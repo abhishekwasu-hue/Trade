@@ -204,7 +204,9 @@ prompt on every call, prompt-cached.
    1) top-down: weekly state → daily trend (degree-aware Dow, protected origin, a correction does not change the trend) → 1H buyer /
       seller areas → 15M pullback → 5M CHoCH;
    2) areas: demand / supply, flips, sharp-fall / sharp-rise points, validity rules, "a zone is dead only beyond the far swing";
-   3) trendlines / channels: K6 validity (≥ 3 touches, wick anchors, close breaks, spacing, slope), horizontal vs sloping, confluence;
+   3) trendlines / channels: K6 validity (TA3: a line is drawn from 2 touches, the projected 3rd touch is the trade location with
+      handover + commitment candle there, ≥ 3 touches = established / evidence +; wick anchors, close breaks, spacing, slope),
+      horizontal vs sloping (TA3b: a horizontal band is drawn from 2 reaction touches the same way), confluence;
    4) corrections: zigzag / flat (incl. expanded / running) / triangle / combinations; impulse vs correction from structure + anatomy;
    5) zone study: handover (trend-side candles growing, counter side weakening, volume), patterns inside the area (K11), sweeps /
       traps (K5);
@@ -215,6 +217,18 @@ prompt on every call, prompt-cached.
 2. **Checklist output.** Vision and the reader return JSON with one entry per checklist item 1–7: `pass` / `fail` / `NA` + one line of
    evidence citing a fact or a visible chart feature; overall verdict `agree` / `partly` / `disagree`. Telegram shows failed / NA items
    first, at most 12 lines. Vision stays audit-only: it never blocks or changes orders or decisions.
+
+   **Item mapping (Abhi R0-1, fixed; `vision/checklist.py` `DECISION3_MAP`, written into every V4 result / log row):**
+
+   | Checklist item (Method Pack section) | decision3 step |
+   |---|---|
+   | 1 Top-down trend | ① Daily trend (Dow, Weekly parent) |
+   | 2 Area | ② 1H levels / areas (incl. sloping-line areas) |
+   | 3 Trendline / channel | ⑤ K inner trendline |
+   | 4 Correction | ③ K open (pullback / correction) |
+   | 5 Zone study | ④ power shift + ⑥ a2 zone study |
+   | 6 Trigger | ⑥ commitment c0 + LTF CHoCH c1 |
+   | 7 Never-list | hard rules H1–H3 (trend side, no breakout, known prices) |
 3. **Caching.** Method Pack + fixed output schema = the cached system prefix (explicit breakpoint at its end); chart images and the
    facts of the moment come after it. TTL per §8; cached vs uncached cost per call reported in the cost table.
 4. **One pack for both.** Vision (V4 prompt) and the reader use the same pack version; every log line records the pack version

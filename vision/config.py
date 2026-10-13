@@ -88,18 +88,21 @@ GLOBAL_DEFAULTS = {
     "visual_audit_daily_cap": 0.10,        # visual audit ची दैनिक उप-मर्यादा ($) — signals ला प्राधान्य (Abhi 2026-10-08)
     "signals_daily_reserve_usd": 0.20,     # signals साठी राखीव ($/दिवस): audit कधीच (दैनिक budget − हे) पलीकडे जात नाही
     "manual_profile": "srv3_instant",      # ✋ /paper (strikes न दिल्यास): strikes / spread width / lots या bot च्या settings ने
+    "vision_v4_audit": "off",              # R0 (design §12): "v4" ⇒ V2 audit नंतर Method Pack checklist (audit-only: Telegram + नोंद);
+                                           # default off ⇒ live मध्ये काहीच बदल नाही; खर्च याच $2 / दिवस budget मध्ये
+    "vision_v4_daily_cap": 0.30,           # R0: V4 ची दैनिक उप-मर्यादा ($); शिवाय V4 कधीच (दैनिक budget − signals राखीव) पलीकडे नाही
 }
 VISUAL_AUDIT_SYMBOLS = ("NIFTY", "BANKNIFTY")
 ENUMS = {
     "vision_mode": MODES, "vision_gray_action": ("half", "skip", "ignore"), "vision_disagree_action": ("skip", "half", "ignore"),
     "vision_fail_action": ("ignore", "skip"), "timeout_action": ("auto_veto", "skip"), "level_gate": ("off", "skip_mid_range"),
-    "manual_profile": MANUAL_PROFILES,
+    "manual_profile": MANUAL_PROFILES, "vision_v4_audit": ("off", "v4"),
 }
 RANGES = {"approve_window_min": (1, 60), "max_drift_mr": (0.05, 5.0), "vision_timeout_sec": (5, 120), "second_audit_below_conf": (0.0, 1.0),
           "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240),
           "line_lookback_sessions": (2, 15), "inv_buffer_mr": (0.1, 3.0), "gap_g0_atr": (0.0, 3.0), "gap_large_atr": (0.1, 5.0), "gap_stretch_atr": (0.5, 20.0),
           "gap_max_age_sessions": (0, 30), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 100.0),
-          "visual_audit_daily_cap": (0.0, 2.0), "signals_daily_reserve_usd": (0.0, 5.0)}
+          "visual_audit_daily_cap": (0.0, 2.0), "signals_daily_reserve_usd": (0.0, 5.0), "vision_v4_daily_cap": (0.0, 2.0)}
 
 
 def defaults(bot):
@@ -214,6 +217,23 @@ def save(bot, changes, by, path=None, trading_mode_fn=None):
     return new
 
 
+def unset(bot, keys, by, path=None):
+    """Stored settings मधून keys काढा (validation शिवाय, इतिहासासह) — rollback आधी नवे keys काढायला (जुना code अज्ञात key पाहून
+    defaults वर परत जातो). रिटर्न काढलेले keys."""
+    with VS.connect(path) as c:
+        r = c.execute("SELECT json FROM vision_settings WHERE bot=?", (bot,)).fetchone()
+        old = json.loads(r[0]) if r else {}
+        new = {k: v for k, v in old.items() if k not in keys}
+        gone = [k for k in keys if k in old]
+        if gone:
+            ts = VS._iso(VS.now_ist())
+            c.execute("UPDATE vision_settings SET json=?, updated_at=?, updated_by=? WHERE bot=?",
+                      (json.dumps(new, ensure_ascii=False), ts, by, bot))
+            c.execute("INSERT INTO vision_settings_history VALUES (?,?,?,?,?)", (ts, bot, by, json.dumps(old, ensure_ascii=False),
+                                                                                json.dumps(new, ensure_ascii=False)))
+    return gone
+
+
 def history(bot=None, path=None):
     with VS.connect(path) as c:
         q = "SELECT * FROM vision_settings_history" + (" WHERE bot=?" if bot else "") + " ORDER BY ts"
@@ -259,6 +279,10 @@ def main(argv=None):
     st.add_argument("value")
     st.add_argument("--by", default=os.environ.get("USER", "cli"))
     sub.add_parser("history")
+    us = sub.add_parser("unset", help="stored key काढा (rollback आधी: _global vision_v4_audit vision_v4_daily_cap)")
+    us.add_argument("bot")
+    us.add_argument("keys", nargs="+")
+    us.add_argument("--by", default=os.environ.get("USER", "cli"))
     a = p.parse_args(argv)
     if a.cmd == "show":
         for b in ["_global", *BOTS]:
@@ -270,6 +294,8 @@ def main(argv=None):
         except ValueError:
             pass
         print(json.dumps(save(a.bot, {a.key: v}, a.by), ensure_ascii=False))
+    elif a.cmd == "unset":
+        print("काढले:", unset(a.bot, a.keys, a.by) or "—")
     else:
         for h in history():
             print(h["ts"], h["bot"], h["by"], h["new_json"])

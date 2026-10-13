@@ -2357,3 +2357,66 @@ figure JSON आणि PNG byte-for-byte तपासले; ON ⇒ supply ना
 V22 ची स्वतःची break स्थिती (वेगळी असेल तर K5 break सुद्धा); sloped रेघेवर acceptance close ची तुलना v(i + 1) शी; magnet closes bar t च्या
 शेवटापर्यंतच; `check_band` / `check_bands` चा default window = finder lookback (`lookback(tf)`: 5M 2, 15M 8, 1H 15, D 126 sessions);
 h1_png real check test (stub नाही), SR V3 default view test ठोस, bands truncation test. Audit re-run (`rerun_shared_review/`): counts तसेच.
+
+## 2026-10-13 · Chart Reader R0 — Method Pack + Vision V4 checklist (branch `claude/r0-method-pack`; design `docs/design/CHART_READER_AGENT.md` §12, §13)
+
+**काय केलं:**
+- **KB markers (फक्त भर, मूळ मजकूर बदलला नाही):** `KNOWLEDGE_BASE.md` मध्ये 11 English "Method Pack" blocks (`<!-- pack:N key -->` …
+  `<!-- /pack -->`, `<details>` मध्ये — KB वाचताना मिटलेले), प्रत्येक त्याच्या मराठी स्रोताशेजारी, source सह: 0 conventions (मोजपट्टी नंतर) ·
+  1 top-down (K1 नंतर) · 4a impulse वि. correction (K2) · 4b correction types (K3) · 2 areas (K4) · 5a liquidity (K5) · 3 trendlines (K6) ·
+  6 trigger (K9) · 5b volume (K10.3) · 5c handover + patterns (K11.18) · 7 never (भाग E). R:R / SL / target / lots / exits pack मध्ये नाहीत.
+- **`scripts/build_method_pack.py` + `vision/method_pack.py`:** blocks Abhi च्या क्रमाने (0–7) + `ABHI_METHOD_NOTES.md` (नवा stub: entries फक्त
+  Abhi च्या मंजुरीनंतर) ⇒ `docs/knowledge/method_pack.md`. Version = body चा sha256 (12 hex) header मध्ये. आज: **version 1ff8a2eaeab5,
+  29,352 chars ≈ 7,338 tokens**. `--check` = stale तपासणी.
+- **`vision/checklist.py`:** JSON (items 1–7 pass / fail / NA + एक evidence ओळ, verdict agree / partly / disagree, pack_version), validator
+  (fail-closed: आकार, agree + fail विसंगत, pack version, **evidence मधला कोणताही price-सारखा आकडा facts / OHLC मध्ये tick ± लिहिलेल्या
+  अचूकतेत नाही ⇒ संपूर्ण output नाकारला + log**), Telegram ओळी (fail / NA आधी, ≤ 12, "audit only").
+- **`vision/v4.py`:** system = [Method Pack, schema मजकूर + `cache_control`] (स्थिर cached prefix), मग images + facts; एकच call (repair नाही);
+  खर्च signal_audit चेच भाव. **Worker:** global `vision_v4_audit` (default **off**, dashboard + CLI) ⇒ V2 निर्णय नोंदल्यानंतरच V4 —
+  `vision_signals.v4_json` + `pack_version`, `vision_usage` (task signal_v4, नवा कॉलम pack_version, जुन्या DB वर migration); $2 / दिवस
+  budget तसाच; gate / verdict / order ला हात नाही; कोणतीही चूक ⇒ V2 वर परिणाम नाही.
+- **`scripts/golden_vision_check.py`:** cases JSON (`tests/fixtures/golden_vision_v4_cases.json`: 12 Oct 09:30, 29 Sep 12:15, BANKNIFTY TODO;
+  अपेक्षा TODO) ⇒ policy guard (holdout कधीच नाही) ⇒ W / D / 1H / 15M / 5M frames ⇒ anonymise (symbol लपवला, तारखा 297 आठवडे मागे,
+  किंमत × 0.731 tick ला) ⇒ charts + OHLC facts + V4 ⇒ validate ⇒ item-निहाय अपेक्षेशी तुलना. `--dry-run` = API नाही, token + $ अंदाज.
+  Sandbox मध्ये खऱ्या key ने कधीच चालवलं नाही.
+**Tests:** `test_method_pack.py` (stale pack = CI check, version hash, R:R / lot नाही, आकार, markers fail-closed), `test_vision_v4_checklist.py`,
+`test_golden_vision_check.py` (dry-run fakes). 18 files (vision सगळे + approval / telegram): 379 pass.
+**उघडे:** OPEN_QUESTIONS R0-1 … R0-8 (items 1–7 चा अर्थ, नवे KB blocks चे शब्द, golden अपेक्षा, BANKNIFTY दिवस / holdout, area, labels कुठे,
+FUT volume, live V4 चालू करायचा का).
+- **Review #318 दुरुस्त्या (त्याच branch वर):**
+  🔴1 budget — V4 ची स्वतःची दैनिक उप-मर्यादा `vision_v4_daily_cap` (default $0.30, 0–2, dashboard + CLI) आणि `run_visual_audit` /
+  `decision3.vision_audit` सारखाच signals राखीव नियम (`v4.budget_ok`: V4 आज + अंदाज ≤ min(cap, दैनिक − राखीव); एकूण ≤ दैनिक − राखीव;
+  मासिक ≤ मासिक − राखीव × उरलेले weekdays) ⇒ V4 नंतरचा V2 audit कधीच "budget संपलं" होत नाही (test). Budget संपलं ⇒ दिवसातून एकच
+  Telegram ओळ (🟡c), per-signal संदेश नाही.
+  🔴2 latency — V4 आता `run_once` च्या **दुसऱ्या पासमध्ये** (`run_v4_jobs`): सगळ्या claimed rows चे V2 निर्णय / `VS.finish` आधी, मग V4
+  (test: row B चं finish row A च्या V4 आधी). एकट्या row चे callers (smoke / dry-run) ⇒ लगेच. कधीच raise नाही. (V4 चालू असताना नवे rows
+  पुढच्या `run_once` मध्ये — त्या pass मधल्या V4 calls इतका उशीर.)
+  🔴3 + 🟡a price validator — price-range फक्त price anchors वरून (level / spot / invalidation / chart levels / room; golden मध्ये model ला
+  दिसणारे OHLC), facts मधले bar counts / MR / अंतरं नाहीत. Range खालचे आकडे दुर्लक्षित; range मधले known मध्ये हवेत; range च्या वर
+  (> 1.5 × max — दुसऱ्या instrument ची किंमत?) ⇒ नाकार. Wave / item / section क्रमांक, "(4)" / "(iv)", ordinals, %, percent, lakh / crore,
+  volume, "9:30am", "12/10", "12-Oct" वगळले (reviewer probes tests मध्ये). Live worker known prices = Vision ला दिलेले facts + chart levels +
+  signal किंमती (21 दिवसांचे 1m OHLC नाहीत).
+  🟡d golden runner — parquet `DP.load_parquet` (holdout file नकार) + `filter_allowed`; W / D holdout gap ओलांडत असतील ⇒ `REFUSED_HOLDOUT_GAP`;
+  लहान W / D इतिहास ⇒ facts मध्ये नोंद + "item 1 unreliable" इशारा; budget = दैनिक − राखीव + मासिक (`v4.budget_ok`).
+  🟡b **Deploy / rollback (VPS):** नवे `_global` keys (`vision_v4_audit`, `vision_v4_daily_cap`) जुन्या code ला "अज्ञात setting" वाटतात ⇒ जुना
+  `VC.load("_global")` defaults वर परत जातो (budget बदल हरवतात). म्हणून (1) deploy ⇒ सगळे vision processes **एकत्र** restart:
+  `git pull && systemctl restart vision_worker vision_telegram` + dashboard (streamlit) restart; (2) rollback ⇒ **आधी** (नव्या code वर) keys काढा:
+  `python3 -m vision.config unset _global vision_v4_audit vision_v4_daily_cap --by abhi`, मग जुना code + तेच restart. `vision_usage`
+  insert कॉलम-निहाय (जुना / नवा schema दोन्हीवर चालतो).
+  Tests: test_vision_v4_checklist (probes, budget, second pass, unset), test_golden_vision_check (holdout gap / parquet / budget).
+  OPEN_QUESTIONS R0-9 (V4 cap).
+- **Re-review #318 (5156a02 नंतर, लहान दुरुस्त्या):** price validator — पूर्ण महिना-शब्द फक्त ("Market / Decline / Mayday 25,555" आता नाकारले),
+  leg / no / n नंतर फक्त 1–2 अंकी क्रमांक किंवा roman; known check आधी (facts मधले OI 1,20,000 / bot tag oi=180000 range बाहेर असले तरी चालतात);
+  V4 मासिक राखीव = राखीव × (उरलेले weekdays + आज weekday असेल तर 1); reserve > daily असताना कारण-मजकूर "$-…" नाही; golden `load_data`
+  tz-aware timestamps आधी IST-naive मग policy filter (holdout file नाव-नकार तसाच); holdout gap सगळ्या frames वर (W / D / 1H / 15M / 5M);
+  worker V4 पास: कमाल 2 jobs / `run_once` (`V4_MAX_PER_CYCLE`), आणि नवे (bar बंद) QUEUED rows असतील तर V4 पास वगळतो — सोडलेले V4
+  jobs पुढे नेत नाही (audit-only), `vision_events` मध्ये `v4_dropped` नोंद; shadow rows साठी V4 budget Telegram इशारा नाही; dashboard V4 cap
+  0–2. Tests: test_vision_v4_checklist, test_golden_vision_check.
+- **Abhi चे R0 निर्णय (R0-1 … R0-9) लागू:** R0-1 item ⇒ decision3 map (design §12.2 तक्ता, `DECISION3_MAP` प्रत्येक V4 निकाल / `v4_json` /
+  Telegram ओळ / golden निकालात); R0-2 "zone dead only beyond the far swing" KB मध्ये `<!-- pending:abhi -->` ⇒ generator ते वगळतो
+  (test), K4 / K6 English blocks: "drawn from 2 touches", 3रा touch = trade location, ≥ 3 = established "never a minimum" (TA3 / TA3b;
+  design §12.1 item 3 सुद्धा) ⇒ **pack version 4855ff77991f** (≈ 7,282 tokens); R0-3 drafts `trade-data/golden_v4/cases.json` (status
+  "draft — pending Abhi ✅"), runner "PROVISIONAL" छापतो; R0-5 runner FUT volume (`--futures`, default collector + exports; नाही ⇒ स्पष्ट
+  NA) + item 6 मोजमाप (FUT volume ÷ आधीचे 8 bars, 5M CHoCH by close); R0-4 `research/banknifty_abc_candidates.py` (V22, research only)
+  ⇒ 3 उमेदवार charts trade-data `review/banknifty_abc_candidates/`. Sandbox dry-run (खरा data, API नाही): 12 Oct FUT volume 1.33×, 5M CHoCH
+  09:40; 29 Sep FUT volume NA (exports 30 Sep पासून), 5M CHoCH 12:30. OPEN_QUESTIONS R0-1 … R0-9 निकाली ("zone dead" उघडा).
