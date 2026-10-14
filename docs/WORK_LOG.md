@@ -2608,3 +2608,17 @@ legs owner वि. reader2 gate).
 - **Deploy:** git pull + restart पुरेसं नाही — `bash scripts/deploy_one_bot.sh` पुन्हा (schedule ओळी + `set_one_bot_mode.py` ⇒ SENSEX 15M SRv2
   OFF, Vision symbols NIFTY / BANKNIFTY). Setting DB मध्ये लिहायची गरज नाही (default).
 - **Review #326 नंतर:** 15:45 सारांश — symbols `signal_symbols` वरून (SENSEX ओळ नाही); areas पट्टे (engine ⇒ `watched_levels`, own ⇒ gate पट्टा); areas आणता आले नाहीत ⇒ "Bot areas not available" (PF-1 केलं).
+
+## 2026-10-14 · Abhi ची zone study उत्तरं (branch `claude/zone-study-answers`)
+
+- **KB आधी:** K4 मध्ये [Abhi] नोंदी (Z-1s शब्दरचना, entry चे तीन भाग क्रमाशिवाय, sticky handover, counter बाजू गायब = दमली, FUT gaps);
+  Method Pack पुन्हा बनवला (`--check` ✅; golden आकडे pack मध्ये नाहीत).
+- **Code:** Z-1p `zone_study` `counter_gone`; Z-1q `method.handover_episode` (absorption / K4 BROKEN पर्यंत टिकतो); Z-1r CHoCH zone मध्ये
+  आल्यानंतरचाच (`arrival_at`); RF-2 `vol_gap_max_frac` (50%) ⇒ data problem + तीच Telegram ओळ; Z-1s `flip.reached` — पलीकडे swing नसेल ⇒
+  पहिला swing confirm होताच FLIPPED / DEAD (engine + `band_flip_facts`); Z-1t `history.level_history_daily` / `daily_warmup` (holdout Daily
+  फक्त level history, फक्त ≥ 2026-07 window, नोंदीसह), V22 holdout 15M bar ⇒ HoldoutError, `_prior_levels` "Q40 prior levels skipped" log;
+  PF-2 "provisional width" (facts, chart labels, log). Harness: `real_inputs` आणि `replay_day.py` आता Daily warm-up देतात (live सारखं).
+- **Tests:** नवीन `tests/test_decision3_zone_answers.py`; `test_decision3_flip.py` मधले जुन्या Z-1a शब्दरचनेचे synthetic tests नव्या नियमाने
+  (golden नाहीत); 29 Sep real test नवा; 12 Oct golden bear call आता मिळतो ⇒ xfail काढला.
+- **Re-run:** 12 Oct 09:30 bear call (grade B); 13 Oct bear call नाही; 29 Sep 22,725–22,810 BROKEN 09:45 → FLIPPED 11:30, 12:00 / 12:15
+  pullback पण FUT नाही ⇒ entry नाही. नवीन प्रश्न: Z-1u (Weekly prior पट्टे merge होऊन मोठा zone), Z-1v (अर्थ लावलेले भाग).

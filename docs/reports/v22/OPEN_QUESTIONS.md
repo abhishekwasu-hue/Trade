@@ -471,7 +471,7 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | B1-a | ठेवलेले (wave prediction नाहीत, Dow रचना): Q23 origin close ने तुटला ⇒ कमाल B, A1 same-degree correction ⇒ कमाल B, weekly विरुद्ध ⇒ कमाल B, trend first (`st.rev`) ⇒ trade नाही; §5.3 range अवस्था (Z-1j, Abhi कडे). ~~Level bots (OFF): origin_risk ⇒ NO_TREND तसंच~~ **superseded ⇒ RF-1** (level gate: origin_risk = context only) | तसंच | Abhi |
 | B2 | Watch-list: trend दिशेचे पुढचे सगळे valid counter-side zones (BROKEN / DEAD नाहीत), जवळचे पहिले, `watch_levels_max` 3 (KB K4 display ≤ 3); प्रत्येकावर in-zone study; zone तुटला ⇒ पुढचा आधीच यादीत; row / payload `watch_list` | ✅ केलं | — |
 | B3 | Loss नंतर lock-out: engine मार्गात (engine_entry) कोणताही loss lock-out नाही. SRv2 bot च्या स्वतःच्या (non-engine) मार्गात: `COOLDOWN_MINUTES` 30 (SL नंतर, hard-coded; `pre_cycle` नंतर ⇒ engine entry ला लागत नाही) आणि `sl_tsl_cooldown_minutes` 15 (dashboard, त्याच level वर SL/TSL नंतर) — LIVE-capable file ⇒ बदल नाही. वेगळे risk settings (बदल नाही): Kill switch enabled, max_daily_loss_pct 2.0, max_daily_profit_pct 3.0, max_trades_per_day 15, count_paper_pnl True (PAPER लाही लागू), MCX kill switch 1.0 %, vision shadow_cooldown_min | 30-min cooldown setting करायचा का (default OFF)? | Abhi |
-| D-29 | 29 Sep: trade-data मध्ये FUT 30 Sep पासून ⇒ 29 Sep ला FUT नाही (NIFTY live ⇒ data error); शिवाय decision3 1H levels मध्ये किंमतीजवळ zone नाही (जवळचा resistance 23,231–23,270, 12:15 close 22,677 पासून ~554 pts) ⇒ ③ ✘ दिवसभर ⇒ wait | wait | Abhi (29 Sep चा zone कोणता?) |
+| D-29 | 29 Sep: trade-data मध्ये FUT 30 Sep पासून ⇒ 29 Sep ला FUT नाही (NIFTY live ⇒ data error); शिवाय decision3 1H levels मध्ये किंमतीजवळ zone नाही (जवळचा resistance 23,231–23,270, 12:15 close 22,677 पासून ~554 pts) ⇒ ③ ✘ दिवसभर ⇒ wait | ⇒ Z-1s / Z-1t (Daily warm-up ने zone जन्मला; 11:30 FLIPPED) | ✅ निकाली |
 
 ### Abhi Z-1j / Z-1h / Z-1m — code
 
@@ -480,22 +480,47 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | Z-1j | §5.3 range अवस्था entry gate नाही — context fact (`range_state` row / payload); `range_state_gate` True फक्त जुने tests | ✅ केलं | ✅ निकाली |
 | Z-1h | Slot normalisation 20 sessions (किमान 10); कमी history ⇒ "volume normalisation: insufficient history — raw per-bar average" (त्याच window मधली per-bar सरासरी; data error नाही); row / payload `volume_measure`, pre-open ℹ️ ओळ. FUT पूर्ण नसेल (NIFTY / BANKNIFTY) ⇒ data error तसाच. `live_export/2026-10-13-fut45/` अजून नाही ⇒ 12 Oct raw fallback वर | ✅ केलं | ✅ निकाली |
 | Z-1m | a2 handover अनिवार्य (`a2_handover_required`), क्रम a2 → c1 → c0. Handover present ⇔ `method.zone_study(arm … t − 1)["handover"]`: zone मधल्या window च्या पहिल्या / दुसऱ्या अर्ध्यात trade-side candles वाढतात (body ↑ आवश्यक + range ↑ / close trade-टोकाजवळ ↑ / volume ↑ पैकी उपलब्धांपैकी किमान अर्धे) **आणि** counter-side candles दमतात (body ↓ आवश्यक + उलट wick ↑ / close दूर ↑ / volume ↓ पैकी किमान अर्धे); window ≥ 4 bars. Level bots (OFF) जुनं वर्तन | ✅ केलं | ✅ निकाली |
-| Z-1p | Handover व्याख्येतली कडा: दुसऱ्या अर्ध्यात counter-side candle **नाहीच** ⇒ counter weakening NA ⇒ handover नाही (12 Oct 10:15). Counter बाजू पूर्ण गायब = दमली मानायचं का? 12 Oct 09:30: selling candles + selling volume वाढले, पण buying candles "दमल्या" नाहीत (body / wick majority) ⇒ handover नाही ⇒ golden bear call अजून नाही | असंच (बदल नाही) | Abhi |
+| Z-1p | Handover व्याख्येतली कडा: दुसऱ्या अर्ध्यात counter-side candle **नाहीच** ⇒ counter weakening NA ⇒ handover नाही (12 Oct 10:15). Counter बाजू पूर्ण गायब = दमली मानायचं का? 12 Oct 09:30: selling candles + selling volume वाढले, पण buying candles "दमल्या" नाहीत (body / wick majority) ⇒ handover नाही ⇒ golden bear call अजून नाही | ✅ Abhi (a): counter बाजू गायब = दमली ⇒ फक्त trade बाजू वाढतेय का (`method.zone_study` `counter_gone`) | ✅ निकाली |
 
 ### Review follow-ups — घेतलेले default निर्णय (Abhi ने बदलावे)
 
 | # | नोंद | code (default) | कोण |
 |---|---|---|---|
 | RF-1 | Level gate (SRv2 / classic / MCX confirmation mode — PAPER default; LIVE touch mode ला लागत नाही): origin_risk आता entry अडवत नाही, फक्त context (B1-a मधली "Level bots: origin_risk ⇒ NO_TREND तसंच" ओळ यामुळे बदलली). Level bots OFF | context | Abhi |
-| RF-2 | FUT gaps in-zone window मध्ये: NA bars वगळून per-bar सरासरी + label मध्ये gap count / कारण. Decision bar (c0) चाच volume NA ⇒ data problem (entry नाही). Gaps जास्त असतील तर (उदा. अर्ध्याहून जास्त bars) entry थांबवायची का? | label फक्त, थांबवत नाही | Abhi |
+| RF-2 | FUT gaps in-zone window मध्ये: NA bars वगळून per-bar सरासरी + label मध्ये gap count / कारण. Decision bar (c0) चाच volume NA ⇒ data problem (entry नाही). Gaps जास्त असतील तर (उदा. अर्ध्याहून जास्त bars) entry थांबवायची का? | ✅ Abhi (b): सरासरी volume असलेल्या bars ची + "gaps n/m"; gaps > `vol_gap_max_frac` (50%) ⇒ data problem, entry नाही + Telegram (`V22.vol_gaps`) | ✅ निकाली |
 | RF-3 | FUT rollover दिवस (expiry + आधीचे 2 sessions) slot baseline मधून वगळले (legs2 प्रमाणे); त्या दिवसाचा स्वतःचा bar normalise होतो, label "FUT rollover day" | वगळले | Abhi |
-| Z-1q | Handover एकदा दिसला की commitment पर्यंत वैध राहतो का, की commitment bar च्या window मध्ये (arm … t − 1) तो पुन्हा दिसायला हवा? Code आज commitment bar ला पुन्हा तपासतो. 12 Oct: 09:45 / 10:00 ला handover होता (doji / inside bar ⇒ commitment नाही), 10:15 ला window बदलल्यावर नाही (Z-1p) | commitment bar ला पुन्हा तपास (बदल नाही) | Abhi |
-| Z-1r | क्रम (handover → LTF CHoCH → commitment) फक्त commitment bar ला तपासला जातो ⇒ handover दिसण्याआधी छापलेला 5M CHoCH सुद्धा चालतो (12 Oct: CHoCH 09:40, handover 09:45). CHoCH handover नंतरच हवा का? | आधीचा CHoCH चालतो (बदल नाही) | Abhi |
+| Z-1q | Handover एकदा दिसला की commitment पर्यंत वैध राहतो का, की commitment bar च्या window मध्ये (arm … t − 1) तो पुन्हा दिसायला हवा? Code आज commitment bar ला पुन्हा तपासतो. 12 Oct: 09:45 / 10:00 ला handover होता (doji / inside bar ⇒ commitment नाही), 10:15 ला window बदलल्यावर नाही (Z-1p) | ✅ Abhi (a): sticky — absorption / zone तुटणे (K4 BROKEN) पर्यंत टिकतो (`method.handover_episode`) | ✅ निकाली |
+| Z-1r | क्रम (handover → LTF CHoCH → commitment) फक्त commitment bar ला तपासला जातो ⇒ handover दिसण्याआधी छापलेला 5M CHoCH सुद्धा चालतो (12 Oct: CHoCH 09:40, handover 09:45). CHoCH handover नंतरच हवा का? | ✅ Abhi (a+): क्रम नाही, तिन्ही commitment bar ला; CHoCH zone मध्ये आल्यानंतरचा (`ltf_choch` `arrival_at`) | ✅ निकाली |
 
 ### Deploy fixes (branch `claude/preopen-fixes`)
 
 | # | प्रश्न | आत्ता काय (default) | पर्याय |
 |---|---|---|---|
 | PF-1 | ~~15:45 सारांश एकच-किंमत areas~~ — केलं (review #326): engine source ⇒ `watched_levels` पट्टे (BROKEN / DEAD नाहीत); own / both ⇒ bot चा gate पट्टा; symbols = `signal_symbols` (SENSEX ओळ नाही) | केलं | — |
-| PF-2 | decision3 levels: σ_1H नसताना (window चे पहिले 20 sessions) तात्पुरती किमान रुंदी = bars ≤ t चे 1H ranges चा median × 0.15; σ आल्यावर spec प्रमाणे | लावलं (नवा आकडा नाही, तोच `level_min_width_sigma`) | σ नसताना level जन्मच नाही |
+| PF-2 | decision3 levels: σ_1H नसताना (window चे पहिले 20 sessions) तात्पुरती किमान रुंदी = bars ≤ t चे 1H ranges चा median × 0.15; σ आल्यावर spec प्रमाणे | ✅ Abhi (a): तसंच, label "provisional width" (level facts, chart labels, log) | ✅ निकाली |
 | PF-3 | `signal_symbols` बदलल्यावर one-bot mode आपोआप लागत नाही (Vision symbols / 15M SRv2 on-off) — `python3 scripts/set_one_bot_mode.py` पुन्हा चालवावा लागतो; engine / pre-open / engine entry लगेच नवी यादी वापरतात | dashboard caption मध्ये सूचना | dashboard save वरच one-bot mode लावा |
+
+### Abhi अंतिम उत्तरं — zone study (Z-1p … Z-1t, RF-2, PF-2) — code (branch `claude/zone-study-answers`)
+
+| # | निर्णय (Abhi) | code | स्थिती |
+|---|---|---|---|
+| Z-1p (a) | Counter बाजू zone मधून गायब (दुसऱ्या अर्ध्यात counter candle नाही, पहिल्यात होती) = दमली ⇒ फक्त trade बाजू वाढतेय का | `method.zone_study` (`counter_gone`) | ✅ निकाली |
+| Z-1q (a) | Handover एकदा दिसला की commitment पर्यंत टिकतो; रद्द फक्त नंतरच्या absorption ने किंवा zone तुटल्याने; प्रत्येक zone भेटीसाठी, look-ahead नाही | `method.handover_episode`, `V22.handover_episode` (zone तुटणे = K4 BROKEN / DEAD) | ✅ निकाली |
+| Z-1r (a+) | क्रम महत्त्वाचा नाही — handover, LTF CHoCH, commitment तिन्ही commitment bar ला; CHoCH zone मध्ये आल्यानंतरचा (arm bar नंतर) | `method.ltf_choch` (`arrival_at`, `after_arrival`), `confirm(handover=…)`; row `commit.choch_vs_arm` | ✅ निकाली |
+| RF-2 (b) | FUT gaps: volume असलेल्या bars ची सरासरी + "gaps n/m"; window च्या `vol_gap_max_frac` (default 50%) पेक्षा जास्त bars ला FUT नाही ⇒ entry नाही + Telegram "data problem: FUT volume gaps" (NIFTY / BANKNIFTY, दिवसातून एकदा); commitment candle चाच volume नाही ⇒ entry नाही | `V22.vol_gaps`, `V22._confirm`, setting `vol_gap_max_frac` (register) | ✅ निकाली |
+| Z-1s (b) | Z-1a ची दुरुस्त शब्दरचना (नवा नियम नाही): पलीकडे आधीचा swing नसेल ⇒ break नंतरचा पहिला swing **confirm** होताच FLIPPED (तोडायची गरज नाही); आधीचा swing असेल ⇒ तो पार हवा; DEAD साठी तसंच | `flip.reached`, `Levels._step_far_swing`, `levels.band_flip_facts` (chart labels = engine) | ✅ निकाली |
+| Z-1t (a) | Replays / tests: NIFTY holdout Daily bars फक्त Daily levels चा इतिहास (Q40), फक्त holdout नंतरच्या (≥ 2026-07) window साठी; holdout तारखेचा निर्णय / गुण / report कधीच नाही; प्रत्येक वापराची नोंद; "0 Daily bars before window ⇒ Q40 prior levels skipped" नोंद | `history.level_history_daily`, `read_level_history`, `repo_level_history`, `daily_warmup`; `engine.guard_sealed_bars` (+ `decide` पहारा); `Levels._prior_levels` log; harness: `tests/test_decision3_flip.real_inputs`, `scripts/replay_day.py` | ✅ निकाली |
+| PF-2 (a) | तात्पुरती रुंदी (σ_1H नसताना median 1H range) तशीच; logs, chart labels, level facts मध्ये "provisional width" | `Level.prov` / `provisional`, snapshot `provisional_width` / `width_note`, `levels.width_tag` (1H chart, setup chart) | ✅ निकाली |
+
+Re-run (default settings, 1m सह, Daily warm-up; FUT 30 Sep पासून ⇒ raw per-bar fallback; `live_export/2026-10-13-fut45/` अजून नाही):
+12 Oct — bear call ✅ 09:30 candle (close 09:45): sticky handover (9 Oct 11:30 पासून), 5M CHoCH 09:40 (arrival 9 Oct 09:55 नंतर),
+strong_close body 4.5×, volume 1.4× (raw) ⇒ grade B (golden xfail काढला); 11:00 ला दुसरा setup. 13 Oct — bear call नाही ✅. 29 Sep —
+22,725–22,810 BROKEN 09:45, FLIPPED 11:30 (22,569.65 confirm), 12:00 / 12:15 = pullback (③ ✔), पण त्या दिवशी FUT नाही ⇒ data problem
+(entry नाही). तपशील: scratchpad अहवाल / WORK_LOG.
+
+### Zone study answers नंतर — Abhi ने ठरवायचे (नवे)
+
+| # | प्रश्न | आत्ता काय (default) | पर्याय |
+|---|---|---|---|
+| Z-1u | Daily warm-up (Z-1t, live सारखं) मुळे Q40 prior Daily / **Weekly** पट्टे (weekly candle चा wick-to-body, ~200–330 pts) window सुरुवातीला जन्मतात आणि overlap ⇒ merge होतात. 12 Oct चा 22,544–22,622 zone 22,476–22,809 या मोठ्या पट्ट्यात merge झाला (1 Oct ला तुटून flip; Abhi चा 8 Oct flip नाही); त्याखाली 21,965–22,622 support पट्टा सुद्धा overlap. Live engine3 (Upstox Daily) मध्येही हेच होत असणार | बदल नाही; 12 Oct zone-identity आणि 13 Oct B2 watch-list tests या कारणावर xfail (दुसरं कारण ⇒ fail) | Weekly prior पट्टे अरुंद (उदा. Daily सारखी किमान/कमाल रुंदी) / prior पट्टे एकमेकांत merge नाहीत / 1H zone prior पट्ट्यात merge नाही |
+| Z-1v | अर्थ लावलेले भाग: (1) Z-1q "zone तुटणे" = K4 BROKEN (accept_closes closes पलीकडे; एका close चा sweep रद्द करत नाही); तुटल्यानंतर handover फक्त break नंतरच्या bars वरून. (2) Z-1r "zone मध्ये आल्यानंतर" = arm bar नंतरची zone ला स्पर्श करणारी पहिली LTF candle. (3) RF-2 window = arm … commitment bar (commitment सकट); gaps जास्त असताना commitment नसली तरी data problem (Telegram दिवसातून एकदा). (4) FUT पूर्ण दिवस नसेल ⇒ "data problem: FUT volume missing on all n zone-window bars" | असंच | Abhi पुष्टी |
