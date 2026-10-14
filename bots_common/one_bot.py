@@ -162,14 +162,27 @@ def _mode(eff):
     return str((eff or {}).get("trading_mode", "PAPER") or "PAPER").upper()
 
 
+def _safe_mode(eff, raw):
+    """LIVE तपास दोन्हीकडून: effective (read अयशस्वी ⇒ defaults = PAPER दिसू शकतो) **आणि** साठवलेली raw row (read अयशस्वी ⇒ raise).
+    कुठेही non-PAPER ⇒ तोच mode — अयशस्वी read मुळे LIVE combo कधीच PAPER दिसत नाही."""
+    a, b = _mode(eff), _mode({**(eff or {}), **(raw or {})})
+    return a if a != "PAPER" else b
+
+
+def _combo_mode(io, strat, sym):
+    """लिहिण्याआधीचा तपास: effective + raw (raw read ची त्रुटी ⇒ exception ⇒ तो टप्पा अयशस्वी, लिहिलं नाही)."""
+    return _safe_mode(io.effective(strat, sym), io.raw(strat, sym))
+
+
 # ------------------------------------------------------------------------------------------------ plan / apply / revert
-def plan(io, parts=None):
+def plan(io, parts=None, symbols=None):
     """रिटर्न (changes, warnings). change = dict(label, strategy, symbol, key, before_raw, before, after, skip).
-    `parts` (उदा. SIGNAL_SYMBOL_PARTS) ⇒ फक्त त्या strategies / "vision" / "paper" चे बदल; None ⇒ सगळं (script)."""
+    `parts` (उदा. SIGNAL_SYMBOL_PARTS) ⇒ फक्त त्या strategies / "vision" / "paper" चे बदल; None ⇒ सगळं (script).
+    `symbols` ⇒ signal symbols हेच (dashboard ने नुकतेच सेव्ह केलेले); None ⇒ io मधून वाचा (script)."""
     changes, warns = [], []
     want = (lambda k: True) if parts is None else (lambda k: k in parts)
     ctext = io.crontab() if any(want(k) for k in AUTO_KEYS) else None
-    sig = signal_symbols(io)
+    sig = [str(x).upper() for x in symbols] if symbols is not None else signal_symbols(io)
     for label, strat, sym, kv in targets(sig):
         if not want(strat):
             continue
@@ -177,9 +190,10 @@ def plan(io, parts=None):
         raw = io.raw(strat, sym)
         if strat in AUTO_KEYS and cron_runs(ctext, AUTO_KEYS[strat]).get(sym) == "LIVE":
             eff = {**eff, "trading_mode": "LIVE"}                        # auto trader चा mode = cron `--mode` (settings मध्ये नाही)
-        live = _mode(eff) != "PAPER"
+        mode = _safe_mode(eff, raw)
+        live = mode != "PAPER"
         if live:
-            warns.append(f"⚠️ {label} {sym}: trading_mode {_mode(eff)} ⇒ हात लावला नाही (LIVE untouched) — फक्त नोंद")
+            warns.append(f"⚠️ {label} {sym}: trading_mode {mode} ⇒ हात लावला नाही (LIVE untouched) — फक्त नोंद")
         for k, v in kv.items():
             changes.append({"label": label, "strategy": strat, "symbol": sym, "key": k, "before_raw": raw.get(k, ABSENT),
                             "before": eff.get(k), "after": eff.get(k) if live else v, "skip": "LIVE" if live else None})
@@ -226,7 +240,7 @@ def _steps(io, changes):
     steps = []
     for (strat, sym), kv in by.items():
         def _write(strat=strat, sym=sym, kv=kv):
-            if _mode(io.effective(strat, sym)) != "PAPER":                # लिहिण्याआधी पुन्हा (race) — LIVE ⇒ नाही
+            if _combo_mode(io, strat, sym) != "PAPER":                    # लिहिण्याआधी पुन्हा (race) — LIVE ⇒ नाही
                 return "skipped (LIVE)"
             io.save(strat, sym, kv)
             return "written"
@@ -276,35 +290,66 @@ def apply_reported(io, changes):
 def apply_signal_symbols(before=None, after=None, io=None, by="dashboard", now_fn=None, logger=None):
     """Abhi 9a (PF-3): dashboard वर `signal_symbols` सेव्ह झाल्यावर — `scripts/set_one_bot_mode.py` चा signal-symbols भाग
     (SIGNAL_SYMBOL_PARTS: 15M SRv2 per symbol on/off + engine + PAPER, Vision srv2 symbols / approval, PAPER instruments) लगेच लावतो.
-    तेच plan / apply (LIVE / LIVE_PAPER combo ⇒ skip, लिहिण्याआधी पुन्हा तपास). बाकी bots ला हात नाही; before-state file लिहीत नाही
-    (script चा revert तसाच) — त्याऐवजी log (before / after, कोण / कुठून, वेळ). कधीच raise करत नाही.
+    Symbols = `after` (नुकतेच सेव्ह केलेले, clean केलेले) — पुन्हा वाचलेली यादी `after` शी जुळली नाही (read अयशस्वी ⇒ जुनी / default
+    यादी) ⇒ काहीच लिहीत नाही, failed "signal_symbols read". तेच plan / apply (LIVE / LIVE_PAPER combo ⇒ skip, effective + raw दोन्हीकडून,
+    लिहिण्याआधी पुन्हा तपास). बाकी bots ला हात नाही; before-state file लिहीत नाही (script चा revert तसाच) — त्याऐवजी log (before /
+    after, कोण / कुठून, वेळ). कधीच raise करत नाही.
     रिटर्न dict: ok, at, by, signal_symbols {before, after}, changes [label symbol key before after skip], warnings, applied,
     skipped_live, failed, not_run."""
-    if logger is None:
-        from log_setup import get_logger
-        logger = get_logger("one_bot")
-    if now_fn is None:
-        from config import get_ist_now as now_fn
-    try:
-        at = now_fn().isoformat(timespec="seconds")
-    except Exception:                                                    # noqa: BLE001
-        at = None
-    res = {"ok": False, "at": at, "by": by, "signal_symbols": {"before": list(before or []), "after": list(after or [])},
+    res = {"ok": False, "at": None, "by": by, "signal_symbols": {"before": list(before or []), "after": list(after or [])},
            "changes": [], "warnings": [], "applied": [], "skipped_live": [], "failed": None, "not_run": []}
+
+    class _NoLog:
+        def info(self, *a):
+            pass
+        error = info
+    try:
+        if logger is None:
+            from log_setup import get_logger
+            logger = get_logger("one_bot")
+    except Exception:                                                    # noqa: BLE001
+        logger = _NoLog()
+
+    def _fail(part, exc):
+        res["failed"] = {"part": part, "error": exc if isinstance(exc, str) else f"{type(exc).__name__}: {exc}"}
+        try:
+            logger.error("signal_symbols apply FAILED at=%s by=%s before=%s after=%s: %s", res["at"], by, res["signal_symbols"]["before"],
+                         res["signal_symbols"]["after"], res["failed"])
+        except Exception:                                                # noqa: BLE001
+            pass
+        return res
+    try:
+        if now_fn is None:
+            from config import get_ist_now as now_fn
+        res["at"] = now_fn().isoformat(timespec="seconds")
+    except Exception:                                                    # noqa: BLE001
+        res["at"] = None
+    try:
+        import cloud_db
+        want = cloud_db.clean_signal_symbols(after)
+        res["signal_symbols"]["after"] = list(want)
+    except Exception as exc:                                             # noqa: BLE001
+        return _fail("signal_symbols (after)", exc)
     try:
         io = io or IO(by=by)
-        changes, warns = plan(io, parts=SIGNAL_SYMBOL_PARTS)
+        got = [str(x).upper() for x in io.signal_symbols()]
     except Exception as exc:                                             # noqa: BLE001
-        res["failed"] = {"part": "plan (settings वाचन)", "error": f"{type(exc).__name__}: {exc}"}
-        logger.error("signal_symbols apply FAILED by=%s before=%s after=%s: %s", by, res["signal_symbols"]["before"],
-                     res["signal_symbols"]["after"], res["failed"])
-        return res
+        return _fail("signal_symbols read", exc)
+    if got != list(want):
+        return _fail("signal_symbols read", f"read back {got} ≠ saved {list(want)} (stale / default) — nothing applied")
+    try:
+        changes, warns = plan(io, parts=SIGNAL_SYMBOL_PARTS, symbols=want)
+    except Exception as exc:                                             # noqa: BLE001
+        return _fail("plan (settings वाचन)", exc)
     res["warnings"] = warns
     res["changes"] = [{k: c[k] for k in ("label", "symbol", "key", "before", "after", "skip")} for c in changes]
     res.update(apply_reported(io, changes))
-    payload = json.dumps({k: res[k] for k in ("by", "signal_symbols", "changes", "applied", "skipped_live", "failed", "not_run")},
-                         ensure_ascii=False, default=str)
-    (logger.info if res["ok"] else logger.error)("signal_symbols apply %s at=%s %s", "OK" if res["ok"] else "FAILED", at, payload)
+    try:
+        payload = json.dumps({k: res[k] for k in ("by", "signal_symbols", "changes", "applied", "skipped_live", "failed", "not_run")},
+                             ensure_ascii=False, default=str)
+        (logger.info if res["ok"] else logger.error)("signal_symbols apply %s at=%s %s", "OK" if res["ok"] else "FAILED", res["at"], payload)
+    except Exception:                                                    # noqa: BLE001
+        pass
     return res
 
 
@@ -332,8 +377,9 @@ def revert(io, st):
         k = (e["strategy"], e["symbol"])
         (by_del.setdefault(k, []).append(e["key"]) if e["raw"] == ABSENT else by_set.setdefault(k, {}).__setitem__(e["key"], e["raw"]))
     for k in sorted(set(by_set) | set(by_del)):
-        if _mode(io.effective(*k)) != "PAPER":
-            warns.append(f"⚠️ {k[0]} {k[1]}: आता {_mode(io.effective(*k))} ⇒ revert केला नाही (LIVE untouched)")
+        m = _combo_mode(io, *k)
+        if m != "PAPER":
+            warns.append(f"⚠️ {k[0]} {k[1]}: आता {m} ⇒ revert केला नाही (LIVE untouched)")
             continue
         if by_set.get(k):
             io.save(k[0], k[1], by_set[k])

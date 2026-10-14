@@ -302,6 +302,18 @@ class TestPostSlCooldownSetting:
         assert "Cooldown" in self._run(on, sl_minutes_ago=5) and "20 मिनिटं" in self._run(on, sl_minutes_ago=5)
         assert "Cooldown" not in self._run(on, sl_minutes_ago=25)
 
+    def test_malformed_minutes_fall_back_to_30_with_warning(self, capsys):
+        for bad in ("abc", None, float("nan"), -5, [1]):
+            assert srv2.post_sl_cooldown_minutes(self._settings(post_sl_cooldown_enabled=True, post_sl_cooldown_minutes=bad)) == 30.0
+        assert "post_sl_cooldown_minutes" in capsys.readouterr().out
+        assert "Cooldown" in self._run(self._settings(post_sl_cooldown_enabled=True, post_sl_cooldown_minutes="x"), sl_minutes_ago=5)
+
+    def test_dashboard_caption_says_switch_has_no_effect_yet(self):
+        import os
+        src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page_bot_dynamic_sr_algo.py"),
+                   encoding="utf-8").read()
+        assert "काहीच फरक पडत नाही" in src and "last_sl_hit_time" in src and "OPEN_QUESTIONS B3" in src
+
     def test_on_with_default_minutes_is_old_30_minute_rule(self):
         on = self._settings(post_sl_cooldown_enabled=True)
         assert srv2.post_sl_cooldown_minutes(on) == srv2.COOLDOWN_MINUTES == 30

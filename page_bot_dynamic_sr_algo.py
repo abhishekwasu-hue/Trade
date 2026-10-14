@@ -361,6 +361,8 @@ def _apply_signal_symbols_one_bot(before, after):
         st.warning(w)
     if res.get("skipped_live"):
         st.warning(f"LIVE combo ला हात नाही: {', '.join(res['skipped_live'])}")
+    st.caption(f"ℹ️ सेव्ह ⇒ signal symbols ({' / '.join(after)}) साठी 15M SRv2 चा `signal_source` = engine (PAPER) लावला जातो — "
+               "तिथे आधी 'own' किंवा 'both' निवडलं असेल तर ते बदलून engine होतं (LIVE combo ला हात नाही).")
 
 
 def _render_vix_halt_alert_banner():
@@ -553,6 +555,10 @@ def render():
                     "चालू केल्यास: SL लागल्यावर या symbol वर (कुठल्याही level वर) इतकी मिनिटं नवीन entry नाही — जुनं वर्तन. "
                     "बंद (डीफॉल्ट): असा cooldown नाही. वरचा 'SL/TSL Cooldown (त्याच level वर)' वेगळा आहे. "
                     "फक्त bot च्या स्वतःच्या (own) मार्गाला लागतो; engine मार्गात loss lock-out नाही."
+                )
+                st.warning(
+                    "⚠️ सध्या हा switch चालू केला तरी काहीच फरक पडत नाही: SL लागल्याची वेळ (`last_sl_hit_time`) कोणताही code लिहीत नाही, "
+                    "त्यामुळे हा cooldown कधीच सुरू होत नाही (आधीही होत नव्हता). खरंच लागू व्हायला हवा असल्यास: OPEN_QUESTIONS B3."
                 )
                 post_sl_cooldown_minutes = _number_input(
                     "Cooldown (मिनिटं, symbol-व्यापी)", settings, "post_sl_cooldown_minutes", strategy_key, symbol,

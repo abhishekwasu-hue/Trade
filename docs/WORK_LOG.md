@@ -2630,3 +2630,9 @@ legs owner वि. reader2 gate).
   AppTest सेव्ह / त्रुटी).
 - **Deploy:** git pull + dashboard restart पुरे (नवीन settings default ⇒ DB migration नाही). Signal symbols बदलल्यावर script हाताने चालवायची
   गरज नाही (dashboard "पूर्ण लागला नाही" सांगेल तेव्हाच).
+- **Review #328 fixes:** (1) dashboard apply आता सेव्ह केलेली यादी (`after`, `clean_signal_symbols`) थेट plan ला देतो; पुन्हा वाचलेली यादी
+  जुळली नाही (read अयशस्वी ⇒ जुनी / default) ⇒ काहीच लिहीत नाही, failed "signal_symbols read" (✅ नाही). (2) LIVE तपास effective **आणि**
+  साठवलेली raw row दोन्हीकडून (`_safe_mode` / `_combo_mode`) — plan, लिहिण्याआधी आणि revert मध्ये; raw read अयशस्वी ⇒ तो टप्पा failed,
+  लिहिलं नाही. (3) `apply_signal_symbols` चे logger / clock imports try मध्ये (कधीच raise नाही). (4) बिघडलेला `post_sl_cooldown_minutes` ⇒
+  30 + ⚠️ ओळ. (5) Dashboard: "हा switch चालू केला तरी सध्या फरक नाही (`last_sl_hit_time` कोणी लिहीत नाही) — B3". (6) 🎯 निकालात: सेव्ह ⇒
+  signal symbols साठी 15M SRv2 `signal_source` = engine ('own' / 'both' बदलतं).

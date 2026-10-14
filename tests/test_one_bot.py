@@ -264,9 +264,83 @@ def test_dashboard_signal_symbols_apply_failure_reports_parts(env):
         def effective(self, strategy, symbol):
             raise RuntimeError("supabase down")
     before = repr(sorted(db.rows.items()))
-    res = OB.apply_signal_symbols(before=["NIFTY"], after=["NIFTY", "BANKNIFTY"], io=BadRead(), now_fn=_now, logger=log)
+    res = OB.apply_signal_symbols(before=["NIFTY", "BANKNIFTY"], after=["NIFTY"], io=BadRead(), now_fn=_now, logger=log)
     assert not res["ok"] and res["failed"]["part"].startswith("plan") and res["applied"] == []
     assert repr(sorted(db.rows.items())) == before and log.lines[-1][0] == "ERROR"
+
+
+def test_dashboard_apply_uses_saved_symbols_and_refuses_stale_read(env, monkeypatch):
+    """Review #328 blocker: सेव्ह नंतरचं वाचन अयशस्वी ⇒ get_signal_symbols जुनी / default यादी देतो ⇒ काहीच लावायचं नाही, failed
+    "signal_symbols read" (✅ नाही). plan ला `after` हीच यादी (override) जाते."""
+    db, _, tmp = env
+    from vision import config as VC
+    db.rows[("15m_dynamic_sr", "BANKNIFTY")] = {"symbol_enabled": True, "signal_source": "engine", "trading_mode": "PAPER"}
+    before = repr(sorted(db.rows.items()))
+    monkeypatch.setattr(cloud_db, "get_signal_symbols", lambda: ["NIFTY", "BANKNIFTY"])          # read fail ⇒ जुनी यादी
+    log = _Log()
+    res = OB.apply_signal_symbols(before=["NIFTY", "BANKNIFTY"], after=["nifty"], now_fn=_now, logger=log)
+    assert not res["ok"] and res["failed"]["part"] == "signal_symbols read" and res["applied"] == [] and res["changes"] == []
+    assert "NIFTY', 'BANKNIFTY'] ≠ saved ['NIFTY']" in res["failed"]["error"]
+    assert repr(sorted(db.rows.items())) == before and db.rows[("15m_dynamic_sr", "BANKNIFTY")]["symbol_enabled"] is True
+    assert log.lines[-1][0] == "ERROR"
+
+    class BoomRead(OB.IO):
+        def signal_symbols(self):
+            raise RuntimeError("db down")
+    res = OB.apply_signal_symbols(after=["NIFTY"], io=BoomRead(), now_fn=_now, logger=log)
+    assert res["failed"]["part"] == "signal_symbols read" and "db down" in res["failed"]["error"]
+    res = OB.apply_signal_symbols(after=["NIFTY", "CRUDEOIL"], now_fn=_now, logger=log)          # अवैध ⇒ काहीच नाही
+    assert res["failed"]["part"] == "signal_symbols (after)" and repr(sorted(db.rows.items())) == before
+    # override: io काहीही म्हणो, plan ला दिलेली यादीच
+    changes, _ = OB.plan(OB.IO(), parts=OB.SIGNAL_SYMBOL_PARTS, symbols=["NIFTY"])
+    bn = next(c for c in changes if c["strategy"] == OB.ON_KEY and c["symbol"] == "BANKNIFTY")
+    assert bn["after"] is False and next(c for c in changes if c["key"] == "symbols")["after"] == ["NIFTY"]
+    assert VC.load(OB.VISION_BOT)["symbols"] == ["NIFTY"]                                       # (default; अजून काही लिहिलं नाही)
+
+
+def test_live_check_uses_raw_row_when_settings_read_falls_back(env):
+    """Review #328: get_strategy_settings read अयशस्वी ⇒ defaults (PAPER) दिसतात; raw row LIVE ⇒ combo skip, लिहिलं नाही — plan मध्ये आणि
+    लिहिण्याआधीच्या तपासात. Raw read अयशस्वी (लिहिण्याआधी) ⇒ तो टप्पा failed, लिहिलं नाही."""
+    db, _, tmp = env
+    db.rows[("15m_dynamic_sr", "BANKNIFTY")] = {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
+
+    class FallbackEff(OB.IO):                                         # read fail ⇒ cloud_db fallback = defaults (PAPER)
+        def effective(self, strategy, symbol):
+            return dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS.get(strategy, {}))
+    io = FallbackEff(by="dashboard")
+    changes, warns = OB.plan(io, parts=OB.SIGNAL_SYMBOL_PARTS, symbols=["NIFTY"])
+    assert any(c["symbol"] == "BANKNIFTY" and c["strategy"] == OB.ON_KEY and c["skip"] == "LIVE" for c in changes)
+    assert any("15M SRv2 BANKNIFTY: trading_mode LIVE" in w for w in warns)
+    rep = OB.apply_reported(io, changes)
+    assert rep["ok"] and "15m_dynamic_sr BANKNIFTY" not in rep["applied"]
+    assert db.rows[("15m_dynamic_sr", "BANKNIFTY")] == {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
+    # plan PAPER पाहून झाल्यावर raw मध्ये LIVE (race) — effective अजूनही PAPER fallback ⇒ लिहिण्याआधीचा तपास raw पाहतो
+    db.rows[("15m_dynamic_sr", "SENSEX")] = {"symbol_enabled": True}
+    changes, _ = OB.plan(io, parts=(OB.ON_KEY,), symbols=["NIFTY"])
+    db.rows[("15m_dynamic_sr", "SENSEX")]["trading_mode"] = "LIVE_PAPER"
+    rep = OB.apply_reported(io, changes)
+    assert "15m_dynamic_sr SENSEX" in rep["skipped_live"]
+    assert db.rows[("15m_dynamic_sr", "SENSEX")] == {"symbol_enabled": True, "trading_mode": "LIVE_PAPER"}
+
+    class RawFails(FallbackEff):
+        def raw(self, strategy, symbol):
+            raise RuntimeError("Supabase connection नाही")
+    db.rows[("15m_dynamic_sr", "SENSEX")] = {"symbol_enabled": True}
+    changes, _ = OB.plan(io, parts=(OB.ON_KEY,), symbols=["NIFTY"])
+    rep = OB.apply_reported(RawFails(), changes)
+    assert not rep["ok"] and "Supabase connection" in rep["failed"]["error"] and rep["applied"] == []
+    assert db.rows[("15m_dynamic_sr", "SENSEX")] == {"symbol_enabled": True}
+
+
+def test_apply_signal_symbols_never_raises_when_logger_or_clock_break(env, monkeypatch):
+    import log_setup
+
+    def boom(*a, **k):
+        raise RuntimeError("no log dir")
+    monkeypatch.setattr(log_setup, "get_logger", boom)
+    assert cloud_db.save_signal_symbols(["NIFTY"]) is True
+    res = OB.apply_signal_symbols(before=["NIFTY", "BANKNIFTY"], after=["NIFTY"], now_fn=boom)
+    assert res["ok"] and res["at"] is None and "15m_dynamic_sr BANKNIFTY" in res["applied"]
 
 
 def _signal_symbols_panel_app():
@@ -287,7 +361,23 @@ def test_dashboard_panel_save_button_applies_and_shows_result(env):
     assert not at.exception, [e.value for e in at.exception]
     assert cloud_db.get_signal_symbols() == ["NIFTY"]
     assert any("One-bot mode लागू" in x.value for x in at.success)
+    assert any("`signal_source` = engine" in x.value and "'own' किंवा 'both'" in x.value for x in at.caption)
     assert db.rows[("15m_dynamic_sr", "BANKNIFTY")] == {"symbol_enabled": False}
+
+
+def test_dashboard_panel_stale_read_shows_error_not_success(env, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    db, _, tmp = env
+    monkeypatch.setattr(OB.IO, "signal_symbols", lambda self: ["NIFTY", "BANKNIFTY"])            # सेव्ह नंतरचं वाचन जुनं
+    at = AppTest.from_function(_signal_symbols_panel_app, default_timeout=60)
+    at.run()
+    at.multiselect(key="bdsr_signal_symbols").set_value(["NIFTY"])
+    at.button(key="bdsr_signal_symbols_save").click()
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert not any("One-bot mode लागू" in x.value for x in at.success)
+    assert any("signal_symbols read" in x.value and "set_one_bot_mode.py" in x.value for x in at.error)
+    assert ("15m_dynamic_sr", "BANKNIFTY") not in db.rows
 
 
 def test_dashboard_panel_shows_error_and_keeps_symbols_when_apply_fails(env, monkeypatch):

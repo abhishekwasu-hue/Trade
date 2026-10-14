@@ -116,7 +116,15 @@ def post_sl_cooldown_minutes(settings):
     settings = settings or {}
     if not settings.get("post_sl_cooldown_enabled", False):
         return None
-    return float(settings.get("post_sl_cooldown_minutes", COOLDOWN_MINUTES))
+    raw = settings.get("post_sl_cooldown_minutes", COOLDOWN_MINUTES)
+    try:
+        minutes = float(raw)
+        if minutes != minutes or minutes < 0:                               # NaN / ऋण ⇒ बिघडलेली value
+            raise ValueError(raw)
+        return minutes
+    except (TypeError, ValueError):
+        print(f"⚠️ post_sl_cooldown_minutes बिघडलेली value ({raw!r}) ⇒ default {COOLDOWN_MINUTES} मिनिटं वापरली")
+        return float(COOLDOWN_MINUTES)
 
 
 def is_repeated_level(level_price, last_tested_level, tolerance_pct=LEVEL_REPEAT_TOLERANCE_PCT):
