@@ -103,14 +103,18 @@ def test_apply_then_dashboard_getter_shows_one_bot_and_revert_is_exact(env, caps
     st = str(tmp / "st.json")
     assert SOB.main(["--state", st]) == 0
     out = capsys.readouterr().out
-    assert "Only 15M SRv2 active · signal source: engine · symbols NIFTY / BANKNIFTY / SENSEX · mode PAPER" in out
+    assert "Only 15M SRv2 active · signal source: engine · symbols NIFTY / BANKNIFTY · mode PAPER" in out   # signal_symbols default
+    assert "SENSEX" not in out.split("Only 15M SRv2 active")[1].split("\n")[0]
     for sym in ("NIFTY", "BANKNIFTY", "SENSEX"):                     # dashboard चा getter (page_bot_dynamic_sr_algo) तेच वाचतो
         s = cloud_db.get_strategy_settings("15m_dynamic_sr", sym)
-        assert s["symbol_enabled"] is True and s["signal_source"] == "engine" and s["trading_mode"] == "PAPER"
+        if sym == "SENSEX":                                          # signal symbol नाही ⇒ 15M SRv2 सुद्धा OFF (data फक्त)
+            assert s["symbol_enabled"] is False and s.get("signal_source", "own") == "own"
+        else:
+            assert s["symbol_enabled"] is True and s["signal_source"] == "engine" and s["trading_mode"] == "PAPER"
+            assert PC.enabled(sym)
         assert cloud_db.get_strategy_settings("1m_instant", sym)["symbol_enabled"] is False
         assert cloud_db.get_strategy_settings("1m_instant", sym)["srv3_shadow_enabled"] is False
         assert cloud_db.get_strategy_settings("classic_sr_reversal", sym)["symbol_enabled"] is False
-        assert PC.enabled(sym)
     s = cloud_db.get_strategy_settings("15m_dynamic_sr", "NIFTY")
     assert all(s[k] == v for k, v in abhi.items())                    # Abhi चे strikes / lots / SL / entry_mode तसेच
     assert cloud_db.get_strategy_settings("1m_instant", "NIFTY")["lots"] == 2
@@ -119,7 +123,10 @@ def test_apply_then_dashboard_getter_shows_one_bot_and_revert_is_exact(env, caps
     assert cloud_db.get_strategy_settings("mcx_futures", "CRUDEOIL")["symbol_enabled"] is False
     from vision import config as VC
     v = VC.load(OB.VISION_BOT)
-    assert set(v["symbols"]) >= {"NIFTY", "BANKNIFTY", "SENSEX"} and v["approval_required"] is True
+    assert v["symbols"] == ["NIFTY", "BANKNIFTY"] and v["approval_required"] is True          # SENSEX ⇒ approval मार्ग नाही
+    st_ = OB.one_bot_status()
+    sx = next(r for r in st_["bots"] if r["strategy"] == OB.ON_KEY and r["symbol"] == "SENSEX")
+    assert st_["signal_symbols"] == ["NIFTY", "BANKNIFTY"] and sx["on"] is False and sx["signal_symbol"] is False
     assert SOB.main(["--revert", "--state", st]) == 0
     assert {k: v for k, v in db.rows.items() if v} == {k: v for k, v in before.items() if v}       # नवे keys काढले, जुने परत
     assert not os.path.exists(os.environ["PAPER_LOCAL_CONFIG"]) and not PC.enabled("BANKNIFTY")
@@ -128,13 +135,46 @@ def test_apply_then_dashboard_getter_shows_one_bot_and_revert_is_exact(env, caps
 
 def test_live_srv2_is_refused(env, capsys):
     db, _, tmp = env
+    db.rows[("15m_dynamic_sr", "BANKNIFTY")] = {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
     db.rows[("15m_dynamic_sr", "SENSEX")] = {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
     SOB.main(["--state", str(tmp / "st.json")])
     out = capsys.readouterr().out
-    assert "15M SRv2 SENSEX: trading_mode LIVE" in out
-    assert db.rows[("15m_dynamic_sr", "SENSEX")] == {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
+    assert "15M SRv2 BANKNIFTY: trading_mode LIVE" in out and "15M SRv2 SENSEX: trading_mode LIVE" in out
+    for sym in ("BANKNIFTY", "SENSEX"):                              # LIVE ⇒ हात नाही (signal symbol असो वा नसो)
+        assert db.rows[("15m_dynamic_sr", sym)] == {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
     st = OB.one_bot_status()
-    assert not st["ok"] and st["line"].startswith("❌")
+    assert not st["ok"] and st["line"].startswith("❌") and "15M SRv2 BANKNIFTY LIVE" in st["line"]
+    assert "15M SRv2 SENSEX LIVE" in st["line"]                      # non-signal LIVE ⇒ ⚠️ LIVE (untouched) नोंद
+
+
+def test_signal_symbols_setting_drives_one_bot(env, capsys):
+    """Dashboard setting signal_symbols (default NIFTY / BANKNIFTY): SENSEX ⇒ 15M SRv2 OFF, Vision approval नाही, status ओळीत नाही;
+    setting बदलला ⇒ तोच (hard-coded यादी नाही)."""
+    db, _, tmp = env
+    assert cloud_db.get_signal_symbols() == ["NIFTY", "BANKNIFTY"]                              # नोंद नाही ⇒ default
+    with pytest.raises(ValueError):
+        cloud_db.clean_signal_symbols(["NIFTY", "CRUDEOIL"])
+    with pytest.raises(ValueError):
+        cloud_db.clean_signal_symbols([])
+    db.rows[("15m_dynamic_sr", "SENSEX")] = {"symbol_enabled": True, "signal_source": "engine", "trading_mode": "PAPER"}
+    from vision import config as VC
+    VC.save(OB.VISION_BOT, {"symbols": ["NIFTY", "BANKNIFTY", "SENSEX"]}, by="test")              # मागच्या deploy सारखं
+    SOB.main(["--state", str(tmp / "st.json")])
+    assert db.rows[("15m_dynamic_sr", "SENSEX")]["symbol_enabled"] is False
+    assert VC.load(OB.VISION_BOT)["symbols"] == ["NIFTY", "BANKNIFTY"]
+    st = OB.one_bot_status()
+    assert "SENSEX" not in st["line"] and st["signal_symbols"] == ["NIFTY", "BANKNIFTY"]
+    db.rows[("15m_dynamic_sr", "SENSEX")]["symbol_enabled"] = True                               # कुणी हाताने चालू केलं ⇒ ❌
+    OB.write_paper_local(os.environ["PAPER_LOCAL_CONFIG"], {"SENSEX": True})
+    VC.save(OB.VISION_BOT, {"symbols": ["NIFTY", "BANKNIFTY", "SENSEX"]}, by="test")
+    cloud_db._LAST_GOOD_STRATEGY_SETTINGS.clear()
+    st = OB.one_bot_status()
+    assert not st["ok"] and "15M SRv2 SENSEX ON (not a signal symbol)" in st["problems"]
+    assert "Vision symbols include SENSEX (not a signal symbol)" in st["problems"]
+    assert cloud_db.save_signal_symbols("nifty") is True and cloud_db.get_signal_symbols() == ["NIFTY"]
+    SOB.main(["--state", str(tmp / "st.json")])
+    assert db.rows[("15m_dynamic_sr", "BANKNIFTY")]["symbol_enabled"] is False and VC.load(OB.VISION_BOT)["symbols"] == ["NIFTY"]
+    assert "symbols NIFTY · mode PAPER" in OB.one_bot_status()["line"]
 
 
 def test_status_flags_auto_trader_cron_and_missing_engine(env, monkeypatch):
@@ -207,7 +247,8 @@ def test_schedule_installer_idempotent_and_revert_exact(tmp_path):
     assert cron.read_text() == once                                   # idempotent
     act = [x for x in once.splitlines() if x and not x.startswith("#")]
     assert sum("scripts/engine_signal_run.py --engine decision3" in x and "--dry-run" not in x for x in act) == 1
-    assert "1,16,31,46 4-9 * * 1-5" in once and "--symbols NIFTY,BANKNIFTY,SENSEX" in once
+    assert "1,16,31,46 4-9 * * 1-5" in once and "engine_signal_run.py --engine decision3 >>" in once   # symbols = dashboard setting
+    assert "SENSEX" not in "".join(x for x in once.splitlines() if "engine_signal_run.py" in x and not x.startswith("#"))
     assert sum(x.startswith("30 3 * * 1-5 ") and "scripts/level_gate_preopen.py" in x for x in act) == 1   # 09:00 IST pre-open, एकदाच
     assert "#one-bot-off# 1,16,31,46 3-10" in once and "#one-bot-off# */5 4-9 * * 1-5 cd /root/Trade && python3 oi_signal" in once
     for live in ("credit_spread_auto_trader.py --mode LIVE", "oi_greeks_vix_strategy.py --mode=LIVE", "--mode 'LIVE'"):
@@ -307,7 +348,7 @@ def test_fail_closed_error_row_alerts_first_repeat_60min_and_recovered(tmp_path,
 
     def run(t, fn=boom):
         return ESR.main(["--symbols", "SENSEX,BANKNIFTY"], token_fn=lambda: "tok", run_fn=fn, market_fn=lambda: True, send=sent.append,
-                        alert_path=al, now=pd.Timestamp(t))
+                        alert_path=al, now=pd.Timestamp(t), symbols_fn=lambda: ["NIFTY", "BANKNIFTY", "SENSEX"])   # dashboard: SENSEX ON
     assert run("2030-01-07 10:16") == 1 and len(sent) == 2 and all(x.startswith("❌ Engine") for x in sent)
     assert run("2030-01-07 10:31") == 1 and len(sent) == 2                       # 60 मिनिटांच्या आत पुन्हा नाही
     st = {"signal_source": "engine", "trading_mode": "PAPER"}
@@ -326,7 +367,22 @@ def test_token_missing_fail_closed(tmp_path, monkeypatch):
     sent = []
     assert ESR.main([], token_fn=lambda: None, market_fn=lambda: True, send=sent.append, alert_path=str(tmp_path / "a.json"),
                     now=pd.Timestamp("2030-01-07 10:16")) == 2
-    assert len(sent) == 3
+    assert len(sent) == 2 and not any("SENSEX" in x for x in sent)           # default signal_symbols = NIFTY / BANKNIFTY
+
+
+def test_engine_run_reads_signal_symbols(tmp_path, monkeypatch, capsys):
+    """Engine run: symbols = dashboard signal_symbols; --symbols मधले बाहेरचे (SENSEX) ⇒ skip (row / alert नाही)."""
+    monkeypatch.setenv("ENGINE_SIGNAL_DB", str(tmp_path / "es.db"))
+    seen = []
+    ok = lambda sym, tok: seen.append(sym) or {"bar_ts": "2030-01-07 10:15:00", "decision": "wait", "skipped": "x"}   # noqa: E731
+    kw = dict(token_fn=lambda: "tok", run_fn=ok, market_fn=lambda: True, send=[].append, alert_path=str(tmp_path / "a.json"),
+              now=pd.Timestamp("2030-01-07 10:16"))
+    assert ESR.main([], **kw) == 0 and seen == ["NIFTY", "BANKNIFTY"]
+    seen.clear()
+    assert ESR.main(["--symbols", "NIFTY,BANKNIFTY,SENSEX"], **kw) == 0 and seen == ["NIFTY", "BANKNIFTY"]
+    assert "⏭️ SENSEX: signal_symbols (NIFTY / BANKNIFTY)" in capsys.readouterr().out
+    seen.clear()
+    assert ESR.main([], symbols_fn=lambda: ["BANKNIFTY"], **kw) == 0 and seen == ["BANKNIFTY"]
 
 class Feed:
     def __init__(self, fut=True, ltf=True):

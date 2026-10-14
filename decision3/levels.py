@@ -164,7 +164,11 @@ class Levels:
         return (float(self.A["open"][ix[0]]), float(self.A["high"][ix].max()), float(self.A["low"][ix].min()), float(self.A["close"][ix[-1]]))
 
     def _w(self, t):
-        sg = self.sig1h[min(t, self.n - 1)]
+        t = min(t, self.n - 1)
+        sg = self.sig1h[t]
+        if not np.isfinite(sg):          # TA4: σ_1H अजून नाही (window चे पहिले sigma_sessions, Q40 prior levels bar 0) ⇒ आधी रुंदी 0 ⇒ एकच-किंमत
+            hl = pd.DataFrame({"h": self.A["high"][:t + 1], "l": self.A["low"][:t + 1], "j": self.h1_of[:t + 1]}).groupby("j")
+            sg = float(np.median(hl["h"].max() - hl["l"].min()))        # तात्पुरता: bars ≤ t चे 1H ranges चा median (lookahead नाही)
         return float(self.s["level_min_width_sigma"]) * (sg if np.isfinite(sg) else 0.0)
 
     def _born(self, t, role, lo, hi, birth, anchor):
@@ -334,11 +338,19 @@ class Levels:
         pv = self._pv_sorted
         k = 0
         known = []
+        prov = set()                            # σ_1H नसताना जन्मलेले levels (तात्पुरती किमान रुंदी)
         for t in range(self.n):
             # t च्या close पर्यंत माहीत pivots
             while k < len(pv) and pv[k].confirm_bar <= t:
                 known.append(pv[k])
                 k += 1
+            if prov and np.isfinite(self.sig1h[t]):                        # σ_1H आता माहीत ⇒ त्यांना खरी किमान रुंदी (TA4; टोकापासून आत)
+                w = self._w(t)
+                for L in self.L:
+                    if L.id in prov and L.alive(t) and L.hi - L.lo < w:
+                        L.lo, L.hi = (L.hi - w, L.hi) if L.role0 == RES else (L.lo, L.lo + w)
+                        L.bands.append((t, L.lo, L.hi))
+                prov.clear()
             # आधीचे levels: चाचणी / sweep / flip / मृत्यू (जन्म bar नंतरच)
             for L in self.L:
                 if not L.alive(t) or L.born_bar >= t:
@@ -403,7 +415,9 @@ class Levels:
                             lo = hi - w
                     births.setdefault(t, []).append((SUP if d > 0 else RES, lo, hi, "b", origin.price))
             for role, lo, hi, why, anchor in births.get(t, []):
-                self._born(t, role, lo, hi, why, anchor)
+                L = self._born(t, role, lo, hi, why, anchor)
+                if not np.isfinite(self.sig1h[t]):
+                    prov.add(L.id)
 
     def _step_far_swing(self, L, t, role, known, beyond_wick, beyond_close, excursion, st, acc):
         """KB K4 (Abhi): one bar of one level — sweep / BROKEN / FLIPPED / reclaim / DEAD (module docstring). A never-flipped zone whose

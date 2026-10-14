@@ -322,6 +322,24 @@ def _render_vix_spike_halt_panel():
                 st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
 
 
+def _render_signal_symbols_panel():
+    """Abhi (signal symbols): कोणत्या index वर signals / approvals / pre-open — एकच setting (`cloud_db.get_signal_symbols`, default
+    NIFTY + BANKNIFTY). One-bot mode, engine signal run, pre-open, Vision srv2 symbols आणि status table हेच वाचतात. बाकी index (SENSEX)
+    फक्त data / charts साठी."""
+    cur = cloud_db.get_signal_symbols()
+    with st.expander(f"🎯 Signal symbols: {' / '.join(cur)} (signals · approvals · pre-open)", expanded=False):
+        st.caption("फक्त या indexes वर engine signals, Vision ✅ approvals आणि pre-open ओळी. बाकी (उदा. SENSEX) फक्त data / charts. "
+                   "बदलल्यावर one-bot mode पुन्हा लावा: `python3 scripts/set_one_bot_mode.py` (Vision symbols + 15M SRv2 on/off).")
+        pick = st.multiselect("Signal symbols", list(cloud_db.SIGNAL_SYMBOLS_CHOICES), default=cur, key="bdsr_signal_symbols")
+        if st.button("💾 Signal symbols सेव्ह करा", key="bdsr_signal_symbols_save"):
+            if not pick:
+                st.error("किमान एक symbol निवडा.")
+            elif cloud_db.save_signal_symbols(pick):
+                st.success(f"✅ Signal symbols: {' / '.join(pick)}")
+            else:
+                st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
+
+
 def _render_vix_halt_alert_banner():
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("VIX gate ची कंडिशन फुल झाली असल्यास तसा मेसेज
     डिस्प्ले व्हायला पाहिजे, जेणेकरून user ला समजेल की आज नवीन entry होणार नाही") — आधीचा "🔴 ट्रिप
@@ -393,6 +411,7 @@ def render():
     _render_kill_switch_panel()
     _render_portfolio_risk_cap_panel()
     _render_vix_spike_halt_panel()
+    _render_signal_symbols_panel()
 
     with st.expander("❓ हे पान पहिल्यांदाच वापरताय? इथे क्लिक करा"):
         st.markdown(

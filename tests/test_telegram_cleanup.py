@@ -195,9 +195,15 @@ ONE_BOT = {("15m_dynamic_sr", s): {"symbol_enabled": True, "signal_source": "eng
 NOW = pd.Timestamp("2026-10-13 09:00")
 
 
+# engine (decision3 ② Levels) चे पट्टे — signal_source = engine ⇒ pre-open हेच दाखवतो (market_zones नाही)
+ENGINE_LEVELS = {"NIFTY": [{"role": "resistance", "lo": 22715.0, "hi": 22776.0}, {"role": "support", "lo": 22400.0, "hi": 22430.0},
+                           {"role": "resistance", "lo": 22900.0, "hi": 22950.0}]}
+
+
 def _one_bot_report(P, active, engine_fn, **kw):
     ctx = {"NIFTY": NIFTY, "BANKNIFTY": BANK, "SENSEX": SENSEX}
     zz = {"NIFTY": ZONES, "BANKNIFTY": None, "SENSEX": None}
+    kw.setdefault("engine_areas_fn", lambda s: ENGINE_LEVELS.get(s, []))
     return P.build_report(list(ctx), "tok", lambda s: zz[s], lambda s: {"NIFTY": 22565.0}.get(s),
                           trend_fn=lambda s: ctx[s], weekly_fn=lambda s: "UP", day="2026-10-13", active=active, engine_fn=engine_fn,
                           now=NOW, **kw)
@@ -321,7 +327,8 @@ def _section(S, **kw):
     zz = {"NIFTY": ZONES, "BANKNIFTY": pd.DataFrame([{"zone_type": "DYNAMIC_SR_SUPPORT_15M", "zone_low": 50800.0, "zone_high": 50900.0,
                                                       "status": "ACTIVE"}])}
     rng = {"NIFTY": {"high": 22625.0, "low": 22480.0}, "BANKNIFTY": {"high": 51300.0, "low": 50830.0}}
-    args = dict(ctx_fn=lambda s, d: ctx.get(s), rows_fn=lambda s, d: (GATE_ROWS[s], None) if s in GATE_ROWS else (None, "db"),
+    args = dict(symbols=("NIFTY", "BANKNIFTY"),                            # = default signal_symbols (DB ला हात नाही; default path: test_preopen_symbols_bands)
+                ctx_fn=lambda s, d: ctx.get(s), rows_fn=lambda s, d: (GATE_ROWS[s], None) if s in GATE_ROWS else (None, "db"),
                 zones_fn=lambda s: zz[s], range_fn=lambda s, d: rng.get(s))
     args.update(kw)
     return S.symbols_section("2026-10-09", **args)
@@ -335,7 +342,9 @@ def test_summary_symbol_lines_plain_words_like_abhis_example():
                         "22,715–22,776 (1H, ≈90 pts above the high). Daily move: mature (context only), near target 22,183.")
     assert lines[1].startswith("<b>BANKNIFTY</b>: no setup today. Trend UP (daily). Price reached a demand area 1 time; no entry because "
                                "the reward was too small for the risk.") and "Price traded into demand 50,800–50,900" in lines[1]
-    assert lines[2] == "<b>SENSEX</b>: no data today (no trend file, bot records and day high / low not available)."
+    assert len(lines) == 2 and "SENSEX" not in txt                       # default = signal_symbols (NIFTY, BANKNIFTY) — SENSEX ची ओळ नाही
+    three = _section(S, symbols=("NIFTY", "BANKNIFTY", "SENSEX")).splitlines()
+    assert three[2] == "<b>SENSEX</b>: no data today (no trend file, bot records and day high / low not available)."
     assert not PT.has_raw_codes(txt)
 
 
@@ -372,7 +381,7 @@ def test_summary_one_message_headline_decisions_pnl_details(monkeypatch):
     msg = sent[0]
     top = _shape(msg, PT.DECISION_NONE)
     assert top.startswith("🗓 Day summary 2026-10-09 (15:45, PAPER)")
-    assert "<b>NIFTY</b>: no setup today." in top and "<b>SENSEX</b>: no data today" in top
+    assert "<b>NIFTY</b>: no setup today." in top and "SENSEX" not in top   # default signal_symbols ⇒ SENSEX ची ओळ नाही
     assert "approved 1 (1 with a changed entry), rejected 2 (wrong zone 2), changed entry 1, no answer 1." in top
     assert "net P&L <b>₹-850</b>" in top and "Skipped trades tracked for comparison: 2" in top
     assert "a:D2+b" in msg.split(PT.SEP)[1]                                            # gate तपशील details मध्येच

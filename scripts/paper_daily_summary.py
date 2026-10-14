@@ -2,7 +2,7 @@
 """🗓 PAPER दिवस-सारांश (Abhi §10e, 15:45 IST) ⇒ **एकच** Telegram संदेश, साध्या शब्दांत (Abhi, TELEGRAM_CLEANUP 1c / 4):
 
   ओळ 1  साधी (काय पाहायचं) · "Decision needed: none — information"
-  symbol-निहाय एक ओळ (NIFTY / BANKNIFTY / SENSEX): setup झाला का, Daily trend, किंमत trade-बाजूच्या area पर्यंत पोचली का (gate नोंदी:
+  symbol-निहाय एक ओळ (dashboard चे `signal_symbols`, default NIFTY / BANKNIFTY): setup झाला का, Daily trend, किंमत trade-बाजूच्या area पर्यंत पोचली का (gate नोंदी:
         armed / confirmed / ignored कारण), दिवसाच्या high / low पासून जवळचा trade-बाजूचा area (points), impulse mature ⇒ cap engine च्याच नियमाने (रचना अखंड ⇒ कमाल B, नाहीतर weak) / origin जवळ ⇒ weak.
         एखादा भाग मिळाला नाही ⇒ तसं स्पष्ट ("no data today …").
   तुमचे निर्णय (approvals / ✏️ / ❌ कारणानुसार / उत्तर नाही) + approved trades चा net P&L + would-have + 📝 corrections (साधे शब्द).
@@ -22,7 +22,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 TG_MAX = 4096                                                              # Telegram एका संदेशाची कमाल लांबी
-SYMBOLS = ("NIFTY", "BANKNIFTY", "SENSEX")
 AREA_TFS = ("1M", "5M", "15M", "30M", "60M")                               # level bots जे areas पाहतात (preopen सारखेच)
 WHY_PLAIN = {"no_commitment": "no strong candle closed out of the area", "impulsive": "price ran into the area too fast",
              "rr": "the reward was too small for the risk", "against_trend": "the area was against the trend",
@@ -64,7 +63,7 @@ def _areas(zones, ctx):
     out = []
     for _, z in zones.iterrows():
         zt = str(z.get("zone_type", ""))
-        if z.get("status") != "ACTIVE" or not any(zt.endswith(f"_{tf}") for tf in AREA_TFS):
+        if z.get("status") != "ACTIVE" or not (zt.startswith("ENGINE_LEVEL") or any(zt.endswith(f"_{tf}") for tf in AREA_TFS)):
             continue
         lo = float(z["zone_low"])
         hi = float(z["zone_high"]) if z.get("zone_high") is not None else lo
@@ -106,7 +105,7 @@ def nearest_area(ctx, zones, rng):
     return None
 
 
-def symbol_line(sym, ctx, gate, zones, rng):
+def symbol_line(sym, ctx, gate, zones, rng, areas_na=None):
     """एका symbol ची साधी ओळ (Abhi चं उदाहरण: "NIFTY: no setup today. Trend DOWN (daily), but price never reached a supply area. Nearest
     supply 22,715–22,776 (≈150 pts above the high). Daily move: mature (context only), near target 22,183.").
     ctx = trend cache (None ⇒ नाही) · gate = LV.summarize निकाल (None ⇒ bot नोंदी वाचता आल्या नाहीत) · rng = {"high", "low"} (None ⇒ नाही)."""
@@ -133,7 +132,9 @@ def symbol_line(sym, ctx, gate, zones, rng):
             why = [WHY_PLAIN.get(k, k) for k, n in sorted((gate.get("ignored") or {}).items(), key=lambda x: -x[1]) if n]
             s.append(f"Trend {tr} (daily). Price reached a {kind} area {armed} time{'s' if armed != 1 else ''}"
                      + (f"; no entry because {', '.join(why[:2])}." if why and not conf else "."))
-        if rng is None:
+        if areas_na:
+            s.append(f"Bot areas not available today ({areas_na}).")
+        elif rng is None:
             s.append("Day high / low not available, so no area distance.")
         else:
             near = nearest_area(ctx, zones, rng)
@@ -179,24 +180,63 @@ def _safe(fn, *a):
         return None
 
 
-def symbols_section(day, symbols=SYMBOLS, ctx_fn=None, rows_fn=None, zones_fn=None, range_fn=None):
+def default_zones(sym):
+    """15M SRv2 bot जे पट्टे पाहतो तेच (pre-open सारखं, TA4 — पट्टा, एकच किंमत नाही): signal source engine ⇒ decision3 चे पट्टे
+    (`engine3_live.watched_levels`, BROKEN / DEAD नाहीत); own / both ⇒ market_zones, एकच-किंमत level ⇒ bot चाच gate पट्टा
+    (level ± `gate_area_pad_pct` / 2). Token / data नाही ⇒ raise (ओळ "Bot areas not available today (कारण)" सांगते)."""
+    import cloud_db
+    import engine_signal as ES
+    from scripts import level_gate_preopen as PO
+    s = cloud_db.get_strategy_settings("15m_dynamic_sr", sym) or {}
+    if ES.source_of(s) == "engine":
+        import engine3_live as L3
+        token = cloud_db.get_effective_upstox_token(None)
+        if not token:
+            raise L3.EngineDataError("Upstox login missing")
+        now = ES._naive(ES.now_ist())
+        return PO.engine_zone_rows(L3.watched_levels(sym, L3.UpstoxFeed(token, now.date()), now))
+    zones = cloud_db.get_market_zones(sym)
+    if zones is None or len(zones) == 0:
+        return zones
+    import pandas as pd
+    from bots_common.level_gate_bot import AREA_PAD_PCT, areas_from_rows
+    tfs = PO.BOT_TFS["15M SRv2"]                                           # bot जे TFs पाहतो तेच (pre-open सारखं)
+    zones = zones[[any(str(zt).endswith(f"_{tf}") for tf in tfs) for zt in zones["zone_type"]]].copy()
+    pad_pct = s.get("gate_area_pad_pct")
+    pad_pct = AREA_PAD_PCT if pad_pct is None else float(pad_pct)
+    for i, z in zones.iterrows():
+        lo = float(z["zone_low"])
+        hi = float(z["zone_high"]) if z.get("zone_high") is not None and pd.notna(z.get("zone_high")) else lo
+        lo, hi = areas_from_rows([{"zone_low": min(lo, hi), "zone_high": max(lo, hi)}], min(lo, hi) * pad_pct / 100.0)[0]
+        zones.at[i, "zone_low"], zones.at[i, "zone_high"] = lo, hi
+    return zones
+
+
+def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None, range_fn=None):
     """symbol-निहाय साध्या ओळी. प्रत्येक dependency injectable (tests — network नाही); कुठलीही चूक ⇒ त्या भागासाठी "not available".
+    symbols None ⇒ dashboard चे `signal_symbols` (default NIFTY, BANKNIFTY — SENSEX ची ओळ नाही).
     rows_fn(sym, day) ⇒ (rows, err) — LV.fetch_rows सारखं; rows रिकामे ⇒ आज कुठलाही area armed नाही (armed 0)."""
     from bots_common import level_visibility as LV
+    if symbols is None:
+        import cloud_db
+        symbols = cloud_db.get_signal_symbols()
     ctx_fn = ctx_fn or (lambda sym, d: LV.trend_from_cache(sym, d))
     rows_fn = rows_fn or (lambda sym, d: LV.fetch_rows(d, (sym,)))
-    if zones_fn is None:
-        def zones_fn(sym):
-            import cloud_db
-            return cloud_db.get_market_zones(sym)
+    zones_fn = zones_fn or default_zones
     range_fn = range_fn or default_range
     out = []
     for sym in symbols:
         ctx = _safe(ctx_fn, sym, day)
         rows, err = _safe(rows_fn, sym, day) or (None, "error")
         gate = None if err or rows is None else _safe(LV.summarize, [r for r in rows if LV.market(r.get("symbol") or sym) == "index"])
-        zones = _safe(zones_fn, sym) if ctx is not None and ctx.get("ok") else None
-        out.append(symbol_line(sym, ctx, gate, zones, _safe(range_fn, sym, day)))
+        zones, zerr = None, None
+        if ctx is not None and ctx.get("ok"):
+            try:
+                zones = zones_fn(sym)
+            except Exception as exc:                                       # noqa: BLE001 — areas NA + कारण (तपशील log मध्ये)
+                print(f"⚠️ {sym} areas: {type(exc).__name__}: {exc}")
+                zerr = html.escape(str(exc)[:60] or type(exc).__name__, quote=False)
+        out.append(symbol_line(sym, ctx, gate, zones, _safe(range_fn, sym, day), areas_na=zerr))
     return "\n".join(out)
 
 

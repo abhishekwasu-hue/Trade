@@ -7,11 +7,16 @@ Trend (decision3 Daily, कालच्या close पर्यंत) दि�
 (fail-closed)" स्पष्ट. Weekly फक्त माहिती (engine च्या ① सारखीच गणना: Daily ⇒ W-FRI ⇒ fold) — gate निर्णय बदलत नाही. Order नाही.
 
 ONE_BOT_TOMORROW §4: संदेशाची पहिली ओळ = dashboard settings वरून चालू bot(s), उदा. "Only 15M SRv2 active · signal source: engine · symbols
-NIFTY / BANKNIFTY / SENSEX · mode PAPER" (hard-coded नाही — वेगळं असेल तर जे चालू ते). signal source engine / both ⇒ प्रत्येक symbol साठी
+NIFTY / BANKNIFTY · mode PAPER" (hard-coded नाही — वेगळं असेल तर जे चालू ते). signal source engine / both ⇒ प्रत्येक symbol साठी
 engine_signal store चा शेवटचा computed_at: नाही / ENGINE_STALE_HOURS पेक्षा जुना ⇒ ❌ ओळ. Price / trend data नाही, Upstox login नाही,
 settings DB नाही ⇒ ❌ ओळ.
 
-    python3 scripts/level_gate_preopen.py [--symbols NIFTY,BANKNIFTY,SENSEX] [--no-telegram | --dry-run]
+Symbols = dashboard setting `signal_symbols` (default NIFTY / BANKNIFTY; `--symbols` दिले तरी त्या यादीबाहेरचे वगळले) — SENSEX फक्त data.
+फक्त **चालू** bots आणि त्यांचे पट्टे (bands, low–high; Abhi TA4): signal source engine ⇒ engine (decision3 ② Levels) चे पट्टे
+(`engine3_live.watched_levels`); own / both ⇒ market_zones, एकच-किंमत level ⇒ bot चाच gate पट्टा (level ± `gate_area_pad_pct`). बंद bots
+(5M Instant, Classic …) संदेशात नाहीत; तपशील / त्रुटी फक्त log (stdout) मध्ये.
+
+    python3 scripts/level_gate_preopen.py [--symbols NIFTY,BANKNIFTY] [--no-telegram | --dry-run]
 """
 import argparse
 import html
@@ -30,8 +35,10 @@ BOT_TFS = {"5M Instant": ("1M", "5M"), "Classic": ("5M", "15M"), "15M SRv2": ("1
 ALL_TFS = ("1M", "5M", "15M", "30M", "60M")
 
 
-def trade_side_areas(zones, tfs, last, ctx, n=3):
-    """त्या bot च्या timeframes चे ACTIVE areas ⇒ trend ने परवानगी दिलेल्या बाजूचे, किंमतीच्या सर्वात जवळचे n."""
+def trade_side_areas(zones, tfs, last, ctx, n=3, pad_pct=None):
+    """त्या bot च्या timeframes चे ACTIVE areas ⇒ trend ने परवानगी दिलेल्या बाजूचे, किंमतीच्या सर्वात जवळचे n. pad_pct (bot चा
+    `gate_area_pad_pct`) ⇒ एकच-किंमत level (DYNAMIC_SR rows: zone_low = zone_high) bot सारखाच gate पट्टा (level ± pad / 2) — bot तोच
+    पट्टा पाहतो (`level_gate_bot.areas_from_rows`)."""
     if zones is None or len(zones) == 0 or last is None:
         return []
     out = []
@@ -39,8 +46,11 @@ def trade_side_areas(zones, tfs, last, ctx, n=3):
         if z.get("status") != "ACTIVE" or not any(str(z.get("zone_type", "")).endswith(f"_{tf}") for tf in tfs):
             continue
         lo = float(z["zone_low"])
-        hi = float(z["zone_high"]) if z.get("zone_high") is not None else lo
+        hi = float(z["zone_high"]) if z.get("zone_high") is not None and pd.notna(z.get("zone_high")) else lo
         lo, hi = min(lo, hi), max(lo, hi)
+        if pad_pct is not None:
+            from bots_common.level_gate_bot import areas_from_rows
+            lo, hi = areas_from_rows([{"zone_low": lo, "zone_high": hi}], lo * float(pad_pct) / 100.0)[0]
         side = LR.BULL if hi < last else (LR.BEAR if lo > last else None)
         if side and LR.side_allowed(ctx, side, (lo, hi)):
             out.append((abs((lo + hi) / 2 - last), side, lo, hi, str(z.get("zone_type"))))
@@ -77,6 +87,7 @@ INDEX_BOTS = (
 LABEL_TFS = {"15M SRv2": BOT_TFS["15M SRv2"], "5M Instant": BOT_TFS["5M Instant"], "SR V3 shadow": BOT_TFS["5M Instant"],
              "Classic SR": BOT_TFS["Classic"]}
 ENGINE_STALE_HOURS = 96                                                    # weekend + एक सुट्टी: त्यापेक्षा जुना engine ⇒ ❌ चालू नाही
+ENGINE_TFS = ("1H",)                                                       # decision3 ② Levels = 1H areas
 
 
 def bot_status(symbols, get_settings, mcx_fn=None):
@@ -89,7 +100,8 @@ def bot_status(symbols, get_settings, mcx_fn=None):
             if s is None:
                 raise RuntimeError(f"settings {key}/{sym} not readable")
             if on(s, sym):
-                out.append({"label": label, "symbol": sym, "source": ES.source_of(s, src_key), "mode": str(s.get("trading_mode", "PAPER"))})
+                out.append({"label": label, "symbol": sym, "source": ES.source_of(s, src_key), "mode": str(s.get("trading_mode", "PAPER")),
+                            "pad_pct": s.get("gate_area_pad_pct")})
     for sym in (mcx_fn() if mcx_fn else ()):
         out.append({"label": "MCX Futures", "symbol": sym, "source": "own", "mode": "PAPER/LIVE (MCX settings)"})
     return out
@@ -195,8 +207,52 @@ def engine_problem(sym, engine_fn, now, stale_hours=ENGINE_STALE_HOURS, cron_ins
     return None, t
 
 
-def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS):
-    """प्रत्येक symbol ची एक साधी ओळ (engine codes नाहीत)."""
+def engine_zone_rows(levels):
+    """engine levels (`watched_levels`: role / lo / hi) ⇒ market_zones सारख्या rows (zone_type …_1H) — trade_side_areas तेच वापरते.
+    फक्त tradeable (`engine3_live.tradeable_levels`: BROKEN / DEAD नाहीत)."""
+    from engine3_live import tradeable_levels
+    return pd.DataFrame([{"zone_type": "ENGINE_LEVEL_1H", "zone_low": float(x["lo"]), "zone_high": float(x["hi"]), "status": "ACTIVE"}
+                         for x in tradeable_levels(levels)], columns=["zone_type", "zone_low", "zone_high", "status"])
+
+
+def active_bot_areas(sym, active, ctx, last, zones, engine_fn=None, n=3):
+    """त्या symbol वर चालू bots ⇒ [(label, source, areas | None, NA कारण | None)]. engine source ⇒ engine चे पट्टे; own / both ⇒ market_zones
+    (bot चे TFs, bot चा gate पट्टा). engine areas आणता आले नाहीत ⇒ areas None + लहान कारण (तपशील stdout मध्ये)."""
+    out, eng = [], {}
+    for a in [x for x in (active or []) if x["symbol"] == sym and x["label"] in LABEL_TFS]:
+        if a["source"] == "engine":
+            if "levels" not in eng:
+                try:
+                    if engine_fn is None:
+                        raise RuntimeError("engine areas not wired")
+                    eng["levels"], eng["why"] = engine_zone_rows(engine_fn(sym)), None
+                except Exception as exc:                                   # noqa: BLE001 — NA + कारण (नवा entry engine च ठरवतो)
+                    print(f"⚠️ {sym} engine areas: {type(exc).__name__}: {exc}")
+                    eng["levels"], eng["why"] = None, "engine areas not available (see the pre-open log)"
+            if eng["levels"] is None:
+                out.append((a["label"], "engine", None, eng["why"]))
+            else:
+                out.append((a["label"], "engine", trade_side_areas(eng["levels"], ENGINE_TFS, last, ctx, n), None))
+        else:
+            pad = a.get("pad_pct")
+            if pad is None:
+                from bots_common.level_gate_bot import AREA_PAD_PCT as pad
+            out.append((a["label"], a["source"], trade_side_areas(zones, LABEL_TFS[a["label"]], last, ctx, n, pad_pct=pad), None))
+    return out
+
+
+def nearest(areas, last, n=3):
+    """अनेक bots चे areas ⇒ किंमतीच्या सर्वात जवळचे n (duplicate नाही)."""
+    seen, res = set(), []
+    for side, lo, hi, zt in sorted(areas, key=lambda x: abs((x[1] + x[2]) / 2 - last)):
+        if (round(lo), round(hi)) not in seen:
+            seen.add((round(lo), round(hi)))
+            res.append((side, lo, hi, zt))
+    return res[:n]
+
+
+def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS, areas=None, na=None):
+    """प्रत्येक symbol ची एक साधी ओळ (engine codes नाहीत). areas (चालू bots चे पट्टे) दिले ⇒ तेच; na ⇒ "Watched areas NA"."""
     wk = f"Weekly {html.escape(str(weekly), quote=False)}" if weekly else "Weekly n/a"
     if not ctx.get("ok"):
         mark = "❌ " if str(ctx.get("trend") or "UNKNOWN") == "UNKNOWN" else ""
@@ -208,20 +264,23 @@ def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS):
         head += " (context: price is near the trend's starting point)"           # Abhi B1: context only, no block / downgrade
     if last is None:
         return "❌ " + head + ". Price data missing (no last close), so no area distances."
-    ar = trade_side_areas(zones, tfs, last, ctx, n=3)
+    ar = trade_side_areas(zones, tfs, last, ctx, n=3) if areas is None else nearest(areas, last, 3)
     sides = sorted(ctx.get("sides") or ())
     want = " or ".join("demand" if s == LR.BULL else "supply" for s in sides) or "trade-side"
+    if na and not ar:
+        return "❌ " + head + f". Last close {last:,.0f}. Watched areas NA — {html.escape(na, quote=False)}."
     if not ar:
         return head + f". Last close {last:,.0f}. No {want} area near price yet."
     return head + f". Last close {last:,.0f}. Watching " + "; ".join(area_words(s, lo, hi, zt, last) for s, lo, hi, zt in ar) + "."
 
 
 def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn=None, day=None, active=False, engine_fn=None,
-                 now=None, problems=(), engine_cron=False):
+                 now=None, problems=(), engine_cron=False, engine_areas_fn=None):
     """एकच संदेश (HTML). ओळ 1 = चालू bot(s) (settings वरून: "Only 15M SRv2 active · signal source: engine · symbols … · mode PAPER"),
     ओळ 2 साधी (काय पाहायचं), ओळ 3 Decision needed; symbol-निहाय एक ओळ (+ ❌ engine / data ओळ) · ── details ── (bot-निहाय areas, MCX, नियम).
     active = bot_status() निकाल (None ⇒ settings वाचता नाही ⇒ ❌; False ⇒ status ओळ नाही — जुने callers). engine_fn(sym) ⇒ computed_at —
-    signal source engine / both असलेल्या symbols साठीच तपासणी. engine_cron = one-bot engine cron ओळ आहे (`engine_cron_installed`)."""
+    signal source engine / both असलेल्या symbols साठीच तपासणी. engine_cron = one-bot engine cron ओळ आहे (`engine_cron_installed`).
+    active list ⇒ फक्त चालू bots चे पट्टे (engine source ⇒ engine_areas_fn(sym) = `watched_levels`); बंद bots / MCX नियम संदेशात नाहीत."""
     trend_fn = trend_fn or (lambda sym: LR.daily_trend(sym, token))
     weekly_fn = weekly_fn or (lambda sym: None)
     day = day or dt.date.today().isoformat()
@@ -231,6 +290,7 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
         tfs = tuple(dict.fromkeys(tf for a in active for tf in LABEL_TFS.get(a["label"], ()))) or ALL_TFS
     eng_syms = {a["symbol"] for a in (active or []) if a["source"] in ("engine", "both")}
     plain, det = list(problems), []
+    legacy = active is False                                               # जुने callers: सगळे bots (settings माहीत नाहीत)
     for sym in symbols:
         ctx = trend_fn(sym)
         last = last_close(sym)
@@ -239,7 +299,14 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
             wk = weekly_fn(sym)
         except Exception:                                                  # noqa: BLE001 — weekly फक्त माहिती
             wk = None
-        plain.append(symbol_line(sym, ctx, wk, last, zones, tfs))
+        per_bot = [] if legacy or not ctx.get("ok") or last is None else active_bot_areas(sym, active, ctx, last, zones, engine_areas_fn)
+        if legacy:
+            plain.append(symbol_line(sym, ctx, wk, last, zones, tfs))
+        else:
+            nas = [why for _, _, ar, why in per_bot if ar is None]
+            na = ("bot settings could not be read" if active is None else "no active bot for this index" if not per_bot
+                  else nas[0] if len(nas) == len(per_bot) else None)
+            plain.append(symbol_line(sym, ctx, wk, last, zones, tfs, areas=[x for _, _, ar, _ in per_bot for x in (ar or [])], na=na))
         if sym in eng_syms:
             bad, t = engine_problem(sym, engine_fn or engine_last_run, now, cron_installed=engine_cron)
             if bad:
@@ -256,15 +323,19 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
             det.append(head + "\n⛔ NO NEW ENTRIES today (fail-closed) — exits run as usual")
             continue
         det.append(head + (f" · last close {last:,.0f}" if last else ""))
-        for bot, tfs in BOT_TFS.items():
-            ar = trade_side_areas(zones, tfs, last, ctx)
-            if not ar:
-                det.append(f"• {bot}: no trade-side area near price")
-                continue
-            txt = "; ".join(f"{'demand' if s == LR.BULL else 'supply'} {lo:,.0f}–{hi:,.0f}" for s, lo, hi, _ in ar)
-            det.append(f"• {bot}: watching {txt}")
-    det.append("MCX: PAPER = confirmation gate on 15M (trend from the current contract's Daily); entry only after CONFIRMED "
-               "(no Vision approval for MCX yet). LIVE MCX stays on touch until you change its entry mode. Exits run as usual.")
+        rows = [(bot, "", trade_side_areas(zones, tf_, last, ctx), None) for bot, tf_ in BOT_TFS.items()] if legacy else per_bot
+        for bot, src, ar, why in rows:
+            name = f"{bot} (engine areas)" if src == "engine" else bot
+            if ar is None:
+                det.append(f"• {name}: {html.escape(why or 'areas not available', quote=False)}")
+            elif not ar:
+                det.append(f"• {name}: no trade-side area near price")
+            else:
+                txt = "; ".join(f"{'demand' if s == LR.BULL else 'supply'} {lo:,.0f}–{hi:,.0f}" for s, lo, hi, _ in ar)
+                det.append(f"• {name}: watching {txt}")
+    if legacy or any(a.get("label") == "MCX Futures" for a in (active or [])):
+        det.append("MCX: PAPER = confirmation gate on 15M (trend from the current contract's Daily); entry only after CONFIRMED "
+                   "(no Vision approval for MCX yet). LIVE MCX stays on touch until you change its entry mode. Exits run as usual.")
     det.append("Entry only after a closed-candle commitment → Vision → your ✅. PAPER only.")
     head = (f"🧭 Pre-open check {day}: today's trend for each index and the areas the bots will trade "
             "(distance in points from the last close).")
@@ -303,7 +374,7 @@ def weekly_trend(df, today=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--symbols", default="NIFTY,BANKNIFTY,SENSEX")
+    ap.add_argument("--symbols", default=None, help="default: dashboard signal_symbols (त्या यादीबाहेरचे वगळले)")
     ap.add_argument("--no-telegram", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="फक्त छाप — Telegram ला पाठवत नाही (--no-telegram सारखंच)")
     a = ap.parse_args(argv)
@@ -313,7 +384,12 @@ def main(argv=None):
     if not token:
         print("❌ Upstox token नाही — आधी daily login करा. Trend काढता येत नाही ⇒ bots नवे entries घेणार नाहीत (fail-closed).")
         problems.append("❌ Upstox login missing — no price data, so no trend and no new entries until you log in.")
-    syms = [s.strip().upper() for s in a.symbols.split(",") if s.strip()]
+    allowed = cloud_db.get_signal_symbols()                                # dashboard setting (वाचता नाही ⇒ default NIFTY / BANKNIFTY)
+    want = [s.strip().upper() for s in a.symbols.split(",") if s.strip()] if a.symbols else allowed
+    syms = [s for s in dict.fromkeys(want) if s in allowed]
+    for s_ in dict.fromkeys(want):
+        if s_ not in allowed:
+            print(f"⏭️ {s_}: signal_symbols ({' / '.join(allowed)}) मध्ये नाही ⇒ pre-open ओळ नाही")
     today = dt.date.today()
     cache = {}
 
@@ -351,10 +427,22 @@ def main(argv=None):
         engine_cron = engine_cron_installed(read_crontab())
     except Exception:                                                      # noqa: BLE001 — खात्री नाही ⇒ ❌ कायम
         engine_cron = False
+    feed = {}
+
+    def engine_areas(sym):
+        """engine (decision3) चे शेवटच्या बंद 15M bar चे पट्टे — engine तेच trade करतो. Token नाही / data नाही ⇒ raise (NA + कारण)."""
+        import engine3_live as L3
+        import engine_signal as ES
+        if not token:
+            raise L3.EngineDataError("Upstox login missing")
+        if "f" not in feed:
+            feed["f"] = L3.UpstoxFeed(token, today)
+        return L3.watched_levels(sym, feed["f"], ES._naive(ES.now_ist()))
+
     msg = build_report(syms, token, lambda s: cloud_db.get_market_zones(s), last_close,
                        trend_fn=lambda s: LR.daily_trend(s, token, fetch=lambda tok, sy: daily_df(sy)),
                        weekly_fn=lambda s: weekly_trend(daily_df(s), today), day=today.isoformat(), active=active,
-                       problems=problems, engine_cron=engine_cron)
+                       problems=problems, engine_cron=engine_cron, engine_areas_fn=engine_areas)
     print(msg)
     if a.no_telegram or a.dry_run:
         return 0

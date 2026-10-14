@@ -1259,6 +1259,42 @@ def set_trading_pause(paused, reason=""):
     return save_strategy_settings(TRADING_PAUSE_STRATEGY_KEY, TRADING_PAUSE_SYMBOL_KEY, payload)
 
 
+# Abhi (signal symbols): कोणत्या index वर signals / approvals / pre-open — एकच dashboard setting (Bot Dynamic SR Algo पान). Default
+# NIFTY + BANKNIFTY (DB मध्ये नोंद नाही ⇒ default; migration नाही). SENSEX फक्त data / context (collectors, charts). वाचणारे: one-bot mode,
+# engine signal run, pre-open, Vision srv2 symbols, one-bot status table, engine entry (PAPER).
+SIGNAL_SYMBOLS_STRATEGY_KEY = "__signal_symbols__"
+SIGNAL_SYMBOLS_SYMBOL_KEY = "ALL"
+SIGNAL_SYMBOLS_CHOICES = ("NIFTY", "BANKNIFTY", "SENSEX")
+SIGNAL_SYMBOLS_DEFAULT = ("NIFTY", "BANKNIFTY")
+
+
+def clean_signal_symbols(value):
+    """list / "NIFTY,BANKNIFTY" ⇒ [..] (upper, क्रम जपून, duplicate नाही). अज्ञात symbol / रिकामी यादी ⇒ ValueError."""
+    items = value.split(",") if isinstance(value, str) else list(value or [])
+    out = list(dict.fromkeys(str(x).strip().upper() for x in items if str(x).strip()))
+    bad = [x for x in out if x not in SIGNAL_SYMBOLS_CHOICES]
+    if bad:
+        raise ValueError(f"signal_symbols: {bad} — {SIGNAL_SYMBOLS_CHOICES} पैकी")
+    if not out:
+        raise ValueError("signal_symbols: किमान एक symbol हवा")
+    return out
+
+
+def get_signal_symbols():
+    """Signals / approvals / pre-open चे symbols (dashboard). नोंद नाही / वाचता नाही / बिघडलेली नोंद ⇒ default [NIFTY, BANKNIFTY]."""
+    try:
+        raw = get_strategy_settings(SIGNAL_SYMBOLS_STRATEGY_KEY, SIGNAL_SYMBOLS_SYMBOL_KEY).get("signal_symbols")
+        return clean_signal_symbols(raw) if raw else list(SIGNAL_SYMBOLS_DEFAULT)
+    except Exception:                                                     # noqa: BLE001
+        return list(SIGNAL_SYMBOLS_DEFAULT)
+
+
+def save_signal_symbols(symbols):
+    """Dashboard: signal_symbols साठवा (validate). रिटर्न bool (DB नाही ⇒ False)."""
+    return save_strategy_settings(SIGNAL_SYMBOLS_STRATEGY_KEY, SIGNAL_SYMBOLS_SYMBOL_KEY,
+                                  {"signal_symbols": clean_signal_symbols(symbols)})
+
+
 # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% क्रॉस केली तर
 # त्या दिवशी bot ने automatic trading थांबवावी") — India VIX हा एकच, मार्केट-व्यापी अस्थिरता निर्देशांक
 # असल्याने एकच daily निकाल NIFTY/BANKNIFTY/SENSEX तिन्हींना लागू होतो (MCX वगळून) — फक्त plain bullish

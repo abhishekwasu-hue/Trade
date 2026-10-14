@@ -3,13 +3,14 @@
 store adapter ने वाचतात (signal_source own / engine / both; 15M SRv2 = engine). Order / broker call नाही. Code मध्ये तारीख नाही. Holdout rows
 कधीच engine input मध्ये नाहीत (data_policy; Daily warm-up फक्त Q33 प्रमाणे).
 
-Engine: `--engine decision3` (default; env ENGINE_SIGNAL_ENGINE) = थर v2.2 (trend → area → pullback → commitment → R:R), NIFTY / BANKNIFTY /
-SENSEX, 09:30–15:00 मध्ये बंद होणारा प्रत्येक 15M bar. `--engine decision2` = जुना मार्ग (NIFTY 1m ⇒ थर 1–7), तसाच.
+Engine: `--engine decision3` (default; env ENGINE_SIGNAL_ENGINE) = थर v2.2 (trend → area → pullback → commitment → R:R), symbols = dashboard
+setting `signal_symbols` (default NIFTY / BANKNIFTY; `--symbols` दिले तरी त्या यादीबाहेरचे ⇒ ⏭️ skip — SENSEX फक्त data), 09:30–15:00 मध्ये
+बंद होणारा प्रत्येक 15M bar. `--engine decision2` = जुना मार्ग (NIFTY 1m ⇒ थर 1–7), तसाच.
 Fail-closed: data नाही / exception ⇒ त्या bar ची "error" row (नवा entry नाही) + Telegram ओळ (पहिलं अपयश, अजून अपयशी ⇒ 60 मिनिटांनी पुन्हा,
 परत चालू ⇒ "recovered").
 
 VPS cron (UTC; `scripts/install_engine_schedule.sh` लावतो — हाताने नाही):
-  1,16,31,46 4-9 * * 1-5  cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/engine_signal_run.py --symbols NIFTY,BANKNIFTY,SENSEX
+  1,16,31,46 4-9 * * 1-5  cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/engine_signal_run.py --engine decision3
 Dry-run (store / Telegram नाही; बाजार बंद असला तरी): python3 scripts/engine_signal_run.py --dry-run --force
 """
 import argparse
@@ -21,12 +22,20 @@ sys.path.insert(0, ROOT)
 
 import engine_signal as ES  # noqa: E402
 
-SYMBOLS = "NIFTY,BANKNIFTY,SENSEX"
 
 
-def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert_path=None, now=None):
+def signal_symbols(symbols_fn=None):
+    """Dashboard setting `signal_symbols` (cloud_db; वाचता नाही ⇒ default NIFTY / BANKNIFTY)."""
+    if symbols_fn is None:
+        import cloud_db
+        symbols_fn = cloud_db.get_signal_symbols
+    return [str(x).upper() for x in symbols_fn()]
+
+
+def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert_path=None, now=None, symbols_fn=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--symbols", default=None, help=f"default: decision3 ⇒ {SYMBOLS}; decision2 ⇒ NIFTY")
+    ap.add_argument("--symbols", default=None, help="default: decision3 ⇒ dashboard signal_symbols; decision2 ⇒ NIFTY. signal_symbols "
+                                                    "बाहेरचे symbols ⇒ skip")
     ap.add_argument("--engine", default=None, help="decision3 (default) / decision2")
     ap.add_argument("--force", action="store_true", help="बाजार बंद असला तरी (dry-run / तपासणी)")
     ap.add_argument("--dry-run", action="store_true", help="store मध्ये लिहीत नाही, Telegram नाही — फक्त print")
@@ -37,7 +46,15 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
     if not a.force and not market_fn():
         print("बाजार बंद ⇒ engine signal नाही")
         return 0
-    syms = [x.strip().upper() for x in (a.symbols or (SYMBOLS if engine == "decision3" else "NIFTY")).split(",") if x.strip()]
+    allowed = signal_symbols(symbols_fn)
+    want = [x.strip().upper() for x in a.symbols.split(",") if x.strip()] if a.symbols else (allowed if engine == "decision3" else ["NIFTY"])
+    syms = [x for x in dict.fromkeys(want) if x in allowed]
+    for x in dict.fromkeys(want):
+        if x not in allowed:
+            print(f"⏭️ {x}: signal_symbols ({' / '.join(allowed)}) मध्ये नाही ⇒ engine signal नाही (dashboard setting)")
+    if not syms:
+        print("⏭️ एकही signal symbol नाही ⇒ engine signal नाही")
+        return 0
     if token_fn is None:
         import cloud_db
         token_fn = lambda: cloud_db.get_effective_upstox_token(None)  # noqa: E731

@@ -1,6 +1,7 @@
-"""bots_common/one_bot.py — Abhi (one bot): फक्त 15M SRv2 (`15m_dynamic_sr`) ON, signal_source = engine (decision3), NIFTY / BANKNIFTY /
-SENSEX, PAPER. बाकी प्रत्येक entry-capable bot OFF — तेच field जे bot स्वतः तपासतो (`symbol_enabled` …); काहीही delete नाही; strikes /
-ITM depth / hedge / lots / SL / TSL / target / exits ला हात नाही; LIVE / LIVE_PAPER combo ला हात नाही (फक्त इशारा).
+"""bots_common/one_bot.py — Abhi (one bot): फक्त 15M SRv2 (`15m_dynamic_sr`) ON, signal_source = engine (decision3), PAPER, फक्त
+dashboard setting `signal_symbols` चे symbols (default NIFTY / BANKNIFTY; `cloud_db.get_signal_symbols`) — बाकी index (SENSEX) वर 15M SRv2
+सुद्धा OFF (data / context म्हणून राहतो). बाकी प्रत्येक entry-capable bot OFF — तेच field जे bot स्वतः तपासतो (`symbol_enabled` …);
+काहीही delete नाही; strikes / ITM depth / hedge / lots / SL / TSL / target / exits ला हात नाही; LIVE / LIVE_PAPER combo ला हात नाही (फक्त इशारा).
 
   plan(io)          ⇒ बदलांची यादी (before / after), LIVE combos skip.
   apply(io, ...)    ⇒ before-state JSON (revert साठी) + लिहिणं.  revert(io, before) ⇒ तंतोतंत आधीचं (आधी नसलेले keys काढले).
@@ -23,7 +24,7 @@ import re
 import subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SYMBOLS = ("NIFTY", "BANKNIFTY", "SENSEX")
+SYMBOLS = ("NIFTY", "BANKNIFTY", "SENSEX")                                  # index universe (बाकी bots सगळ्यांवर OFF)
 ON_KEY = "15m_dynamic_sr"
 VISION_BOT = "srv2_momentum_reversal"
 ABSENT = "__ABSENT__"
@@ -41,9 +42,11 @@ def mcx_symbols():
         return ("CRUDEOIL", "NATURALGAS", "GOLD", "SILVER", "COPPER")
 
 
-def targets():
-    """(label, strategy, symbol, {key: value}) — लिहायचे settings (bot जे field तपासतो तेच)."""
-    out = [("15M SRv2", ON_KEY, s, {"symbol_enabled": True, "signal_source": "engine", "trading_mode": "PAPER"}) for s in SYMBOLS]
+def targets(signal=SYMBOLS):
+    """(label, strategy, symbol, {key: value}) — लिहायचे settings (bot जे field तपासतो तेच). 15M SRv2: signal symbols ⇒ ON (engine, PAPER),
+    बाकी index ⇒ OFF (`symbol_enabled` = false)."""
+    out = [("15M SRv2", ON_KEY, s, {"symbol_enabled": True, "signal_source": "engine", "trading_mode": "PAPER"} if s in signal
+            else {"symbol_enabled": False}) for s in SYMBOLS]
     out += [("5M Instant", "1m_instant", s, {"symbol_enabled": False}) for s in SYMBOLS]
     out += [("SR V3 PAPER shadow", "1m_instant", s, {"srv3_shadow_enabled": False}) for s in SYMBOLS]
     out += [("Classic SR reversal", "classic_sr_reversal", s, {"symbol_enabled": False}) for s in SYMBOLS]
@@ -93,6 +96,19 @@ class IO:
 
     def crontab(self):
         return read_crontab()
+
+    def signal_symbols(self):
+        import cloud_db
+        return cloud_db.get_signal_symbols()
+
+
+def signal_symbols(io):
+    """io चे signal symbols (dashboard setting); जुनं IO (method नाही) / त्रुटी ⇒ default NIFTY / BANKNIFTY."""
+    try:
+        return [x.upper() for x in io.signal_symbols()]
+    except Exception:                                                    # noqa: BLE001
+        import cloud_db
+        return list(cloud_db.SIGNAL_SYMBOLS_DEFAULT)
 
 
 AUTO_KEYS = {"credit_spread_auto_trader": "credit_spread_auto_trader.py", "oi_signal_auto_trader": "oi_signal_auto_trader.py",
@@ -144,7 +160,8 @@ def plan(io):
     """रिटर्न (changes, warnings). change = dict(label, strategy, symbol, key, before_raw, before, after, skip)."""
     changes, warns = [], []
     ctext = io.crontab()
-    for label, strat, sym, kv in targets():
+    sig = signal_symbols(io)
+    for label, strat, sym, kv in targets(sig):
         eff = io.effective(strat, sym)
         raw = io.raw(strat, sym)
         if strat in AUTO_KEYS and cron_runs(ctext, AUTO_KEYS[strat]).get(sym) == "LIVE":
@@ -155,13 +172,13 @@ def plan(io):
         for k, v in kv.items():
             changes.append({"label": label, "strategy": strat, "symbol": sym, "key": k, "before_raw": raw.get(k, ABSENT),
                             "before": eff.get(k), "after": eff.get(k) if live else v, "skip": "LIVE" if live else None})
-    vs = io.vision_load(VISION_BOT)
-    syms = list(dict.fromkeys([*(x.upper() for x in vs.get("symbols") or []), *SYMBOLS]))
+    vs = io.vision_load(VISION_BOT)                                     # Vision srv2 symbols = signal symbols (बाकी index ⇒ approval मार्ग नाही)
+    syms = list(dict.fromkeys([*(x.upper() for x in vs.get("symbols") or [] if x.upper() not in SYMBOLS), *sig]))
     for k, v in (("symbols", syms), ("approval_required", True)):
         changes.append({"label": "Vision (15M SRv2 approval)", "strategy": "vision", "symbol": VISION_BOT, "key": k, "before_raw": vs.get(k),
                         "before": vs.get(k), "after": v, "skip": None})
     cfg = io.paper_cfg()
-    for sym in SYMBOLS:
+    for sym in sig:                                                      # PAPER instrument: फक्त signal symbols ON (बाकी तसेच)
         cur = bool(((cfg.get("instruments") or {}).get(sym) or {}).get("enabled", False))
         changes.append({"label": "PAPER instrument", "strategy": "paper", "symbol": sym, "key": "enabled", "before_raw": cur,
                         "before": cur, "after": True, "skip": None})
@@ -277,6 +294,7 @@ def one_bot_status(io=None, crontab_text=False):
     traders चा cron, engine schedule. रिटर्न dict: bots (list), auto_traders, engine_cron, vision, ok (फक्त 15M SRv2 engine), line."""
     io = io or IO()
     rows = []
+    sig = signal_symbols(io)
     try:
         cfg = io.paper_cfg()
     except Exception:                                                    # noqa: BLE001
@@ -284,7 +302,7 @@ def one_bot_status(io=None, crontab_text=False):
     pin = {s: bool(((cfg.get("instruments") or {}).get(s) or {}).get("enabled", False)) for s in SYMBOLS}
     ctext = io.crontab() if crontab_text is False else crontab_text
     cron = cron_state(ctext)
-    for label, strat, sym, kv in targets():
+    for label, strat, sym, kv in targets(sig):
         try:
             eff = io.effective(strat, sym)
         except Exception as exc:                                         # noqa: BLE001
@@ -314,10 +332,12 @@ def one_bot_status(io=None, crontab_text=False):
         vision = {"symbols": vs.get("symbols"), "approval_required": vs.get("approval_required"), "vision_mode": vs.get("vision_mode")}
     except Exception as exc:                                             # noqa: BLE001
         vision = {"error": str(exc)}
-    srv2 = [r for r in rows if r["strategy"] == ON_KEY]
-    others_on = [r for r in rows if r["strategy"] != ON_KEY and r.get("on") and r.get("trading_mode") == "PAPER"]
+    for r in rows:
+        r["signal_symbol"] = r["symbol"] in sig if r["symbol"] in SYMBOLS else None
+    srv2 = [r for r in rows if r["strategy"] == ON_KEY and r["symbol"] in sig]
+    others_on = [r for r in rows if (r["strategy"] != ON_KEY or r["symbol"] not in sig) and r.get("on") and r.get("trading_mode") == "PAPER"]
     live = [f"{r['bot']} {r['symbol']} {r['trading_mode']}" for r in rows if r.get("on") and r.get("trading_mode") not in ("PAPER", None)
-            and r["strategy"] != ON_KEY]
+            and (r["strategy"] != ON_KEY or r["symbol"] not in sig)]
     problems = []
     for r in srv2:
         if not r.get("on"):
@@ -328,16 +348,20 @@ def one_bot_status(io=None, crontab_text=False):
             problems.append(f"15M SRv2 {r['symbol']} {r.get('trading_mode')}")
     if not vision.get("approval_required", False):
         problems.append("Vision approval_required OFF (shadow trades possible)")
-    missing_v = [s for s in SYMBOLS if s not in [x.upper() for x in (vision.get("symbols") or [])]]
+    vsyms = [x.upper() for x in (vision.get("symbols") or [])]
+    missing_v = [s for s in sig if s not in vsyms]
     if missing_v:
         problems.append(f"Vision symbols missing {'/'.join(missing_v)} (no approval request)")
-    problems += [f"{r['bot']} {r['symbol']} ON" for r in others_on]
+    extra_v = [s for s in SYMBOLS if s in vsyms and s not in sig]
+    if extra_v and "error" not in vision:
+        problems.append(f"Vision symbols include {'/'.join(extra_v)} (not a signal symbol)")
+    problems += [f"{r['bot']} {r['symbol']} ON" + ("" if r["strategy"] != ON_KEY else " (not a signal symbol)") for r in others_on]
     if cron.get(ENGINE_CRON_TAG) not in ("on", "unknown"):
         problems.append(f"engine schedule {cron.get(ENGINE_CRON_TAG)}")
     if cron.get("srv2_momentum_reversal_strategy.py") not in ("on", "unknown"):
         problems.append(f"15M SRv2 cron {cron.get('srv2_momentum_reversal_strategy.py')}")
-    st = {"bots": rows, "vision": vision, "auto_traders": {s: cron.get(s) for s in AUTO_TRADERS}, "engine_cron": cron.get(ENGINE_CRON_TAG),
-          "srv2_cron": cron.get("srv2_momentum_reversal_strategy.py"), "problems": problems, "live_untouched": live, "ok": not problems}
+    st = {"bots": rows, "signal_symbols": sig, "vision": vision, "auto_traders": {s: cron.get(s) for s in AUTO_TRADERS},
+          "engine_cron": cron.get(ENGINE_CRON_TAG), "srv2_cron": cron.get("srv2_momentum_reversal_strategy.py"), "problems": problems, "live_untouched": live, "ok": not problems}
     st["line"] = preopen_line(st)
     return st
 
@@ -345,7 +369,8 @@ def one_bot_status(io=None, crontab_text=False):
 def preopen_line(st):
     live = f" · ⚠️ LIVE (untouched): {', '.join(st['live_untouched'])}" if st.get("live_untouched") else ""
     if st.get("ok"):
-        return "Only 15M SRv2 active · signal source: engine · symbols NIFTY / BANKNIFTY / SENSEX · mode PAPER" + live
+        syms = " / ".join(st.get("signal_symbols") or SYMBOLS)
+        return f"Only 15M SRv2 active · signal source: engine · symbols {syms} · mode PAPER" + live
     return "❌ One-bot mode NOT clean: " + "; ".join(st.get("problems") or ["unknown"]) + live
 
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# scripts/install_engine_schedule.sh — Abhi (one bot): decision3 engine चा live schedule (प्रत्येक बंद 15M candle नंतर, NIFTY / BANKNIFTY /
-# SENSEX) VPS crontab मध्ये. Idempotent (दोनदा चालवलं तरी एकच ओळ). Abhi VPS वर चालवतो — session नाही. LIVE ओळींना कधीच हात नाही.
+# scripts/install_engine_schedule.sh — Abhi (one bot): decision3 engine चा live schedule (प्रत्येक बंद 15M candle नंतर; symbols = dashboard
+# setting `signal_symbols`, default NIFTY / BANKNIFTY — cron ओळीत symbols नाहीत) VPS crontab मध्ये.
+# Idempotent (दोनदा चालवलं तरी एकच ओळ). Abhi VPS वर चालवतो — session नाही. LIVE ओळींना कधीच हात नाही.
 #   • crontab वाचता आला नाही / trade_monitor (exits) ओळ नाही ⇒ ❌ थांबतो, काहीच लिहीत नाही (exits कधीच थांबू नयेत).
 #   • जुन्या `scripts/engine_signal_run.py` ओळी (decision2, NIFTY) ⇒ comment (`#one-bot-off# `), delete नाही.
 #   • नवी ओळ (tag `# one-bot-engine`): 1,16,31,46 4-9 UTC = 09:31 … 15:16 IST (09:30 … 15:00 चे bars; 15:15 bar script स्वतः वगळतो).
@@ -42,8 +43,8 @@ if [ "$MODE" = "install" ] && ! has_monitor "$CUR"; then
 fi
 write_cron() { if [ -n "${CRONTAB_FILE:-}" ]; then cat > "$CRONTAB_FILE"; else crontab -; fi; }
 
-ENGINE_LINE="1,16,31,46 4-9 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && flock -n /tmp/engine_signal_run.lock python3 scripts/engine_signal_run.py --engine decision3 --symbols NIFTY,BANKNIFTY,SENSEX >> $REPO_DIR/engine_signal.log 2>&1 # one-bot-engine"
-WARM_LINE="20 3 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && flock -n /tmp/engine_signal_run.lock python3 scripts/engine_signal_run.py --engine decision3 --symbols NIFTY,BANKNIFTY,SENSEX --dry-run --force >> $REPO_DIR/engine_signal.log 2>&1 # one-bot-engine-warm"
+ENGINE_LINE="1,16,31,46 4-9 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && flock -n /tmp/engine_signal_run.lock python3 scripts/engine_signal_run.py --engine decision3 >> $REPO_DIR/engine_signal.log 2>&1 # one-bot-engine"
+WARM_LINE="20 3 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && flock -n /tmp/engine_signal_run.lock python3 scripts/engine_signal_run.py --engine decision3 --dry-run --force >> $REPO_DIR/engine_signal.log 2>&1 # one-bot-engine-warm"
 SRV2_LINES="45-59 3 * * 1-5 cd $REPO_DIR && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> $REPO_DIR/srv2.log 2>&1 # one-bot-srv2
 * 4-10 * * 1-5 cd $REPO_DIR && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> $REPO_DIR/srv2.log 2>&1 # one-bot-srv2"
 PREOPEN_LINE="30 3 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && python3 scripts/level_gate_preopen.py >> $REPO_DIR/level_gate_preopen.log 2>&1 # one-bot-preopen"
