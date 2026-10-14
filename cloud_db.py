@@ -464,6 +464,7 @@ STRATEGY_SETTINGS_DEFAULTS = {
     "15m_dynamic_sr": {
         "lots": 1,
         "signal_source": "own",          # 🎓 Abhi (Monday PAPER): own / engine / both
+        "engine3_use_1m": True,          # 🎓 Abhi Z-1o (a): engine (decision3) ला 1m spot ⇒ swings2 candle आतला high / low क्रम (False ⇒ जुनं)
         # 🎓 Level memory (वापरकर्त्याचा निर्णय: "levels तिथेच राहावेत, बदलू नयेत", डीफॉल्ट चालू) — Dynamic S/R refresh मध्ये जुने levels त्याच
         # किंमतीवर (बघा level_memory.py; logic तोच compute_dynamic_sr, फक्त स्मरण). बंद ⇒ जुनं वर्तन (ताजे top-5, बाकी STALE).
         "level_memory_enabled": True,
@@ -506,6 +507,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # टिप्पणी बघा) — त्याच exact level वर आधीचा SL/TSL-प्रकारचा exit किती मिनिटांपूर्वी झाला हे
         # थेट live_trades वरून बघणारा गेट. डीफॉल्ट 15 मिनिटं — 0 केलं की बंद.
         "sl_tsl_cooldown_minutes": 15,
+        # 🎓 Abhi 7a ("loss नंतर lock-out नाही") — bot च्या स्वतःच्या (non-engine) मार्गातला symbol-व्यापी post-SL cooldown
+        # (srv2 `srv2_strategy_state.last_sl_hit_time` पासून) आधी hard-coded 30 मिनिटं होता. आता setting: default बंद ⇒ cooldown नाही;
+        # चालू ⇒ जुनं वर्तन तंतोतंत, `post_sl_cooldown_minutes` मिनिटं (default 30). फक्त 15M SRv2 (MCX चा `sl_cooldown_minutes` वेगळा).
+        "post_sl_cooldown_enabled": False,
+        "post_sl_cooldown_minutes": 30,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Naked Option Buy आणि Credit Spread दोन्ही
         # independently optional असायला पाहिजेत — कमी कॅपिटल असलेला user फक्त naked करणं
         # पसंत करतो") — आधी credit spread नेहमीच चालायचा (toggle नव्हता), फक्त naked ऐच्छिक

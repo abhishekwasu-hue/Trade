@@ -437,7 +437,8 @@ def main(argv=None):
             raise L3.EngineDataError("Upstox login missing")
         if "f" not in feed:
             feed["f"] = L3.UpstoxFeed(token, today)
-        return L3.watched_levels(sym, feed["f"], ES._naive(ES.now_ist()))
+        # Z-1o: live engine सारखाच 1m (engine3_use_1m dashboard setting; OFF ⇒ 1m मागवत नाही) ⇒ pre-open पट्टे = engine चे पट्टे
+        return L3.watched_levels(sym, feed["f"], ES._naive(ES.now_ist()), ES.engine3_settings(sym))
 
     msg = build_report(syms, token, lambda s: cloud_db.get_market_zones(s), last_close,
                        trend_fn=lambda s: LR.daily_trend(s, token, fetch=lambda tok, sy: daily_df(sy)),

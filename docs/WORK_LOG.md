@@ -2586,6 +2586,22 @@ legs owner वि. reader2 gate).
   (ACTIVE किंवा FLIPPED) — engine च्या `_step_far_swing` सारखं; फक्त role विरुद्धचा break नवा BROKEN. Chart label "swept".
   OPEN_QUESTIONS जुनी Z-1j (12 Oct "data problem") ओळ struck ⇒ Z-1p.
 
+## 2026-10-13 · Z-1o = (a): live engine3 ला 1m (branch `claude/engine3-live-1m`, PR #325 वर)
+
+- Abhi चा निर्णय (a): live decision3 (`engine_signal_run --engine decision3` ⇒ `engine3_live` ⇒ V22) ला spot 1m ⇒ V22 `df1m` ⇒ swings2
+  प्रत्येक 15M candle मधला high / low क्रम replay / rsi2 सारखाच (levels + RSI divergence त्याच pivots वर). decision3 नियमांना हात नाही.
+- 1m window = `engine3_m15_days` (90 दिवस). आधीचे दिवस historical (28-दिवस chunks, दिवसातून एकदा disk cache — कालचा दिवस अजून नसेल तर
+  cache नाही), आजचा intraday प्रत्येक cycle. फक्त बंद 1m आणि शेवटच्या बंद 15M bar_end पर्यंत (look-ahead नाही); NIFTY holdout filter.
+- 1m नाही / त्रुटी ⇒ 1m शिवाय (जुना मार्ग) + कारण: log ओळ + row payload `m1` (used / fallback / note). Data error नाही (FUT volume हाच
+  आवश्यक input). Setting `engine3_use_1m` (dashboard 15M SRv2 पान, default ON; OFF = जुनं वर्तन, 1m मागवत नाही).
+- Upstox 1m calls (review #327 नंतर दुरुस्त): सामान्य दिवस ⇒ प्रत्येक cycle +1 / symbol (intraday), दिवसाचा पहिला cycle +5 (4 history + 1
+  intraday) ⇒ 28 / symbol / दिवस (24 cycles); सुट्टीनंतरचा दिवस ⇒ पहिला cycle +6 (सुट्टीचा दिवस gap-fill 1, रिकामा) ⇒ 29. Fix आधी सुट्टीनंतर
+  cache कधीच भरत नव्हता ⇒ प्रत्येक cycle 6 ⇒ 144 / symbol. signal_symbols NIFTY + BANKNIFTY ⇒ 56 (सुट्टीनंतर 58). Pre-open (09:00) तोच
+  दिवसाचा cache भरतो ⇒ engine चा पहिला cycle फक्त intraday; 15:45 सारांश +1 intraday / symbol.
+- तुलना `scripts/engine3_1m_compare.py` (read-only) ⇒ trade-data `review/engine3_1m/run1`: NIFTY 12 / 13 Oct निर्णय सगळे wait दोन्हीकडे;
+  1m सह zone hi 22,621.80 ⇒ 22,651.10, RSI bear div 9 Oct 14:15 → 12 Oct 09:15 फक्त 1m सह, wait bars वर grade 10 ठिकाणी वर. BANKNIFTY:
+  निर्णय बदल नाही. Tests: नवे `tests/test_engine3_1m.py` (14). OPEN_QUESTIONS Z-1o (a).
+
 ## 2026-10-13 · Deploy fixes: signal_symbols, पट्टे (bands), pre-open फक्त चालू bot (branch `claude/preopen-fixes`)
 
 - **SENSEX OFF (signal_symbols):** नवीन dashboard setting `signal_symbols` (Bot Dynamic SR Algo पान, 🎯 expander; Supabase
@@ -2608,6 +2624,49 @@ legs owner वि. reader2 gate).
 - **Deploy:** git pull + restart पुरेसं नाही — `bash scripts/deploy_one_bot.sh` पुन्हा (schedule ओळी + `set_one_bot_mode.py` ⇒ SENSEX 15M SRv2
   OFF, Vision symbols NIFTY / BANKNIFTY). Setting DB मध्ये लिहायची गरज नाही (default).
 - **Review #326 नंतर:** 15:45 सारांश — symbols `signal_symbols` वरून (SENSEX ओळ नाही); areas पट्टे (engine ⇒ `watched_levels`, own ⇒ gate पट्टा); areas आणता आले नाहीत ⇒ "Bot areas not available" (PF-1 केलं).
+
+## 2026-10-14 · Review #327 fixes (branch `claude/engine3-live-1m`, #326 merge सह)
+
+- **Blocker:** pre-open (`level_gate_preopen` engine_areas) आणि 15:45 सारांश (`paper_daily_summary.default_zones`) चे `watched_levels` आता
+  live `compute` सारखाच 1m (`load_m1` ⇒ V22 `df1m`; s = `ES.engine3_settings(sym)`, `engine3_use_1m` OFF ⇒ 1m मागवत नाही) ⇒ pre-open पट्टे =
+  engine चे पट्टे (NIFTY zone hi 22,621.80 vs 22,651.10 फरक गेला).
+- 1m history cache: अपेक्षित शेवटचा दिवस = 15M history चा शेवटचा session (सुट्टी ⇒ तोच आधीचा दिवस; cache key मध्ये) ⇒ सुट्टीनंतर cache भरतो;
+  15M ला नवा दिवस ⇒ नवी key ⇒ पुन्हा fetch. Tmp file process प्रमाणे (`.{pid}.tmp`).
+- Payload `m1.m15_complete` = swings2 `m1_status == "complete"` bars; log `1m ✓ (complete n/m)`; rows आहेत पण complete 0 ⇒ ⚠️ (1m व 15M चे
+  high / low जुळत नाहीत). V22 1m सह त्रुटी ⇒ एकदा 1m शिवाय + `m1.note` (fallback), fail-closed नाही.
+- `use_1m`: None / "" ⇒ default ON; dashboard checkbox तोच parser (stored "false" ⇒ unchecked). Cache prune: run3 (खरा Upstox feed) सुरू होताना
+  `prune_cache`, नवी setting `engine3_cache_keep_days` (3 — आधीचं `prune_cache` default, आता setting). Review hardening: फक्त `hist_*` /
+  `fold_*` (.tmp सह) files; keep_days किमान 1, चुकीचं / ऋण ⇒ 3.
+- Tests: `tests/test_engine3_1m.py` +11 functions (सुट्टी cache, 15M नवा दिवस, watched_levels 1m / OFF / retry, pre-open + सारांश settings, complete count +
+  ⚠️, V22 retry, tmp नाव, prune, dashboard parser); tag test spec बदल. Replay 1m (`replay_day --source upstox`) प्रश्न उघडाच.
+
+## 2026-10-14 · Abhi 7a (SRv2 post-SL cooldown setting) + 9a / PF-3 (signal_symbols सेव्ह ⇒ one-bot आपोआप) (branch `claude/srv2-cooldown-symbols-apply`)
+
+- **7a — loss नंतर lock-out नाही:** 15M SRv2 च्या स्वतःच्या (own, non-engine) मार्गातला symbol-व्यापी post-SL cooldown (`COOLDOWN_MINUTES`
+  30, `srv2_strategy_state.last_sl_hit_time` पासून, `pre_cycle` नंतर) आता setting: `15m_dynamic_sr.post_sl_cooldown_enabled` (default
+  **False** ⇒ cooldown नाही) + `post_sl_cooldown_minutes` (default 30, फक्त ON असताना; ON ⇒ जुनं वर्तन तंतोतंत). Dashboard: 15M SRv2 →
+  🚪 Entry Gate → "⏸️ Post-SL Cooldown". हा code path फक्त 15M SRv2 चा (`is_in_cooldown` / `srv2_strategy_state` दुसरं कोणी वापरत नाही);
+  5M Instant / Classic चा (level, role) 30-मिनिट re-entry gap (शेवटच्या खऱ्या trade पासून, #91), `sl_tsl_cooldown_minutes` आणि MCX चा
+  `sl_cooldown_minutes` — बदल नाही. **टीप:** `last_sl_hit_time` कधीच नवीन मूल्याने लिहिला जात नाही (फक्त तसाच परत लिहिला जातो) ⇒ हा
+  cooldown live मध्ये आधीही व्यवहारात लागत नव्हता; ON केलं तरी तसंच (replay मध्ये SRv2 symbol cooldown 0 — बदल नाही).
+- **9a / PF-3 — `signal_symbols` dashboard सेव्ह ⇒ one-bot आपोआप:** 🎯 panel वर सेव्ह ⇒ `bots_common/one_bot.apply_signal_symbols()` —
+  script चाच `plan()` (नवीन `parts=SIGNAL_SYMBOL_PARTS`) + `apply` चे टप्पे (`_steps` / `apply_reported`): 15M SRv2 per symbol on/off
+  (+ engine, PAPER), Vision srv2 symbols / approval_required (इतिहासात by = dashboard), PAPER instruments. LIVE / LIVE_PAPER combo ⇒ skip +
+  इशारा, लिहिण्याआधी पुन्हा तपास (script सारखंच). बाकी bots (5M / Classic / MCX / auto traders) ला हात नाही; before-state file लिहीत नाही
+  (script चा `--revert` तसाच). Log `data/app.log` (`amw_a1.one_bot`): before / after symbols, प्रत्येक बदल, by dashboard, वेळ (logger +
+  `get_ist_now`). अयशस्वी ⇒ symbols सेव्ह राहतात; पहिल्या त्रुटीवर थांबतो, UI मध्ये कोणते भाग लागले / न चाललेले + "`python3
+  scripts/set_one_bot_mode.py` चालवा". Script स्वतः: वर्तन बदल नाही.
+- **Tests:** `test_srv2_momentum_reversal_strategy` (default OFF, OFF ⇒ SL नंतर block नाही, ON ⇒ N मिनिटं block, ON default = जुने 30;
+  जुना cooldown test आता setting ON करून — spec बदल), `test_one_bot` (+6: apply, LIVE नकार + race, failure टप्पे, dashboard panel
+  AppTest सेव्ह / त्रुटी).
+- **Deploy:** git pull + dashboard restart पुरे (नवीन settings default ⇒ DB migration नाही). Signal symbols बदलल्यावर script हाताने चालवायची
+  गरज नाही (dashboard "पूर्ण लागला नाही" सांगेल तेव्हाच).
+- **Review #328 fixes:** (1) dashboard apply आता सेव्ह केलेली यादी (`after`, `clean_signal_symbols`) थेट plan ला देतो; पुन्हा वाचलेली यादी
+  जुळली नाही (read अयशस्वी ⇒ जुनी / default) ⇒ काहीच लिहीत नाही, failed "signal_symbols read" (✅ नाही). (2) LIVE तपास effective **आणि**
+  साठवलेली raw row दोन्हीकडून (`_safe_mode` / `_combo_mode`) — plan, लिहिण्याआधी आणि revert मध्ये; raw read अयशस्वी ⇒ तो टप्पा failed,
+  लिहिलं नाही. (3) `apply_signal_symbols` चे logger / clock imports try मध्ये (कधीच raise नाही). (4) बिघडलेला `post_sl_cooldown_minutes` ⇒
+  30 + ⚠️ ओळ. (5) Dashboard: "हा switch चालू केला तरी सध्या फरक नाही (`last_sl_hit_time` कोणी लिहीत नाही) — B3". (6) 🎯 निकालात: सेव्ह ⇒
+  signal symbols साठी 15M SRv2 `signal_source` = engine ('own' / 'both' बदलतं).
 
 ## 2026-10-14 · Abhi ची zone study उत्तरं (branch `claude/zone-study-answers`)
 
