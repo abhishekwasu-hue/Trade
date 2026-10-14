@@ -455,6 +455,12 @@ completed pattern allows, the count is wrong.
 **काय.**
 - **Demand (supply) zone** = displacement (जोरदार impulse) च्या आधीचा **base**: 1–4 लहान, overlapping candles. तिथे न भरलेल्या orders शिल्लक असतात असं मानलं जातं.
 - **Role flip (polarity) [Abhi]:** तुटलेला support resistance बनतो, आणि उलट — फक्त price zone च्या पलीकडे जाऊन **पलीकडच्या बाजूचा swing पार** केल्यावर (तो swing पार होणं हाच पुरावा; candle ची वेगळी अट नाही). तोपर्यंत zone जुनी भूमिका ठेवतो (sweep).
+- **नवे lows / highs — पलीकडे swing नाही [Abhi, Z-1s]:** zone च्या पलीकडे आधीचा swing नसेल (price नवे lows / highs करते) तर पलीकडचा swing = break नंतर **बनलेला पहिला swing**; तिथे "पोहोचणं" = तो swing **confirm** होणं (तो तोडायची गरज नाही). उदा. तुटलेल्या support खाली पहिला swing low confirm ⇒ zone **FLIPPED**; त्या swing पासून zone मध्ये परतणारी चाल = pullback, entry zone मधल्या वाचनाने. पलीकडे आधीचा swing **असेल** तर नियम तसाच: price ने तो पार केला पाहिजे. DEAD चा नियम तसाच: FLIPPED zone पुन्हा तुटला आणि पलीकडे swing नसेल ⇒ त्या break नंतरचा पहिला swing confirm झाला की zone DEAD. (आधीच्या Z-1a शब्दरचनेची दुरुस्ती — नवा नियम नाही.)
+- **Zone मधलं वाचन — Abhi ची अंतिम उत्तरं [Abhi]:**
+  - **Counter बाजू गायब (Z-1p):** in-zone window च्या दुसऱ्या अर्ध्यात counter-side candle **एकही नाही** (पहिल्या अर्ध्यात होती) ⇒ counter बाजू दमली (दमण्याचं टोक); मग फक्त trend बाजू वाढतेय का ते पाहायचं.
+  - **Handover टिकतो (Z-1q):** handover एकदा दिसला की commitment candle पर्यंत वैध; रद्द फक्त नंतरच्या absorption ने (counter बाजू पुन्हा मजबूत) किंवा zone तुटल्याने. Commitment bar च्या window मध्ये तो पुन्हा दिसायची गरज नाही. प्रत्येक armed zone भेटीसाठी वेगळा; look-ahead नाही.
+  - **क्रम महत्त्वाचा नाही (Z-1r):** handover, LTF CHoCH आणि commitment — तिन्ही commitment bar ला हजर हवेत. अट: CHoCH price zone मध्ये **आल्यानंतरचा** हवा (त्या भेटीच्या arm bar नंतर); zone मध्ये येण्याआधीचा CHoCH मोजायचा नाही.
+  - **FUT volume gaps (RF-2):** volume असलेल्या bars ची सरासरी, आणि "gaps n/m" नोंद. Window मधल्या setting (default 50%) पेक्षा जास्त bars ला FUT volume नसेल ⇒ entry नाही + एक Telegram ओळ "data problem: FUT volume gaps" (NIFTY / BANKNIFTY, दिवसातून एकदा). Commitment candle चाच volume नसेल ⇒ entry नाही (आधीसारखं).
 
 **मानसशास्त्र.**
 - चाल सुटलेले traders परत किंमत आली की entry घेऊ इच्छितात.
@@ -548,9 +554,12 @@ completed pattern allows, the count is wrong.
   break makes the area BROKEN; it becomes FLIPPED only by the flip rule below.
 - **A broken zone flips [Abhi]:** a zone FLIPS role (supply ⇒ demand, demand ⇒ supply) when price goes beyond it AND past the swing
   on the far side. Reaching that swing is the proof; there is no extra candle condition. Until then the zone keeps its old role (sweep).
-  When no swing exists beyond the zone (price making new highs / lows), the far-side swing is the first CONFIRMED swing formed after
-  the break. Once a zone flips, its old role ends; if the FLIPPED zone is broken again past its own far-side swing, it is DEAD (no
-  second flip).
+  When a swing exists beyond the zone, price must pass it. When no swing exists beyond the zone (price making new highs / lows), the
+  far-side swing is the first CONFIRMED swing formed after the break, and reaching it means that swing being CONFIRMED (it does not
+  have to be broken): e.g. a support breaks, price makes new lows, and the first swing low below it is confirmed ⇒ the zone FLIPS to
+  supply; the move back from that swing into the zone is the pullback, and the in-zone study decides the entry. Once a zone flips, its
+  old role ends; if the FLIPPED zone is broken again past its own far-side swing (or, with no swing beyond it, once the first swing
+  formed after that break is confirmed), it is DEAD (no second flip).
 - **Broken, not flipped [Abhi]:** price went beyond the zone but did NOT reach the far-side swing ⇒ state BROKEN. Its retest is NOT a
   trade location; wait.
 - **Flip retest (G4 / S4) [Abhi]:** after a flip, price returning from that far-side swing into the flipped area makes the flipped area a
@@ -561,15 +570,24 @@ completed pattern allows, the count is wrong.
   the zone (channel, wedge, double / triple top or bottom, sideways base); which side's candles grow or shrink; whether selling (or
   buying) volume expands; RSI divergence. This in-zone study tells whether price will break out or the trend will continue. In-zone study
   unclear ⇒ wait.
-- **Entry order at a zone [Abhi]:** (1) a visible HANDOVER inside the zone (seller ⇒ buyer for a bull trade, buyer ⇒ seller for a bear
-  trade) is MANDATORY; (2) then an LTF CHoCH by close; (3) then the dominant commitment candle on higher FUT volume = entry. No handover
-  or no CHoCH ⇒ no entry. RSI divergence is evidence, not a trigger.
+- **What an entry at a zone needs [Abhi]:** (1) a visible HANDOVER inside the zone (seller ⇒ buyer for a bull trade, buyer ⇒ seller
+  for a bear trade) is MANDATORY; (2) an LTF CHoCH by close that happened AFTER price entered the zone (a CHoCH from before the arrival
+  does not count); (3) the dominant commitment candle on higher FUT volume = entry. The order does not matter: all three must be present
+  at the commitment candle. No handover or no CHoCH ⇒ no entry. RSI divergence is evidence, not a trigger.
+- **A handover holds [Abhi]:** once seen inside the zone, the handover holds until the commitment candle; it is cancelled only by a
+  later absorption (the counter side strengthening again) or by the zone breaking. It is judged per visit to the zone, from bars up to
+  the decision only.
+- **The counter side gone = exhausted [Abhi]:** if the counter side disappears from the zone (no counter-side candle in the second half
+  of the in-zone study while the first half had one), it counts as exhausted, the extreme of weakening; then only the trade side
+  growing is checked.
 - **Overlap / sideways candles inside the zone are the handover study, not a blocker [Abhi]:** a range or sideways base inside a zone is
   read, never used to skip; ranges are traded at their edges (bull put at the range low, bear call at the range high).
 - **Volume in the in-zone study [Abhi]:** compare the average per bar, never sums, and normalise each bar by its time-of-day slot (the
   median of the same slot over the last 20 sessions, at least 10), because the opening and closing bars are always heavy. With fewer than
   10 sessions say "volume normalisation: insufficient history" and compare raw per-bar averages, clearly labelled. NIFTY / BANKNIFTY with
-  FUT volume missing = a data error ⇒ no entry.
+  FUT volume missing = a data error ⇒ no entry. Gaps in FUT volume inside the zone: average over the bars that have it and report the
+  gaps (n of m bars); more than a set share of the window's bars without FUT volume (a dashboard setting, default half) ⇒ data problem,
+  no entry; a commitment candle without its own FUT volume ⇒ no entry.
 - **Trader's patience — no wave prediction [Abhi]:** a C wave (any correction) can EXTEND; nobody knows in advance where it ends. Never
   predict the end of a correction, and never block or skip on wave count, maturity or "C is long enough": wave count, maturity and
   projections (e.g. c = a) are CONTEXT facts only.
