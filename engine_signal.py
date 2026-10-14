@@ -248,12 +248,30 @@ def alert_recovered(symbol, send=None, state_path=None, now=None):
     return True
 
 
+ENGINE3_SETTINGS_KEY = "15m_dynamic_sr"                                     # one bot (bots_common.one_bot.ON_KEY): engine3_* settings याच पानावर
+
+
+def engine3_settings(symbol, settings_fn=None):
+    """Dashboard (15M SRv2 पान, symbol प्रमाणे) चे `engine3_*` settings (उदा. `engine3_use_1m`, Abhi Z-1o). वाचता आलं नाही ⇒ {} ⇒
+    engine3_live.DEFAULTS (default True). कधीच raise नाही."""
+    try:
+        if settings_fn is None:
+            import cloud_db
+            settings_fn = cloud_db.get_strategy_settings
+        st = settings_fn(ENGINE3_SETTINGS_KEY, str(symbol).upper()) or {}
+        return {k: v for k, v in dict(st).items() if str(k).startswith("engine3_")}
+    except Exception as exc:                                             # noqa: BLE001
+        print(f"⚠️ engine_signal.engine3_settings {symbol}: {type(exc).__name__}: {exc} ⇒ defaults")
+        return {}
+
+
 def run3(symbol, access_token, feed=None, path=None, now=None, s=None, dry_run=False):
     """decision3 (V22) चा एक service cycle: शेवटच्या **बंद** 15M bar चा निर्णय ⇒ store. रिटर्न row (+ "skipped" कारण, असल्यास).
     Data नाही / अपूर्ण / exception ⇒ raise (caller: error row + Telegram ओळ). dry_run ⇒ store मध्ये लिहीत नाही."""
     import engine3_live as L
     now = _naive(now or now_ist())
     if feed is None:
+        L.prune_cache((s or {}).get("engine3_cache_keep_days"))           # जुन्या cache files (hist_ / fold_) — एक listdir, स्वस्त
         feed = L.UpstoxFeed(access_token, now.date())
     r = L.compute(str(symbol).upper(), feed, now, s)
     row = L.row_from_v22(symbol, r, now_ist)
