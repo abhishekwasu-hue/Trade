@@ -2,9 +2,12 @@
 
 Rule (KB K4 "A broken zone flips [Abhi]" / "Broken, not flipped [Abhi]"; G4; Abhi final answers Z-1a … Z-1f):
   • A zone FLIPS role when price goes beyond it AND past the swing on the far side (reaching it is the proof; no candle condition).
-    No swing beyond the zone (new highs / lows) ⇒ the far-side swing is the first CONFIRMED swing that forms after the break (Z-1a).
+    No swing beyond the zone (new highs / lows) ⇒ the far-side swing is the first swing FORMED after the break, and reaching it means
+    that swing being CONFIRMED — it does not have to be broken (Abhi Z-1s, the corrected Z-1a wording): e.g. a confirmed swing low
+    below a broken support flips it at that confirmation. A swing that existed beyond the zone before the break must still be passed.
   • Beyond the zone (acceptance) but the far-side swing not reached ⇒ BROKEN: not a trade location; wait.
-  • Once flipped the old role ends: a FLIPPED zone broken again past its far-side swing is DEAD — no second flip (Z-1f).
+  • Once flipped the old role ends: a FLIPPED zone broken again past its far-side swing (no swing beyond ⇒ the first swing after that
+    break confirmed, Z-1s) is DEAD — no second flip (Z-1f).
   • FLIPPED ⇒ the return into the area is a trade location. HOW price approaches (corrective or not, lower volume or not) is CONTEXT
     only (Z-1d) — reported, never a gate. The decision is the in-zone study after price enters the zone: candle sizes by side, FUT volume
     per candle (time-of-day normalised, per-bar averages), patterns inside the zone, which side grows / shrinks, selling (buying) volume
@@ -32,7 +35,7 @@ def far_swing(known, lo, hi, up, start=None):
     `known` = pivots confirmed by the bar being judged (caller's list).
       1. the nearest such swing that formed before the excursion began (pivot bar < start; start None ⇒ any bar);
       2. none (the zone is at new highs / lows) ⇒ the FIRST CONFIRMED such swing that formed after the break began (Abhi, Z-1a).
-    Returns the pivot or None."""
+    Returns the pivot or None. Whether it is reached: `reached` (Abhi Z-1s — source 2 is reached by its confirmation)."""
     kind = "H" if up else "L"
     beyond = [p for p in known if p.kind == kind and (p.price > hi if up else p.price < lo)]
     pre = [p for p in beyond if start is None or p.bar < start]
@@ -46,6 +49,16 @@ def far_swing(known, lo, hi, up, start=None):
 
 def swing_source(p, start):
     return None if p is None else ("before_break" if start is None or p.bar < start else "first_confirmed_after_break")
+
+
+def reached(src, price, extreme, up):
+    """Abhi Z-1s: is the far-side swing reached at this bar? A swing that existed beyond the zone before the break ("before_break") ⇒
+    only when price trades past it (extreme = the bar's high for an up break / low for a down break). The first swing formed after the
+    break ("first_confirmed_after_break", no swing beyond the zone — new highs / lows) ⇒ reached by its CONFIRMATION (the caller only
+    passes swings confirmed by the bar being judged); it does not have to be broken."""
+    if src == "first_confirmed_after_break":
+        return True
+    return bool(extreme > price) if up else bool(extreme < price)
 
 
 # ------------------------------------------------------------------------------------------------ approach context (G4, facts only)
@@ -132,11 +145,13 @@ def approach_context(A, ts, t, lvl, pivots, s, legs_A=None):
 
 
 # ------------------------------------------------------------------------------------------------ in-zone read (facts)
-def zone_read(A, ts, arm, t, d, lvl, s, rsi=None):
+def zone_read(A, ts, arm, t, d, lvl, s, rsi=None, handover=None):
     """The in-zone study as facts, bar by bar, from zone entry (`arm`) to the decision bar t (bars ≤ t): per candle — time, side
     (trade side / counter side / doji), body vs the window's average body, raw and time-of-day-normalised FUT volume, in the zone or
     not; plus the zone_study summary (which side grows / shrinks, handover / absorption, volume rising on which side), the pattern, and
-    the counter-side volume first half → second half. rsi = an rsi2 Divergence read summary (optional). Facts only."""
+    the counter-side volume first half → second half. rsi = an rsi2 Divergence read summary (optional). handover = the sticky per-episode
+    handover (Abhi Z-1q, `method.handover_episode`) — reported as `handover_sticky`; `handover` stays the read of window arm … t − 1. Facts
+    only."""
     from . import method as M
     o, h, lo_, c = A["open"], A["high"], A["low"], A["close"]
     V = A.get("volume")                                                    # what the comparisons use (normalised, or raw fallback)
@@ -169,7 +184,8 @@ def zone_read(A, ts, arm, t, d, lvl, s, rsi=None):
                "counter_vol_first_half": half(cs1), "counter_vol_second_half": half(cs2),
                "counter_volume_expanding": None if half(cs1) is None or half(cs2) is None else bool(half(cs2) > half(cs1)),
                "trade_side_growing": zs.get("trade_growing", zs.get("trend_growing")), "counter_side_weakening": zs.get("counter_weakening"),
-               "handover": zs.get("handover"), "absorption": zs.get("absorption"), "vol_rising_trade_side": zs.get("vol_trend_rising"),
+               "counter_side_gone": zs.get("counter_gone"), "handover": zs.get("handover"),
+               "handover_sticky": handover, "absorption": zs.get("absorption"), "vol_rising_trade_side": zs.get("vol_trend_rising"),
                "pattern": zs.get("pattern") or M.zone_pattern(A, arm, t, d, s), "line": zs.get("line"),
                "commit_bar": rows[-1] if rows else None, "rsi_divergence": rsi}
     return {"from": _ts(ts, arm), "to": _ts(ts, t), "candles": rows, "summary": summary,

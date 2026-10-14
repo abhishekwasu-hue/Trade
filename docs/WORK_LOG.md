@@ -2667,3 +2667,32 @@ legs owner वि. reader2 gate).
   लिहिलं नाही. (3) `apply_signal_symbols` चे logger / clock imports try मध्ये (कधीच raise नाही). (4) बिघडलेला `post_sl_cooldown_minutes` ⇒
   30 + ⚠️ ओळ. (5) Dashboard: "हा switch चालू केला तरी सध्या फरक नाही (`last_sl_hit_time` कोणी लिहीत नाही) — B3". (6) 🎯 निकालात: सेव्ह ⇒
   signal symbols साठी 15M SRv2 `signal_source` = engine ('own' / 'both' बदलतं).
+
+## 2026-10-14 · Abhi ची zone study उत्तरं (branch `claude/zone-study-answers`)
+
+- **KB आधी:** K4 मध्ये [Abhi] नोंदी (Z-1s शब्दरचना, entry चे तीन भाग क्रमाशिवाय, sticky handover, counter बाजू गायब = दमली, FUT gaps);
+  Method Pack पुन्हा बनवला (`--check` ✅; golden आकडे pack मध्ये नाहीत).
+- **Code:** Z-1p `zone_study` `counter_gone`; Z-1q `method.handover_episode` (absorption / K4 BROKEN पर्यंत टिकतो); Z-1r CHoCH zone मध्ये
+  आल्यानंतरचाच (`arrival_at`); RF-2 `vol_gap_max_frac` (50%) ⇒ data problem + तीच Telegram ओळ; Z-1s `flip.reached` — पलीकडे swing नसेल ⇒
+  पहिला swing confirm होताच FLIPPED / DEAD (engine + `band_flip_facts`); Z-1t `history.level_history_daily` / `daily_warmup` (holdout Daily
+  फक्त level history, फक्त ≥ 2026-07 window, नोंदीसह), V22 holdout 15M bar ⇒ HoldoutError, `_prior_levels` "Q40 prior levels skipped" log;
+  PF-2 "provisional width" (facts, chart labels, log). Harness: `real_inputs` आणि `replay_day.py` आता Daily warm-up देतात (live सारखं).
+- **Tests:** नवीन `tests/test_decision3_zone_answers.py`; `test_decision3_flip.py` मधले जुन्या Z-1a शब्दरचनेचे synthetic tests नव्या नियमाने
+  (golden नाहीत); 29 Sep real test नवा; 12 Oct golden bear call आता मिळतो ⇒ xfail काढला.
+- **Re-run:** 12 Oct 09:30 bear call (grade B); 13 Oct bear call नाही; 29 Sep 22,725–22,810 BROKEN 09:45 → FLIPPED 11:30, 12:00 / 12:15
+  pullback पण FUT नाही ⇒ entry नाही. नवीन प्रश्न: Z-1u (Weekly prior पट्टे merge होऊन मोठा zone), Z-1v (अर्थ लावलेले भाग).
+
+## 2026-10-14 · Review #329 (FIX FIRST) नंतर — Abhi Z-1u / Z-1w / Z-1v (branch `claude/zone-study-answers`)
+
+- **का:** आधीचा 12 Oct bear call चुकीच्या कारणाने आला — Daily / Weekly prior पट्टे merge होऊन 22,476–22,809 चा मोठा पट्टा आणि 9 Oct
+  चा handover 12 Oct पर्यंत चालला. Abhi च्या 22,543.75–22,621.80 पट्ट्यावर call नव्हता.
+- **KB आधी:** Z-1u (timeframes वेगळे, पट्टे फक्त बांधायचे, confluence label, location = 1H), Z-1v (visit), Z-1w (fixture मधून 8 Oct काढलं);
+  RF-2 "register setting"; Method Pack पुन्हा.
+- **Code:** `Levels._born` merge / widen नाही (`tf`, lineage); Weekly = context; Daily = 1H zone नसेल तिथेच location; snapshot मध्ये
+  `confluence_label`, `trade_location`, `width`, `width_sigma`; नवी setting `trade_band_max_sigma` = None (फक्त report). `V22.visit`:
+  पट्ट्याबाहेर (आली त्या बाजूला) close ⇒ visit संपली; handover / absorption window = visit. Live pre-open / 15:45 / watched_levels: फक्त
+  location पट्टे + confluence label. `after_arrival` काढलं; `daily_from_1m` session व्याख्या shared; BANKNIFTY Daily (`date` column) fix.
+  जुने synthetic tests साठी legacy pins `level_merge` / `zone_visit_rule` (असर्ट बदलले नाहीत).
+- **Re-run:** 12 Oct (78-pt पट्टा) bear call नाही ⇒ strict xfail (visit 09:15, 09:30 आधी फक्त 1 bar ⇒ handover नाही; Z-1z). 13 Oct bear
+  call नाही; पट्टा 14:30 ला 22,651.10 पार ⇒ FLIPPED (Z-1y). 29 Sep Daily 22,725–22,810 FLIPPED 11:30; FUT नाही ⇒ entry नाही.
+  Width distribution + प्रस्ताव 1.5 σ_1H (Z-1x). Charts: trade-data `review/oct12_zone/`, `review/sep29_zone/…_v2.png`.

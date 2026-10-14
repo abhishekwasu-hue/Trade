@@ -74,8 +74,9 @@ def _areas(zones, ctx):
 def _band(lo, hi, zt):
     from bots_common import plain_text as PT
     tf = PT.tf_word(zt)
+    note = PT.zone_note(zt)                                                # Abhi Z-1u: "confluence: Daily …" label
     rng = f"{lo:,.0f}" if round(lo) == round(hi) else f"{lo:,.0f}–{hi:,.0f}"
-    return rng + (f" ({tf})" if tf else "")
+    return rng + (f" ({tf}{'; ' + note if note else ''})" if tf or note else "")
 
 
 def nearest_area(ctx, zones, rng):

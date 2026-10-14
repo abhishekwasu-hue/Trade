@@ -62,10 +62,23 @@ def fut_children(fut_ts):
     return ft.groupby(b0).nunique(), max(1, int(LVOL.BAR // step)), step
 
 
+def guard_sealed_bars(m15, sealed):
+    """Abhi Z-1t: sealed (NIFTY holdout) dates may enter only as Daily level history (`history.level_history_daily`) — never as 15M
+    bars, so V22 never computes, scores or reports a decision for a holdout date. Any sealed 15M bar ⇒ HoldoutError."""
+    if sealed is None or m15 is None or not len(m15):
+        return
+    days = pd.to_datetime(m15["timestamp"]).dt.normalize().unique()
+    bad = [d for d in days if sealed(d)]
+    if bad:
+        from elliott import data_policy as DP
+        raise DP.HoldoutError(f"sealed holdout dates in the 15M input ({len(bad)} days) — decisions on holdout dates are never produced")
+
+
 class V22:
     def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
         self.s = S3.load(s)
         self.sealed = sealed                                              # Q33: sealed (NIFTY holdout) तारखा output मध्ये नाहीत
+        guard_sealed_bars(m15 if res is None else res["m15"], sealed)       # Abhi Z-1t: no 15M bar (⇒ no decision) on a sealed date
         self.df1m = df1m                                                  # फक्त advisory (elliott count) साठी
         if res is None:
             from swings2 import engine as SE
@@ -172,31 +185,98 @@ class V22:
         return A, f"slot-normalised (÷ median of the same 15M slot, {int(self.s['vol_slot_sessions'])} sessions, min " \
                   f"{int(self.s['vol_slot_min_sessions'])}, FUT rollover days excluded)" + gtxt
 
+    def visit(self, t, lvl, d, k0=0):
+        """Abhi Z-1v: the current VISIT to the zone at decision bar t (bars ≤ t). Abhi: "when price leaves the zone (closes outside the
+        band, away from it, without a commitment), the visit ends, and the next visit needs a new handover." Precisely: the visit ends at
+        a close outside the band on the side price came from (supply ⇒ below `lo`, demand ⇒ above `hi`) at a bar BEFORE t (t is the
+        commitment being judged); the current visit starts with the first bar after the last such close that trades into the band. A close
+        beyond the far side is the K4 lifecycle's business (sweep / BROKEN — a break cancels the handover, Z-1q). `touch_window_bars` no
+        longer defines the visit: it only says how far the commitment candle may be from the last touch (③ "in / next to the level"),
+        inside the same visit. Returns {start, prev_end, why} (start None ⇒ no visit in progress)."""
+        A = self.levels.A
+        lo, hi = float(lvl["lo"]), float(lvl["hi"])
+        if self.s.get("zone_visit_rule", "close_away") == "touch_window":   # legacy only (old tests / what-if): the last group of touches
+            hits = [i for i in range(int(k0), t + 1) if A["low"][i] <= hi and A["high"][i] >= lo]
+            arm = hits[-1] if hits else t
+            for i in reversed(hits[:-1]):
+                if arm - i > int(self.s["touch_window_bars"]):
+                    break
+                arm = i
+            return {"start": arm, "prev_end": None, "why": None}
+        lid = lvl.get("parent_level", lvl.get("id"))
+        born = self.levels.L[lid].born_bar if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(self.levels.L) else 0
+        C = A["close"]
+        away = (C < lo) if d < 0 else (C > hi)
+        u = next((i for i in range(t - 1, int(born) - 1, -1) if away[i]), None)
+        start = next((i for i in range((u + 1) if u is not None else int(born), t + 1)
+                      if A["low"][i] <= hi and A["high"][i] >= lo), None)
+        why = None if start is not None else (
+            f"no visit in progress: price closed outside the band, away from it, at {str(pd.Timestamp(self._ts[u]))[:16]} — a new visit "
+            f"needs a new handover (Abhi Z-1v)" if u is not None else "no visit in progress")
+        return {"start": start, "prev_end": u, "why": why}
+
     def _confirm(self, t, d, lvl, k):
-        """⑥ = एकच shared confirmation (method.confirm: a2 + c0 + c1). Study window = चालू भेट: K मध्ये level ला स्पर्श करणाऱ्या bars चा
-        शेवटचा सलग गट (दोन स्पर्शांत ≤ touch_window_bars — ③ चीच "level मध्ये / लगत" व्याख्या) — त्याचा पहिला स्पर्श (arrival) … t;
-        LTF संदर्भ = K च्या impulse टोकापासून (pullback चे swings); LTF bars फक्त setup bar च्या close पर्यंत."""
+        """⑥ = एकच shared confirmation (method.confirm: a2 + c0 + c1). Study window = चालू VISIT (Abhi Z-1v, `visit`): पट्ट्यात शिरणारी
+        पहिली candle (arrival) … t; किंमत पट्ट्याबाहेर (आली त्या बाजूला) close झाली ⇒ visit संपली, नवा handover हवा. LTF संदर्भ = K च्या
+        impulse टोकापासून (pullback चे swings); LTF bars फक्त setup bar च्या close पर्यंत."""
         A = self.levels.A
         k0 = k.get("k_open_bar") if k.get("k_open_bar") is not None else t
-        hits = [i for i in range(int(k0), t + 1) if A["low"][i] <= lvl["hi"] and A["high"][i] >= lvl["lo"]]
-        arm = hits[-1] if hits else t
-        for i in reversed(hits[:-1]):
-            if arm - i > int(self.s["touch_window_bars"]):
-                break
-            arm = i
+        vi = self.visit(t, lvl, d, k0)
+        ts_ = lambda i: None if i is None else str(pd.Timestamp(self._ts[int(i)]))   # noqa: E731
+        vfacts = {"visit_start": ts_(vi["start"]), "visit_start_bar": vi["start"], "visit_prev_end": ts_(vi["prev_end"])}
+        if vi["start"] is None:
+            return False, vi["why"], {"confirm_wait": "no_visit", "arm_bar": int(t), **vfacts}
+        arm = int(vi["start"])
         c0 = k.get("i_end_bar") if k.get("i_end_bar") is not None else k0
         times = (pd.Timestamp(self._ts[min(int(c0), arm)]), pd.Timestamp(self._ts[arm]), pd.Timestamp(self.bar_end[t]))
         Av, vlabel = self.vol_view(arm, t)                                  # Abhi Z-1h: normalised, or raw per-bar fallback (labelled)
-        cf = M.confirm(Av, arm, t, d, lvl, self.s, self._ts, ltf=self.ltf, ltf_times=times)
+        ho = self.handover_episode(Av, arm, t, d, lvl)                     # Abhi Z-1q: sticky per zone episode
+        cf = M.confirm(Av, arm, t, d, lvl, self.s, self._ts, ltf=self.ltf, ltf_times=times, handover=ho)
         cm = dict(cf["commit"] or {})
+        ch = cf["choch"] or {}
         cm.update(study_from=str(pd.Timestamp(self._ts[arm])), confirm_wait=cf["wait"], confirm_lines=cf["lines"],
-                  ltf_line=(cf["choch"] or {}).get("line"), handover=(cf["study"] or {}).get("handover"),
-                  absorption=cf["absorption"], arm_bar=int(arm), choch=cf["choch"], volume_measure=vlabel, handover_present=cf.get("handover"))
+                  ltf_line=ch.get("line"), handover=(cf["study"] or {}).get("handover"),
+                  absorption=cf["absorption"], arm_bar=int(arm), choch=cf["choch"], volume_measure=vlabel, handover_present=cf.get("handover"),
+                  handover_state={k: v for k, v in ho.items() if k != "events"} | {
+                      "seen_ts": None if ho["seen_at"] is None else str(pd.Timestamp(self._ts[ho["seen_at"]])),
+                      "cancelled_ts": None if ho["cancelled_at"] is None else str(pd.Timestamp(self._ts[ho["cancelled_at"]]))},
+                  **vfacts, choch_vs_arm=None if not ch.get("done") else
+                  f"CHoCH at {str(ch.get('at'))[:16]} after arrival {str(ch.get('arrival_at'))[:16]} "
+                  f"(arm bar {str(pd.Timestamp(self._ts[arm]))[:16]})")
         ok, why = cf["ok"], cf["why"]
+        gaps = self.vol_gaps(arm, t)
+        cm["vol_gaps"] = gaps
         if cf["c0"] and cm.get("vol_na") and bool(self.s.get("c0_volume_required", True)):   # Abhi Z-1c: FUT volume नाही ⇒ data problem
             ok, why = False, "data problem: " + (self.vol_na_reason(t, Av) or "FUT volume missing")
             cm.update(confirm_wait="data_problem", data_problem=why)
+        elif gaps and gaps["over"]:                                        # Abhi RF-2 (b): too many in-zone bars without FUT volume
+            dp = (f"data problem: FUT volume missing on all {gaps['m']} zone-window bars" if gaps["n"] == gaps["m"] else
+                  f"data problem: FUT volume gaps {gaps['n']}/{gaps['m']} bars in the zone window (> {gaps['limit']:.0%}, vol_gap_max_frac)")
+            ok, why = False, dp + (f" · {why}" if why else "")
+            cm.update(confirm_wait="data_problem", data_problem=dp)
+        away_t = (A["close"][t] < lvl["lo"]) if d < 0 else (A["close"][t] > lvl["hi"])
+        cm["visit_end"] = ts_(t) if (away_t and not ok) else None         # Z-1v: closed outside, away, without a commitment ⇒ visit over
         return ok, why, cm
+
+    def vol_gaps(self, arm, t):
+        """Abhi RF-2 (b): FUT volume gaps in the in-zone window arm … t (commitment bar included): {n, m, frac, limit, over}; FUT not given
+        at all ⇒ None (that is the Z-1c "FUT volume missing" path). over ⇔ n / m > `vol_gap_max_frac` ⇒ data problem, no entry."""
+        raw = self.levels.A.get("volume_raw")
+        if raw is None:
+            return None
+        w = np.arange(int(arm), int(t) + 1)
+        n = int((~(np.isfinite(raw[w]) & (raw[w] > 0))).sum())
+        lim = float(self.s.get("vol_gap_max_frac", 0.5))
+        return {"n": n, "m": len(w), "frac": round(n / len(w), 3), "limit": lim, "over": bool(n / len(w) > lim)}
+
+    def handover_episode(self, A, arm, t, d, lvl):
+        """Abhi Z-1q (a): `method.handover_episode` for this zone visit; "the zone breaking" = the level's K4 state turns BROKEN / DEAD
+        (accept_closes closes beyond — a sweep does not cancel) at a bar after the handover was seen. TL confluence areas use their parent
+        level. Bars ≤ t only."""
+        lid = lvl.get("parent_level", lvl.get("id"))
+        L = self.levels.L[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(self.levels.L) else None
+        broken = None if L is None else (lambda u: L.state_at(int(u)) in (FL.BROKEN, FL.DEAD))
+        return M.handover_episode(A, arm, t, d, self.s, broken=broken)
 
     def step1(self, t):
         """① Q15: Daily impulse-degree Dow + Weekly पालक. रिटर्न (ok, why, st, ctx); ctx = {trend (वापरलेला), resolution, cap, notes,
@@ -337,10 +417,12 @@ class V22:
         arm = int(cm.get("arm_bar", t))
         rsi = self.rsi_divergence(t, d, arm)                               # zone evidence (Abhi): never a gate
         Av, vlabel = self.vol_view(arm, t)
-        zr = FL.zone_read(Av, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi)  # in-zone study facts (bars arm … t)
+        zr = FL.zone_read(Av, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi,
+                          handover=cm.get("handover_state"))               # in-zone study facts (bars arm … t)
         zr["volume_measure"] = vlabel
         last3 = range(max(0, t - 2), t + 1)
-        ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D")), "fresh": lvl["fresh"],
+        ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D"))
+              or bool(lvl.get("confluence")), "fresh": lvl["fresh"],          # Abhi Z-1u: Daily / Weekly confluence = evidence (label)
               "power_shift": ok4, "trap_sweep": bool(items.get("sweep")) or lvl["sweeps"] >= 1,
               "second_attempt": (k["legs"] >= 2) if self.s.get("wave_gates", False) else None,   # Abhi B1: leg count = context (NA)
               "commit_strong": bool(cm.get("big_body") and cm.get("big_range")) if cm else False,   # signal-bar ताकद (आकार); grade वेगळी
@@ -398,6 +480,9 @@ class V22:
         return M_NO, chk, {**extra, "why": "विरुद्ध पुरावे जास्त"}
 
     def decide(self, t):
+        if self.sealed is not None and self.sealed(pd.Timestamp(self.m15["timestamp"].iloc[t])):   # Abhi Z-1t (belt and braces)
+            from elliott import data_policy as DP
+            raise DP.HoldoutError("decision on a sealed holdout date — never produced")
         ok1, why1, st, ctx = self.step1(t)
         trend = ctx["trend"]
         ok2, why2, act = self.step2(t, trend, ctx.get("band")) if ok1 else (False, "① ✘", [])
@@ -428,7 +513,8 @@ class V22:
                 "mature": st.mature, "maturity_targets": list(st.targets), "trend_notes": ctx["notes"], "trend_cap": ctx["cap"],
                 "mature_step_down": bool(ctx.get("step_down")), "wave_context": {**(ctx.get("wave_context") or {}),
                                                                                  **(best.get("wave_context") or {})},
-                "watch_list": [{k: a.get(k) for k in ("id", "role", "lo", "hi", "state", "dist", "births")} for a in act],
+                "watch_list": [{k: a.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "dist", "births", "width", "width_sigma",
+                                                      "confluence_label")} for a in act],
                 "trade_side": list(DD.trade_side(trend)),
                 "protected": None if st.protected is None else {"kind": st.protected.kind, "price": st.protected.price,
                                                                   "day": ("before window" if self.sealed and self.sealed(st.protected.day)

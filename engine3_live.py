@@ -494,8 +494,10 @@ TRADEABLE_STATES = ("ACTIVE", "TESTED", "FLIPPED")                         # BRO
 
 def tradeable_levels(levels):
     """फक्त trade करता येणारे पट्टे: `state` field असेल (decision3 #325 नंतर) ⇒ ACTIVE / TESTED / FLIPPED ठेवा, BROKEN / DEAD (अज्ञात) वगळा;
-    field नसेल (main: snapshot फक्त जिवंत levels देतो) ⇒ सगळे ठेवा."""
-    return [x for x in levels or [] if x.get("state") is None or str(x["state"]).upper() in TRADEABLE_STATES]
+    field नसेल (main: snapshot फक्त जिवंत levels देतो) ⇒ सगळे ठेवा. Abhi Z-1u: `trade_location` False (Weekly context; Daily पट्टा 1H zone
+    ने झाकलेला) ⇒ वगळा — प्रत्येक timeframe चा स्वतःचा पट्टा, confluence फक्त label (`confluence_label`)."""
+    return [x for x in levels or [] if (x.get("state") is None or str(x["state"]).upper() in TRADEABLE_STATES)
+            and x.get("trade_location", True)]
 
 
 def watched_levels(symbol, feed, now, s=None):

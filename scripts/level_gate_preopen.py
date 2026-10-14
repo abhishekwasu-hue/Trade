@@ -43,7 +43,7 @@ def trade_side_areas(zones, tfs, last, ctx, n=3, pad_pct=None):
         return []
     out = []
     for _, z in zones.iterrows():
-        if z.get("status") != "ACTIVE" or not any(str(z.get("zone_type", "")).endswith(f"_{tf}") for tf in tfs):
+        if z.get("status") != "ACTIVE" or not any(str(z.get("zone_type", "")).split("|", 1)[0].endswith(f"_{tf}") for tf in tfs):
             continue
         lo = float(z["zone_low"])
         hi = float(z["zone_high"]) if z.get("zone_high") is not None and pd.notna(z.get("zone_high")) else lo
@@ -72,7 +72,9 @@ def area_words(side, lo, hi, zt, last):
     tf = PT.tf_word(zt)
     dist = (last - hi) if bull else (lo - last)
     rng = f"{lo:,.0f}" if round(lo) == round(hi) else f"{lo:,.0f}–{hi:,.0f}"
-    return f"{'demand' if bull else 'supply'} {rng} ({(tf + ', ') if tf else ''}{PT.pts(dist)} {'below' if bull else 'above'})"
+    note = PT.zone_note(zt)
+    return f"{'demand' if bull else 'supply'} {rng} ({(tf + ', ') if tf else ''}{PT.pts(dist)} {'below' if bull else 'above'}" + \
+        (f"; {note})" if note else ")")
 
 
 # ------------------------------------------------------------------------------------------------ कोणते bots चालू (settings वरून)
@@ -87,7 +89,7 @@ INDEX_BOTS = (
 LABEL_TFS = {"15M SRv2": BOT_TFS["15M SRv2"], "5M Instant": BOT_TFS["5M Instant"], "SR V3 shadow": BOT_TFS["5M Instant"],
              "Classic SR": BOT_TFS["Classic"]}
 ENGINE_STALE_HOURS = 96                                                    # weekend + एक सुट्टी: त्यापेक्षा जुना engine ⇒ ❌ चालू नाही
-ENGINE_TFS = ("1H",)                                                       # decision3 ② Levels = 1H areas
+ENGINE_TFS = ("1H", "1D")              # decision3 ② Levels: 1H areas (+ a Daily band where no 1H zone overlaps it, Abhi Z-1u)
 
 
 def bot_status(symbols, get_settings, mcx_fn=None):
@@ -211,7 +213,10 @@ def engine_zone_rows(levels):
     """engine levels (`watched_levels`: role / lo / hi) ⇒ market_zones सारख्या rows (zone_type …_1H) — trade_side_areas तेच वापरते.
     फक्त tradeable (`engine3_live.tradeable_levels`: BROKEN / DEAD नाहीत)."""
     from engine3_live import tradeable_levels
-    return pd.DataFrame([{"zone_type": "ENGINE_LEVEL_1H", "zone_low": float(x["lo"]), "zone_high": float(x["hi"]), "status": "ACTIVE"}
+    tf = {"1H": "1H", "D": "1D", "W": "W"}
+    return pd.DataFrame([{"zone_type": f"ENGINE_LEVEL_{tf.get(x.get('tf'), '1H')}" + (f"|{x['confluence_label']}" if x.get("confluence_label")
+                                                                                     else ""),   # Abhi Z-1u: confluence = label only
+                          "zone_low": float(x["lo"]), "zone_high": float(x["hi"]), "status": "ACTIVE"}
                          for x in tradeable_levels(levels)], columns=["zone_type", "zone_low", "zone_high", "status"])
 
 
