@@ -205,14 +205,24 @@ def alert_error(symbol, msg, send=None, state_path=None, now=None):
 
 def alert_data_problem(symbol, msg="data problem: FUT volume missing", send=None, state_path=None, now=None):
     """Abhi Z-1c: data problem (NIFTY / BANKNIFTY FUT volume missing) ⇒ एक Telegram ओळ, symbol प्रमाणे दिवसातून जास्तीत जास्त एकदा
-    (त्याच alert state file मध्ये). Entry आधीच नाही (caller). रिटर्न पाठवलं का. raise नाही."""
+    (त्याच alert state file मध्ये). Entry आधीच नाही (caller). रिटर्न पाठवलं का. raise नाही. दिवस "sent" म्हणून फक्त send यशस्वी झाला
+    तरच नोंदवतो (send raise / False ⇒ पुढच्या cycle ला पुन्हा प्रयत्न)."""
     p, sym = _alert_path(state_path), str(symbol).upper()
     day = str(_naive(now or now_ist()).date())
     st = _alert_state(p)
     seen = st.setdefault("_data_problem", {})
     if seen.get(sym) == day:
         return False
-    _alert_send(f"⚠️ Engine {sym}: {str(msg)[:160]} ⇒ no engine entry for {sym} (exits unaffected)", send)
+    line = f"⚠️ Engine {sym}: {str(msg)[:160]} ⇒ no engine entry for {sym} (exits unaffected)"
+    try:
+        if send is None:
+            from notifications import send_telegram_message as send
+        ok = send(line) is not False                                     # notifications ⇒ False on failure; raise ⇒ failure
+    except Exception as exc:                                             # noqa: BLE001
+        print(f"{line}  [Telegram send failed: {type(exc).__name__}]")
+        ok = False
+    if not ok:
+        return False
     seen[sym] = day
     try:
         os.makedirs(os.path.dirname(p), exist_ok=True)

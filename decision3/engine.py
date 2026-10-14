@@ -48,6 +48,20 @@ def mature_intact(st):
     return st.phase in ("impulse", "correction") and st.counter != "correction"
 
 
+def fut_children(fut_ts):
+    """FUT bars ⇒ (children per 15M bin, children a complete bin needs, FUT bar step). Bins are the same 09:15-anchored 15M bins as
+    legs2.volume.to_15m (OPEN / BAR — the volume join itself); the step is the FUT data's own bar size (median spacing inside a session),
+    never the LTF minutes. A complete bin needs BAR ÷ step distinct FUT bars."""
+    from legs2 import volume as LVOL
+    ft = pd.to_datetime(pd.Series(fut_ts)).sort_values().reset_index(drop=True)
+    day = ft.dt.normalize()
+    d = ft.diff()[(day == day.shift()) & (ft.diff() > pd.Timedelta(0))]
+    step = d.median() if len(d) else LVOL.BAR
+    step = step if pd.notna(step) and step > pd.Timedelta(0) else LVOL.BAR
+    b0 = day + LVOL.OPEN + ((ft - day - LVOL.OPEN) // LVOL.BAR) * LVOL.BAR
+    return ft.groupby(b0).nunique(), max(1, int(LVOL.BAR // step)), step
+
+
 class V22:
     def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
         self.s = S3.load(s)
@@ -89,31 +103,74 @@ class V22:
             M.warn_ltf_missing("decision3 V22")                            # fail-closed (⑥ "LTF data missing"), पण शांतपणे नाही
         # Abhi (Z-1 volume): every in-zone comparison (a2, c0, in-zone facts, G4 context) uses the per-bar FUT volume ÷ the median of the
         # same 15M slot over the previous `vol_slot_sessions` sessions (method.slot_rel_volume); averages per bar, never sums. Raw kept.
-        raw, self.vol_src = None, None
+        raw, self.vol_src, roll = None, None, None
+        self.vol_reason = {}                                               # bar ⇒ why its FUT volume is NA (incomplete / missing)
         if futures is not None:
+            from legs2 import settings2 as LS2
             from legs2 import volume as LVOL
             raw, self.vol_src = LVOL.bar_volume(self.m15, futures), "near-month FUT 5M ⇒ 15M (legs2.volume.bar_volume)"
+            nm = LVOL.near_month(futures)
+            st = pd.to_datetime(self.m15["timestamp"]).reset_index(drop=True)
+            if len(nm):                                                    # 15M bar with < 3 of 3 FUT 5M children ⇒ NA (never under-counted)
+                kids, need, step = fut_children(nm["timestamp"])
+                for i, x in enumerate(st):
+                    got = int(kids.get(x, 0))
+                    if 0 < got < need:
+                        raw[i] = np.nan
+                        self.vol_reason[i] = f"incomplete 15M FUT bar ({got} of {need} {int(step / pd.Timedelta(minutes=1))}M bars)"
+                    elif got == 0:
+                        self.vol_reason[i] = "no FUT bar"
+                sessions = sorted(st.dt.normalize().unique())
+                roll = LVOL.rollover_days(nm["expiry"].unique(), sessions, int(LS2.DEFAULTS["roll_sessions_before"]))
         elif "volume" in self.m15.columns:
             raw = pd.to_numeric(self.m15["volume"], errors="coerce").to_numpy(float)
             raw, self.vol_src = (raw, "m15 volume column (caller-joined)") if M._vol({"volume": raw}) is not None else (None, None)
+        self.vol_roll = set(roll or ())
         self.vol_hist = None
         if raw is not None:
             rel, self.vol_hist = M.slot_rel_volume(self.m15["timestamp"], raw, int(self.s["vol_slot_sessions"]),
-                                                   int(self.s["vol_slot_min_sessions"]))
+                                                   int(self.s["vol_slot_min_sessions"]), exclude_days=roll)   # rollover days out
             self.levels.A["volume"] = rel
             self.levels.A["volume_raw"] = np.asarray(raw, float)
 
-    def vol_na_reason(self, t):
-        """Why the normalised volume at bar t is NA (None ⇒ it is available)."""
+    def vol_na_reason(self, t, Av=None):
+        """Why the volume used at bar t is NA (None ⇒ it is available). Av = the window's volume view (raw fallback ⇒ only missing FUT)."""
         A = self.levels.A
+        if Av is not None and Av is not A and A.get("volume_raw") is not None and np.isfinite(A["volume_raw"][t]) and A["volume_raw"][t] > 0:
+            return None
         if A.get("volume_raw") is None:
             return "FUT volume missing (no FUT bars given)"
         if not (np.isfinite(A["volume_raw"][t]) and A["volume_raw"][t] > 0):
-            return "FUT volume missing on this bar"
+            return "FUT volume missing on this bar" + (f" ({self.vol_reason[t]})" if getattr(self, "vol_reason", {}).get(t) else "")
         if np.isfinite(A["volume"][t]):
             return None
         return (f"FUT volume slot baseline NA: {int(self.vol_hist[t])} earlier sessions in this time slot "
                 f"(< vol_slot_min_sessions {int(self.s['vol_slot_min_sessions'])})")
+
+    INSUFFICIENT = "volume normalisation: insufficient history — raw per-bar average"
+
+    def vol_view(self, arm, t):
+        """Abhi Z-1h: the volume the in-zone comparisons use for the window arm … t. Slot-normalised (20 sessions, min 10) when every bar
+        with FUT volume has a baseline; otherwise (fewer than `vol_slot_min_sessions` earlier sessions in a slot) the RAW per-bar FUT
+        volume for the whole window (comparisons stay within the same window ⇒ per-bar averages, never sums) — labelled, NOT a data error.
+        Returns (A to use, label)."""
+        A = self.levels.A
+        raw = A.get("volume_raw")
+        if raw is None:
+            return A, "FUT volume missing"
+        w = np.arange(int(arm), int(t) + 1)
+        have = np.isfinite(raw[w]) & (raw[w] > 0)
+        gaps = [int(i) for i in w[~have]]
+        gtxt = ""
+        if gaps and have.any():                                            # FUT present but with gaps: count + reason, never silent
+            why = sorted({self.vol_reason.get(i, "no FUT volume") for i in gaps})
+            gtxt = f" · FUT volume gaps: {len(gaps)}/{len(w)} bars ({'; '.join(why)}) — averages over the bars with volume"
+        if self.levels.ts.iloc[int(t)].normalize() in getattr(self, "vol_roll", set()):
+            gtxt += " · FUT rollover day (volume less reliable; never used in a baseline)"
+        if have.any() and not np.isfinite(A["volume"][w][have]).all():
+            return {**A, "volume": raw, "volume_rel": A["volume"]}, self.INSUFFICIENT + gtxt
+        return A, f"slot-normalised (÷ median of the same 15M slot, {int(self.s['vol_slot_sessions'])} sessions, min " \
+                  f"{int(self.s['vol_slot_min_sessions'])}, FUT rollover days excluded)" + gtxt
 
     def _confirm(self, t, d, lvl, k):
         """⑥ = एकच shared confirmation (method.confirm: a2 + c0 + c1). Study window = चालू भेट: K मध्ये level ला स्पर्श करणाऱ्या bars चा
@@ -129,14 +186,15 @@ class V22:
             arm = i
         c0 = k.get("i_end_bar") if k.get("i_end_bar") is not None else k0
         times = (pd.Timestamp(self._ts[min(int(c0), arm)]), pd.Timestamp(self._ts[arm]), pd.Timestamp(self.bar_end[t]))
-        cf = M.confirm(A, arm, t, d, lvl, self.s, self._ts, ltf=self.ltf, ltf_times=times)
+        Av, vlabel = self.vol_view(arm, t)                                  # Abhi Z-1h: normalised, or raw per-bar fallback (labelled)
+        cf = M.confirm(Av, arm, t, d, lvl, self.s, self._ts, ltf=self.ltf, ltf_times=times)
         cm = dict(cf["commit"] or {})
         cm.update(study_from=str(pd.Timestamp(self._ts[arm])), confirm_wait=cf["wait"], confirm_lines=cf["lines"],
                   ltf_line=(cf["choch"] or {}).get("line"), handover=(cf["study"] or {}).get("handover"),
-                  absorption=cf["absorption"], arm_bar=int(arm), choch=cf["choch"])
+                  absorption=cf["absorption"], arm_bar=int(arm), choch=cf["choch"], volume_measure=vlabel, handover_present=cf.get("handover"))
         ok, why = cf["ok"], cf["why"]
-        if cf["c0"] and cm.get("vol_na") and bool(self.s.get("c0_volume_required", True)):                                  # Abhi Z-1c: volume शिवाय grade-B trade नाही ⇒ data problem
-            ok, why = False, "data problem: " + (self.vol_na_reason(t) or "FUT volume missing")
+        if cf["c0"] and cm.get("vol_na") and bool(self.s.get("c0_volume_required", True)):   # Abhi Z-1c: FUT volume नाही ⇒ data problem
+            ok, why = False, "data problem: " + (self.vol_na_reason(t, Av) or "FUT volume missing")
             cm.update(confirm_wait="data_problem", data_problem=why)
         return ok, why, cm
 
@@ -173,13 +231,20 @@ class V22:
             if st.counter == "correction":                                  # A1: impulse origin तुटला (parent टिकला) ⇒ आधीसारखाच कमाल B (Q23)
                 ctx["cap"] = M.cap_min(ctx["cap"], "B")
                 ctx["notes"].append("impulse origin close ने तुटला, parent टिकला — same-degree correction चालू ⇒ कमाल B")
-            if st.origin_risk:                                              # B1 (Abhi): correction origin जवळ ⇒ conviction weak
+            gates = bool(self.s.get("wave_gates", False))                   # Abhi B1 (patience): wave / maturity फक्त context
+            ctx["wave_context"] = {"mature": bool(st.mature), "maturity_targets": list(st.targets), "origin_risk": bool(st.origin_risk),
+                                   "wave": st.wave, "corr_label": st.corr_label}
+            if st.origin_risk and gates:                                    # legacy (wave_gates): correction origin जवळ ⇒ conviction weak
                 ctx["cap"] = M.cap_min(ctx["cap"], "weak")
                 ctx["notes"].append("correction protected origin जवळ (origin धोक्यात) ⇒ नवे entries weak")
+            elif st.origin_risk:
+                ctx["notes"].append("context: correction protected origin जवळ (gate नाही — Abhi B1)")
             if getattr(st, "corr_zone", None) is not None and st.phase == "impulse" and st.counter in (None, "pullback"):                  # ABC_FIX rule 3: correction sharp zone मध्ये संपली + trend
                 ctx["evidence"] = list(st.evidence)                         # दिशेने close ⇒ continuation पुरावा (cap नाही; नोंद — Q51)
                 ctx["notes"].append("continuation evidence: " + st.evidence[-1] if st.evidence else "continuation evidence")
-            if st.mature and mature_intact(st):                             # Abhi (12 Oct): maturity = पुरावा फक्त — रचना अखंड ⇒ gate नाही,
+            if st.mature and not gates:                                     # Abhi B1: maturity / projections = context only — no cap, no step-down
+                ctx["notes"].append("context: impulse mature — target जवळ (Q44) (gate / downgrade नाही — Abhi B1)")
+            elif st.mature and mature_intact(st):                           # legacy (wave_gates): maturity — रचना अखंड ⇒ gate नाही,
                 ctx["step_down"] = True                                     # grade फक्त एक पायरी खाली (A ⇒ B; B तसाच) — `step_down_conv`
                 ctx["notes"].append("impulse mature — target जवळ (Q44) · पुरावा फक्त: protected अखंड, उलट impulse नाही ⇒ grade एक पायरी खाली")
             elif st.mature:
@@ -271,15 +336,18 @@ class V22:
         chk["⑥"] = [ok6, why6]
         arm = int(cm.get("arm_bar", t))
         rsi = self.rsi_divergence(t, d, arm)                               # zone evidence (Abhi): never a gate
-        zr = FL.zone_read(A, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi)   # in-zone study facts (bars arm … t)
+        Av, vlabel = self.vol_view(arm, t)
+        zr = FL.zone_read(Av, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi)  # in-zone study facts (bars arm … t)
+        zr["volume_measure"] = vlabel
         last3 = range(max(0, t - 2), t + 1)
         ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D")), "fresh": lvl["fresh"],
-              "power_shift": ok4, "trap_sweep": bool(items.get("sweep")) or lvl["sweeps"] >= 1, "second_attempt": k["legs"] >= 2,
+              "power_shift": ok4, "trap_sweep": bool(items.get("sweep")) or lvl["sweeps"] >= 1,
+              "second_attempt": (k["legs"] >= 2) if self.s.get("wave_gates", False) else None,   # Abhi B1: leg count = context (NA)
               "commit_strong": bool(cm.get("big_body") and cm.get("big_range")) if cm else False,   # signal-bar ताकद (आकार); grade वेगळी
               "engulf": bool(cm.get("engulf")) if cm else False,
               "rsi_div": True if rsi.get("found") else None, "volume_low": None, "pattern": None,   # RSI: evidence + only
               "against_bodies": any((A["close"][i] - A["open"][i]) * d < 0 and M.candle_read(A, i, self.s)["big_body"] for i in last3),
-              "fourth_attempt": k["legs"] > int(self.s["max_attempts"]),
+              "fourth_attempt": (k["legs"] > int(self.s["max_attempts"])) if self.s.get("wave_gates", False) else None,
               "tl_break": True if (tl and tl["broken"]) else None,           # ⑤ "(असल्यास) तुटली ⇒ grade +": अखंड / नाही ⇒ NA (वजा नाही)
               "tl_confluence": True if "tl" in lvl["births"] else None}      # फक्त नोंद (वजन नाही ⇒ grade वाढत नाही; D12-6)
         sw, tr = LQ.sweeps_and_traps(self, t, int(self.s["liquidity_lookback"]))                           # §7: pullback ने pool (bear call ⇒ buy-side वर, bull put ⇒ खाली) sweep?
@@ -290,10 +358,14 @@ class V22:
         extra = {"K": k, "evidence": ev, "trendline": tl, "conviction": conv, "conv_score": score, "missing": missing, "commit": cm,
                  "liquidity": {"sweeps": mine[:3], "trapped": [x for x in tr if x["side"] == side][:2]}, "flip_retest": g4,
                  "zone_read": zr}
-        if rng:
+        extra["range_state"] = bool(rng)                                  # Abhi Z-1j: context fact (sideways = the handover study)
+        if rng and bool(self.s.get("range_state_gate", False)):            # legacy only
             chk["⑥"] = [False, "§5.3 range अवस्था (overlap + doji) ⇒ entry नाही"]
             return M_WAIT, chk, extra
-        if k["legs"] > int(self.s["max_attempts"]):
+        gates = bool(self.s.get("wave_gates", False))
+        extra["wave_context"] = {"legs": k["legs"], "second_attempt": k["legs"] >= 2, "fourth_attempt": k["legs"] > int(self.s["max_attempts"]),
+                                 "note": "context only (Abhi B1)" if not gates else "legacy wave gates on"}
+        if k["legs"] > int(self.s["max_attempts"]) and gates:          # legacy only: Abhi B1 — leg / wave count never blocks
             return M_NO, chk, {**extra, "why": "चौथा+ प्रयत्न ⇒ reversal शक्यता (§5.1)"}
         if not ok6:
             return M_WAIT, chk, {**extra, "why": f"commitment ची वाट ({why6})"}
@@ -303,7 +375,7 @@ class V22:
             extra["risk"] = rk
             if not ok7:
                 return M_NO, chk, {**extra, "why": "R:R < 3 ⇒ trade नाही"}
-        conv1 = M.first_leg_cap(conv, k["legs"], lvl["sweeps"], ev["commit_strong"])
+        conv1 = M.first_leg_cap(conv, k["legs"], lvl["sweeps"], ev["commit_strong"]) if gates else conv   # Abhi B1: legacy only
         if conv1 != conv:
             conv = extra["conviction"] = conv1
             if conv == "weak":
@@ -354,7 +426,9 @@ class V22:
                 "engine_version": "v22", "daily_trend": st.trend, "trend_used": trend, "trend_resolution": ctx["resolution"],
                 "weekly_trend": ctx["weekly"], "daily_phase": st.phase, "daily_leg": st.wave, "corr_label": st.corr_label,
                 "mature": st.mature, "maturity_targets": list(st.targets), "trend_notes": ctx["notes"], "trend_cap": ctx["cap"],
-                "mature_step_down": bool(ctx.get("step_down")),
+                "mature_step_down": bool(ctx.get("step_down")), "wave_context": {**(ctx.get("wave_context") or {}),
+                                                                                 **(best.get("wave_context") or {})},
+                "watch_list": [{k: a.get(k) for k in ("id", "role", "lo", "hi", "state", "dist", "births")} for a in act],
                 "trade_side": list(DD.trade_side(trend)),
                 "protected": None if st.protected is None else {"kind": st.protected.kind, "price": st.protected.price,
                                                                   "day": ("before window" if self.sealed and self.sealed(st.protected.day)
@@ -364,7 +438,8 @@ class V22:
                 "missing": best.get("missing"), "evidence": best.get("evidence"), "why": best.get("why"),
                 "level": best.get("level"), "liquidity": best.get("liquidity"), "trendline": best.get("trendline"),
                 "commit": best.get("commit"), "commitment_form": (best.get("commit") or {}).get("form"),
-                "flip_retest": best.get("flip_retest"), "zone_read": best.get("zone_read"),
+                "flip_retest": best.get("flip_retest"), "zone_read": best.get("zone_read"), "range_state": best.get("range_state"),
+                "volume_measure": (best.get("commit") or {}).get("volume_measure") or (best.get("zone_read") or {}).get("volume_measure"),
                 "flip": None if not best.get("level") else {k: best["level"].get(k) for k in ("state", "broken_ts", "far_swing",
                                                                                               "flipped_ts", "break_dir")},
                 "level_evals": evals}

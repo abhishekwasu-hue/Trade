@@ -20,7 +20,7 @@ from tests import oct12_fixture as F
 # Z-1 (Abhi K4 flip नियम): या synthetic fixture चा supply = acceptance ने flip झालेला support, आणि त्याखाली आधीचा swing low नाही ⇒
 # नव्या नियमाने BROKEN (trade location नाही). हे tests a2 / c0 / c1 / confluence चे ⇒ जुना flip नियम स्पष्ट pin (असर्ट तसेच);
 # default नियमावर हाच fixture: tests/test_decision3_flip.py::test_oct12_synthetic_fixture_supply_is_broken_not_flipped_under_k4.
-S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance"}     # claude/v22-touch-levels (TL1) — merge होईपर्यंत स्पष्ट
+S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False}   # Z-1m आधीचा fixture — pin     # claude/v22-touch-levels (TL1) — merge होईपर्यंत स्पष्ट
 S_OLD = {**S_ROLE, "rr_step": True, "entry_first_bar": False}              # Abhi 13 Oct आधीचे नियम (⑦ R:R + 09:15 फक्त पुरावा) — जुने असर्ट pin
 
 
@@ -75,6 +75,8 @@ def test_mirror_gives_the_same_decisions():
 
 def test_maturity_is_evidence_only_on_the_oct12_case(case):
     mirror, (V, m15, fut, ltf, bars) = case
+    dflt = {t: V.decide(t) for t in bars[:6]}
+    V.s["wave_gates"] = True                                                     # Abhi 12 Oct नियम (step-down) pin — B1 ने बदलला
     base = {t: V.decide(t) for t in bars[:6]}
     V.daily = [dataclasses.replace(x, mature=True) if x.trend in ("UP", "DOWN") else x for x in V.daily]
     try:
@@ -83,7 +85,12 @@ def test_maturity_is_evidence_only_on_the_oct12_case(case):
             assert r["mature"] and r["mature_step_down"] and r["decision"] == r0["decision"]
             if r0["decision"] == "setup":
                 assert r["conviction"] == M.step_down_conv(r0["conviction"])
+        V.s["wave_gates"] = False                                                # Abhi B1 (default): maturity = context, grade unchanged
+        for t, r0 in dflt.items():
+            r = V.decide(t)
+            assert r["mature"] and not r["mature_step_down"] and (r["decision"], r["conviction"]) == (r0["decision"], r0["conviction"])
     finally:
+        V.s["wave_gates"] = False
         V.daily = E3.DD.fold(V.daily_df, V.s)
 
 
@@ -260,7 +267,7 @@ def test_replay_day_upstox_source_is_read_only_and_writes_json(monkeypatch, tmp_
     out = tmp_path / "out.json"
     rc = RD.main(["--date", "2030-03-04", "--symbol", "NIFTY", "--source", "upstox", "--futures", str(fpath), "--dry-run",
                   "--json", str(out), "--out-dir", str(tmp_path), "--legacy-rr", "--no-first-bar-entry",
-                  "--flip-rule", "acceptance"])                          # rr असर्ट ⇒ जुने नियम (pin); Z-1 flip pin
+                  "--flip-rule", "acceptance", "--legacy-zone-gates"])                          # rr असर्ट ⇒ जुने नियम (pin); Z-1 flip pin
     assert rc == 0 and {c[1] for c in calls} == {"15minute", "5minute", "day"}
     j = json.loads(out.read_text(encoding="utf-8"))
     assert j["setup"]["side"] == "bear call" and j["setup"]["rr"] >= 3 and j["bars"][0]["ts"].endswith("09:15:00")

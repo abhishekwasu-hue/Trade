@@ -467,7 +467,7 @@ completed pattern allows, the count is wrong.
   - उंची ≤ 1.5 MR.
 - **Displacement** (repo `zones.py`): ≥ 2 सलग candles, प्रत्येकाचा body ≥ 0.6 × range आणि range ≥ 1.5 MR; किंवा एकच candle ≥ 2.5 MR. सोबत **आधीचा swing तुटला पाहिजे (BOS).** BOS नाही तर तो noise.
 - **Flip level:** वरचा flip नियम [Abhi] (zone पलीकडे + पलीकडचा swing पार). Real break (खाली) फक्त BROKEN ठरवतो, flip नाही.
-- **Flip fixtures [Abhi] (pack मध्ये नाहीत):** 12 Oct NIFTY = 22,544–22,622 (spot; FUT मध्ये ≈22,667 — तोच zone) हा 8 Oct ला flip झालेला seller zone; zone मध्ये selling volume वाढला, dominant red candle, RSI divergence ⇒ bear call ✅ (golden). 13 Oct NIFTY = तोच zone; लहान red candles, कमी volume, घसरण नाही, sideways base ⇒ bear call नाही; दुपारी breakout ⇒ spot 22,731.8 (6 Oct high) पार झाला तर flip (support).
+- **Flip fixtures [Abhi] (pack मध्ये नाहीत):** 12 Oct NIFTY = 22,544–22,622 (spot; FUT मध्ये ≈22,667 — तोच zone) हा 8 Oct ला flip झालेला seller zone; zone मध्ये selling volume वाढला, dominant red candle, RSI divergence ⇒ bear call ✅ (golden). 13 Oct NIFTY = तोच zone; लहान red candles, कमी volume, घसरण नाही, sideways base ⇒ bear call नाही; दुपारी breakout. हा zone 8 Oct लाच flip झाला होता ⇒ spot 22,731.8 (6 Oct high) पार झाला तर तो **DEAD** (दुसरा flip नाही, Z-1k = Z-1f [Abhi]); मग वरचे armed zones पाहायचे.
 - **Trend बाजू [Abhi] (13 Oct, pack मध्ये नाही):** daily trend बदलला नाही (price 5–6 Oct च्या highs खाली) तोपर्यंत reversal low पासूनची चाल = **correction (a-b-c)**; तुटलेला / flip झालेला zone त्या correction मध्ये bull trade location नाही (S4 अपवाद नाही). पुढचा seller zone = आधीचे swing highs (5–6 Oct); तिथे correction संपताना zone मधलं वाचन ⇒ bear. 13 Oct spot: a = 8 Oct low 22,179.9 → 12 Oct 22,651.1 (471); b = 13 Oct 09:15 low 22,288.45; c = a ⇒ ≈22,760; 6 Oct high 22,776.1.
 - **Freshness:** touches मोजा. पण नुसती संख्या नको; **प्रत्येक test वरची reaction किती जोरदार** होती ते मोजा (खाली विश्वासार्हता पाहा).
 - **Range edge:** range चा वरचा आणि खालचा कडा. Range च्या आतले minor swings नाहीत.
@@ -559,11 +559,26 @@ completed pattern allows, the count is wrong.
   decide the trade. Whether the pullback is corrective and how its volume compares with the impulse are reported as CONTEXT only. The
   decision comes from price behaviour AFTER price enters the zone: candle sizes by side and FUT volume per candle; patterns forming inside
   the zone (channel, wedge, double / triple top or bottom, sideways base); which side's candles grow or shrink; whether selling (or
-  buying) volume expands; RSI divergence. Then the dominant commitment candle on higher FUT volume + LTF CHoCH by close = entry. This
-  in-zone study tells whether price will break out or the trend will continue. In-zone study unclear ⇒ wait.
+  buying) volume expands; RSI divergence. This in-zone study tells whether price will break out or the trend will continue. In-zone study
+  unclear ⇒ wait.
+- **Entry order at a zone [Abhi]:** (1) a visible HANDOVER inside the zone (seller ⇒ buyer for a bull trade, buyer ⇒ seller for a bear
+  trade) is MANDATORY; (2) then an LTF CHoCH by close; (3) then the dominant commitment candle on higher FUT volume = entry. No handover
+  or no CHoCH ⇒ no entry. RSI divergence is evidence, not a trigger.
+- **Overlap / sideways candles inside the zone are the handover study, not a blocker [Abhi]:** a range or sideways base inside a zone is
+  read, never used to skip; ranges are traded at their edges (bull put at the range low, bear call at the range high).
 - **Volume in the in-zone study [Abhi]:** compare the average per bar, never sums, and normalise each bar by its time-of-day slot (the
-  median of the same slot over the last 20 sessions), because the opening and closing bars are always heavy. NIFTY / BANKNIFTY with FUT
-  volume missing = a data error ⇒ no entry.
+  median of the same slot over the last 20 sessions, at least 10), because the opening and closing bars are always heavy. With fewer than
+  10 sessions say "volume normalisation: insufficient history" and compare raw per-bar averages, clearly labelled. NIFTY / BANKNIFTY with
+  FUT volume missing = a data error ⇒ no entry.
+- **Trader's patience — no wave prediction [Abhi]:** a C wave (any correction) can EXTEND; nobody knows in advance where it ends. Never
+  predict the end of a correction, and never block or skip on wave count, maturity or "C is long enough": wave count, maturity and
+  projections (e.g. c = a) are CONTEXT facts only.
+- **Watch-list [Abhi]:** in the trend direction, arm EVERY valid counter-side zone ahead of price, nearest first, up to the display limit
+  (in a downtrend, all supply zones above the current pullback; mirror for an uptrend). Run the in-zone study inside each zone. If a zone
+  breaks (the correction extends), the next zone is already armed: no reset, no gap in watching.
+- **A match is not always won [Abhi]:** losing trades are normal. A read is judged by whether it follows the method, not by whether it won.
+  Never change a rule or a threshold to turn a losing case into a win. No automatic lock-out after a loss (any such limit is a dashboard
+  setting, default OFF).
 - **Chart display [Abhi]:** broken areas are hidden except the most recent broken one (dashed, "broken"); at most 3 bands above and 3
   below price per timeframe.
 - Mistakes: calling every pause a zone without displacement / BOS; zones wider than 1.5 MR; assuming a zone holds without a reversal

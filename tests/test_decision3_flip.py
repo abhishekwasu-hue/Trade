@@ -292,7 +292,7 @@ def test_end_to_end_flipped_zone_in_zone_study_decides_and_context_never_gates(a
     assert rows                                                            # the G4 path is really exercised through decide()
     for r in rows:
         assert r["checklist"]["G4"][0] is None and "not a gate" in r["checklist"]["G4"][1]   # context, never a gate
-        assert r["decision"] in ("setup", "wait") and r["flip"]["state"] == FL.FLIPPED and r["flip"]["far_swing"]
+        assert "G4" not in str(r.get("why")) and r["flip"]["state"] == FL.FLIPPED and r["flip"]["far_swing"]   # outcome: ⑥ / conviction
         z = r["zone_read"]
         assert z and z["candles"] and z["summary"]["bars"] == len(z["candles"]) and "rsi_divergence" in z["summary"]
         assert r["flip_retest"]["context_only"]
@@ -418,7 +418,8 @@ def test_oct12_synthetic_fixture_supply_is_broken_not_flipped_under_k4():
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=False)
     new = E3.V22(m15, s={"level_death_side": "role"}, ltf=ltf, futures=fut)
-    old = E3.V22(m15, s={"level_death_side": "role", "level_flip_rule": "acceptance"}, ltf=ltf, futures=fut)
+    old = E3.V22(m15, s={"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False}, ltf=ltf,
+                 futures=fut)
     ts = new.levels.ts
     bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == ts.dt.normalize().iloc[-1]]
     so = [r for r in (old.decide(t) for t in bars) if r["decision"] == "setup"]
@@ -526,8 +527,15 @@ def test_real_12_oct_flipped_seller_zone_in_zone_study_and_golden_bear_call(real
     bear = [r for r in at if r["decision"] == "setup" and r["trend_used"] == "DOWN"]
     if not bear:
         last = at[-1]
-        pytest.xfail(f"golden 12 Oct bear call NOT produced: decision {last['decision']} · ⑥ {last['checklist'].get('⑥')} · "
-                     f"conviction {last.get('conviction')} · missing {last.get('missing')}")
+        six = last["checklist"].get("⑥") or [None, ""]
+        sm = (last.get("zone_read") or {}).get("summary") or {}
+        # only the known open question may xfail: Z-1p (the counter side is absent in the window's second half ⇒ counter weakening NA
+        # ⇒ no handover ⇒ wait). Any other cause is a real failure.
+        assert last["decision"] == "wait" and six[0] is False and str(six[1]).startswith(M.REASON[M.C_NO_HANDOVER]), six
+        assert (last.get("commit") or {}).get("handover_present") is False
+        assert sm.get("trade_side_growing") is True and sm.get("counter_side_weakening") is None, sm
+        pytest.xfail(f"golden 12 Oct bear call NOT produced — open question Z-1p (no counter candle in the second half ⇒ counter "
+                     f"weakening NA ⇒ no handover): decision {last['decision']} · ⑥ {six} · conviction {last.get('conviction')}")
 
 
 def test_real_13_oct_no_bear_call_then_flip_only_past_22731(real):
@@ -552,7 +560,437 @@ def test_real_13_oct_no_bear_call_then_flip_only_past_22731(real):
     st = L.state_at(t)
     print(f"\n13 Oct: {len(ix)} bars, spot high {hi:,.2f} vs far swing {FAR_UP:,.1f} ⇒ state {st}, role {L.role_at(t)}; "
           f"trend {[r['trend_used'] for r in rows][-1]}")
+    nxt = [w for w in (rows[-1].get("watch_list") or []) if w["role"] == LV.RES]
+    print(f"13 Oct close watch-list: {[(w['lo'], w['hi'], w['state']) for w in nxt]}")
+    assert nxt and nxt[0]["lo"] > ZONE[1]                                  # Abhi B2: the next seller zones above are already armed
     if hi > FAR_UP and (m15["close"].iloc[ix] > ZONE[1]).any():
-        assert st == FL.DEAD                                               # Z-1f: second break past the far swing ⇒ dead
+        assert st == FL.DEAD                                               # Z-1f / Z-1k (Abhi: DEAD): second break past the far swing
     else:
         assert st in (FL.BROKEN, FL.FLIPPED) and L.role_at(t) == LV.RES    # not past 22,731.8 ⇒ no flip to support
+
+
+# ------------------------------------------------------------------------------------------------ Abhi A / B: in-zone study, watch-list
+def _zone_bars(kind, mirror):
+    """A seller zone 100–102 (bear call, DOWN) and 9 in-zone bars arm … t − 1, then the decision bar t. kind "absorption": the buying
+    (counter) candles grow and their volume rises inside the zone; kind "takeover": the selling candles grow on rising volume, the buying
+    candles shrink, then a dominant red candle on high volume. Mirror: prices reflected (p ⇒ 2·MID − p), bull put. Volume = already
+    slot-normalised values."""
+    f = (lambda x: 2 * MID - x) if mirror else (lambda x: float(x))
+    if kind == "absorption":
+        seq = [(101.0, 100.6, 1.0), (100.6, 100.9, 0.8), (100.9, 100.5, 1.0), (100.5, 100.8, 0.8),
+               (100.8, 100.5, 1.0), (100.5, 101.4, 1.4), (101.4, 101.0, 1.0), (101.0, 101.9, 1.6), (101.9, 101.6, 1.0),
+               (101.6, 100.9, 1.0)]
+    else:
+        seq = [(101.0, 101.4, 1.2), (101.4, 101.1, 0.9), (101.1, 101.5, 1.1), (101.5, 101.2, 0.9),
+               (101.2, 101.4, 0.8), (101.4, 100.8, 1.3), (100.8, 101.0, 0.7), (101.0, 100.2, 1.5), (100.2, 100.4, 0.6),
+               (100.4, 98.6, 2.5)]
+    o = np.array([f(x[0]) for x in seq])
+    c = np.array([f(x[1]) for x in seq])
+    A = {"open": o, "close": c, "high": np.maximum(o, c) + 0.3, "low": np.minimum(o, c) - 0.3, "volume": np.array([x[2] for x in seq])}
+    lvl = {"lo": min(f(100.0), f(102.0)), "hi": max(f(100.0), f(102.0))}
+    return A, lvl, (UP if mirror else DOWN)
+
+
+def _tss(n):
+    return pd.date_range("2030-01-07 09:15", periods=n, freq="15min").to_numpy()
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bear", "bull"])
+def test_in_zone_absorption_is_no_trade(mirror):
+    A, lvl, d = _zone_bars("absorption", mirror)
+    t = len(A["close"]) - 1
+    cf = M.confirm(A, 0, t, d, lvl, {**S, "ltf_choch": False})
+    assert not cf["ok"] and cf["wait"] == M.C_ABSORB                      # counter side strengthening inside the zone ⇒ no entry
+    z = FL.zone_read(A, _tss(t + 1), 0, t, d, lvl, S)
+    assert z["summary"]["absorption"] is True and z["summary"]["handover"] is False
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bear", "bull"])
+def test_in_zone_seller_takeover_plus_commitment_is_a_trade(mirror):
+    A, lvl, d = _zone_bars("takeover", mirror)
+    t = len(A["close"]) - 1
+    cf = M.confirm(A, 0, t, d, lvl, {**S, "ltf_choch": False})
+    assert cf["ok"] and cf["c0"] and not cf["absorption"], cf["why"]
+    assert cf["commit"]["vol_mult"] > 1.0 and cf["commit"]["form"]
+    z = FL.zone_read(A, _tss(t + 1), 0, t, d, lvl, S)
+    assert z["summary"]["trade_side_growing"] is True and z["summary"]["absorption"] is False
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bear", "bull"])
+def test_zone_broken_the_next_zone_is_already_armed(mirror):
+    """Abhi B2: in a downtrend every supply ahead of price is armed, nearest first; the nearest breaks (the correction extends) ⇒ the
+    next one is already on the list — no reset, no gap. Mirror: uptrend, demand zones below."""
+    f = (lambda x: 2 * MID - x) if mirror else (lambda x: float(x))
+    sw = (lambda k: ("L" if k == "H" else "H")) if mirror else (lambda k: k)
+    anchors = [(0, 140), (6, 110), (10, 130), (18, 104), (26, 118), (34, 100), (40, 106), (50, 124)]
+    closes = [float(anchors[0][1])]
+    for (b0, p0), (b1, p1) in zip(anchors[:-1], anchors[1:]):
+        closes += list(np.linspace(p0, p1, b1 - b0 + 1)[1:])
+    m = m15_from([f(c) for c in closes], wick=0.3)
+    p2 = [P(sw("L"), f(110), 6, 8), P(sw("H"), f(130), 10, 12), P(sw("L"), f(104), 18, 20), P(sw("H"), f(118), 26, 28),
+          P(sw("L"), f(100), 34, 36)]
+    lv = _levels(m, p2, [])
+    trend = "UP" if mirror else "DOWN"
+    before = [x["id"] for x in lv.active(40, trend)]
+    R1, R2 = lv.L[before[0]], lv.L[before[1]]                             # nearest first, the next one already armed
+    assert len(before) >= 2 and abs(R2.anchor - f(130)) < 1e-6 and (R1.hi < R2.lo if not mirror else R1.lo > R2.hi)
+    t_brk = next(b for b, k, _ in R1.events if k == "broken" and b > 40)
+    after = [x["id"] for x in lv.active(t_brk, trend)]
+    assert R1.id not in after and after[0] == R2.id and R1.state_at(t_brk) == FL.BROKEN
+    assert all(R2.id in [x["id"] for x in lv.active(t, trend)] for t in range(40, len(m)))   # no gap in watching R2
+
+
+# ------------------------------------------------------------------------------------------------ Abhi Z-1j / Z-1h
+def test_range_state_is_context_only_never_an_entry_gate(abc, monkeypatch):
+    """Abhi Z-1j: overlapping / sideways candles inside the zone are the handover study, not a blocker — §5.3 range state is reported as
+    a context fact and never changes the decision (the old gate only with `range_state_gate` = True, legacy)."""
+    m15, s, V, _ = abc
+    bars = range(735, 746)
+    base = {t: V.decide(t) for t in bars}
+    monkeypatch.setattr(M, "range_state", lambda A, t, s=None: True)
+    monkeypatch.setattr(M, "range_broken_by", lambda A, t, d, s=None: False)
+    V2 = E3.V22(m15, s={**s, "c0_volume_required": False})
+    for t in bars:
+        r = V2.decide(t)
+        assert (r["decision"], r["checklist"]["⑥"]) == (base[t]["decision"], base[t]["checklist"]["⑥"])
+        if (r["checklist"].get("③") or [None])[0]:
+            assert r["range_state"] is True and "§5.3" not in str(r["checklist"]["⑥"][1])
+    V3 = E3.V22(m15, s={**s, "c0_volume_required": False, "range_state_gate": True})
+    hit = [V3.decide(t) for t in bars if (V3.decide(t)["checklist"].get("③") or [None])[0]]
+    assert hit and all("§5.3" in str(r["checklist"]["⑥"][1]) and r["decision"] == "wait" for r in hit)
+
+
+def test_short_fut_history_falls_back_to_raw_per_bar_volume_not_a_data_error():
+    """Abhi Z-1h: < vol_slot_min_sessions sessions of slot history ⇒ "volume normalisation: insufficient history", the window's
+    comparisons use the RAW per-bar FUT volume — labelled in the row / payload, never a data-problem wait. FUT missing entirely stays the
+    data error (Z-1c)."""
+    import engine3_live as L
+    from tests import oct12_fixture as F
+    m15, fut, ltf = F.build(mirror=False)
+    last = pd.to_datetime(m15["timestamp"]).dt.normalize().iloc[-1]
+    days = sorted(pd.to_datetime(fut["timestamp"]).dt.normalize().unique())
+    short = fut[pd.to_datetime(fut["timestamp"]).dt.normalize() >= days[-5]]                    # 4 earlier sessions only
+    sv = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False}   # fixture's setup level (old pins)
+    V = E3.V22(m15, s=sv, ltf=ltf, futures=short)
+    ts = V.levels.ts
+    bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == last]
+    A, label = V.vol_view(bars[0], bars[-1])
+    assert label.startswith(V.INSUFFICIENT) and np.allclose(A["volume"][bars], V.levels.A["volume_raw"][bars], equal_nan=True)
+    rows = [V.decide(t) for t in bars]
+    assert not [r for r in rows if "data problem" in str(r["checklist"].get("⑥"))]
+    seen = [r for r in rows if (r["checklist"].get("③") or [None])[0]]
+    assert seen and all(r["volume_measure"].startswith(V.INSUFFICIENT) for r in seen)
+    row = L.row_from_v22("NIFTY", seen[0], lambda: pd.Timestamp("2030-03-04 10:00"))
+    assert "insufficient history" in row["payload"]
+    full = E3.V22(m15, s=sv, ltf=ltf, futures=fut)
+    assert full.vol_view(bars[0], bars[-1])[1].startswith("slot-normalised")
+
+
+# ------------------------------------------------------------------------------------------------ volume baseline: incomplete FUT / rollover
+def test_fut_present_but_incomplete_bar_is_na_with_reason_and_gaps_are_counted():
+    """Reviewer (Z-1 volume): a 15M bar with < 3 of 3 FUT 5M children is marked incomplete — NA with a reason, never an under-counted
+    sum; FUT present but with gaps inside the in-zone window ⇒ the label carries the gap count and the reason (no silent averaging)."""
+    from tests import oct12_fixture as F
+    m15, fut, ltf = F.build(mirror=False)
+    ts15 = pd.to_datetime(m15["timestamp"])
+    last = ts15.dt.normalize().iloc[-1]
+    bars = [i for i in range(len(ts15)) if ts15.dt.normalize().iloc[i] == last]
+    hole, gone = bars[3], bars[5]
+    ft = pd.to_datetime(fut["timestamp"])
+    drop = (ft == ts15.iloc[hole] + pd.Timedelta(minutes=5)) | ((ft >= ts15.iloc[gone]) & (ft < ts15.iloc[gone] + pd.Timedelta(minutes=15)))
+    V = E3.V22(m15, s={"level_death_side": "role"}, ltf=ltf, futures=fut[~drop.to_numpy()].reset_index(drop=True))
+    full = E3.V22(m15, s={"level_death_side": "role"}, ltf=ltf, futures=fut)
+    raw = V.levels.A["volume_raw"]
+    assert np.isnan(raw[hole]) and np.isfinite(full.levels.A["volume_raw"][hole])          # NA, not 2/3 of the bar
+    assert np.isnan(V.levels.A["volume"][hole])
+    assert V.vol_reason[hole] == "incomplete 15M FUT bar (2 of 3 5M bars)" and V.vol_reason[gone] == "no FUT bar"
+    assert "incomplete 15M FUT bar (2 of 3 5M bars)" in V.vol_na_reason(hole) and "no FUT bar" in V.vol_na_reason(gone)
+    _, label = V.vol_view(bars[0], bars[-1])
+    assert f"FUT volume gaps: 2/{len(bars)} bars" in label and "incomplete 15M FUT bar" in label and "no FUT bar" in label
+    assert "gaps" not in full.vol_view(bars[0], bars[-1])[1]
+    ok = [i for i in bars if i not in (hole, gone)]                         # complete bars keep their exact volume
+    assert np.allclose(raw[ok], full.levels.A["volume_raw"][ok])
+
+
+def test_slot_baseline_excludes_rollover_days():
+    """Reviewer: slot_rel_volume leaves FUT rollover days out of every baseline, as legs2.volume.rvol does."""
+    days = pd.bdate_range("2030-01-01", periods=14)
+    ts = pd.Series([d + pd.Timedelta(hours=9, minutes=15) for d in days])
+    vol = np.full(len(ts), 100.0)
+    vol[5] = 10000.0                                                        # a rollover-day spike
+    rel, cnt = M.slot_rel_volume(ts, vol, sessions=20, min_sessions=10, exclude_days=[days[5]])
+    _, cnt0 = M.slot_rel_volume(ts, vol, sessions=20, min_sessions=10)
+    assert cnt[-1] == 12 and cnt0[-1] == 13 and rel[-1] == pytest.approx(1.0)
+    rel2, cnt2 = M.slot_rel_volume(ts, np.where(np.arange(len(ts)) < 7, 1000.0, 100.0), sessions=20, min_sessions=3,
+                                   exclude_days=list(days[:4]))
+    rel3, _ = M.slot_rel_volume(ts, np.where(np.arange(len(ts)) < 7, 1000.0, 100.0), sessions=20, min_sessions=3)
+    assert cnt2[-1] == 9 and rel2[-1] == pytest.approx(1.0)                 # baseline = days 4..12 ⇒ median 100
+    assert rel3[-1] == pytest.approx(0.1)                                   # with the rollover days in, the baseline is inflated
+
+
+# ------------------------------------------------------------------------------------------------ Telegram data-problem line (review)
+def test_data_problem_day_marked_sent_only_after_a_successful_send(tmp_path):
+    import engine_signal as ES
+    p, now = str(tmp_path / "a.json"), pd.Timestamp("2030-01-07 10:16")
+    calls = []
+
+    def boom(line):
+        calls.append(line)
+        raise RuntimeError("telegram down")
+    assert ES.alert_data_problem("NIFTY", "x", send=boom, state_path=p, now=now) is False
+    assert ES.alert_data_problem("NIFTY", "x", send=lambda line: calls.append(line) or False, state_path=p, now=now) is False
+    sent = []
+    assert ES.alert_data_problem("NIFTY", "x", send=sent.append, state_path=p, now=now + pd.Timedelta(minutes=15)) is True
+    assert len(calls) == 2 and len(sent) == 1                               # retried until it went through
+    assert ES.alert_data_problem("NIFTY", "x", send=sent.append, state_path=p, now=now + pd.Timedelta(minutes=30)) is False
+
+
+def test_data_problem_line_only_for_nifty_banknifty_never_sensex(tmp_path, monkeypatch):
+    import json
+
+    from scripts import engine_signal_run as ESR
+    monkeypatch.setenv("ENGINE_SIGNAL_DB", str(tmp_path / "es.db"))
+    sent = []
+
+    def run(sym, tok):
+        return {"bar_ts": "2030-01-07 10:15:00", "decision": "wait", "skipped": "test",
+                "payload": json.dumps({"engine": "decision3", "data_problem": "data problem: FUT volume missing"})}
+    ESR.main(["--symbols", "NIFTY,BANKNIFTY,SENSEX"], token_fn=lambda: "tok", run_fn=run, market_fn=lambda: True, send=sent.append,
+             alert_path=str(tmp_path / "a.json"), now=pd.Timestamp("2030-01-07 10:16"))
+    assert len(sent) == 2 and not [x for x in sent if "SENSEX" in x]
+    assert ESR._data_problem(run("SENSEX", None), "SENSEX") is None and ESR._data_problem(run("NIFTY", None), "NIFTY")
+
+
+def test_payload_size_limit_never_drops_the_data_problem_flag():
+    import json
+
+    import engine3_live as L
+    big = {"engine": "decision3", "checklist": {"x": "y" * 30000}, "zone_read": {"z": "w" * 30000},
+           "data_problem": "data problem: FUT volume missing (test)", "volume_measure": "slot-normalised"}
+    out = L.fit_payload(big)
+    d = json.loads(out)                                                     # valid JSON (no blind cut)
+    assert len(out) <= L.PAYLOAD_MAX and d["data_problem"] == big["data_problem"] and d["dropped"] == ["checklist", "zone_read"]
+    huge = {**big, "volume_note": "v" * 30000}
+    d2 = json.loads(L.fit_payload(huge))
+    assert d2["data_problem"] == big["data_problem"] and "all context" in d2["dropped"]
+    small = {"engine": "decision3", "data_problem": None}
+    assert L.fit_payload(small) == json.dumps(small)
+
+
+def test_band_flip_facts_new_highs_use_first_confirmed_swing_after_break():
+    """Review: band_flip_facts applies Abhi Z-1a like the engine (flip.far_swing) — no swing beyond the band before the break (new highs)
+    ⇒ the far swing is the FIRST CONFIRMED swing beyond the band after the break; FLIPPED once price trades past it."""
+    from facts import validity as FV
+    hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2                     # bars 0-19: below the 95-98 band top
+    hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]  # break at 20, swing 104 @24, past it @30
+    cl = [h - 0.6 for h in hi]
+    lo = [h - 1.0 for h in hi]
+    ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
+    df = pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl})
+    B = FV.bars_of(df)
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}]}
+    before = LV.band_flip_facts(B, 25, x, start=0)                          # swing @24 not yet confirmed (k = 2)
+    assert before["flip_state"] == FL.BROKEN and before["far_swing"] is None
+    mid = LV.band_flip_facts(B, 29, x, start=0)
+    assert mid["flip_state"] == FL.BROKEN and mid["far_swing"]["bar"] == 24 and mid["far_swing"]["price"] == 104.0
+    assert mid["far_swing"]["source"] == "first_confirmed_after_break"
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flip_state"] == FL.FLIPPED and f["flipped_at"]["bar"] == 30 and f["far_swing"]["bar"] == 24
+
+
+# ------------------------------------------------------------------------------------------------ end to end on the DEFAULT path (review)
+_HANDOVER = [(19436, 19458, 6e5), (19458, 19455, 2e5), (19455, 19466, 6e5), (19466, 19452, 5e5), (19452, 19455, 2e5), (19455, 19440, 7e5)]
+_NO_HANDOVER = [(19436, 19458, 6e5), (19458, 19446, 4e5), (19446, 19462, 5e5), (19462, 19458, 3e5), (19458, 19468, 6e5),
+                (19468, 19452, 3e5)]
+
+
+def _default_case(window, commit_vol=1.2e6, with_fut=True):
+    """tests.test_decision3_method._abc_m15 (Daily DOWN): its supply 19,432–19,472 is a support broken at bar 651 and FLIPPED at 659
+    (price traded past the far swing before the break). Bars 735–740 are rewritten to sit in that zone (the in-zone study window), 741 is
+    the bearish commitment. FUT 5M = 3 complete children per 15M bar (flat 3e5 elsewhere); LTF = 5M split of the same bars."""
+    from tests.ltf_fixtures import split_bars
+    from tests.test_decision3_method import _abc_m15
+    m15 = _abc_m15()
+    vol = np.full(len(m15), 3e5)
+    for j, (o_, c_, v_) in enumerate(window):
+        m15.loc[735 + j, ["open", "close", "high", "low"]] = [o_, c_, max(o_, c_) + 2, min(o_, c_) - 2]
+        vol[735 + j] = v_
+    m15.loc[741, ["open", "high"]] = [19440, 19443]
+    vol[741] = commit_vol
+    fut = pd.DataFrame({"timestamp": [t + pd.Timedelta(minutes=5 * j) for t in m15["timestamp"] for j in range(3)],
+                        "volume": np.repeat(vol / 3.0, 3), "expiry": pd.Timestamp("2030-03-28")})
+    return E3.V22(m15, ltf=split_bars(m15, 15, 3), futures=fut if with_fut else None)
+
+
+def test_end_to_end_default_path_flipped_zone_handover_choch_commitment_with_volume_is_a_setup():
+    """DEFAULT settings, no pins: far_swing flip rule + c0_volume_required + mandatory handover (a2) + LTF CHoCH, through V22.decide()."""
+    V = _default_case(_HANDOVER)
+    assert (V.s["level_flip_rule"], V.s["c0_volume_required"], V.s["a2_handover_required"], V.s["ltf_choch"], V.s["wave_gates"]) == \
+        ("far_swing", True, True, True, False)
+    r = V.decide(741)
+    lv = r["level"]
+    assert lv["state"] == FL.FLIPPED and lv["far_swing"]["source"] == "before_break" and lv["broken_at"] < lv["flipped_at"] < 735
+    assert r["decision"] == "setup" and r["checklist"]["⑥"][0] is True and r["conviction"] in ("A", "B")
+    cm = r["commit"]
+    assert cm["handover_present"] is True and cm["arm_bar"] == 735 and cm["choch"]["done"] and cm["vol_mult"] > 1.0
+    assert r["volume_measure"].startswith("slot-normalised") and not cm.get("data_problem")
+    assert r["zone_read"]["summary"]["handover"] is True and r["checklist"]["G4"][0] is None
+    early = V.decide(738)                                                  # CHoCH already done, handover not yet ⇒ wait (order: a2 first)
+    assert early["decision"] == "wait" and "no handover" in early["checklist"]["⑥"][1]
+
+
+def test_end_to_end_default_path_no_handover_or_no_fut_is_no_entry():
+    r = _default_case(_NO_HANDOVER).decide(741)                             # same zone, CHoCH + commitment, but no handover
+    assert r["decision"] == "wait" and (r["commit"] or {}).get("handover_present") is False
+    assert "no handover" in r["checklist"]["⑥"][1]
+    nf = _default_case(_HANDOVER, with_fut=False).decide(741)               # FUT missing ⇒ data problem, never a grade-B entry
+    assert nf["decision"] == "wait" and "data problem" in nf["checklist"]["⑥"][1]
+    lo = _default_case(_HANDOVER, commit_vol=1e5).decide(741)              # commitment without volume ⇒ no entry
+    assert lo["decision"] == "wait" and "low volume" in lo["checklist"]["⑥"][1]
+
+
+# ------------------------------------------------------------------------------------------------ re-review (282d484) fixes
+def test_band_flip_facts_flipped_then_passed_again_is_dead_like_the_engine():
+    """Re-review: a 95–98 band breaks up (bar 20), flips past the swing 104 (bar 30), then breaks down (bar 36) and trades past that
+    break's far swing 92 (first confirmed swing after the break, bar 39) at bar 43 ⇒ DEAD, never a second flip (Z-1f / Z-1k)."""
+    from facts import validity as FV
+    hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2
+    hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]
+    hi += [103.0, 101.0, 99.0, 97.5, 95.5, 94.5, 93.8, 93.0, 94.0, 94.6, 93.5, 91.5, 91.0]
+    cl = [h - 0.6 for h in hi]
+    lo = [h - 1.0 for h in hi]
+    ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
+    B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}, {"bar": 36, "dir": "down"}]}
+    assert LV.band_flip_facts(B, 35, x, start=0)["flip_state"] == FL.FLIPPED
+    mid = LV.band_flip_facts(B, 42, x, start=0)
+    assert mid["flip_state"] == FL.BROKEN and mid["flipped_at"]["bar"] == 30 and mid["broken_at"]["bar"] == 36
+    assert mid["far_swing"]["bar"] == 39 and mid["far_swing"]["source"] == "first_confirmed_after_break"
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flip_state"] == FL.DEAD and f["dead_at"]["bar"] == 43 and f["flipped_at"]["bar"] == 30
+    assert "dead" in LV.band_label({**f, "role": "resistance", "lo": 95.0, "hi": 98.0, "touch_count": 2, "valid": True})
+
+
+def test_setup_chart_notes_for_maturity_and_origin_are_context_only_in_english():
+    import inspect
+
+    from decision3 import setup_chart as SC
+    notes = ["context: impulse mature — target जवळ (Q44) (gate / downgrade नाही — Abhi B1)",
+             "context: correction protected origin जवळ (gate नाही — Abhi B1)"]
+    src = inspect.getsource(E3)
+    for n in notes:
+        assert n in src                                                    # the exact notes the engine writes by default
+        en = SC.note_en(n)
+        assert en.startswith("context only") and "no cap, no gate" in en and en.isascii()
+        assert "weak" not in en and "cap B" not in en and "(gate" not in en
+
+
+def test_no_entry_reason_never_names_origin_risk():
+    from bots_common import plain_text as PT
+    base = {"trend": "UP", "origin_risk": True, "ok": False}
+    assert PT.unclear_words({**base, "counter": "correction"}) == "Daily UP is inside a bigger correction"
+    w = PT.unclear_words({**base, "structure_against": True, "counter": "correction"})
+    assert "structure" in w and "starting point" not in w
+    assert "starting point" not in PT.unclear_words(base) and "origin" not in PT.unclear_words(base)
+    assert "broke on a daily close" in PT.unclear_words({**base, "phase": "origin_broken"})
+
+
+def test_fut_children_use_the_fut_bar_step_and_the_legs2_session_anchor():
+    from legs2 import volume as LVOL
+    day = pd.Timestamp("2030-01-07")
+    t5 = [day + LVOL.OPEN + pd.Timedelta(minutes=5 * j) for j in range(9)]
+    kids, need, step = E3.fut_children(t5)
+    assert (need, step) == (3, pd.Timedelta(minutes=5)) and int(kids[day + LVOL.OPEN]) == 3 and len(kids) == 3
+    t1 = [day + LVOL.OPEN + pd.Timedelta(minutes=j) for j in range(30) if j != 7]
+    kids1, need1, step1 = E3.fut_children(t1)
+    assert (need1, step1) == (15, pd.Timedelta(minutes=1)) and int(kids1[day + LVOL.OPEN]) == 14   # 1M FUT ⇒ 15 children, not 3
+    kids15, need15, _ = E3.fut_children([day + LVOL.OPEN + pd.Timedelta(minutes=15 * j) for j in range(4)])
+    assert need15 == 1 and (kids15 == 1).all()
+
+
+def _bars_from_highs(hi):
+    from facts import validity as FV
+    cl = [h - 0.6 for h in hi]
+    lo = [h - 1.0 for h in hi]
+    ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
+    return FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
+
+
+def test_band_flip_facts_flipped_then_broken_then_reclaimed_stays_flipped_not_dead():
+    """Re-review: flip (30) → break down (36, far swing 92.8 never reached) → back above the band (up break 42 = reclaim) → rally past
+    104 ⇒ the engine keeps FLIPPED demand + a sweep (Levels._step_far_swing reclaim) — never DEAD, never a second flip."""
+    hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2
+    hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]
+    hi += [103.0, 101.0, 99.0, 97.5, 95.5, 94.5, 93.8, 94.5, 96.0, 97.8, 99.5, 101.5, 103.0, 104.0, 105.5]
+    B = _bars_from_highs(hi)
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}, {"bar": 36, "dir": "down"}, {"bar": 42, "dir": "up"}]}
+    mid = LV.band_flip_facts(B, 41, x, start=0)
+    assert mid["flip_state"] == FL.BROKEN and mid["flipped_at"]["bar"] == 30 and mid["broken_at"]["bar"] == 36
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flip_state"] == FL.FLIPPED and f["flipped_at"]["bar"] == 30 and f["dead_at"] is None
+    assert [w["bar"] for w in f["sweeps"]] == [42]
+    lab = LV.band_label({**f, "role": "support", "lo": 95.0, "hi": 98.0, "touch_count": 2, "valid": True})
+    assert "flipped" in lab and "swept" in lab and "dead" not in lab
+
+
+def test_band_flip_facts_never_flipped_break_then_reclaim_is_active_with_a_sweep():
+    """Re-review: a support band 95–98 never flipped, broken down (37), the far swing (93 @ 39, first confirmed after the break) never
+    passed, price back above the band (up break 44 = reclaim) and on to new highs ⇒ ACTIVE + sweep (role kept) — not FLIPPED."""
+    hi = [101.0, 101.5, 100.8, 101.6, 101.2, 100.9, 101.4, 101.0, 100.7, 101.3] * 3
+    hi += [101.0, 100.6, 100.4, 100.2, 100.0, 99.5, 97.5, 95.5, 94.5, 94.0, 95.0, 96.5, 97.5, 98.5, 99.8, 101.0, 103.0]
+    B = _bars_from_highs(hi)
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
+    mid = LV.band_flip_facts(B, 43, x, start=0)
+    assert mid["flip_state"] == FL.BROKEN and mid["far_swing"]["bar"] == 39
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flip_state"] == FL.ACTIVE and f["flipped_at"] is None and [w["bar"] for w in f["sweeps"]] == [44]
+    lab = LV.band_label({**f, "role": "support", "lo": 95.0, "hi": 98.0, "touch_count": 2, "valid": True})
+    assert "swept" in lab and "flipped" not in lab
+
+
+def test_band_flip_facts_far_swing_passed_on_the_reclaim_bar_flips_first_like_the_engine():
+    """Re-review (6153269): the engine checks the far swing before a reclaim on every bar. A support 95–98 broken down (37), far swing
+    93 @ 39; bar 44 wicks to 92.0 (past 93) and closes back above the band (the band check's up break) ⇒ FLIPPED at 44 (not a reclaim
+    sweep), and the up break at 44 is against the new resistance role ⇒ BROKEN with the flip kept."""
+    from facts import validity as FV
+    hi = [101.0, 101.5, 100.8, 101.6, 101.2, 100.9, 101.4, 101.0, 100.7, 101.3] * 3
+    hi += [101.0, 100.6, 100.4, 100.2, 100.0, 99.5, 97.5, 95.5, 94.5, 94.0, 95.0, 96.5, 97.5, 98.5, 99.8, 101.0, 103.0]
+    cl = [h - 0.6 for h in hi]
+    lo = [h - 1.0 for h in hi]
+    lo[44], cl[44] = 92.0, 99.5                                            # reclaim bar trades past the far swing first
+    ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
+    B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
+    f = LV.band_flip_facts(B, 44, x, start=0)
+    assert f["flipped_at"]["bar"] == 44 and f["sweeps"] == []
+    assert f["flip_state"] == FL.BROKEN and f["broken_at"]["bar"] == 44
+    end = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert end["flip_state"] in (FL.BROKEN, FL.DEAD) and end["flip_state"] != FL.ACTIVE and end["sweeps"] == []
+
+
+def test_band_flip_facts_reclaim_to_flipped_restores_the_flip_facts():
+    hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2
+    hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]
+    hi += [103.0, 101.0, 99.0, 97.5, 95.5, 94.5, 93.8, 94.5, 96.0, 97.8, 99.5, 101.5, 103.0, 104.0, 105.5]
+    B = _bars_from_highs(hi)
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}]}
+    flip = LV.band_flip_facts(B, 35, x, start=0)
+    f = LV.band_flip_facts(B, len(hi) - 1, {**x, "breaks": x["breaks"] + [{"bar": 36, "dir": "down"}, {"bar": 42, "dir": "up"}]},
+                           start=0)
+    assert f["flip_state"] == FL.FLIPPED and f["broken_at"] == flip["broken_at"] and f["far_swing"] == flip["far_swing"]
+
+
+def test_band_flip_facts_flip_bar_is_never_also_the_dead_bar():
+    """Re-review (9bc7524): an outside reclaim bar that passes the far swing (flip) and, with its other extreme, the new break's far
+    swing must not flip AND die on the same bar — the engine returns right after a flip (no double-counting of one bar)."""
+    from facts import validity as FV
+    hi = [101.0, 101.5, 100.8, 101.6, 101.2, 100.9, 101.4, 101.0, 100.7, 101.3] * 3
+    hi += [101.0, 100.6, 100.4, 100.2, 100.0, 99.5, 97.5, 95.5, 94.5, 94.0, 95.0, 96.5, 97.5, 98.5, 102.5, 99.6, 99.6, 99.6]
+    cl = [h - 0.6 for h in hi]
+    lo = [h - 1.0 for h in hi]
+    lo[44], cl[44] = 92.0, 99.5                                            # outside bar: past 93 (flip) and above every earlier high
+    ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
+    B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flipped_at"]["bar"] == 44 and f["flip_state"] == FL.BROKEN and f["dead_at"] is None
