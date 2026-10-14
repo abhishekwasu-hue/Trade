@@ -464,6 +464,7 @@ STRATEGY_SETTINGS_DEFAULTS = {
     "15m_dynamic_sr": {
         "lots": 1,
         "signal_source": "own",          # 🎓 Abhi (Monday PAPER): own / engine / both
+        "engine3_use_1m": True,          # 🎓 Abhi Z-1o (a): engine (decision3) ला 1m spot ⇒ swings2 candle आतला high / low क्रम (False ⇒ जुनं)
         # 🎓 Level memory (वापरकर्त्याचा निर्णय: "levels तिथेच राहावेत, बदलू नयेत", डीफॉल्ट चालू) — Dynamic S/R refresh मध्ये जुने levels त्याच
         # किंमतीवर (बघा level_memory.py; logic तोच compute_dynamic_sr, फक्त स्मरण). बंद ⇒ जुनं वर्तन (ताजे top-5, बाकी STALE).
         "level_memory_enabled": True,
