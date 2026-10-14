@@ -3,6 +3,7 @@ Q23 origin_broken ⇒ कमाल B, Q27 trend नंतर RANGE, Q34 mechanic
 नाहीत; फक्त रचना)."""
 import numpy as np
 import pandas as pd
+import pytest
 
 from decision3 import daily as DD
 from decision3 import daily_legs as DL
@@ -153,19 +154,29 @@ def test_q34_describe_has_no_wave_numbers_and_leg_index_is_debug():
 
 # ------------------------------------------------------------------------------------------------ Q33 engine output
 def test_q33_engine_rows_mask_sealed_dates():
-    """Engine output (rows) मध्ये sealed तारीख नाही: protected pivot ची तारीख sealed ⇒ "before window" (किंमत तशीच)."""
+    """Engine output (rows) मध्ये sealed तारीख नाही: protected pivot ची तारीख sealed ⇒ "before window" (किंमत तशीच). Abhi Z-1t: sealed
+    तारखा फक्त 15M window आधीचा Daily इतिहास असू शकतात — sealed 15M bar ⇒ HoldoutError (निर्णयच नाही)."""
     import json
+
     from decision3 import engine as E3
+    from elliott import data_policy as DP
+    from pivots import charts as PC
     from tests.test_decision3_method import _synthetic_m15
     m15 = _synthetic_m15()
-    open_ = E3.V22(m15)
-    sealed = E3.V22(m15, sealed=lambda ts: True)
+    days = sorted(pd.to_datetime(m15["timestamp"]).dt.normalize().unique())
+    d0 = days[len(days) // 2]
+    daily = PC.daily_from_15m(m15, pd.to_datetime(m15["bar_end"]).max())
+    late = m15[pd.to_datetime(m15["timestamp"]) >= d0].reset_index(drop=True)
+    open_ = E3.V22(late, daily_df=daily)
+    sealed = E3.V22(late, daily_df=daily, sealed=lambda ts: pd.Timestamp(ts) < d0)   # the Daily history before the window is sealed
     a = [r for r in open_.run() if r.get("protected")]
     b = [r for r in sealed.run() if r.get("protected")]
     assert a and len(a) == len(b)
     assert all(r["protected"]["day"] != "before window" for r in a)
     assert all(r["protected"]["day"] == "before window" for r in b)
     assert [r["protected"]["price"] for r in a] == [r["protected"]["price"] for r in b] and json.dumps(b, default=str)
+    with pytest.raises(DP.HoldoutError):                                    # a sealed 15M bar ⇒ no decision at all
+        E3.V22(m15, sealed=lambda ts: True)
 
 
 def test_q33_display_start_after_last_sealed():

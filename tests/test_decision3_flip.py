@@ -137,12 +137,13 @@ def test_flip_only_when_price_trades_past_the_far_side_swing(mirror):
 
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull", "bear"])
-def test_first_confirmed_swing_after_the_break_when_no_swing_lies_beyond(mirror):
-    """Abhi Z-1a: the zone is the top of the known structure (no swing above) ⇒ the far-side swing is the first CONFIRMED swing that
-    forms after the break; the zone flips only once price trades past it."""
+def test_first_swing_after_the_break_flips_on_its_confirmation_when_no_swing_lies_beyond(mirror):
+    """Abhi Z-1s (the corrected Z-1a wording): the zone is the top of the known structure (no swing above) ⇒ the far-side swing is the
+    first swing FORMED after the break, and reaching it = that swing being CONFIRMED — it does not have to be broken. The zone flips on
+    the confirmation bar; the move back from that swing into the zone is the pullback."""
     f = (lambda x: 2 * MID - x) if mirror else (lambda x: float(x))
     sw = (lambda k: ("L" if k == "H" else "H")) if mirror else (lambda k: k)
-    anchors = [(0, 100), (8, 118), (16, 106), (26, 126), (31, 121), (38, 130), (40, 129)]
+    anchors = [(0, 100), (8, 118), (16, 106), (26, 126), (31, 121), (38, 125), (41, 118.2)]
     closes = [float(anchors[0][1])]
     for (b0, p0), (b1, p1) in zip(anchors[:-1], anchors[1:]):
         closes += list(np.linspace(p0, p1, b1 - b0 + 1)[1:])
@@ -152,14 +153,58 @@ def test_first_confirmed_swing_after_the_break_when_no_swing_lies_beyond(mirror)
     Z = [L for L in lv.L if abs(L.anchor - f(118)) < 1e-6][0]
     t_brk = next(b for b, k, _ in Z.events if k == "broken")
     assert _row(lv, Z, 28)["state"] == FL.BROKEN and _row(lv, Z, 28)["far_swing"] is None          # swing 126 not confirmed yet
-    x = _row(lv, Z, 30)
-    assert x["state"] == FL.BROKEN and x["far_swing"]["price"] == pytest.approx(f(126))
-    assert x["far_swing"]["source"] == "first_confirmed_after_break" and x["far_swing"]["bar"] >= x["exc_start"]
     t_flip = next(b for b, k, _ in Z.events if k == "flip")
+    assert t_brk < t_flip == 29                                            # flipped AT the confirmation bar of the post-break swing
     ext = (m["low"] if mirror else m["high"]).to_numpy()
-    assert t_brk < t_flip and ((ext[t_flip] < f(126)) if mirror else (ext[t_flip] > 126))
-    assert not any(((ext[i] < f(126)) if mirror else (ext[i] > 126)) for i in range(29, t_flip))
+    assert not any(((ext[i] < f(126) - 0.3) if mirror else (ext[i] > 126.3)) for i in range(27, len(m)))   # never traded through
+    x = _row(lv, Z, 30)
+    assert x["state"] == FL.FLIPPED and x["far_swing"]["price"] == pytest.approx(f(126)) and x["flipped_at"] == 29
+    assert x["far_swing"]["source"] == "first_confirmed_after_break" and x["far_swing"]["bar"] >= x["exc_start"]
+    assert "confirmed" in [d for b, k, d in Z.events if k == "flip"][0]
     assert Z.state_at(len(m) - 1) == FL.FLIPPED and Z.role_at(len(m) - 1) == (LV.RES if mirror else LV.SUP)
+    t = len(m) - 1                                                         # the pullback back into the zone ⇒ a trade location
+    lo, hi = Z.band_at(t)
+    assert m["low"].iloc[t] <= hi and m["high"].iloc[t] >= lo
+    assert any(a["id"] == Z.id for a in lv.active(t, "DOWN" if mirror else "UP"))
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bull", "bear"])
+def test_flipped_zone_broken_again_with_no_swing_beyond_dies_when_the_first_swing_after_that_break_confirms(mirror):
+    """Abhi Z-1s, the DEAD rule: a FLIPPED zone broken again, with no swing beyond it on the new break side ⇒ DEAD as soon as the first
+    swing formed after that break is CONFIRMED (not traded through) — never a second flip."""
+    f = (lambda x: 2 * MID - x) if mirror else (lambda x: float(x))
+    sw = (lambda k: ("L" if k == "H" else "H")) if mirror else (lambda k: k)
+    anchors = [(0, 100), (8, 118), (16, 110), (26, 126), (31, 121), (38, 125), (46, 112), (50, 116)]
+    closes = [float(anchors[0][1])]
+    for (b0, p0), (b1, p1) in zip(anchors[:-1], anchors[1:]):
+        closes += list(np.linspace(p0, p1, b1 - b0 + 1)[1:])
+    m = m15_from([f(c) for c in closes], wick=0.3)
+    p2 = [P(sw("H"), f(118), 8, 10), P(sw("H"), f(126), 26, 29), P(sw("L"), f(112), 46, 48)]   # no swing low below the zone before
+    lv = _levels(m, p2, [])
+    Z = [L for L in lv.L if abs(L.anchor - f(118)) < 1e-6][0]
+    kinds = [(b, k) for b, k, _ in Z.events if k in ("broken", "flip", "dead")]
+    assert [k for _, k in kinds] == ["broken", "flip", "broken", "dead"]
+    assert dict((k, b) for b, k in kinds)["flip"] == 29 and Z.dead_bar == 48     # flip and death both at a swing's confirmation bar
+    ext = (m["high"] if mirror else m["low"]).to_numpy()
+    assert not any(((ext[i] > f(112) + 0.3) if mirror else (ext[i] < 112 - 0.3)) for i in range(47, len(m)))   # never traded through
+    assert "confirmed" in [d for b, k, d in Z.events if k == "dead"][0] and "no second flip" in [d for b, k, d in Z.events if k == "dead"][0]
+    assert Z.state_at(47) == FL.BROKEN and Z.state_at(48) == FL.DEAD and Z.count("flip", len(m) - 1) == 1
+    assert all(x["id"] != Z.id for x in lv.snapshot(len(m) - 1))
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bull", "bear"])
+def test_a_prior_swing_beyond_the_zone_must_still_be_passed_not_just_confirmed(mirror):
+    """Abhi Z-1s: where a swing beyond the zone existed before the break, the rule is unchanged — price must trade past it. A swing that
+    forms after the break and confirms does NOT flip the zone while the prior swing stands (BROKEN, not a trade location)."""
+    m, p2, p1, _ = _build("broken_only", mirror)
+    extra = P(("L" if mirror else "H"), 2 * MID - 126 if mirror else 126, 36, 38)   # a post-break swing that confirms (bar 38)
+    lv = _levels(m, p2 + [extra], p1)
+    Z = _zone(lv, mirror)
+    t = len(m) - 2
+    x = _row(lv, Z, t)
+    assert x["state"] == FL.BROKEN and Z.count("flip", t) == 0
+    assert x["far_swing"]["source"] == "before_break" and x["far_swing"]["price"] == pytest.approx(2 * MID - 130 if mirror else 130)
+    assert all(a["id"] != Z.id for a in lv.active(t, "DOWN" if mirror else "UP"))
 
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull", "bear"])
@@ -411,10 +456,11 @@ def test_band_flip_facts_broken_vs_flipped():
 
 
 # ------------------------------------------------------------------------------------------------ synthetic 12-Oct fixture (oct12_fixture)
-def test_oct12_synthetic_fixture_supply_is_broken_not_flipped_under_k4():
-    """tests/oct12_fixture.py (synthetic bear call): its supply is a support broken by acceptance with nothing below it; under Abhi's K4
-    rule the far-side swing is the first CONFIRMED swing low after the break (Z-1a), which price has not passed ⇒ BROKEN, not a trade
-    location ⇒ no setup there (the old spec §5.4 flip made it the setup level; the old tests pin "acceptance")."""
+def test_oct12_synthetic_fixture_supply_flips_when_the_first_swing_after_the_break_is_confirmed():
+    """tests/oct12_fixture.py (synthetic bear call): its supply is a support broken by acceptance with nothing below it (new lows). Under
+    Abhi Z-1s (the corrected Z-1a wording) the far-side swing is the first swing low formed after the break and the zone FLIPS when that
+    swing is CONFIRMED — it is not traded through. The zone is then a seller location (old spec §5.4 made it the setup level by
+    acceptance); the in-zone study decides (here: no handover ⇒ wait, never a ② / ③ refusal)."""
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=False)
     new = E3.V22(m15, s={"level_death_side": "role"}, ltf=ltf, futures=fut)
@@ -425,11 +471,14 @@ def test_oct12_synthetic_fixture_supply_is_broken_not_flipped_under_k4():
     so = [r for r in (old.decide(t) for t in bars) if r["decision"] == "setup"]
     assert so
     t = so[0]["bar"]
-    x = [y for y in new.levels.snapshot(t) if y["lo"] <= so[0]["level"]["hi"] and y["hi"] >= so[0]["level"]["lo"] and y["role"] == LV.SUP]
-    assert x and x[0]["state"] == FL.BROKEN and x[0]["far_swing"]["source"] == "first_confirmed_after_break"
-    assert m15["low"].iloc[x[0]["far_swing"]["known_bar"]:t + 1].min() >= x[0]["far_swing"]["price"]   # not passed yet
-    assert all(y["id"] != x[0]["id"] for y in new.levels.active(t, "DOWN"))
-    assert not [r for r in (new.decide(t) for t in bars) if r["decision"] == "setup" and (r["level"] or {}).get("id") == x[0]["id"]]
+    x = [y for y in new.levels.snapshot(t) if y["lo"] <= so[0]["level"]["hi"] and y["hi"] >= so[0]["level"]["lo"]]
+    assert x and x[0]["state"] == FL.FLIPPED and x[0]["role"] == LV.RES
+    fs = x[0]["far_swing"]
+    assert fs["source"] == "first_confirmed_after_break" and x[0]["flipped_at"] == fs["known_bar"]   # flipped AT its confirmation
+    assert m15["low"].iloc[fs["known_bar"]:t + 1].min() >= fs["price"]     # never traded through (reaching = confirmation)
+    assert any(y["id"] == x[0]["id"] for y in new.levels.active(t, "DOWN"))
+    r = new.decide(t)
+    assert (r["level"] or {}).get("id") == x[0]["id"] and r["checklist"]["③"][0] is True and r["checklist"]["⑥"][0] is not None
 
 
 # ------------------------------------------------------------------------------------------------ real days (private data only)
@@ -437,6 +486,7 @@ TD = "/home/user/trade-data"
 EOD = os.path.join(TD, "live_export", "2026-10-13-eod")
 FILES = {"m1_hist": os.path.join(TD, "upstox", "NIFTY_1m_2026-07-01_2026-10-08.csv.gz"), "m1_exp": os.path.join(EOD, "NIFTY_1minute.parquet"),
          "i5": os.path.join(EOD, "oe_index_5min_NIFTY.parquet"), "fut5": os.path.join(EOD, "oe_futures_5min_NIFTY.parquet")}
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ZONE = (22543.75, 22621.8)                                                # decision3 1H level (spot) = Abhi's 22,667 FUT supply (Z-1e)
 FAR_UP = 22731.8                                                          # D2 H 6 Oct 14:00 (known 7 Oct 13:45) — the 6 / 7 Oct high
 
@@ -460,10 +510,19 @@ def _to15(df5):
     return g[g["n"] == 3].reset_index().rename(columns={"k": "timestamp"})[["timestamp", "open", "high", "low", "close"]]
 
 
+def daily_history(window_start, log_fn=None):
+    """Abhi Z-1t: the Daily warm-up the replay harness feeds V22 (as live feeds Upstox Daily) — `history.repo_level_history`: IS / VAL
+    1m ⇒ complete Daily sessions + the sealed holdout Daily file ONLY as level history and ONLY for a 15M window after the holdout end
+    (refused otherwise; logged "holdout daily bars used as level history: n bars")."""
+    from decision3 import history as HI
+    return HI.repo_level_history("NIFTY", window_start, root=ROOT, log_fn=log_fn)
+
+
 def real_inputs():
     """NIFTY SPOT 15M (decision3 runs on spot, as the live engine3 feed): 1m history (golden window) + the EOD export's 1m to 12 Oct ⇒
-    market_state.core.frame 15M / 5M; 13 Oct = complete bins of the export's spot 5M. FUT = the export's near-month 5M. Daily = from
-    the 15M (V22 default; the live feed uses Upstox Daily — a known difference). Returns (m15, ltf, fut, m1). Skips without the data."""
+    market_state.core.frame 15M / 5M; 13 Oct = complete bins of the export's spot 5M. FUT = the export's near-month 5M. Daily = the
+    Z-1t warm-up (`daily_history`: IS / VAL + holdout Daily as level history, before the 15M window) + the window's own days — the same
+    role as live's Upstox Daily. Returns (m15, ltf, fut, m1, daily). Skips without the data."""
     if not all(os.path.exists(p) for p in FILES.values()):
         pytest.skip("private trade-data (2026-10-13-eod export / upstox 1m) not present")
     import market_state.core as MC
@@ -478,15 +537,18 @@ def real_inputs():
     m15["bar_end"] = m15["timestamp"] + pd.Timedelta(minutes=15)
     ltf = pd.concat([MC.frame(m1, "5m", end)[["timestamp", "open", "high", "low", "close"]], i5], ignore_index=True)
     ltf["bar_end"] = ltf["timestamp"] + pd.Timedelta(minutes=5)
-    return m15, ltf, _read(FILES["fut5"]), m1
+    from decision3 import history as HI
+    hist, _n = daily_history(m15["timestamp"].min())
+    return m15, ltf, _read(FILES["fut5"]), m1, HI.daily_warmup("NIFTY", m15, hist)
 
 
 @pytest.fixture(scope="module")
 def real():
-    m15, ltf, fut, m1 = real_inputs()
+    from decision3 import history as HI
+    m15, ltf, fut, m1, daily = real_inputs()
     # 1m intrabar order data where it exists (as the rsi2 phase-1 run and replay_day): swings2 D0 pivots — and so the RSI divergence
     # pairs — depend on it (without 1m the 12 Oct 09:15 swing high is not a D0 pivot). 13 Oct has no 1m (5M-built bars).
-    return m15, ltf, fut, E3.V22(m15, m1, s=None, ltf=ltf, futures=fut)
+    return m15, ltf, fut, E3.V22(m15, m1, daily, s=None, ltf=ltf, futures=fut, sealed=HI.sealed_fn("NIFTY"))
 
 
 def _day_bars(V, day):
@@ -497,9 +559,12 @@ def _day_bars(V, day):
 
 
 def _zone_level(V, t):
+    """The decision3 level at the zone: the one armed as a seller zone (`Levels.active(t, "DOWN")`) when several overlap there (with the
+    Z-1t Daily warm-up, wide Q40 prior bands overlap the zone — OPEN_QUESTIONS Z-1u), else the first."""
     hits = [x for x in V.levels.snapshot(t) if x["lo"] <= sum(ZONE) / 2 <= x["hi"]]
     assert hits, f"no decision3 level at the {ZONE} zone (report, do not tune)"
-    return hits[0]
+    armed = {x["id"] for x in V.levels.active(t, "DOWN")}
+    return next((x for x in hits if x["id"] in armed), hits[0])
 
 
 def zone_table(r):
@@ -510,32 +575,53 @@ def zone_table(r):
     return "\n".join(out + [f"summary: {z.get('summary')}"])
 
 
+def _merged_zone_cause(lvl):
+    """The one known cause for the 12 / 13 Oct zone facts to differ from Abhi's (22,544–22,622 spot zone flipped 8 Oct): with the Daily
+    warm-up (Abhi Z-1t, as live) the Q40 prior Daily / Weekly bands are born at the window start and the 1H zone merges into such a wider
+    band (`Levels._born` merge) that broke and flipped earlier. Returns the xfail text, or None when the facts are not that case."""
+    prior = any(b in lvl.get("births", []) for b in ("a:D-prior", "a:W-prior"))
+    if prior and lvl["lo"] < ZONE[0] and lvl["hi"] > ZONE[1]:
+        return (f"zone facts differ from Abhi's 22,544–22,622 / 8 Oct flip — Z-1t Daily warm-up: Q40 prior bands merged the zone into "
+                f"{lvl['lo']:,.2f}–{lvl['hi']:,.2f} ({'+'.join(lvl['births'])}), flipped {lvl.get('flipped_ts')} (OPEN_QUESTIONS Z-1u)")
+    return None
+
+
 def test_real_12_oct_flipped_seller_zone_in_zone_study_and_golden_bear_call(real):
-    """12 Oct NIFTY (Abhi Z-1e): the 22,544–22,622 spot zone is FLIPPED (demand broken 8 Oct past the 5 Oct low) ⇒ a seller area; the
-    in-zone study decides. Abhi's bear call that day is the golden truth: if the code does not give it, the test reports the exact
-    failing item (xfail with the numbers) — never tuned to pass."""
+    """12 Oct NIFTY (Abhi Z-1e): the seller zone around 22,544–22,622 spot is FLIPPED (a resistance now) ⇒ a seller area; the in-zone
+    study decides. Abhi's bear call that day is the golden truth (handover + LTF CHoCH after the arrival + dominant commitment on higher
+    FUT volume, Z-1p / Z-1q / Z-1r) — asserted, never tuned."""
     m15, ltf, fut, V = real
     ix = _day_bars(V, "2026-10-12")
     lvl = _zone_level(V, ix[0])
-    assert lvl["state"] == FL.FLIPPED and lvl["role"] == LV.RES and lvl["flipped_ts"].startswith("2026-10-08")
+    assert lvl["state"] == FL.FLIPPED and lvl["role"] == LV.RES
     rows = [V.decide(t) for t in ix]
     at = [r for r in rows if (r.get("level") or {}).get("id") == lvl["id"] and (r["checklist"].get("③") or [None])[0]]
     for r in at:
-        print(f"\n{r['ts']} {r['decision']} ⑥ {r['checklist'].get('⑥')} conv {r.get('conviction')} · G4 {r['checklist'].get('G4')}")
+        cm = r.get("commit") or {}
+        print(f"\n{r['ts']} {r['decision']} ⑥ {r['checklist'].get('⑥')} conv {r.get('conviction')} · G4 {r['checklist'].get('G4')}"
+              f"\n  handover {cm.get('handover_state')} · {cm.get('choch_vs_arm')} · gaps {cm.get('vol_gaps')}")
         print(zone_table(r))
     assert at and all(r["checklist"]["G4"][0] is None for r in at)        # context only
     bear = [r for r in at if r["decision"] == "setup" and r["trend_used"] == "DOWN"]
-    if not bear:
-        last = at[-1]
-        six = last["checklist"].get("⑥") or [None, ""]
-        sm = (last.get("zone_read") or {}).get("summary") or {}
-        # only the known open question may xfail: Z-1p (the counter side is absent in the window's second half ⇒ counter weakening NA
-        # ⇒ no handover ⇒ wait). Any other cause is a real failure.
-        assert last["decision"] == "wait" and six[0] is False and str(six[1]).startswith(M.REASON[M.C_NO_HANDOVER]), six
-        assert (last.get("commit") or {}).get("handover_present") is False
-        assert sm.get("trade_side_growing") is True and sm.get("counter_side_weakening") is None, sm
-        pytest.xfail(f"golden 12 Oct bear call NOT produced — open question Z-1p (no counter candle in the second half ⇒ counter "
-                     f"weakening NA ⇒ no handover): decision {last['decision']} · ⑥ {six} · conviction {last.get('conviction')}")
+    assert bear, f"golden 12 Oct bear call NOT produced: {[(r['ts'][11:16], r['checklist'].get('⑥')) for r in at]}"
+    cm = bear[0]["commit"]
+    assert cm["handover_present"] is True and cm["choch"]["done"] and cm["choch"]["after_arrival"]
+    assert pd.Timestamp(cm["choch"]["at"]) > pd.Timestamp(cm["study_from"]) and not cm.get("data_problem")
+    assert cm.get("vol_mult") is not None and cm["vol_mult"] > 1.0
+
+
+def test_real_12_oct_zone_is_the_band_that_flipped_on_8_oct(real):
+    """Abhi (KB K4 fixture): the 12 Oct seller zone is the 22,544–22,622 spot band that flipped on 8 Oct. Any difference xfails ONLY on
+    its one known cause (`_merged_zone_cause`); anything else fails."""
+    m15, ltf, fut, V = real
+    ix = _day_bars(V, "2026-10-12")
+    lvl = _zone_level(V, ix[0])
+    print(f"\n12 Oct zone: {lvl['lo']:,.2f}–{lvl['hi']:,.2f} {lvl['births']} {lvl['state']} flipped {lvl.get('flipped_ts')}")
+    if not str(lvl.get("flipped_ts")).startswith("2026-10-08"):
+        why = _merged_zone_cause(lvl)
+        assert why, lvl
+        pytest.xfail(why)
+    assert lvl["state"] == FL.FLIPPED and lvl["role"] == LV.RES
 
 
 def test_real_13_oct_no_bear_call_then_flip_only_past_22731(real):
@@ -560,13 +646,45 @@ def test_real_13_oct_no_bear_call_then_flip_only_past_22731(real):
     st = L.state_at(t)
     print(f"\n13 Oct: {len(ix)} bars, spot high {hi:,.2f} vs far swing {FAR_UP:,.1f} ⇒ state {st}, role {L.role_at(t)}; "
           f"trend {[r['trend_used'] for r in rows][-1]}")
-    nxt = [w for w in (rows[-1].get("watch_list") or []) if w["role"] == LV.RES]
-    print(f"13 Oct close watch-list: {[(w['lo'], w['hi'], w['state']) for w in nxt]}")
-    assert nxt and nxt[0]["lo"] > ZONE[1]                                  # Abhi B2: the next seller zones above are already armed
     if hi > FAR_UP and (m15["close"].iloc[ix] > ZONE[1]).any():
         assert st == FL.DEAD                                               # Z-1f / Z-1k (Abhi: DEAD): second break past the far swing
     else:
         assert st in (FL.BROKEN, FL.FLIPPED) and L.role_at(t) == LV.RES    # not past 22,731.8 ⇒ no flip to support
+    nxt = [w for w in (rows[-1].get("watch_list") or []) if w["role"] == LV.RES]
+    print(f"13 Oct close watch-list: {[(w['lo'], w['hi'], w['state']) for w in nxt]}")
+    assert nxt
+    if not nxt[0]["lo"] > ZONE[1]:                                         # Abhi B2: the next seller zones above are already armed
+        why = _merged_zone_cause(_zone_level(V, t))
+        assert why and nxt[0]["id"] == lvl["id"] and all(w["lo"] > ZONE[1] for w in nxt[1:]) and len(nxt) > 1, nxt
+        pytest.xfail("13 Oct B2 watch-list: " + why)
+
+
+def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmup(real):
+    """29 Sep NIFTY (Abhi Z-1s / Z-1t): the 22,725–22,810 1H supply is a Q40 prior Daily level — born only with the Daily warm-up. It
+    broke at 09:45 (new lows, no swing below it) and FLIPPED at 11:30 when the first swing low after the break (22,569.65) was CONFIRMED
+    — never traded through. The 12:00 rally into the zone is the pullback; 12:00 / 12:15 are judged by the in-zone study (reported, not
+    forced). 29 Sep has no FUT bar in trade-data ⇒ never a setup without volume (Z-1c / RF-2)."""
+    m15, ltf, fut, V = real
+    ix = _day_bars(V, "2026-09-29")
+    z = [x for x in V.levels.snapshot(ix[0]) if abs(x["lo"] - 22725.45) < 1.0 and abs(x["hi"] - 22809.9) < 1.0]
+    assert z and "a:D-prior" in z[0]["births"]
+    L = V.levels.L[z[0]["id"]]
+    ts = lambda b: str(V.levels.ts.iloc[b])[:16]                          # noqa: E731
+    ev = [(ts(b), k) for b, k, _ in L.events if k in ("broken", "flip", "dead", "reclaim") and ts(b).startswith("2026-09-29")]
+    print(f"\n29 Sep zone {z[0]['lo']:,.2f}–{z[0]['hi']:,.2f}: {ev}")
+    assert ("2026-09-29 09:45", "broken") in ev and ("2026-09-29 11:30", "flip") in ev
+    t_flip = next(b for b, k, _ in L.events if k == "flip")
+    f = V.levels.flip_view(L, t_flip)
+    assert f["far_swing"]["price"] == pytest.approx(22569.65) and f["far_swing"]["source"] == "first_confirmed_after_break"
+    assert float(m15["low"].iloc[t_flip:ix[-1] + 1].min()) >= 22569.65 - 1e-6   # reached by confirmation, never traded through
+    for t in ix:
+        r = V.decide(t)
+        if r["ts"][11:16] in ("12:00", "12:15"):
+            cm = r.get("commit") or {}
+            print(f"{r['ts'][11:16]} {r['decision']} lvl {(r.get('level') or {}).get('id')} ③ {r['checklist'].get('③')} "
+                  f"⑥ {r['checklist'].get('⑥')} · handover {cm.get('handover_state')} · CHoCH {cm.get('choch_vs_arm') or cm.get('ltf_line')}")
+            assert (r.get("level") or {}).get("id") == L.id and r["checklist"]["③"][0] is True   # the pullback into the flipped zone
+        assert r["decision"] != "setup"                                    # no FUT that day ⇒ no entry
 
 
 # ------------------------------------------------------------------------------------------------ Abhi A / B: in-zone study, watch-list
@@ -777,9 +895,9 @@ def test_payload_size_limit_never_drops_the_data_problem_flag():
     assert L.fit_payload(small) == json.dumps(small)
 
 
-def test_band_flip_facts_new_highs_use_first_confirmed_swing_after_break():
-    """Review: band_flip_facts applies Abhi Z-1a like the engine (flip.far_swing) — no swing beyond the band before the break (new highs)
-    ⇒ the far swing is the FIRST CONFIRMED swing beyond the band after the break; FLIPPED once price trades past it."""
+def test_band_flip_facts_new_highs_flip_when_the_first_swing_after_break_is_confirmed():
+    """band_flip_facts applies Abhi Z-1s like the engine (flip.far_swing / flip.reached) — no swing beyond the band before the break (new
+    highs) ⇒ the far swing is the FIRST swing beyond the band formed after the break; FLIPPED when it is CONFIRMED (not traded through)."""
     from facts import validity as FV
     hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2                     # bars 0-19: below the 95-98 band top
     hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]  # break at 20, swing 104 @24, past it @30
@@ -791,11 +909,12 @@ def test_band_flip_facts_new_highs_use_first_confirmed_swing_after_break():
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}]}
     before = LV.band_flip_facts(B, 25, x, start=0)                          # swing @24 not yet confirmed (k = 2)
     assert before["flip_state"] == FL.BROKEN and before["far_swing"] is None
-    mid = LV.band_flip_facts(B, 29, x, start=0)
-    assert mid["flip_state"] == FL.BROKEN and mid["far_swing"]["bar"] == 24 and mid["far_swing"]["price"] == 104.0
-    assert mid["far_swing"]["source"] == "first_confirmed_after_break"
+    mid = LV.band_flip_facts(B, 26, x, start=0)                             # confirmed at 26 (24 + k) ⇒ FLIPPED there
+    assert mid["flip_state"] == FL.FLIPPED and mid["far_swing"]["bar"] == 24 and mid["far_swing"]["price"] == 104.0
+    assert mid["far_swing"]["source"] == "first_confirmed_after_break" and mid["flipped_at"]["bar"] == 26
+    assert max(B.H[24:27]) <= 104.0                                         # not traded through yet
     f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
-    assert f["flip_state"] == FL.FLIPPED and f["flipped_at"]["bar"] == 30 and f["far_swing"]["bar"] == 24
+    assert f["flip_state"] == FL.FLIPPED and f["flipped_at"]["bar"] == 26 and f["far_swing"]["bar"] == 24
 
 
 # ------------------------------------------------------------------------------------------------ end to end on the DEFAULT path (review)
@@ -851,8 +970,9 @@ def test_end_to_end_default_path_no_handover_or_no_fut_is_no_entry():
 
 # ------------------------------------------------------------------------------------------------ re-review (282d484) fixes
 def test_band_flip_facts_flipped_then_passed_again_is_dead_like_the_engine():
-    """Re-review: a 95–98 band breaks up (bar 20), flips past the swing 104 (bar 30), then breaks down (bar 36) and trades past that
-    break's far swing 92 (first confirmed swing after the break, bar 39) at bar 43 ⇒ DEAD, never a second flip (Z-1f / Z-1k)."""
+    """A 95–98 band breaks up (bar 20) with nothing above it ⇒ FLIPPED when the first swing after the break (104 @ 24) is confirmed
+    (bar 26, Z-1s); then it breaks down (bar 36) with nothing below it ⇒ DEAD when that break's first swing (the low @ 39) is confirmed
+    (bar 41) — never a second flip (Z-1f / Z-1k / Z-1s, the DEAD rule under the corrected wording)."""
     from facts import validity as FV
     hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2
     hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]
@@ -863,11 +983,11 @@ def test_band_flip_facts_flipped_then_passed_again_is_dead_like_the_engine():
     B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}, {"bar": 36, "dir": "down"}]}
     assert LV.band_flip_facts(B, 35, x, start=0)["flip_state"] == FL.FLIPPED
-    mid = LV.band_flip_facts(B, 42, x, start=0)
-    assert mid["flip_state"] == FL.BROKEN and mid["flipped_at"]["bar"] == 30 and mid["broken_at"]["bar"] == 36
-    assert mid["far_swing"]["bar"] == 39 and mid["far_swing"]["source"] == "first_confirmed_after_break"
+    mid = LV.band_flip_facts(B, 40, x, start=0)
+    assert mid["flip_state"] == FL.BROKEN and mid["flipped_at"]["bar"] == 26 and mid["broken_at"]["bar"] == 36
     f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
-    assert f["flip_state"] == FL.DEAD and f["dead_at"]["bar"] == 43 and f["flipped_at"]["bar"] == 30
+    assert f["flip_state"] == FL.DEAD and f["dead_at"]["bar"] == 41 and f["flipped_at"]["bar"] == 26
+    assert min(B.L[39:42]) >= 92.0                                          # the low @ 39 was confirmed, never traded through
     assert "dead" in LV.band_label({**f, "role": "resistance", "lo": 95.0, "hi": 98.0, "touch_count": 2, "valid": True})
 
 
@@ -908,40 +1028,46 @@ def test_fut_children_use_the_fut_bar_step_and_the_legs2_session_anchor():
     assert need15 == 1 and (kids15 == 1).all()
 
 
-def _bars_from_highs(hi):
+def _bars_from_highs(hi, lows=None):
+    """lows = {bar: low} overrides (e.g. a swing low below the band that existed BEFORE a later down break — Z-1s: it must be passed)."""
     from facts import validity as FV
     cl = [h - 0.6 for h in hi]
     lo = [h - 1.0 for h in hi]
+    for i, v in (lows or {}).items():
+        lo[i] = v
     ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
     return FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
 
 
 def test_band_flip_facts_flipped_then_broken_then_reclaimed_stays_flipped_not_dead():
-    """Re-review: flip (30) → break down (36, far swing 92.8 never reached) → back above the band (up break 42 = reclaim) → rally past
-    104 ⇒ the engine keeps FLIPPED demand + a sweep (Levels._step_far_swing reclaim) — never DEAD, never a second flip."""
+    """Re-review: flip (26, the first swing after the up break confirmed) → break down (36; a swing low 90 below the band existed before
+    that break ⇒ it must be PASSED, Z-1s; 92.8 never reaches it) → back above the band (up break 42 = reclaim) → rally past 104 ⇒ the
+    engine keeps FLIPPED demand + a sweep (Levels._step_far_swing reclaim) — never DEAD, never a second flip."""
     hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2
     hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]
     hi += [103.0, 101.0, 99.0, 97.5, 95.5, 94.5, 93.8, 94.5, 96.0, 97.8, 99.5, 101.5, 103.0, 104.0, 105.5]
-    B = _bars_from_highs(hi)
+    B = _bars_from_highs(hi, {5: 90.0})
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}, {"bar": 36, "dir": "down"}, {"bar": 42, "dir": "up"}]}
     mid = LV.band_flip_facts(B, 41, x, start=0)
-    assert mid["flip_state"] == FL.BROKEN and mid["flipped_at"]["bar"] == 30 and mid["broken_at"]["bar"] == 36
+    assert mid["flip_state"] == FL.BROKEN and mid["flipped_at"]["bar"] == 26 and mid["broken_at"]["bar"] == 36
+    assert mid["far_swing"]["source"] == "before_break" and mid["far_swing"]["price"] == 90.0
     f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
-    assert f["flip_state"] == FL.FLIPPED and f["flipped_at"]["bar"] == 30 and f["dead_at"] is None
+    assert f["flip_state"] == FL.FLIPPED and f["flipped_at"]["bar"] == 26 and f["dead_at"] is None
     assert [w["bar"] for w in f["sweeps"]] == [42]
     lab = LV.band_label({**f, "role": "support", "lo": 95.0, "hi": 98.0, "touch_count": 2, "valid": True})
     assert "flipped" in lab and "swept" in lab and "dead" not in lab
 
 
 def test_band_flip_facts_never_flipped_break_then_reclaim_is_active_with_a_sweep():
-    """Re-review: a support band 95–98 never flipped, broken down (37), the far swing (93 @ 39, first confirmed after the break) never
-    passed, price back above the band (up break 44 = reclaim) and on to new highs ⇒ ACTIVE + sweep (role kept) — not FLIPPED."""
+    """Re-review: a support band 95–98 never flipped, broken down (37); a swing low 90 below the band existed before the break (bar 5) ⇒
+    it must be PASSED (Z-1s), the later low 93 @ 39 does not flip it; price back above the band (up break 44 = reclaim) and on to new
+    highs ⇒ ACTIVE + sweep (role kept) — not FLIPPED."""
     hi = [101.0, 101.5, 100.8, 101.6, 101.2, 100.9, 101.4, 101.0, 100.7, 101.3] * 3
     hi += [101.0, 100.6, 100.4, 100.2, 100.0, 99.5, 97.5, 95.5, 94.5, 94.0, 95.0, 96.5, 97.5, 98.5, 99.8, 101.0, 103.0]
-    B = _bars_from_highs(hi)
+    B = _bars_from_highs(hi, {5: 90.0})
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
     mid = LV.band_flip_facts(B, 43, x, start=0)
-    assert mid["flip_state"] == FL.BROKEN and mid["far_swing"]["bar"] == 39
+    assert mid["flip_state"] == FL.BROKEN and mid["far_swing"]["bar"] == 5 and mid["far_swing"]["source"] == "before_break"
     f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
     assert f["flip_state"] == FL.ACTIVE and f["flipped_at"] is None and [w["bar"] for w in f["sweeps"]] == [44]
     lab = LV.band_label({**f, "role": "support", "lo": 95.0, "hi": 98.0, "touch_count": 2, "valid": True})
@@ -950,14 +1076,16 @@ def test_band_flip_facts_never_flipped_break_then_reclaim_is_active_with_a_sweep
 
 def test_band_flip_facts_far_swing_passed_on_the_reclaim_bar_flips_first_like_the_engine():
     """Re-review (6153269): the engine checks the far swing before a reclaim on every bar. A support 95–98 broken down (37), far swing
-    93 @ 39; bar 44 wicks to 92.0 (past 93) and closes back above the band (the band check's up break) ⇒ FLIPPED at 44 (not a reclaim
-    sweep), and the up break at 44 is against the new resistance role ⇒ BROKEN with the flip kept."""
+    = the swing low 93 that existed before the break (bar 5; must be passed, Z-1s); bar 44 wicks to 92.0 (past 93) and closes back above
+    the band (the band check's up break) ⇒ FLIPPED at 44 (not a reclaim sweep), and the up break at 44 is against the new resistance
+    role ⇒ BROKEN with the flip kept."""
     from facts import validity as FV
     hi = [101.0, 101.5, 100.8, 101.6, 101.2, 100.9, 101.4, 101.0, 100.7, 101.3] * 3
     hi += [101.0, 100.6, 100.4, 100.2, 100.0, 99.5, 97.5, 95.5, 94.5, 94.0, 95.0, 96.5, 97.5, 98.5, 99.8, 101.0, 103.0]
     cl = [h - 0.6 for h in hi]
     lo = [h - 1.0 for h in hi]
     lo[44], cl[44] = 92.0, 99.5                                            # reclaim bar trades past the far swing first
+    lo[5] = 93.0                                                           # the swing low below the band before the break
     ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
     B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
@@ -972,7 +1100,7 @@ def test_band_flip_facts_reclaim_to_flipped_restores_the_flip_facts():
     hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2
     hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]
     hi += [103.0, 101.0, 99.0, 97.5, 95.5, 94.5, 93.8, 94.5, 96.0, 97.8, 99.5, 101.5, 103.0, 104.0, 105.5]
-    B = _bars_from_highs(hi)
+    B = _bars_from_highs(hi, {5: 90.0})                                      # a swing below the band before the down break (Z-1s)
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}]}
     flip = LV.band_flip_facts(B, 35, x, start=0)
     f = LV.band_flip_facts(B, len(hi) - 1, {**x, "breaks": x["breaks"] + [{"bar": 36, "dir": "down"}, {"bar": 42, "dir": "up"}]},
@@ -989,6 +1117,7 @@ def test_band_flip_facts_flip_bar_is_never_also_the_dead_bar():
     cl = [h - 0.6 for h in hi]
     lo = [h - 1.0 for h in hi]
     lo[44], cl[44] = 92.0, 99.5                                            # outside bar: past 93 (flip) and above every earlier high
+    lo[5] = 93.0                                                           # the swing low below the band before the break (Z-1s)
     ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
     B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
