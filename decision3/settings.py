@@ -35,6 +35,12 @@ DEFAULTS = {
                                              # नाहीत. True = जुने gates (फक्त जुने tests / what-if)
     "prior_level_atr_mult": 8.0,             # Q40: window आधीचे trend-degree Daily / Weekly swings — किंमतीपासून इतक्या ATR_D आत
     "prior_level_atr_n": 14,                 # Q40: ATR_D = window आधीच्या इतक्या Daily candles चा सरासरी true range
+    "level_merge": False,                    # Abhi Z-1u: पट्टे फक्त बांधायचे, merge ने रुंद नाहीत (प्रत्येक timeframe वेगळा). True = जुनं
+                                             # merge + widen — फक्त जुने synthetic tests / what-if (dashboard वर नाही)
+    "zone_visit_rule": "close_away",         # Abhi Z-1v: visit संपते = पट्ट्याबाहेर, आली त्या बाजूला close (commitment शिवाय).
+                                             # "touch_window" = जुनं (स्पर्शांचा शेवटचा गट, अंतर ≤ touch_window_bars) — फक्त जुने tests / what-if
+    "trade_band_max_sigma": None,            # Abhi Z-1u: trade location चा पट्टा यापेक्षा रुंद (× σ_1H) ⇒ location नाही. None = फक्त report
+                                             # (widths facts / log) — आकडा Abhi ठरवणार (OPEN_QUESTIONS Z-1x, width distribution)
     "accept_closes": 3,                      # पलीकडे सलग इतके closes ⇒ acceptance (flip पक्का); कमी आणि परत ⇒ sweep ★
     "level_death_side": "role",              # Q2 / TL1 (✅ Abhi मंजूर): मृत्यू-swing चालू भूमिकेच्या बाजूचा (flipped support = supply ⇒ वरचा D2 H);
                                              # "role0" = जुना Q2 default (मूळ भूमिकेची बाजू, flip नंतरही) — revert साठी
@@ -142,6 +148,11 @@ REGISTER = {
     "active_levels_max": (2, "—", "Abhi नियम", "spec ② active level = जवळची 2"),
     "prior_level_atr_mult": (8.0, "5/8/12", "अंदाज", "Q40: window आधीचे महत्त्वाचे Daily / Weekly levels — किंमतीपासूनचं अंतर (ATR-scaled)"),
     "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
+    "level_merge": (False, "False / True (legacy)", "Abhi नियम", "Abhi Z-1u: bands built, never widened; True फक्त जुने tests / what-if"),
+    "zone_visit_rule": ("close_away", "close_away / touch_window (legacy)", "Abhi नियम", "Abhi Z-1v: visit end = close outside the band, "
+                        "away from it, without a commitment; touch_window फक्त जुने tests / what-if"),
+    "trade_band_max_sigma": (None, "None (report) / × σ_1H", "Abhi नियम", "Abhi Z-1u: trade पट्ट्याची कमाल रुंदी — default None (फक्त report) "
+                             "जोपर्यंत Abhi width distribution पाहून आकडा ठरवत नाही (OPEN_QUESTIONS Z-1x)"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
     "a2_handover_required": (True, "True / False", "Abhi नियम", "Abhi Z-1m: handover (a2) अनिवार्य, क्रम a2 → c1 → c0; False फक्त जुने tests"),

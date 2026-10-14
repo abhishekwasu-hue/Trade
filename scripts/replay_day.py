@@ -391,6 +391,8 @@ def _main(argv=None):
                     help="level flip नियम (default engine चा: far_swing = KB K4 Abhi); acceptance = जुना spec §5.4 — फक्त जुने reports reproduce")
     ap.add_argument("--legacy-zone-gates", action="store_true",
                     help="जुने zone gates (handover अनिवार्य नाही, §5.3 range gate) — Abhi Z-1m / Z-1j आधीचे reports reproduce")
+    ap.add_argument("--legacy-bands", action="store_true",
+                    help="जुने पट्टे / visit (merge ने रुंद पट्टे, स्पर्श-गट visit) — Abhi Z-1u / Z-1v आधीचे reports reproduce")
     a = ap.parse_args(argv)
     import instruments as INS
     from decision3 import engine as E3
@@ -425,7 +427,8 @@ def _main(argv=None):
         return 2
     es = {**ENGINE_S, **({"rr_step": True} if a.legacy_rr else {}), **({"entry_first_bar": False} if a.no_first_bar_entry else {}),
           **({"level_flip_rule": a.flip_rule} if a.flip_rule else {}),
-          **({"a2_handover_required": False, "range_state_gate": True} if a.legacy_zone_gates else {})}
+          **({"a2_handover_required": False, "range_state_gate": True} if a.legacy_zone_gates else {}),
+          **({"level_merge": True, "zone_visit_rule": "touch_window"} if a.legacy_bands else {})}
     V = E3.V22(m15, m1, daily, s=es, sealed=HI.sealed_fn(a.symbol) if src != "synthetic" else None, ltf=ltf, futures=fut)
     vol = V.levels.A.get("volume")
     nv = int(np.isfinite(vol[bars]).sum()) if vol is not None else 0

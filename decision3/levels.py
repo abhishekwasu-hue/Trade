@@ -37,6 +37,11 @@ from . import flip as FL
 from . import settings as S3
 
 SUP, RES = "support", "resistance"
+# Abhi Z-1u: every band has ONE timeframe and is built only from its own base / reaction candles (TA4) — never merged with another level,
+# never widened. 1H = the trade-location timeframe; Daily = a location only where no 1H zone overlaps it; Weekly (whole weekly candles) =
+# context only. A Daily / Weekly band overlapping a 1H band is a confluence label on the 1H band (evidence).
+TF_OF = {"a:D2": "1H", "b": "1H", "d": "1H", "a:D": "D", "a:D-prior": "D", "a:W-prior": "W"}
+TF_WORD = {"1H": "1H", "D": "Daily", "W": "Weekly"}
 PROV_WIDTH = "provisional width"            # Abhi PF-2: σ_1H missing ⇒ min width from the median 1H range (bars ≤ t) — labelled
 log = logging.getLogger(__name__)
 
@@ -56,6 +61,8 @@ class Level:
     bands: list = field(default_factory=list)       # [(bar, lo, hi)] — merge ने पट्टा बदलला तर इतिहास (truncation-safe snapshot)
     flip_facts: list = field(default_factory=list)  # [(bar, dict)] — K4 BROKEN / FLIPPED facts (broken_at, far_swing, flipped_at …)
     prov: list = field(default_factory=list)        # Abhi PF-2: [(from bar, to bar | None)] — band min width provisional (σ_1H missing)
+    tf: str = "1H"                                  # Abhi Z-1u: the band's own timeframe (1H / D / W) — never mixed
+    lineage: list = field(default_factory=list)     # Abhi Z-1u: [{"bar", "overlaps": level id, "band": (lo, hi)}] — "born from" evidence
 
     def provisional(self, t):
         """PF-2: the band's min width at t is the provisional one (born / merged while σ_1H was missing, σ_1H not known yet)."""
@@ -182,15 +189,35 @@ class Levels:
         return float(self.s["level_min_width_sigma"]) * (sg if np.isfinite(sg) else 0.0)
 
     def _born(self, t, role, lo, hi, birth, anchor):
-        for L in self.L:                                                  # merge: overlap असलेला जिवंत level — DEAD level कधीच नाही
-            if L.alive(t) and not (hi < L.lo or lo > L.hi):               # (alive); BROKEN मध्ये merge चालतो: तोच zone (Z-1 review — OPEN_QUESTIONS)
-                L.lo, L.hi = min(L.lo, lo), max(L.hi, hi)
-                L.bands.append((t, L.lo, L.hi))
-                if birth not in L.births:
-                    L.births.append(birth)
-                L.merged_from.append((t, birth))
-                return L
-        L = Level(len(self.L), role, float(lo), float(hi), int(t), [birth], anchor)
+        """Abhi Z-1u: a birth always BUILDS its own band (its own candles, its own timeframe) — never merged into another band, never
+        widening one. A birth lying wholly inside an alive same-timeframe, same-role band is that zone (lineage only, band unchanged); one
+        that overlaps it partly is its own level with the overlap recorded as lineage ("born from" evidence); other timeframes are related
+        only as confluence labels (`snapshot`)."""
+        tf = TF_OF.get(birth, "1H")
+        if self.s.get("level_merge", False):                              # legacy only (old tests / what-if): merge + widen, any timeframe
+            for o in self.L:
+                if o.alive(t) and not (hi < o.lo or lo > o.hi):
+                    o.lo, o.hi = min(o.lo, lo), max(o.hi, hi)
+                    o.bands.append((t, o.lo, o.hi))
+                    if birth not in o.births:
+                        o.births.append(birth)
+                    o.merged_from.append((t, birth))
+                    return o
+        for o in self.L:                                                   # inside an alive same-timeframe, same-role band ⇒ the same zone:
+            if o.tf == tf and o.alive(t) and o.role_at(t) == role:          # lineage only ("born from" evidence), the band is unchanged
+                olo, ohi = o.band_at(t)
+                if olo <= lo and hi <= ohi:
+                    o.merged_from.append((t, birth))                       # births by time (snapshot reads merged_from ≤ t)
+                    if birth not in o.births:
+                        o.births.append(birth)
+                    o.lineage.append({"bar": int(t), "inside": birth, "band": (round(float(lo), 2), round(float(hi), 2))})
+                    return o
+        L = Level(len(self.L), role, float(lo), float(hi), int(t), [birth], anchor, tf=tf)
+        for o in self.L:
+            if o.tf == tf and o.alive(t):
+                olo, ohi = o.band_at(t)
+                if not (hi < olo or lo > ohi):
+                    L.lineage.append({"bar": int(t), "overlaps": o.id, "band": (round(olo, 2), round(ohi, 2))})
         L.bands.append((t, L.lo, L.hi))
         self.L.append(L)
         return L
@@ -533,11 +560,11 @@ class Levels:
                 "flipped_ts": ts(f.get("flipped_at")) if flipped else None}
 
     # ------------------------------------------------------------------------------------------ snapshot
-    def score(self, L, t, births):
-        """फक्त माहिती (निर्णयात नाही): births = t ला माहीत जन्म-कारणं (snapshot मधून ⇒ नंतरचा merge / flip नाही)."""
+    def score(self, L, t, births, confluence=()):
+        """फक्त माहिती (निर्णयात नाही): births = t ला माहीत जन्म-कारणं; Daily (स्वतःचा Daily पट्टा किंवा Daily / Weekly confluence) ⇒ bonus."""
         tests = L.count("test", t)
         sc = 0.0
-        if "a:D" in births:
+        if "a:D" in births or L.tf == "D" or confluence:
             sc += float(self.s["score_daily_bonus"])
         if tests == 0:
             sc += float(self.s["score_fresh_bonus"])
@@ -545,23 +572,41 @@ class Levels:
         return sc
 
     def snapshot(self, t):
-        """t च्या close ला जिवंत levels (dict), किंमतीपासूनच्या अंतरासह."""
+        """t च्या close ला जिवंत levels (dict), किंमतीपासूनच्या अंतरासह. Abhi Z-1u: each with its own `tf`; a 1H level lists the
+        overlapping alive Daily / Weekly bands as `confluence` (+ `confluence_label`, evidence); `trade_location` = 1H, or Daily with no
+        overlapping 1H zone (not BROKEN), never Weekly (context only) — and, when `trade_band_max_sigma` is set, no wider than that × σ_1H.
+        `width` (points) / `width_sigma` are facts for the width report (Abhi: max width — the setting stays None until he decides)."""
         c = float(self.A["close"][t])
         sg = self.sig1h[t]
+        alive = [(L, *L.band_at(t)) for L in self.L if L.alive(t)]
+        st = {L.id: L.state_at(t) for L, _, _ in alive}
+        mx = self.s.get("trade_band_max_sigma")
         out = []
-        for L in self.L:
-            if not L.alive(t):
-                continue
-            lo, hi = L.band_at(t)
+        for L, lo, hi in alive:
             dist = 0.0 if lo <= c <= hi else (lo - c if c < lo else c - hi)
-            births = [L.births[0]] + [b for tm, b in L.merged_from if tm <= t and b != L.births[0]]
-            births = list(dict.fromkeys(births)) + (["c"] if L.count("flip", t) else [])
-            out.append({"id": L.id, "role": L.role_at(t), "lo": round(lo, 2), "hi": round(hi, 2), "births": births,
+            births = [L.births[0]] + [b for tm, b in L.merged_from if tm <= t and b != L.births[0]]   # (merged_from: legacy only)
+            births = [b for b in dict.fromkeys(births) if b != "c"] + (["c"] if L.count("flip", t) else [])   # "c" once flipped by t
+            ov = [(o, olo, ohi) for o, olo, ohi in alive if o.id != L.id and not (hi < olo or lo > ohi)]
+            conf = [{"tf": o.tf, "id": o.id, "lo": round(olo, 2), "hi": round(ohi, 2)} for o, olo, ohi in ov
+                    if L.tf == "1H" and o.tf in ("D", "W")]
+            inside_1h = [o.id for o, _, _ in ov if L.tf != "1H" and o.tf == "1H" and st[o.id] not in (FL.BROKEN, FL.DEAD)]
+            w = hi - lo
+            wsg = round(w / sg, 2) if np.isfinite(sg) and sg > 0 else None
+            loc, why = True, None
+            if L.tf == "W":
+                loc, why = False, "Weekly band: context only (Abhi Z-1u)"
+            elif inside_1h:
+                loc, why = False, f"{TF_WORD[L.tf]} band overlapped by 1H zone(s) {inside_1h}: the 1H band is the location (Abhi Z-1u)"
+            elif mx is not None and wsg is not None and wsg > float(mx):
+                loc, why = False, f"band {w:,.2f} pts = {wsg}× σ_1H > trade_band_max_sigma {mx}"
+            out.append({"id": L.id, "tf": L.tf, "role": L.role_at(t), "lo": round(lo, 2), "hi": round(hi, 2), "births": births,
                         "anchor": L.anchor, "tests": L.count("test", t), "sweeps": L.count("sweep", t), "flips": L.count("flip", t),
-                        "fresh": L.count("test", t) == 0, "score": self.score(L, t, births), "dist": round(dist, 2),
+                        "fresh": L.count("test", t) == 0, "score": self.score(L, t, births, conf), "dist": round(dist, 2),
                         "dist_sigma": round(dist / sg, 2) if np.isfinite(sg) and sg > 0 else None,
                         "above": lo > c, "below": hi < c, "born_bar": L.born_bar, "provisional_width": L.provisional(t),
-                        "width_note": PROV_WIDTH if L.provisional(t) else None, **self.flip_view(L, t)})
+                        "width_note": PROV_WIDTH if L.provisional(t) else None, "width": round(w, 2), "width_sigma": wsg,
+                        "confluence": conf, "confluence_label": confluence_label(conf), "trade_location": loc, "not_location_why": why,
+                        "lineage": [dict(x) for x in L.lineage if x["bar"] <= t], **self.flip_view(L, t)})
         return out
 
     def active(self, t, trend, band=None):
@@ -569,7 +614,8 @@ class Levels:
         BROKEN / DEAD नाहीत ⇒ zone तुटला की पुढचा आधीच यादीत (reset नाही). जुनी व्याख्या: trade-बाजूची जवळची levels. DOWN ⇒ किंमतीवरचे / किंमत ज्यात आहे ते resistance; UP ⇒ खालचे support;
         RANGE ⇒ खालचा support + वरचा resistance (प्रत्येकी जवळचा). Daily पट्टा (Q27) दिला असेल ⇒ फक्त कडांची बाजू: support पट्ट्याच्या
         खालच्या अर्ध्यात, resistance वरच्या अर्ध्यात (मध्य = पट्ट्याचा मध्य; Abhi: bull put खालच्या कडेला, bear call वरच्या)."""
-        snap = [x for x in self.snapshot(t) if x.get("state") != FL.BROKEN]   # K4 (Abhi): BROKEN (far swing पार नाही) ⇒ trade location नाही
+        snap = [x for x in self.snapshot(t) if x.get("state") != FL.BROKEN   # K4 (Abhi): BROKEN (far swing पार नाही) ⇒ trade location नाही
+                and x.get("trade_location", True)]                          # Abhi Z-1u: per-timeframe bands; the 1H band is the location
         m = int(self.s["active_levels_max"]) if trend == "RANGE" else int(self.s.get("watch_levels_max", self.s["active_levels_max"]))
         sup = sorted([x for x in snap if x["role"] == SUP and not x["above"]], key=lambda x: x["dist"])
         res = sorted([x for x in snap if x["role"] == RES and not x["below"]], key=lambda x: x["dist"])
@@ -689,6 +735,23 @@ def check_bands(df, t, items, s=None, start=None, magnet_df=None):
     out = [(x, FV.check_band(B, t, x["lo"], x["hi"], s, start=start, magnet_df=magnet_df)) for x in items]
     FV.latest_broken_only([f for _, f in out])
     return out
+
+
+def tf_word(x):
+    """Chart / text word of a level's timeframe ("1H" / "Daily" / "Weekly"); none ⇒ "1H"."""
+    return TF_WORD.get(x.get("tf", "1H"), "1H")
+
+
+def confluence_label(conf):
+    """Abhi Z-1u: "confluence: Daily 22,725–22,810" (and / or Weekly) for a 1H zone overlapped by higher-timeframe bands — evidence."""
+    if not conf:
+        return None
+    return "confluence: " + "; ".join(f"{TF_WORD.get(x['tf'], x['tf'])} {x['lo']:,.0f}–{x['hi']:,.0f}" for x in conf)
+
+
+def level_tags(x):
+    """Chart label tail: provisional width (PF-2) + confluence (Z-1u)."""
+    return width_tag(x) + (f", {x['confluence_label']}" if x.get("confluence_label") else "")
 
 
 def width_tag(x):

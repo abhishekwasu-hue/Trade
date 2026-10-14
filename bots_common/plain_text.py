@@ -107,6 +107,12 @@ def unclear_words(ctx):
 
 
 def tf_word(zone_type):
-    """"DYNAMIC_SR_RESISTANCE_60M" ⇒ "1H"; ओळखता नाही ⇒ ""."""
-    tail = str(zone_type or "").rsplit("_", 1)[-1].upper()
+    """"DYNAMIC_SR_RESISTANCE_60M" ⇒ "1H"; ओळखता नाही ⇒ "". "|" नंतरचा भाग = label (`zone_note`)."""
+    tail = str(zone_type or "").split("|", 1)[0].rsplit("_", 1)[-1].upper()
     return TF_WORD.get(tail, "")
+
+
+def zone_note(zone_type):
+    """engine zone row चा label ("ENGINE_LEVEL_1H|confluence: Daily 22,725–22,810" ⇒ "confluence: Daily 22,725–22,810"); नाही ⇒ ""."""
+    parts = str(zone_type or "").split("|", 1)
+    return parts[1].strip() if len(parts) == 2 else ""

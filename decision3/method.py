@@ -367,7 +367,9 @@ def handover_episode(A, arm, t, d, s, broken=None, mr=None):
     the counter side strengthening again) or by the zone breaking (`broken(u)` True at a bar u after it was seen, u ≤ t — the caller's
     K4 state). A cancelled handover may be seen again by a later window — after a zone break only from bars after the break (windows
     start at the bar after it, while the zone is not broken). Never re-required on the commitment bar's own window.
-    Returns {present, seen_at, cancelled ("absorption" / "zone broken" / None), cancelled_at, events [(bar, what)]}."""
+    The caller passes arm = the start of the current VISIT (Abhi Z-1v), so a handover never carries from an earlier visit.
+    Returns {present, seen_at, cancelled ("absorption" / "zone broken" / None), cancelled_at, window_start (after a break: the bar after
+    it — the absorption gate uses the same window), events [(bar, what)]}."""
     s = s or S3.DEFAULTS
     arm, t = int(arm), int(t)
     nmin = int(s.get("study_min_bars", 4))
@@ -391,8 +393,11 @@ def handover_episode(A, arm, t, d, s, broken=None, mr=None):
         elif not st["present"] and zs.get("handover"):
             st.update(present=True, seen_at=int(e), cancelled=None, cancelled_at=None)
             st["events"].append((int(e), "handover seen"))
-    if st["present"] and broken is not None and broken(t):
-        cancel(t, "zone broken")
+    if broken is not None and broken(t):
+        if st["present"]:
+            cancel(t, "zone broken")
+        a0 = t + 1
+    st["window_start"] = int(a0)
     return st
 
 
@@ -617,7 +622,9 @@ def ltf_choch(L, d, t_ctx, t_start, t_end, lvl=None):
     (समान ⇒ double bottom). V-reversal / stair-step recovery / gap-down चा पहिलाच bar low — सगळे चालतात. Wick वर गेला पण close नाही ⇒
     CHoCH नाही. शेवटचा बंद LTF bar च LL ⇒ "still trending against". Bearish = आरसा (किंमती उलट करून तेच गणित).
     Abhi Z-1r: CHoCH price zone मध्ये आल्यानंतरचाच — lvl दिला ⇒ study = t_start नंतरची पहिली zone ला स्पर्श करणारी LTF candle (arrival)
-    पासून; arrival आधीचा CHoCH मोजत नाही (`arrival_at`, `after_arrival`). स्पर्श करणारी LTF candle नाही ⇒ t_start पासून (arm bar).
+    पासून; arrival आधीचा CHoCH मोजत नाही (`arrival_at`;
+    LL / HH arrival नंतरच्या window मध्ये ⇒ CHoCH candle नेहमी arrival नंतर —
+    रचनेनेच, वेगळा flag नाही). स्पर्श करणारी LTF candle नाही ⇒ t_start पासून (arm bar).
     रिटर्न dict: done, code (ltf_missing / ltf_against / ltf_pending), line + किंमती."""
     lab = (L or {}).get("label", "LTF")
     miss = {"done": False, "code": C_LTF_MISSING, "line": f"{lab}: LTF data missing"}
@@ -668,7 +675,7 @@ def ltf_choch(L, d, t_ctx, t_start, t_end, lvl=None):
     first = ", ".join(parts) or f"{ext_word} {_px(out['low'])}"
     if jc is not None:
         hm = pd.Timestamp(E[jc]).strftime("%H:%M")
-        out.update(code=None, at=str(pd.Timestamp(E[jc])), close=back(float(C[jc])), after_arrival=bool(E[jc] > np.datetime64(arrival)),
+        out.update(code=None, at=str(pd.Timestamp(E[jc])), close=back(float(C[jc])),
                    line=f"{lab} CHoCH: {first}, close {beyond} {lh_word} {_px(out['lh'])} at {hm}")
         return out
     if jl < m - 1 or sweep:
@@ -696,8 +703,9 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None, h
     out = {"ok": False, "wait": None, "why": "", "commit": {}, "study": None, "absorption": False, "study_ran": False, "c0": False,
            "c1": None, "choch": None, "lines": [], "handover": None}
     zp = None
-    if t - 1 >= arm:
-        zp = zone_study(A, arm, t - 1, d, s, mr=mr)
+    a_ab = int(handover.get("window_start", arm)) if handover else int(arm)   # the episode's window (restarts after a zone break)
+    if t - 1 >= a_ab:
+        zp = zone_study(A, a_ab, t - 1, d, s, mr=mr)
         out["study_ran"] = True
         if zp.get("absorption"):
             out.update(absorption=True, wait=C_ABSORB, why=REASON[C_ABSORB], study=zp, handover=bool(zp.get("handover")))

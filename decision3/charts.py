@@ -187,7 +187,7 @@ def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None,
             st = {"valid": f"{f['touch_count']} touches" + (", established" if f["established"] else ""), "broken": "broken",
                   "active": f"{f['touch_count']} touches, active level outside the 3 + 3 view",
                   "decision": "fails band check: " + ", ".join(f["reasons"])}[style]
-            lab = f"{'▶ ' if x['id'] in act else ''}{x['role'].lower()} {x['lo']:,.0f}-{x['hi']:,.0f} ({st}{LV.width_tag(x)})"
+            lab = f"{'▶ ' if x['id'] in act else ''}{x['role'].lower()} {x['lo']:,.0f}-{x['hi']:,.0f} ({st}{LV.level_tags(x)})"
         ax.text(len(frame) - 0.5, (x["lo"] + x["hi"]) / 2, " " + lab, fontsize=7, color="#868e96" if style == "broken" else col, va="center")
     ax.axvspan(len(frame) - 1.5, len(frame) - 0.5, color="#fab005", alpha=0.18, lw=0)   # C1: trigger candle (चालू तास)
     for q in (liq or ()) if debug else ():                                                        # §7.6 liquidity pools (BSL वर / SSL खाली) — लहान खुणा

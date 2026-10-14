@@ -287,7 +287,7 @@ def daily_panel(D, ax, axv, axs, r, st, setup_ts, setup_end):
             off.append(f"{lab} {'above' if y > yhi else 'below'} chart")
     lv = r["level"]
     ax.add_patch(Rectangle((n - 12.5, lv["lo"]), 12, lv["hi"] - lv["lo"], color=C["level"], alpha=0.18, zorder=2, lw=0))
-    labs.append(((lv["lo"] + lv["hi"]) / 2, f"1H {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f}{LV.width_tag(lv)}", C["level"]))
+    labs.append(((lv["lo"] + lv["hi"]) / 2, f"{LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f}{LV.level_tags(lv)}", C["level"]))
     if st.imp_end is not None and xof(st.imp_end.day) not in (None, 0):
         xi = xof(st.imp_end.day)
         ax.plot(xi, st.imp_end.price, marker="o", ms=7, mfc="none", mec=C["target"], mew=1.6, zorder=6)
@@ -409,8 +409,8 @@ def m15_panel(D, ax, axv, r, st, setup_ts, w, vst, debug=False):
     right = n + max(24, n // 3)                                            # labels साठी रिकामी जागा (candles नाहीत)
     ax.axhspan(lv["lo"], lv["hi"], color=C["level"], alpha=0.14, zorder=2)
     stars = f", {lv['sweeps']} sweeps" if lv.get("sweeps") else ""
-    ax.text(0.5, lv["hi"], f"1H {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} ({'+'.join(lv['births'])}{stars}, "
-            f"{'fresh' if lv['fresh'] else 'tested'}{LV.width_tag(lv)})", fontsize=8, color=C["level"], va="bottom", zorder=7,
+    ax.text(0.5, lv["hi"], f"{LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} ({'+'.join(lv['births'])}{stars}, "
+            f"{'fresh' if lv['fresh'] else 'tested'}{LV.level_tags(lv)})", fontsize=8, color=C["level"], va="bottom", zorder=7,
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1))
     if vst["arm"] is not None:                                             # study window (volume pane सारखाच) — वर पातळ पट्टी
         ax.axvspan(vst["arm"] - 0.5, vst["commit"] + 0.5, ymin=0.985, ymax=1.0, color=VP.MPL["trend"], alpha=0.6, zorder=8)
@@ -503,7 +503,7 @@ def footer_lines(r, st, status, vline):
             f"trend cap {r['trend_cap'] or 'none'} · mature {'YES' if r['mature'] else 'no'} · Q44 target "
             f"{' / '.join(fmt(t) for t in r['maturity_targets']) or 'none'} (Daily panel only)",
             "    trend notes: " + ("; ".join(notes) if notes else "none"),
-            f"(2) 1H {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} (born {'+'.join(lv['births'])}, tests {lv.get('tests')}, sweeps {lv.get('sweeps')}, "
+            f"(2) {LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} (born {'+'.join(lv['births'])}, tests {lv.get('tests')}, sweeps {lv.get('sweeps')}, "
             f"{'fresh' if lv['fresh'] else 'not fresh'})   (3) K pullback open ({why_open}), leg {K.get('legs')}   (4) {ps}",
             f"(5) K line: {'none' if not tl else ('broken (grade +)' if tl['broken'] else 'intact')}   (6) commitment {cm.get('form')} grade "
             f"{cm.get('grade')}" + (f"   (7) R:R {rk.get('rr')} · entry {fmt(rk.get('entry'))} / SL {fmt(rk.get('sl'))} / target "
@@ -545,7 +545,7 @@ def caption(D, r, st, short, longst, head="V22 setup", tail="Reading review only
         f"Trend cap {r['trend_cap'] or 'none'} · conviction {r['conviction']} (score {r.get('conv_score')}; missing "
         f"{', '.join(r.get('missing') or []) or 'none'}) · impulse mature: {'YES' if r['mature'] else 'no'} (Q44 target "
         f"{' / '.join(fmt(t) for t in r['maturity_targets']) or 'none'})",
-        f"1H {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} ({'+'.join(lv['births'])}, sweeps {lv.get('sweeps')}) · K leg {K.get('legs')} · "
+        f"{LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} ({'+'.join(lv['births'])}, sweeps {lv.get('sweeps')}) · K leg {K.get('legs')} · "
         f"commitment {cm.get('form')} ({cm.get('grade')})",
         longst])
     assert all(not (0x0900 <= ord(ch) <= 0x097F) for ch in cap)            # English only

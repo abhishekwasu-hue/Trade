@@ -77,6 +77,8 @@ HOLDOUT_LINE = "holdout daily bars used as level history: {n} bars"
 
 def _ohlc_daily(df):
     d = df.copy()
+    if "timestamp" not in d.columns and "date" in d.columns:               # research Daily files (date, open, high, low, close)
+        d = d.rename(columns={"date": "timestamp"})
     d["timestamp"] = pd.to_datetime(d["timestamp"])
     if getattr(d["timestamp"].dt, "tz", None) is not None:
         d["timestamp"] = d["timestamp"].dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
@@ -84,16 +86,17 @@ def _ohlc_daily(df):
     return d[["timestamp", "open", "high", "low", "close"]]
 
 
-def daily_from_1m(df1m, close_hm="15:29"):
-    """1m bars ⇒ Daily candles of complete sessions only (the session's last 1m bar at / after `close_hm`; a cut-off day is dropped,
-    never a partial Daily candle)."""
+def daily_from_1m(df1m, bar_minutes=1):
+    """1m bars ⇒ Daily candles of complete sessions only — the shared session definition `pivots.engine.session_complete` (the session's
+    last bar closes at the session end; CAS days included); a cut-off day is dropped, never a partial Daily candle."""
+    from pivots import engine as PE
     d = df1m.copy()
     d["timestamp"] = pd.to_datetime(d["timestamp"])
     d["_d"] = d["timestamp"].dt.normalize()
     g = d.sort_values("timestamp").groupby("_d").agg(open=("open", "first"), high=("high", "max"), low=("low", "min"),
                                                      close=("close", "last"), last=("timestamp", "max")).reset_index()
-    g = g[g["last"].dt.strftime("%H:%M") >= close_hm]
-    return g.rename(columns={"_d": "timestamp"})[["timestamp", "open", "high", "low", "close"]].reset_index(drop=True)
+    ok = [PE.session_complete(x, e + pd.Timedelta(minutes=int(bar_minutes))) for x, e in zip(g["_d"], g["last"])]
+    return g[ok].rename(columns={"_d": "timestamp"})[["timestamp", "open", "high", "low", "close"]].reset_index(drop=True)
 
 
 def level_history_daily(symbol, frames, window_start, log_fn=None):
@@ -150,7 +153,8 @@ def repo_level_history(symbol, window_start, root=None, trade_data=None, log_fn=
     """Abhi Z-1t: the default Daily warm-up for a replay / test of `symbol` whose 15M window starts at `window_start` — the files this
     repo / trade-data hold, older first: NIFTY = IS / VAL 1m (`data/nifty50_1min.parquet` ⇒ complete Daily sessions, data_policy
     research rows) + the sealed holdout Daily file (`data/nifty50_daily_extension.parquet`, level history only, window after the
-    holdout end — else HoldoutError); BANKNIFTY = <trade-data>/banknifty/BANKNIFTY_daily_*.csv. Missing files are skipped (Levels then
+    holdout end — else HoldoutError); BANKNIFTY = <trade-data>/banknifty/BANKNIFTY_daily_*.csv + BANKNIFTY_D.csv.gz.
+    Missing files are skipped (Levels then
     logs "Q40 prior levels skipped"). Returns (history before the window, n holdout bars used) — logged by `level_history_daily`."""
     from elliott import data_policy as DP
     root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -164,6 +168,7 @@ def repo_level_history(symbol, window_start, root=None, trade_data=None, log_fn=
             fr.append(read_level_history(pe, symbol, window_start))
     elif str(symbol).upper() == "BANKNIFTY" and trade_data:
         import glob
-        for p in sorted(glob.glob(os.path.join(trade_data, "banknifty", "BANKNIFTY_daily_*.csv"))):
+        for p in sorted(glob.glob(os.path.join(trade_data, "banknifty", "BANKNIFTY_daily_*.csv"))) + \
+                sorted(glob.glob(os.path.join(trade_data, "banknifty", "BANKNIFTY_D.csv*"))):       # older first; Upstox Daily wins
             fr.append(_read(p))
     return level_history_daily(symbol, fr, window_start, log_fn)
