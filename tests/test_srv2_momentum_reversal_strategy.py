@@ -264,9 +264,49 @@ class TestCollectTouchCandidatesActiveTimeframes:
 
 class TestProcessSymbol:
     def test_cooldown_blocks_entry(self):
-        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": get_ist_now()}):
+        """Abhi 7a: post-SL cooldown आता setting — चालू केल्यास जुनं वर्तन (SL नंतर block)."""
+        on = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"], symbol_enabled=True, post_sl_cooldown_enabled=True)
+        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=on), \
+             patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": get_ist_now()}):
             result = srv2.process_symbol("fake_token", "NIFTY")
             assert "Cooldown" in result
+
+
+class TestPostSlCooldownSetting:
+    """Abhi 7a ("loss नंतर lock-out नाही"): symbol-व्यापी post-SL cooldown = dashboard setting `post_sl_cooldown_enabled` (default
+    False) + `post_sl_cooldown_minutes` (default 30, फक्त चालू असताना)."""
+
+    @staticmethod
+    def _settings(**kw):
+        return dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"], symbol_enabled=True, **kw)
+
+    def _run(self, settings, sl_minutes_ago):
+        sl_at = get_ist_now() - datetime.timedelta(minutes=sl_minutes_ago)
+        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": sl_at}), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=pd.DataFrame()):
+            return srv2.process_symbol("fake_token", "NIFTY")
+
+    def test_default_is_off(self):
+        d = cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]
+        assert d["post_sl_cooldown_enabled"] is False and d["post_sl_cooldown_minutes"] == 30
+        assert srv2.post_sl_cooldown_minutes(d) is None
+        assert srv2.post_sl_cooldown_minutes({}) is None                       # जुनी साठवलेली settings (key नाही) ⇒ बंद
+
+    def test_off_means_no_block_right_after_sl(self):
+        result = self._run(self._settings(), sl_minutes_ago=0)
+        assert "Cooldown" not in result and "zones" in result               # cooldown नाही ⇒ पुढच्या पायरीपर्यंत पोहोचला
+
+    def test_on_blocks_for_n_minutes_then_releases(self):
+        on = self._settings(post_sl_cooldown_enabled=True, post_sl_cooldown_minutes=20)
+        assert "Cooldown" in self._run(on, sl_minutes_ago=5) and "20 मिनिटं" in self._run(on, sl_minutes_ago=5)
+        assert "Cooldown" not in self._run(on, sl_minutes_ago=25)
+
+    def test_on_with_default_minutes_is_old_30_minute_rule(self):
+        on = self._settings(post_sl_cooldown_enabled=True)
+        assert srv2.post_sl_cooldown_minutes(on) == srv2.COOLDOWN_MINUTES == 30
+        assert "Cooldown" in self._run(on, sl_minutes_ago=29)
+        assert "Cooldown" not in self._run(on, sl_minutes_ago=31)
 
     def test_successful_support_bounce_entry(self):
         candles_df = _fake_candles_df(last_close=23902)
