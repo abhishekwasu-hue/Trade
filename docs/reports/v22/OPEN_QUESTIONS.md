@@ -514,8 +514,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | PF-2 (a) | तात्पुरती रुंदी (σ_1H नसताना median 1H range) तशीच; logs, chart labels, level facts मध्ये "provisional width" | `Level.prov` / `provisional`, snapshot `provisional_width` / `width_note`, `levels.width_tag` (1H chart, setup chart) | ✅ निकाली |
 
 Re-run (default settings, 1m सह, Daily warm-up; FUT 30 Sep पासून ⇒ raw per-bar fallback; `live_export/2026-10-13-fut45/` अजून नाही):
-12 Oct — bear call ✅ 09:30 candle (close 09:45): sticky handover (9 Oct 11:30 पासून), 5M CHoCH 09:40 (arrival 9 Oct 09:55 नंतर),
-strong_close body 4.5×, volume 1.4× (raw) ⇒ grade B (golden xfail काढला); 11:00 ला दुसरा setup. 13 Oct — bear call नाही ✅. 29 Sep —
+~~12 Oct — bear call ✅ 09:30 candle (close 09:45): sticky handover (9 Oct 11:30 पासून), 5M CHoCH 09:40 (arrival 9 Oct 09:55 नंतर),
+strong_close body 4.5×, volume 1.4× (raw) ⇒ grade B (golden xfail काढला); 11:00 ला दुसरा setup.~~ **चुकीच्या कारणाने** (merge झालेला 22,476–22,809 पट्टा + 9 Oct चा handover) — review #329; खाली नवा re-run. 13 Oct — bear call नाही ✅. 29 Sep —
 22,725–22,810 BROKEN 09:45, FLIPPED 11:30 (22,569.65 confirm), 12:00 / 12:15 = pullback (③ ✔), पण त्या दिवशी FUT नाही ⇒ data problem
 (entry नाही). तपशील: scratchpad अहवाल / WORK_LOG.
 
@@ -523,5 +523,30 @@ strong_close body 4.5×, volume 1.4× (raw) ⇒ grade B (golden xfail काढ�
 
 | # | प्रश्न | आत्ता काय (default) | पर्याय |
 |---|---|---|---|
-| Z-1u | Daily warm-up (Z-1t, live सारखं) मुळे Q40 prior Daily / **Weekly** पट्टे (weekly candle चा wick-to-body, ~200–330 pts) window सुरुवातीला जन्मतात आणि overlap ⇒ merge होतात. 12 Oct चा 22,544–22,622 zone 22,476–22,809 या मोठ्या पट्ट्यात merge झाला (1 Oct ला तुटून flip; Abhi चा 8 Oct flip नाही); त्याखाली 21,965–22,622 support पट्टा सुद्धा overlap. Live engine3 (Upstox Daily) मध्येही हेच होत असणार | बदल नाही; 12 Oct zone-identity आणि 13 Oct B2 watch-list tests या कारणावर xfail (दुसरं कारण ⇒ fail) | Weekly prior पट्टे अरुंद (उदा. Daily सारखी किमान/कमाल रुंदी) / prior पट्टे एकमेकांत merge नाहीत / 1H zone prior पट्ट्यात merge नाही |
-| Z-1v | अर्थ लावलेले भाग: (1) Z-1q "zone तुटणे" = K4 BROKEN (accept_closes closes पलीकडे; एका close चा sweep रद्द करत नाही); तुटल्यानंतर handover फक्त break नंतरच्या bars वरून. (2) Z-1r "zone मध्ये आल्यानंतर" = arm bar नंतरची zone ला स्पर्श करणारी पहिली LTF candle. (3) RF-2 window = arm … commitment bar (commitment सकट); gaps जास्त असताना commitment नसली तरी data problem (Telegram दिवसातून एकदा). (4) FUT पूर्ण दिवस नसेल ⇒ "data problem: FUT volume missing on all n zone-window bars" | असंच | Abhi पुष्टी |
+| Z-1u | ~~Daily warm-up (Z-1t, live सारखं) मुळे Q40 prior Daily / **Weekly** पट्टे (weekly candle चा wick-to-body, ~200–330 pts) window सुरुवातीला जन्मतात आणि overlap ⇒ merge होतात. 12 Oct चा 22,544–22,622 zone 22,476–22,809 या मोठ्या पट्ट्यात merge झाला (1 Oct ला तुटून flip; Abhi चा 8 Oct flip नाही); त्याखाली 21,965–22,622 support पट्टा सुद्धा overlap. Live engine3 (Upstox Daily) मध्येही हेच होत असणार~~ | ✅ निकाली (Abhi, खाली "Review #329") | — |
+| Z-1v | ~~अर्थ लावलेले भाग: (1) Z-1q "zone तुटणे" = K4 BROKEN (accept_closes closes पलीकडे; एका close चा sweep रद्द करत नाही); तुटल्यानंतर handover फक्त break नंतरच्या bars वरून. (2) Z-1r "zone मध्ये आल्यानंतर" = arm bar नंतरची zone ला स्पर्श करणारी पहिली LTF candle. (3) RF-2 window = arm … commitment bar (commitment सकट); gaps जास्त असताना commitment नसली तरी data problem (Telegram दिवसातून एकदा). (4) FUT पूर्ण दिवस नसेल ⇒ "data problem: FUT volume missing on all n zone-window bars"~~ | ✅ निकाली (Abhi, खाली "Review #329") | — |
+
+
+### Review #329 नंतर — Abhi ची उत्तरं (Z-1u, Z-1w, Z-1v) — code (branch `claude/zone-study-answers`)
+
+| # | निर्णय (Abhi) | code | स्थिती |
+|---|---|---|---|
+| Z-1u (a) + confluence | वेगवेगळ्या timeframes चे levels कधीच एका पट्ट्यात merge नाहीत; प्रत्येक zone स्वतःच्या TF च्या base / reaction candles वरून (TA4); पट्टे फक्त बांधायचे, merge ने रुंद नाहीत. Daily / Weekly zone 1H zone वर ⇒ दोन्ही वेगळे, 1H वर label "confluence: Daily <low–high>" (पुरावा); trade location = अरुंद 1H पट्टा. Weekly (पूर्ण weekly candle) पट्टे फक्त context. Same-TF: पूर्ण आत ⇒ तोच zone (lineage), अंशतः overlap ⇒ स्वतःचा पट्टा + lineage | `levels.TF_OF`, `Levels._born` (merge नाही), `snapshot` (`tf`, `confluence`, `confluence_label`, `trade_location`, `width`, `width_sigma`, `lineage`), `active`; live: `engine3_live.tradeable_levels`, `level_gate_preopen.engine_zone_rows` (`ENGINE_LEVEL_1H\|confluence: …`), `plain_text.zone_note`; ⑥ पुरावा `level_star` ⇐ confluence. जुनं merge फक्त `level_merge` (legacy tests) | ✅ निकाली |
+| Z-1w | "8 Oct" कधीच Abhi ची अपेक्षा नव्हती — fixture / tests मधून काढलं. Golden फक्त: 12 Oct ला हा zone seller area आणि bear call valid; तारखा K4 (Z-1s) ने | KB fixture ओळ, `tests/test_decision3_flip.py` (8-Oct test काढला; lifecycle test नवा) | ✅ निकाली |
+| Z-1v (हो) | Handover फक्त त्याच **visit** मध्ये; किंमत पट्ट्याबाहेर, त्याच्यापासून दूर (आली त्या बाजूला) close, commitment शिवाय ⇒ visit संपली; नव्या visit ला नवा handover. `touch_window_bars` आता visit ठरवत नाही — फक्त ③ (commitment candle शेवटच्या स्पर्शापासून किती दूर चालते), त्याच visit मध्ये. Row / facts: `visit_start`, `visit_prev_end`, `visit_end`. Absorption gate सुद्धा episode च्या window वर (zone तुटल्यावर नव्याने). Daily warm-up (Z-1t) ① Daily / Weekly trend warm-up सुद्धा चालवतो (V22 `daily_df` ⇒ `DD.fold`) | `V22.visit`, `_confirm`; `method.handover_episode` (`window_start`), `confirm`; जुनं `zone_visit_rule` = "touch_window" फक्त legacy tests | ✅ निकाली |
+| Review notes | `after_arrival` नेहमी True होतं (रचनेनेच) ⇒ काढलं; tests आता वेळा तुलना करतात (CHoCH > arrival > arm). `daily_from_1m` session शेवट `pivots.engine.session_complete` वरून (CAS सकट), literal नाही. "No prior swing ⇒ post-break swing confirm होण्याआधी reclaim ⇒ sweep" coverage परत (engine + band facts). `vol_gap_max_frac` dashboard वर नाही ⇒ KB मध्ये "register setting" | — | ✅ |
+
+Re-run (default, 1m सह, Daily warm-up; `live_export/2026-10-13-fut45/` अजून नाही ⇒ raw per-bar volume, label सह) — 22,543.75–22,621.80 पट्ट्यावर:
+12 Oct — bear call **नाही** ⇒ golden strict xfail (कारण तपासून): visit 12 Oct 09:15 पासून (9 Oct चा visit 9 Oct 15:00 च्या close ने संपला); 09:30
+dominant red candle (body 6.3×, volume 0.6× raw, 5M CHoCH 09:40) आधी visit मध्ये फक्त 1 bar < study_min_bars 4 ⇒ handover वाचता येत नाही; 09:30 चा
+close पट्ट्याखाली ⇒ visit संपली; दिवसात पुढे visit नाही. 13 Oct — bear call नाही ✅. 29 Sep — Daily 22,725–22,810 BROKEN 09:45, FLIPPED 11:30
+(22,569.65 confirm); 12:15 engulf (5.8×), CHoCH 12:30, handover नाही, FUT नाही ⇒ entry नाही.
+
+### Review #329 नंतर — Abhi ने ठरवायचे (नवे)
+
+| # | प्रश्न | आत्ता काय (default) | पर्याय |
+|---|---|---|---|
+| Z-1x | Trade पट्ट्याची कमाल रुंदी (`trade_band_max_sigma`, × σ_1H). Distribution (trade-location पट्टे, σ_1H माहीत असताना): NIFTY 1H 40 पट्टे — median 22.6 pts / 0.44 σ, p90 61.5 / 1.25 σ, max 78.5 / 1.47 σ; NIFTY Daily 33 — median 60.8 / 1.13 σ, p90 157 / 2.91 σ, max 228 / 3.74 σ. BANKNIFTY 1H 32 — median 68.9 / 0.40 σ, p90 213 / 1.42 σ, max 331.5 / 1.95 σ; Daily 30 — median 159 / 0.98 σ, p90 359 / 2.2 σ, max 634 / 3.87 σ | None (फक्त report; snapshot `width` / `width_sigma`) | प्रस्ताव **1.5 σ_1H** (NIFTY 1H सगळे, BANKNIFTY 1H ≈ 93% आत; रुंद Daily पट्टे बाहेर); किंवा 2.0 (सगळे 1H) |
+| Z-1y | 13 Oct: 22,543.75–22,621.80 पट्टा स्वतःच्या lifecycle ने 5 Oct ला resistance म्हणून जन्मला (आधी flip नाही); वरच्या break चा far swing = 12 Oct high 22,651.10 ⇒ 13 Oct 14:30 पार ⇒ FLIPPED (support). जुनी "फक्त 22,731.8 पार ⇒ DEAD" अपेक्षा काढलेल्या 8 Oct flip वर आधारित होती | test strict xfail (कारण तपासून) | 22,731.8 अपेक्षा काढायची / तसाच नियम ठेवायचा |
+| Z-1z | Visit (Z-1v) + handover साठी किमान `study_min_bars` 4 bars ⇒ visit च्या पहिल्या 1–3 candles वर entry कधीच शक्य नाही (12 Oct: visit 09:15, 09:30 ची dominant red candle). 12 Oct golden म्हणूनच मिळत नाही | असंच (golden strict xfail) | लहान visit साठी handover वाचन (उदा. sweep / rejection candle = handover) / study_min_bars बदल — Abhi ठरवतील |
+| Z-1v-a | "पट्ट्याबाहेर close" = rejection candle सुद्धा (wick आत, close बाहेर): ती commitment नसेल तर visit संपते — synthetic 12-Oct fixture मध्ये 09:15 spike-rejection मुळे पुढची candle "no visit" | असंच | rejection candle ने visit संपू नये (उदा. पुढच्या candle पर्यंत) |
