@@ -51,14 +51,33 @@ def open_paper(access_token, symbol, settings, direction, level, lot_size, sourc
     return out or ["Credit Spread / Naked बंद किंवा strike सापडला नाही"], spot
 
 
+def engine_gate_tags(r, direction):
+    """Engine row ⇒ Vision row tags["gate"]: area = engine चा पट्टा [lo, hi] (Abhi TA4 — एकच किंमत नाही) ⇒ approval caption / chart / Vision
+    audit पट्टाच दाखवतात. SL / target / entry इथे नाहीत (✏️ Modify / R:R वर्तन आधीसारखंच). Band नाही ⇒ area नाही (NA)."""
+    import json
+    try:
+        pay = json.loads(r.get("payload") or "{}")
+    except (TypeError, ValueError):
+        pay = {}
+    lo, hi = r.get("level_lo"), r.get("level_hi")
+    area = sorted([float(lo), float(hi)]) if lo is not None and hi is not None else None
+    return {"mode": "engine", "side": direction, "area": area, "grade": r.get("grade"), "tf": "15M",
+            "trend": pay.get("trend_used") or pay.get("daily_trend"), "form": pay.get("commitment_form")}
+
+
 def process(bot, access_token, symbol, settings, lot_size, source, now=None, has_open=None, gate_fn=None, open_fn=None, chain=None,
-            path=None, cutoff=None, vpath=None):
+            path=None, cutoff=None, vpath=None, symbols_fn=None):
     """engine mode चा एक cycle. रिटर्न संदेश (None = engine mode नाही / नवा setup नाही)."""
     if ES.source_of(settings) != "engine":
         return None
     now = ES._naive(now or ES.now_ist())
     if str(settings.get("trading_mode", "PAPER")).upper() != "PAPER":
         return f"{symbol}: signal_source = engine फक्त PAPER साठी — {settings.get('trading_mode')} ⇒ entry नाही"
+    if symbols_fn is None:
+        import cloud_db
+        symbols_fn = cloud_db.get_signal_symbols
+    if str(symbol).upper() not in [str(x).upper() for x in symbols_fn()]:   # dashboard signal_symbols बाहेर (उदा. SENSEX) ⇒ approval / entry नाही
+        return f"{symbol}: signal_symbols मध्ये नाही (dashboard) ⇒ engine entry नाही"
     r = ES.pending_entry(bot, symbol, settings, now, path)
     if r is None:
         return f"{symbol}: engine — नवा setup नाही ({ES.opinion(symbol, now, path)})"
@@ -91,7 +110,8 @@ def process(bot, access_token, symbol, settings, lot_size, source, now=None, has
         if spot is None:
             return f"{symbol}: engine setup {direction} — option chain / spot नाही ⇒ पुढच्या cycle ला"
         g = gate_fn(bot, symbol, "PAPER", direction, level, role, "15M", pd.Timestamp(r["bar_ts"]), spot, lots, naked,
-                    tags={"engine": True, "engine_bar": r["bar_ts"], "engine_grade": r.get("grade")}, path=vpath)
+                    tags={"engine": True, "engine_bar": r["bar_ts"], "engine_grade": r.get("grade"), "gate": engine_gate_tags(r, direction)},
+                    path=vpath)
     except Exception as exc:
         return f"{symbol}: engine setup — gate त्रुटी ⇒ entry नाही ({exc})"
     if g is None or (g.action == "HOLD" and not getattr(g, "final", False)):

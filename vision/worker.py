@@ -177,9 +177,11 @@ def _body(row, res, mode, reused=False):
     """जुना caption (engine / Vision तपशील) — आता "── details ──" खाली."""
     e, mr = VERDICT_MR.get(res.get("verdict") or "unavailable", ("⚪", res.get("verdict")))
     ts = pd.Timestamp(row["signal_ts"])
+    ga = [x for x in ((_row_tags(row).get("gate") or {}).get("area") or [])[:2] if x is not None]   # engine / gate पट्टा (TA4) असेल तर तोच
     s = [f"👁 <b>Vision V0 — फक्त माहिती</b> · {html.escape(str(row.get('bot_label') or row['bot']))}",
          f"{row['symbol']} · {DIR_MR.get(str(row.get('direction')).upper(), row.get('direction'))} · {setup_kind(row)}",
-         f"Level {float(row['level']):,.0f} ({row.get('role')}, {row.get('setup_tf')}) · signal {ts:%H:%M}" if row.get("level") is not None
+         f"Area {min(ga):,.0f}–{max(ga):,.0f} ({row.get('role')}, {row.get('setup_tf')}) · signal {ts:%H:%M}" if len(ga) == 2
+         else f"Level {float(row['level']):,.0f} ({row.get('role')}, {row.get('setup_tf')}) · signal {ts:%H:%M}" if row.get("level") is not None
          else f"signal {ts:%H:%M}",
          f"मत: {e} <b>{mr}</b>" + (f" (confidence {res['confidence']:.2f})" if res.get("confidence") is not None else "")
          + (" · 15 मिनिटांतलं आधीचं मत" if reused else "")]

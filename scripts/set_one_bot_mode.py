@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""🎯 One bot mode (Abhi): फक्त 15M SRv2 (`15m_dynamic_sr`) ON — NIFTY / BANKNIFTY / SENSEX, PAPER, signal_source = engine (decision3).
+"""🎯 One bot mode (Abhi): फक्त 15M SRv2 (`15m_dynamic_sr`) ON — dashboard setting `signal_symbols` चे symbols (default NIFTY / BANKNIFTY;
+बाकी index उदा. SENSEX वर 15M SRv2 सुद्धा OFF), PAPER, signal_source = engine (decision3).
 बाकी entry-capable bots OFF (bot जे field तपासतो तेच — `symbol_enabled` / `srv3_shadow_enabled`); काहीही delete नाही; Abhi चे strikes / ITM
 depth / hedge / lots / SL / TSL / target / exits तसेच; LIVE combo ला हात नाही (इशारा). Dashboard चीच storage (Supabase strategy_settings,
 Vision settings, PAPER instruments local override) ⇒ dashboard तेच दाखवतो. यादी / नियम: `bots_common/one_bot.py`.
@@ -24,10 +25,11 @@ DEFAULT_STATE = os.path.join(ROOT, "data", "one_bot_before.json")
 
 
 def _print_status(st):
-    print("\nAfter (dashboard getters):")
+    print(f"\nAfter (dashboard getters) · signal_symbols: {' / '.join(st.get('signal_symbols') or [])}")
     for r in st["bots"]:
+        note = "  (not a signal symbol — data only)" if r.get("signal_symbol") is False and r["strategy"] == OB.ON_KEY else ""
         print(f"  {r['bot']:<20} {r['symbol']:<11} {'ON ' if r.get('on') else 'off'}  mode {r.get('trading_mode')}  "
-              f"signal_source {r.get('signal_source')}  entry_mode {r.get('entry_mode')}")
+              f"signal_source {r.get('signal_source')}  entry_mode {r.get('entry_mode')}{note}")
     print(f"  Vision {OB.VISION_BOT}: {st['vision']}")
     print(f"  auto traders cron: {st['auto_traders']} · engine cron: {st['engine_cron']} · 15M SRv2 cron: {st['srv2_cron']}")
     print(f"\n{st['line']}")

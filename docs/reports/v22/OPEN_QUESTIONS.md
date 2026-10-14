@@ -491,3 +491,11 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | RF-3 | FUT rollover दिवस (expiry + आधीचे 2 sessions) slot baseline मधून वगळले (legs2 प्रमाणे); त्या दिवसाचा स्वतःचा bar normalise होतो, label "FUT rollover day" | वगळले | Abhi |
 | Z-1q | Handover एकदा दिसला की commitment पर्यंत वैध राहतो का, की commitment bar च्या window मध्ये (arm … t − 1) तो पुन्हा दिसायला हवा? Code आज commitment bar ला पुन्हा तपासतो. 12 Oct: 09:45 / 10:00 ला handover होता (doji / inside bar ⇒ commitment नाही), 10:15 ला window बदलल्यावर नाही (Z-1p) | commitment bar ला पुन्हा तपास (बदल नाही) | Abhi |
 | Z-1r | क्रम (handover → LTF CHoCH → commitment) फक्त commitment bar ला तपासला जातो ⇒ handover दिसण्याआधी छापलेला 5M CHoCH सुद्धा चालतो (12 Oct: CHoCH 09:40, handover 09:45). CHoCH handover नंतरच हवा का? | आधीचा CHoCH चालतो (बदल नाही) | Abhi |
+
+### Deploy fixes (branch `claude/preopen-fixes`)
+
+| # | प्रश्न | आत्ता काय (default) | पर्याय |
+|---|---|---|---|
+| PF-1 | ~~15:45 सारांश एकच-किंमत areas~~ — केलं (review #326): engine source ⇒ `watched_levels` पट्टे (BROKEN / DEAD नाहीत); own / both ⇒ bot चा gate पट्टा; symbols = `signal_symbols` (SENSEX ओळ नाही) | केलं | — |
+| PF-2 | decision3 levels: σ_1H नसताना (window चे पहिले 20 sessions) तात्पुरती किमान रुंदी = bars ≤ t चे 1H ranges चा median × 0.15; σ आल्यावर spec प्रमाणे | लावलं (नवा आकडा नाही, तोच `level_min_width_sigma`) | σ नसताना level जन्मच नाही |
+| PF-3 | `signal_symbols` बदलल्यावर one-bot mode आपोआप लागत नाही (Vision symbols / 15M SRv2 on-off) — `python3 scripts/set_one_bot_mode.py` पुन्हा चालवावा लागतो; engine / pre-open / engine entry लगेच नवी यादी वापरतात | dashboard caption मध्ये सूचना | dashboard save वरच one-bot mode लावा |
