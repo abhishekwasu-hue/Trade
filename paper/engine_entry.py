@@ -51,9 +51,12 @@ def open_paper(access_token, symbol, settings, direction, level, lot_size, sourc
     return out or ["Credit Spread / Naked बंद किंवा strike सापडला नाही"], spot
 
 
-def engine_gate_tags(r, direction):
+def engine_gate_tags(r, direction, settings=None):
     """Engine row ⇒ Vision row tags["gate"]: area = engine चा पट्टा [lo, hi] (Abhi TA4 — एकच किंमत नाही) ⇒ approval caption / chart / Vision
-    audit पट्टाच दाखवतात. SL / target / entry इथे नाहीत (✏️ Modify / R:R वर्तन आधीसारखंच). Band नाही ⇒ area नाही (NA)."""
+    audit पट्टाच दाखवतात. SL / target / entry इथे नाहीत (✏️ Modify / R:R वर्तन आधीसारखंच). Band नाही ⇒ area नाही (NA).
+    band_warn_pts = bot settings चे `approval_band_warn_pts` (default 150): caption पट्ट्याची रुंदी त्यापेक्षा जास्त ⇒ "merged band — check"
+    ओळ दाखवतो — फक्त दाखवणं, निर्णय / gate / order ला हात नाही."""
+    from bots_common import plain_text as PT
     import json
     try:
         pay = json.loads(r.get("payload") or "{}")
@@ -62,7 +65,8 @@ def engine_gate_tags(r, direction):
     lo, hi = r.get("level_lo"), r.get("level_hi")
     area = sorted([float(lo), float(hi)]) if lo is not None and hi is not None else None
     return {"mode": "engine", "side": direction, "area": area, "grade": r.get("grade"), "tf": "15M",
-            "trend": pay.get("trend_used") or pay.get("daily_trend"), "form": pay.get("commitment_form")}
+            "trend": pay.get("trend_used") or pay.get("daily_trend"), "form": pay.get("commitment_form"),
+            "band_warn_pts": PT.band_warn_pts(settings)}
 
 
 def process(bot, access_token, symbol, settings, lot_size, source, now=None, has_open=None, gate_fn=None, open_fn=None, chain=None,
@@ -110,7 +114,7 @@ def process(bot, access_token, symbol, settings, lot_size, source, now=None, has
         if spot is None:
             return f"{symbol}: engine setup {direction} — option chain / spot नाही ⇒ पुढच्या cycle ला"
         g = gate_fn(bot, symbol, "PAPER", direction, level, role, "15M", pd.Timestamp(r["bar_ts"]), spot, lots, naked,
-                    tags={"engine": True, "engine_bar": r["bar_ts"], "engine_grade": r.get("grade"), "gate": engine_gate_tags(r, direction)},
+                    tags={"engine": True, "engine_bar": r["bar_ts"], "engine_grade": r.get("grade"), "gate": engine_gate_tags(r, direction, settings)},
                     path=vpath)
     except Exception as exc:
         return f"{symbol}: engine setup — gate त्रुटी ⇒ entry नाही ({exc})"

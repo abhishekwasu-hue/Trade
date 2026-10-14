@@ -1396,6 +1396,8 @@ def render():
     srv3_signal_source = settings.get("srv3_signal_source", "own")
     import engine3_live as _L3                                       # तोच parser (stored "false" ⇒ unchecked; रिकामं ⇒ default ON)
     engine3_use_1m = _L3.use_1m({"engine3_use_1m": settings.get("engine3_use_1m")})
+    from bots_common import plain_text as _PT
+    approval_band_warn_pts = _PT.band_warn_pts(settings)
     if strategy_key in ("1m_instant", "15m_dynamic_sr"):
         # 🎓 Abhi (Monday PAPER): signal कुठून — own (bot चा स्वतःचा, default) / engine (common analysis engine चा setup) / both (दोन्ही एकाच
         # दिशेला तरच). कुठलाही असो: Vision + ✅ approval शिवाय PAPER entry नाही; engine चं मत caption मध्ये नेहमी (shadow).
@@ -1414,6 +1416,11 @@ def render():
                 engine3_use_1m = st.checkbox("Engine: 1m data वापरा (swings2 candle आतला high / low क्रम)", value=engine3_use_1m,
                                              key=_widget_key(strategy_key, symbol, "engine3_use_1m"),
                                              help="ON (default) = replay / RSI divergence सारखेच pivots · OFF = जुनं (1m शिवाय). 1m नाही ⇒ आपोआप 1m शिवाय (block नाही).")
+                # 🎓 Abhi: approval / pre-open / 15:45 सारांशात पट्टा यापेक्षा रुंद ⇒ "⚠️ merged band — check" (फक्त दाखवणं)
+                approval_band_warn_pts = st.number_input("Approval: 'merged band — check' इशारा, पट्टा यापेक्षा रुंद (pts)", min_value=1.0,
+                                                         value=float(approval_band_warn_pts), step=10.0,
+                                                         key=_widget_key(strategy_key, symbol, "approval_band_warn_pts"),
+                                                         help="फक्त Telegram संदेशात इशारा — निर्णय / gate / order बदलत नाही. Default 150.")
 
     st.markdown("---")
     if st.button("💾 Settings जतन करा", key="bdsr_save_btn", type="primary"):
@@ -1460,6 +1467,7 @@ def render():
 
         if strategy_key == "15m_dynamic_sr":
             new_settings["engine3_use_1m"] = bool(engine3_use_1m)
+            new_settings["approval_band_warn_pts"] = float(approval_band_warn_pts)
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_support_max"] = int(rsi_support_max)

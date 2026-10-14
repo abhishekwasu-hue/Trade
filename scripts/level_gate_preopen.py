@@ -66,13 +66,31 @@ def trade_side_areas(zones, tfs, last, ctx, n=3, pad_pct=None):
     return res
 
 
-def area_words(side, lo, hi, zt, last):
-    """"supply 22,715–22,776 (1H, ≈150 pts above)" — अंतर = last close पासून area च्या जवळच्या कडेपर्यंत."""
+def area_words(side, lo, hi, zt, last, warn_pts=None):
+    """"supply 22,715–22,776 (1H, ≈150 pts above), 61 pts wide" — अंतर = last close पासून area च्या जवळच्या कडेपर्यंत. रुंदी > warn_pts
+    (`approval_band_warn_pts`, default 150) ⇒ "… 312 pts wide ⚠️ merged band — check (over 150 pts)" (Abhi; फक्त दाखवणं)."""
     bull = side == LR.BULL
     tf = PT.tf_word(zt)
     dist = (last - hi) if bull else (lo - last)
-    rng = f"{lo:,.0f}" if round(lo) == round(hi) else f"{lo:,.0f}–{hi:,.0f}"
-    return f"{'demand' if bull else 'supply'} {rng} ({(tf + ', ') if tf else ''}{PT.pts(dist)} {'below' if bull else 'above'})"
+    one = round(lo) == round(hi)
+    rng = f"{lo:,.0f}" if one else f"{lo:,.0f}–{hi:,.0f}"
+    wide = "" if one else PT.band_wide_words(lo, hi, warn_pts)
+    return (f"{'demand' if bull else 'supply'} {rng} ({(tf + ', ') if tf else ''}{PT.pts(dist)} {'below' if bull else 'above'})"
+            + (f", {wide}" if wide else ""))
+
+
+def band_detail(lo, hi, warn_pts=None):
+    """details ओळीसाठी (HTML-escaped): "22,715–22,776 (61 pts)" (+ " ⚠️ merged band — check (width N pts &gt; 150)")."""
+    flag = PT.band_flag(lo, hi, warn_pts)
+    return PT.band_range(lo, hi) + (f" {html.escape(flag, quote=False)}" if flag else "")
+
+
+def warn_pts_for(active, sym):
+    """चालू bots च्या settings मधला `approval_band_warn_pts` (त्या symbol चा पहिला) ⇒ float; नाही ⇒ default 150."""
+    for a in active or ():
+        if a.get("symbol") == sym and a.get("band_warn_pts") is not None:
+            return PT.band_warn_pts(a["band_warn_pts"])
+    return PT.band_warn_pts(None)
 
 
 # ------------------------------------------------------------------------------------------------ कोणते bots चालू (settings वरून)
@@ -101,7 +119,7 @@ def bot_status(symbols, get_settings, mcx_fn=None):
                 raise RuntimeError(f"settings {key}/{sym} not readable")
             if on(s, sym):
                 out.append({"label": label, "symbol": sym, "source": ES.source_of(s, src_key), "mode": str(s.get("trading_mode", "PAPER")),
-                            "pad_pct": s.get("gate_area_pad_pct")})
+                            "pad_pct": s.get("gate_area_pad_pct"), "band_warn_pts": s.get(PT.BAND_WARN_KEY)})
     for sym in (mcx_fn() if mcx_fn else ()):
         out.append({"label": "MCX Futures", "symbol": sym, "source": "own", "mode": "PAPER/LIVE (MCX settings)"})
     return out
@@ -251,7 +269,7 @@ def nearest(areas, last, n=3):
     return res[:n]
 
 
-def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS, areas=None, na=None):
+def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS, areas=None, na=None, warn_pts=None):
     """प्रत्येक symbol ची एक साधी ओळ (engine codes नाहीत). areas (चालू bots चे पट्टे) दिले ⇒ तेच; na ⇒ "Watched areas NA"."""
     wk = f"Weekly {html.escape(str(weekly), quote=False)}" if weekly else "Weekly n/a"
     if not ctx.get("ok"):
@@ -271,7 +289,7 @@ def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS, areas=None, na=None)
         return "❌ " + head + f". Last close {last:,.0f}. Watched areas NA — {html.escape(na, quote=False)}."
     if not ar:
         return head + f". Last close {last:,.0f}. No {want} area near price yet."
-    return head + f". Last close {last:,.0f}. Watching " + "; ".join(area_words(s, lo, hi, zt, last) for s, lo, hi, zt in ar) + "."
+    return head + f". Last close {last:,.0f}. Watching " + "; ".join(area_words(s, lo, hi, zt, last, warn_pts) for s, lo, hi, zt in ar) + "."
 
 
 def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn=None, day=None, active=False, engine_fn=None,
@@ -300,13 +318,15 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
         except Exception:                                                  # noqa: BLE001 — weekly फक्त माहिती
             wk = None
         per_bot = [] if legacy or not ctx.get("ok") or last is None else active_bot_areas(sym, active, ctx, last, zones, engine_areas_fn)
+        warn = warn_pts_for(active if not legacy else None, sym)          # Abhi: merged band — check (setting, default 150)
         if legacy:
-            plain.append(symbol_line(sym, ctx, wk, last, zones, tfs))
+            plain.append(symbol_line(sym, ctx, wk, last, zones, tfs, warn_pts=warn))
         else:
             nas = [why for _, _, ar, why in per_bot if ar is None]
             na = ("bot settings could not be read" if active is None else "no active bot for this index" if not per_bot
                   else nas[0] if len(nas) == len(per_bot) else None)
-            plain.append(symbol_line(sym, ctx, wk, last, zones, tfs, areas=[x for _, _, ar, _ in per_bot for x in (ar or [])], na=na))
+            plain.append(symbol_line(sym, ctx, wk, last, zones, tfs, areas=[x for _, _, ar, _ in per_bot for x in (ar or [])], na=na,
+                                     warn_pts=warn))
         if sym in eng_syms:
             bad, t = engine_problem(sym, engine_fn or engine_last_run, now, cron_installed=engine_cron)
             if bad:
@@ -331,7 +351,7 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
             elif not ar:
                 det.append(f"• {name}: no trade-side area near price")
             else:
-                txt = "; ".join(f"{'demand' if s == LR.BULL else 'supply'} {lo:,.0f}–{hi:,.0f}" for s, lo, hi, _ in ar)
+                txt = "; ".join(f"{'demand' if s == LR.BULL else 'supply'} {band_detail(lo, hi, warn)}" for s, lo, hi, _ in ar)
                 det.append(f"• {name}: watching {txt}")
     if legacy or any(a.get("label") == "MCX Futures" for a in (active or [])):
         det.append("MCX: PAPER = confirmation gate on 15M (trend from the current contract's Daily); entry only after CONFIRMED "

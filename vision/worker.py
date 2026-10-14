@@ -156,13 +156,14 @@ def _row_tags(row):
 
 def plain_head(row):
     """Caption ओळ 1 (Abhi, TELEGRAM_CLEANUP 3): साधी English — कोणता index, कोणती बाजू, कुठे, आणि chart वर काय पाहायचं. Engine codes नाहीत."""
+    from bots_common import plain_text as PT
     tags = _row_tags(row)
     bull = str(row.get("direction") or "").upper() == "BULLISH"
     trade = "bull put (bullish)" if bull else "bear call (bearish)"
     g = tags.get("gate") or {}
     area = [x for x in (g.get("area") or [])[:2] if x is not None]
-    if len(area) == 2:
-        where = f"{'demand' if bull else 'supply'} area {min(area):,.0f}–{max(area):,.0f}"
+    if len(area) == 2:                                                  # Abhi: पट्ट्याची रुंदी (pts) पट्ट्याशेजारी
+        where = f"{'demand' if bull else 'supply'} area {PT.band_range(*area)}"
     elif row.get("level") is not None:
         where = f"{'support' if bull else 'resistance'} {float(row['level']):,.0f}"
     else:
@@ -175,12 +176,13 @@ def plain_head(row):
 
 def _body(row, res, mode, reused=False):
     """जुना caption (engine / Vision तपशील) — आता "── details ──" खाली."""
+    from bots_common import plain_text as PT
     e, mr = VERDICT_MR.get(res.get("verdict") or "unavailable", ("⚪", res.get("verdict")))
     ts = pd.Timestamp(row["signal_ts"])
     ga = [x for x in ((_row_tags(row).get("gate") or {}).get("area") or [])[:2] if x is not None]   # engine / gate पट्टा (TA4) असेल तर तोच
     s = [f"👁 <b>Vision V0 — फक्त माहिती</b> · {html.escape(str(row.get('bot_label') or row['bot']))}",
          f"{row['symbol']} · {DIR_MR.get(str(row.get('direction')).upper(), row.get('direction'))} · {setup_kind(row)}",
-         f"Area {min(ga):,.0f}–{max(ga):,.0f} ({row.get('role')}, {row.get('setup_tf')}) · signal {ts:%H:%M}" if len(ga) == 2
+         f"Area {PT.band_range(*ga)} ({row.get('role')}, {row.get('setup_tf')}) · signal {ts:%H:%M}" if len(ga) == 2
          else f"Level {float(row['level']):,.0f} ({row.get('role')}, {row.get('setup_tf')}) · signal {ts:%H:%M}" if row.get("level") is not None
          else f"signal {ts:%H:%M}",
          f"मत: {e} <b>{mr}</b>" + (f" (confidence {res['confidence']:.2f})" if res.get("confidence") is not None else "")
@@ -206,10 +208,24 @@ def _body(row, res, mode, reused=False):
     return "\n".join(s)                                                 # कापणी callers (_fit, ओळी-निहाय) करतात
 
 
-def caption(row, res, mode, reused=False):
-    """V0 (फक्त माहिती): साधी ओळ + "Decision needed: none" + ── details ── + जुना तपशील (≤ 1024)."""
+def band_flag_line(row):
+    """Abhi: gate पट्टा `approval_band_warn_pts` (tags["gate"]["band_warn_pts"], नाही ⇒ default 150) पेक्षा रुंद ⇒ "⚠️ merged band — check
+    (width N pts > 150)" — वरच्या साध्या भागात, निर्णय ओळीनंतर. पट्टा नाही / ठीक ⇒ "". फक्त दाखवणं (निर्णय / gate / order ला हात नाही)."""
     from bots_common import plain_text as PT
-    top = f"{html.escape(plain_head(row))}\n{PT.DECISION_NONE} (Vision opinion only; the bot decided as usual)\n{PT.SEP}"
+    try:
+        g = _row_tags(row).get("gate") or {}
+        area = [x for x in (g.get("area") or [])[:2] if x is not None]
+        return PT.band_flag(*area, g.get("band_warn_pts")) if len(area) == 2 else ""
+    except Exception:                                                    # noqa: BLE001 — फक्त माहिती, caption कधीच अडत नाही
+        return ""
+
+
+def caption(row, res, mode, reused=False):
+    """V0 (फक्त माहिती): साधी ओळ + "Decision needed: none" (+ merged band ओळ) + ── details ── + जुना तपशील (≤ 1024)."""
+    from bots_common import plain_text as PT
+    flag = band_flag_line(row)
+    top = (f"{html.escape(plain_head(row))}\n{PT.DECISION_NONE} (Vision opinion only; the bot decided as usual)\n"
+           + (f"{html.escape(flag)}\n" if flag else "") + PT.SEP)
     body = [x for x in _body(row, res, mode, reused).split("\n") if x]
     return top + "\n" + _fit(body, 1024 - PT.MARGIN - PT.tg_len(top) - 1, keep=1)   # ओळी-निहाय (HTML tag अर्धवट नाही)
 
@@ -277,7 +293,8 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
         dline = f"<b>{PT.DECISION_APPROVE}</b> by {pd.Timestamp(deadline).strftime('%H:%M') if deadline else '?'}"
     else:
         dline = PT.DECISION_NONE + (" (entry approved automatically)" if d.status == "APPROVED" else " (entry rejected automatically)")
-    top = f"{head}\n{dline}\n{PT.SEP}"
+    flag = band_flag_line(row)                                           # Abhi: रुंद (merged) पट्टा ⇒ निर्णय ओळीनंतर स्पष्ट इशारा
+    top = f"{head}\n{dline}\n" + (f"{html.escape(flag)}\n" if flag else "") + PT.SEP
     manual = str(tags.get("manual_text") or "") if tags.get("manual") else ""
     s = s.replace("Bot ने नेहमीप्रमाणे निर्णय घेतला — vision चा trade वर परिणाम नाही (V0).", "")
     lines = [x for x in s.split("\n") if x]
