@@ -81,8 +81,11 @@ def _synthetic_m15(seed=7, legs=None):
 # far swing पार न झाल्याने BROKEN ⇒ trade location नाही. हे tests flip नियमाचे नाहीत (setup invariants / charts / captions) ⇒ जुना नियम
 # स्पष्ट pin (`level_flip_rule` = "acceptance"); नवा नियम tests/test_decision3_flip.py मध्ये. असर्ट बदलले नाहीत.
 # हे fixtures volume-नसलेले ⇒ Abhi Z-1c (volume नाही ⇒ data problem, entry नाही) इथे जुनी प्रथा pin (`c0_volume_required` False).
+# Abhi Z-1u / Z-1v (bands never widened by merging; handover per visit) आधीचे fixtures ⇒ जुनं merge / touch-window visit pin
+# (`level_merge`, `zone_visit_rule`); नवे नियम tests/test_decision3_zone_answers.py मध्ये. असर्ट बदलले नाहीत.
 NO_MATURE = {"maturity_sigma_d": -1e6, "ltf_choch": False, "commit_dom_mult": 0.0, "level_flip_rule": "acceptance",
-             "c0_volume_required": False, "a2_handover_required": False}   # Z-1m (handover अनिवार्य) आधीचे fixtures — pin
+             "c0_volume_required": False, "a2_handover_required": False,   # Z-1m (handover अनिवार्य) आधीचे fixtures — pin
+             "level_merge": True, "zone_visit_rule": "touch_window"}
 LEGACY_RR = {**NO_MATURE, "rr_step": True}                                       # Abhi 13 Oct: ⑦ default मधून काढला — जुने असर्ट याने
 
 

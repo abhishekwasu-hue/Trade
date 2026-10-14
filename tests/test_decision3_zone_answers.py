@@ -145,7 +145,10 @@ def test_a_choch_before_price_entered_the_zone_does_not_count():
     assert ch["arrival_at"].startswith("2030-01-07 10:25")
     rows2 = rows + [(101.0, 103.0, 100.9, 102.9)]                         # closes above the post-arrival lower high ⇒ CHoCH now
     ch2 = M.ltf_choch(_ltf(rows2), UP, "2030-01-07 10:00", "2030-01-07 10:15", "2030-01-07 10:50", lvl={"lo": 100.0, "hi": 101.0})
-    assert ch2["done"] is True and ch2["after_arrival"] is True and pd.Timestamp(ch2["at"]) > pd.Timestamp(ch2["arrival_at"])
+    assert ch2["done"] is True and pd.Timestamp(ch2["at"]) == pd.Timestamp("2030-01-07 10:50")   # the post-arrival CHoCH candle
+    assert pd.Timestamp(ch2["at"]) > pd.Timestamp(ch2["arrival_at"]) > pd.Timestamp("2030-01-07 10:15")   # after the arrival, not the arm
+    old = M.ltf_choch(_ltf(rows2), UP, "2030-01-07 10:00", "2030-01-07 10:00", "2030-01-07 10:50", lvl={"lo": 100.0, "hi": 101.0})
+    assert old["at"] == ch2["at"]                                           # the context CHoCH (10:10 close 105.5) is never reported
 
 
 def test_default_path_reports_the_choch_time_relative_to_the_arm_and_all_three_parts():
@@ -303,3 +306,166 @@ def test_provisional_width_is_labelled_in_the_level_facts_and_chart_labels():
     x1 = [x for x in lv.snapshot(first_day_end + 1) if x["id"] == Z.id][0]
     assert x1["provisional_width"] is False and x1["width_note"] is None   # σ_1H known ⇒ the spec width, label gone
     assert LV.width_tag(x0) == ", provisional width" and LV.width_tag(x1) == ""
+
+
+# ------------------------------------------------------------------------------------------------ Abhi Z-1u: one timeframe per band
+def _z1u_levels(monkeypatch, prior, s=None, extra=()):
+    """A 1H D2 swing high 118 (band from its own candle) + Q40 prior bands injected at bar 0 (role, lo, hi, birth, anchor)."""
+    monkeypatch.setattr(LV.Levels, "_prior_levels", lambda self: [tuple(x) for x in prior])
+    closes = list(np.linspace(110, 118, 9)) + list(np.linspace(118, 112, 7))[1:] + list(np.linspace(112, 117.6, 6))[1:]
+    m = m15_from(closes, wick=0.3)
+    return m, LV.Levels(res_of(m, [P("H", 118, 8, 10)] + list(extra)), s=s)
+
+
+def test_daily_and_weekly_bands_are_never_merged_into_the_1h_band_confluence_is_a_label(monkeypatch):
+    m, lv = _z1u_levels(monkeypatch, [(LV.RES, 116.0, 125.0, "a:D-prior", 124.0), (LV.RES, 110.0, 130.0, "a:W-prior", 129.0)])
+    t = len(m) - 1
+    snap = {x["tf"]: x for x in lv.snapshot(t)}
+    h, d, w = snap["1H"], snap["D"], snap["W"]
+    assert (d["lo"], d["hi"], w["lo"], w["hi"]) == (116.0, 125.0, 110.0, 130.0)          # each band its own, never merged
+    assert h["hi"] == 118.0 and h["lo"] > 116.0 and h["births"] == ["a:D2"]              # the 1H band from its own swing candle only
+    assert h["confluence_label"] == "confluence: Daily 116–125; Weekly 110–130" and h["trade_location"]
+    assert not d["trade_location"] and "1H band is the location" in d["not_location_why"]
+    assert not w["trade_location"] and "context only" in w["not_location_why"]
+    assert [x["id"] for x in lv.active(t, "DOWN")] == [h["id"]]                         # the narrower 1H band is the location
+
+
+def test_a_daily_band_without_a_1h_zone_over_it_stays_a_location(monkeypatch):
+    m, lv = _z1u_levels(monkeypatch, [(LV.RES, 121.0, 126.0, "a:D-prior", 126.0)])
+    d = [x for x in lv.snapshot(len(m) - 1) if x["tf"] == "D"][0]
+    assert d["trade_location"] and d["confluence"] == []
+
+
+def test_bands_are_built_never_widened_same_timeframe_lineage(monkeypatch):
+    """`Levels._born`: a birth inside an alive same-timeframe, same-role band = that zone (lineage, band unchanged); one overlapping it
+    partly builds its own band (lineage recorded); another timeframe is never related by lineage — only by the confluence label. No
+    band ever changes, and no level of the run ever had its band widened."""
+    m, lv = _z1u_levels(monkeypatch, [])
+    t = len(m) - 1
+    Z = [L for L in lv.L if L.tf == "1H"][0]
+    lo, hi = Z.band_at(t)
+    same = lv._born(t, LV.RES, lo + 0.1, hi - 0.1, "a:D2", hi - 0.1)
+    assert same is Z and Z.band_at(t) == (lo, hi) and Z.lineage[-1]["inside"] == "a:D2"
+    part = lv._born(t, LV.RES, hi - 0.2, hi + 3.0, "a:D2", hi + 3.0)
+    assert part is not Z and part.band_at(t) == (hi - 0.2, hi + 3.0) and part.lineage[-1]["overlaps"] == Z.id and Z.band_at(t) == (lo, hi)
+    d = lv._born(t, LV.RES, lo - 5.0, hi + 5.0, "a:D-prior", hi + 5.0)
+    assert d.tf == "D" and d.lineage == [] and Z.band_at(t) == (lo, hi) and part.band_at(t) == (hi - 0.2, hi + 3.0)
+    for L in lv.L:
+        assert len({(round(a_, 6), round(b_, 6)) for _, a_, b_ in L.bands}) == 1
+
+
+def test_trade_band_max_width_setting_none_reports_set_excludes(monkeypatch):
+    m, lv = _z1u_levels(monkeypatch, [])
+    t = len(m) - 1
+    assert S3.DEFAULTS["trade_band_max_sigma"] is None and "trade_band_max_sigma" in S3.REGISTER
+    x = [y for y in lv.snapshot(t) if y["tf"] == "1H"][0]
+    assert x["width"] > 0 and x["width_sigma"] == round(x["width"] / 10.0, 2) and x["trade_location"]   # None ⇒ report only
+    _, lv2 = _z1u_levels(monkeypatch, [], s={"trade_band_max_sigma": x["width_sigma"] / 2})
+    assert all(y["width_sigma"] <= x["width_sigma"] / 2 for y in lv2.active(t, "DOWN"))   # no traded band wider than the setting
+    assert not [y for y in lv2.snapshot(t) if y["id"] == x["id"]][0]["trade_location"]
+
+
+# ------------------------------------------------------------------------------------------------ Abhi Z-1v: handover per visit
+def _visit_case(window):
+    from tests.test_decision3_flip import _default_case
+    return _default_case(window)
+
+
+def test_a_close_outside_the_band_away_from_it_ends_the_visit_the_next_needs_a_new_handover():
+    """tests.test_decision3_flip._default_case supply 19,432–19,472 (bear call): with the handover window intact ⇒ setup at 741. The
+    same bars but 737 closes BELOW the band (away from it, no commitment) ⇒ that visit ends; the new visit starts at 738 and has too
+    few bars for a handover ⇒ wait — the earlier handover never carries over."""
+    from tests.test_decision3_flip import _HANDOVER
+    ok = _visit_case(_HANDOVER).decide(741)
+    assert ok["decision"] == "setup" and ok["commit"]["visit_start"] == ok["commit"]["study_from"]
+    assert ok["commit"]["visit_start_bar"] == 735 and ok["commit"]["visit_end"] is None
+    broken = list(_HANDOVER)
+    broken[2] = (19455, 19425, 6e5)                                         # bar 737 closes below the band's low (away from it)
+    V = _visit_case(broken)
+    r = V.decide(741)
+    cm = r["commit"]
+    assert pd.Timestamp(cm["visit_prev_end"]) == pd.Timestamp(V._ts[737])
+    assert cm["visit_start_bar"] == 738 and r["decision"] == "wait" and cm["handover_present"] is False
+    assert "no handover" in r["checklist"]["⑥"][1]
+
+
+def test_visit_is_not_defined_by_touch_window_bars():
+    """touch_window_bars only says how far the commitment candle may be from the last touch (③); the visit (handover window) ends only on
+    a close outside the band, away from it — non-touching bars that close inside the band's reach do not end it."""
+    from tests.test_decision3_flip import _HANDOVER
+    V = _visit_case(_HANDOVER)
+    lvl = V.decide(741)["level"]
+    for tw in (1, 3, 6):
+        V.s = {**V.s, "touch_window_bars": tw}
+        assert V.visit(741, lvl, DOWN)["start"] == 735
+    legacy = {**V.s, "zone_visit_rule": "touch_window", "touch_window_bars": 3}
+    V.s = legacy
+    assert V.visit(741, lvl, DOWN, k0=700)["start"] is not None              # the legacy rule stays available for old tests only
+
+
+# ------------------------------------------------------------------------------------------------ review notes
+def test_absorption_gate_restarts_after_a_zone_break_like_the_episode():
+    A = _A(HANDOVER + ABSORB + [(102.4, 102.5, 0.7)])
+    t = len(HANDOVER + ABSORB)
+    lvl = {"lo": 100.0, "hi": 103.0}
+    full = M.zone_study(A, 0, t - 1, DOWN, S)
+    late = M.zone_study(A, 8, t - 1, DOWN, S)
+    assert full["absorption"] is True and late["absorption"] is False
+    ho = M.handover_episode(A, 0, t, DOWN, S, broken=lambda u: u == 7)
+    assert ho["window_start"] == 8
+    cf = M.confirm(A, 0, t, DOWN, lvl, {**S, "ltf_choch": False}, handover=ho)
+    assert cf["absorption"] is False                                        # the gate reads the same post-break window
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bull", "bear"])
+def test_engine_reclaim_before_the_first_post_break_swing_confirms_is_a_sweep_not_a_flip(mirror):
+    """Abhi Z-1s: no swing beyond the zone ⇒ the first swing after the break flips it ON CONFIRMATION — but a reclaim (accept_closes
+    back on the role's side) that comes BEFORE that swing is confirmed is a sweep ★: role kept, never a flip."""
+    f = (lambda x: 2 * MID - x) if mirror else (lambda x: float(x))
+    sw = (lambda k: ("L" if k == "H" else "H")) if mirror else (lambda k: k)
+    anchors = [(0, 100), (8, 118), (16, 106), (22, 121), (28, 112), (34, 110)]
+    closes = [float(anchors[0][1])]
+    for (b0, p0), (b1, p1) in zip(anchors[:-1], anchors[1:]):
+        closes += list(np.linspace(p0, p1, b1 - b0 + 1)[1:])
+    m = m15_from([f(c) for c in closes], wick=0.3)
+    p2 = [P(sw("H"), f(118), 8, 10), P(sw("L"), f(106), 16, 18), P(sw("H"), f(121), 22, 30)]   # confirmed late (bar 30)
+    lv = LV.Levels(res_of(m, p2))
+    Z = [L for L in lv.L if abs(L.anchor - f(118)) < 1e-6][0]
+    ev = [(b, k) for b, k, _ in Z.events if k in ("broken", "reclaim", "flip", "dead")]
+    t_rc = next(b for b, k in ev if k == "reclaim")
+    assert [k for _, k in ev][:2] == ["broken", "reclaim"] and t_rc < 30 and Z.count("flip", len(m) - 1) == 0
+    assert Z.state_at(len(m) - 1) in ("ACTIVE", "TESTED") and Z.role_at(len(m) - 1) == (LV.SUP if mirror else LV.RES)
+    assert Z.count("sweep", len(m) - 1) >= 1
+
+
+def test_band_facts_reclaim_before_the_first_post_break_swing_confirms_is_a_sweep():
+    from facts import validity as FV
+    hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2 + [99.0, 100.0, 96.0, 95.5, 95.0, 94.8]
+    cl = [h - 0.6 for h in hi]
+    lo = [h - 1.0 for h in hi]
+    ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
+    B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}, {"bar": 22, "dir": "down"}]}   # swing @21 confirms at 23
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flip_state"] == "ACTIVE" and f["flipped_at"] is None and [w["bar"] for w in f["sweeps"]] == [22]
+
+
+# ------------------------------------------------------------------------------------------------ live: per-timeframe bands, confluence label
+def test_live_watched_levels_show_only_location_bands_with_confluence_as_a_label():
+    import engine3_live as L3
+    from bots_common import plain_text as PT
+    from scripts import level_gate_preopen as PO
+    snap = [{"id": 1, "tf": "1H", "role": "resistance", "lo": 22543.75, "hi": 22621.8, "state": "TESTED", "trade_location": True,
+             "confluence_label": "confluence: Weekly 22,476–22,795"},
+            {"id": 2, "tf": "W", "role": "resistance", "lo": 22475.85, "hi": 22794.7, "state": "FLIPPED", "trade_location": False},
+            {"id": 3, "tf": "D", "role": "resistance", "lo": 22725.45, "hi": 22809.9, "state": "FLIPPED", "trade_location": True}]
+    keep = L3.tradeable_levels(snap)
+    assert [x["id"] for x in keep] == [1, 3]                                # the Weekly band never shows as an area
+    rows = PO.engine_zone_rows(snap)
+    assert list(rows["zone_type"]) == ["ENGINE_LEVEL_1H|confluence: Weekly 22,476–22,795", "ENGINE_LEVEL_1D"]
+    assert PT.tf_word(rows["zone_type"].iloc[0]) == "1H" and PT.zone_note(rows["zone_type"].iloc[0]) == "confluence: Weekly 22,476–22,795"
+    words = PO.area_words("BEARISH", 22543.75, 22621.8, rows["zone_type"].iloc[0], 22400.0)
+    assert words.startswith("supply 22,544–22,622 (1H,") and words.endswith("; confluence: Weekly 22,476–22,795)")
+    from bots_common import level_reaction as LR
+    areas = PO.trade_side_areas(rows, PO.ENGINE_TFS, 22400.0, {"ok": True, "trend": "DOWN", "sides": {LR.BEAR}}, 3)
+    assert {round(a[1]) for a in areas} == {22544, 22725}

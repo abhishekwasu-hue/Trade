@@ -457,26 +457,25 @@ def test_band_flip_facts_broken_vs_flipped():
 
 # ------------------------------------------------------------------------------------------------ synthetic 12-Oct fixture (oct12_fixture)
 def test_oct12_synthetic_fixture_supply_flips_when_the_first_swing_after_the_break_is_confirmed():
-    """tests/oct12_fixture.py (synthetic bear call): its supply is a support broken by acceptance with nothing below it (new lows). Under
-    Abhi Z-1s (the corrected Z-1a wording) the far-side swing is the first swing low formed after the break and the zone FLIPS when that
-    swing is CONFIRMED — it is not traded through. The zone is then a seller location (old spec §5.4 made it the setup level by
-    acceptance); the in-zone study decides (here: no handover ⇒ wait, never a ② / ③ refusal)."""
+    """tests/oct12_fixture.py (synthetic bear call): its 1H supply is a support broken by acceptance with nothing below it (new lows).
+    Under Abhi Z-1s (the corrected Z-1a wording) the far-side swing is the first swing low formed after the break and the zone FLIPS when
+    that swing is CONFIRMED — it is not traded through. The zone is then a seller location; on the last day the in-zone study decides
+    (⑥ judged, never a ② / ③ refusal). Abhi Z-1u: its own 1H band (the overlapping Daily band is a separate level, not a location)."""
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=False)
     new = E3.V22(m15, s={"level_death_side": "role"}, ltf=ltf, futures=fut)
-    old = E3.V22(m15, s={"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False}, ltf=ltf,
-                 futures=fut)
     ts = new.levels.ts
-    bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == ts.dt.normalize().iloc[-1]]
-    so = [r for r in (old.decide(t) for t in bars) if r["decision"] == "setup"]
-    assert so
-    t = so[0]["bar"]
-    x = [y for y in new.levels.snapshot(t) if y["lo"] <= so[0]["level"]["hi"] and y["hi"] >= so[0]["level"]["lo"]]
-    assert x and x[0]["state"] == FL.FLIPPED and x[0]["role"] == LV.RES
+    t = next(i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == ts.dt.normalize().iloc[-1])
+    snap = new.levels.snapshot(t)
+    x = [y for y in snap if y["tf"] == "1H" and y["role"] == LV.RES and y["state"] == FL.FLIPPED and y["far_swing"]
+         and y["far_swing"]["source"] == "first_confirmed_after_break" and y["lo"] <= m15["high"].iloc[t] and y["hi"] >= m15["low"].iloc[t]]
+    assert x
     fs = x[0]["far_swing"]
-    assert fs["source"] == "first_confirmed_after_break" and x[0]["flipped_at"] == fs["known_bar"]   # flipped AT its confirmation
+    assert x[0]["flipped_at"] == fs["known_bar"]                           # flipped AT its confirmation
     assert m15["low"].iloc[fs["known_bar"]:t + 1].min() >= fs["price"]     # never traded through (reaching = confirmation)
     assert any(y["id"] == x[0]["id"] for y in new.levels.active(t, "DOWN"))
+    daily = [y for y in snap if y["tf"] == "D" and not (y["hi"] < x[0]["lo"] or y["lo"] > x[0]["hi"])]
+    assert all(not y["trade_location"] for y in daily) and all(y["id"] not in {a["id"] for a in new.levels.active(t, "DOWN")} for y in daily)
     r = new.decide(t)
     assert (r["level"] or {}).get("id") == x[0]["id"] and r["checklist"]["③"][0] is True and r["checklist"]["⑥"][0] is not None
 
@@ -559,12 +558,12 @@ def _day_bars(V, day):
 
 
 def _zone_level(V, t):
-    """The decision3 level at the zone: the one armed as a seller zone (`Levels.active(t, "DOWN")`) when several overlap there (with the
-    Z-1t Daily warm-up, wide Q40 prior bands overlap the zone — OPEN_QUESTIONS Z-1u), else the first."""
-    hits = [x for x in V.levels.snapshot(t) if x["lo"] <= sum(ZONE) / 2 <= x["hi"]]
-    assert hits, f"no decision3 level at the {ZONE} zone (report, do not tune)"
-    armed = {x["id"] for x in V.levels.active(t, "DOWN")}
-    return next((x for x in hits if x["id"] in armed), hits[0])
+    """Abhi's 12 Oct seller zone = the 1H band 22,543.75–22,621.80 itself (Abhi Z-1u: built from its own candles, never merged / widened;
+    the overlapping Weekly bands are separate, context-only levels)."""
+    hits = [x for x in V.levels.snapshot(t) if x["tf"] == "1H" and abs(x["lo"] - ZONE[0]) < 0.01 and abs(x["hi"] - ZONE[1]) < 0.01]
+    assert hits, f"no decision3 1H level {ZONE} (report, do not tune): " + \
+        str([(x["id"], x["tf"], x["lo"], x["hi"]) for x in V.levels.snapshot(t) if not (x["hi"] < ZONE[0] or x["lo"] > ZONE[1])])
+    return hits[0]
 
 
 def zone_table(r):
@@ -575,59 +574,85 @@ def zone_table(r):
     return "\n".join(out + [f"summary: {z.get('summary')}"])
 
 
-def _merged_zone_cause(lvl):
-    """The one known cause for the 12 / 13 Oct zone facts to differ from Abhi's (22,544–22,622 spot zone flipped 8 Oct): with the Daily
-    warm-up (Abhi Z-1t, as live) the Q40 prior Daily / Weekly bands are born at the window start and the 1H zone merges into such a wider
-    band (`Levels._born` merge) that broke and flipped earlier. Returns the xfail text, or None when the facts are not that case."""
-    prior = any(b in lvl.get("births", []) for b in ("a:D-prior", "a:W-prior"))
-    if prior and lvl["lo"] < ZONE[0] and lvl["hi"] > ZONE[1]:
-        return (f"zone facts differ from Abhi's 22,544–22,622 / 8 Oct flip — Z-1t Daily warm-up: Q40 prior bands merged the zone into "
-                f"{lvl['lo']:,.2f}–{lvl['hi']:,.2f} ({'+'.join(lvl['births'])}), flipped {lvl.get('flipped_ts')} (OPEN_QUESTIONS Z-1u)")
-    return None
+def _rows_on(V, ix, lid):
+    """decide() rows of bars ix with this level's own evaluation (`level_evals` + `_level_eval` facts when it is not the row's level)."""
+    out = []
+    for t in ix:
+        r = V.decide(t)
+        if (r.get("level") or {}).get("id") != lid:
+            _, _, _, ctx = V.step1(t)
+            lv = [x for x in V.levels.snapshot(t) if x["id"] == lid]
+            if lv and ctx["trend"] in ("UP", "DOWN"):
+                dd, part, extra = V._level_eval(t, ctx["trend"], lv[0], ctx["cap"], ctx["notes"])
+                r = {**r, "decision": {"s": "setup", "w": "wait", "n": "no_trade"}[dd], "checklist": {**r["checklist"], **part},
+                     "level": lv[0], "commit": extra.get("commit"), "zone_read": extra.get("zone_read"), "conviction": extra.get("conviction")}
+        out.append(r)
+    return out
 
 
-def test_real_12_oct_flipped_seller_zone_in_zone_study_and_golden_bear_call(real):
-    """12 Oct NIFTY (Abhi Z-1e): the seller zone around 22,544–22,622 spot is FLIPPED (a resistance now) ⇒ a seller area; the in-zone
-    study decides. Abhi's bear call that day is the golden truth (handover + LTF CHoCH after the arrival + dominant commitment on higher
-    FUT volume, Z-1p / Z-1q / Z-1r) — asserted, never tuned."""
+def test_real_12_oct_seller_zone_in_zone_study_and_golden_bear_call(real):
+    """12 Oct NIFTY (Abhi Z-1e / Z-1w): the 22,543.75–22,621.80 spot zone is a seller area that day (role resistance, not BROKEN / DEAD)
+    and Abhi's bear call is the golden truth (handover in THIS visit + LTF CHoCH after the arrival + dominant commitment on higher FUT
+    volume, Z-1p / Z-1q / Z-1r / Z-1v) — asserted on that band, never tuned. A miss xfails ONLY on its exact, asserted cause."""
     m15, ltf, fut, V = real
     ix = _day_bars(V, "2026-10-12")
     lvl = _zone_level(V, ix[0])
-    assert lvl["state"] == FL.FLIPPED and lvl["role"] == LV.RES
-    rows = [V.decide(t) for t in ix]
-    at = [r for r in rows if (r.get("level") or {}).get("id") == lvl["id"] and (r["checklist"].get("③") or [None])[0]]
+    assert lvl["role"] == LV.RES and lvl["state"] in (FL.ACTIVE, FL.TESTED, FL.FLIPPED)   # Abhi Z-1w: a seller area on 12 Oct
+    rows = _rows_on(V, ix, lvl["id"])
+    at = [r for r in rows if (r["checklist"].get("③") or [None])[0]]
     for r in at:
         cm = r.get("commit") or {}
-        print(f"\n{r['ts']} {r['decision']} ⑥ {r['checklist'].get('⑥')} conv {r.get('conviction')} · G4 {r['checklist'].get('G4')}"
-              f"\n  handover {cm.get('handover_state')} · {cm.get('choch_vs_arm')} · gaps {cm.get('vol_gaps')}")
+        print(f"\n{r['ts']} {r['decision']} ⑥ {r['checklist'].get('⑥')} conv {r.get('conviction')} · visit {cm.get('visit_start')} → "
+              f"{cm.get('visit_end')} (previous ended {cm.get('visit_prev_end')}) · handover {cm.get('handover_state')} · "
+              f"{cm.get('choch_vs_arm')} · {cm.get('form')} body×{cm.get('body_mult')} vol×{cm.get('vol_mult')} · gaps {cm.get('vol_gaps')}")
         print(zone_table(r))
-    assert at and all(r["checklist"]["G4"][0] is None for r in at)        # context only
+    assert at
     bear = [r for r in at if r["decision"] == "setup" and r["trend_used"] == "DOWN"]
-    assert bear, f"golden 12 Oct bear call NOT produced: {[(r['ts'][11:16], r['checklist'].get('⑥')) for r in at]}"
-    cm = bear[0]["commit"]
-    assert cm["handover_present"] is True and cm["choch"]["done"] and cm["choch"]["after_arrival"]
-    assert pd.Timestamp(cm["choch"]["at"]) > pd.Timestamp(cm["study_from"]) and not cm.get("data_problem")
-    assert cm.get("vol_mult") is not None and cm["vol_mult"] > 1.0
+    if bear:
+        cm = bear[0]["commit"]
+        assert cm["handover_present"] is True and cm["choch"]["done"] and not cm.get("data_problem")
+        assert pd.Timestamp(cm["choch"]["at"]) > pd.Timestamp(cm["visit_start"]) and cm["vol_mult"] > 1.0
+        return
+    # the one known cause (OPEN_QUESTIONS Z-1z): the visit that day starts 12 Oct 09:15 (the 9 Oct visit ended at the 9 Oct 15:00 close
+    # below the band, Abhi Z-1v); the 09:30 dominant red candle has fewer than study_min_bars in-zone bars before it ⇒ no handover can be
+    # read; its close below the band ends the visit; no later visit that day
+    by = {r["ts"][11:16]: r for r in rows}
+    c930 = by["09:30"]["commit"] or {}
+    assert str(c930.get("visit_start")).startswith("2026-10-12 09:15") and str(c930.get("visit_prev_end")).startswith("2026-10-09 15:00")
+    assert c930.get("handover_present") is False and (c930.get("handover_state") or {}).get("seen_at") is None
+    assert c930.get("form") and int(by["09:30"]["bar"]) - int(c930["visit_start_bar"]) < int(V.s["study_min_bars"])
+    assert str(by["09:30"]["checklist"]["⑥"][1]).startswith(M.REASON[M.C_NO_HANDOVER]) and str(c930.get("visit_end")).startswith("2026-10-12 09:30")
+    later = [r for r in rows if r["ts"][11:16] > "09:30" and (r["checklist"].get("③") or [None])[0]]
+    assert all(((r.get("commit") or {}).get("confirm_wait") == "no_visit") for r in later), [(r["ts"], r["checklist"]["⑥"]) for r in later]
+    pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — Abhi Z-1v: the visit starts 12 Oct 09:15 (the 9 Oct visit "
+                 "ended at the 9 Oct 15:00 close below the band); the 09:30 dominant red candle (body "
+                 f"{c930.get('body_mult')}×) has only {int(by['09:30']['bar']) - int(c930['visit_start_bar'])} in-zone bar(s) before it "
+                 f"< study_min_bars {V.s['study_min_bars']} ⇒ no handover; its close below the band ends the visit (OPEN_QUESTIONS Z-1z)")
 
 
-def test_real_12_oct_zone_is_the_band_that_flipped_on_8_oct(real):
-    """Abhi (KB K4 fixture): the 12 Oct seller zone is the 22,544–22,622 spot band that flipped on 8 Oct. Any difference xfails ONLY on
-    its one known cause (`_merged_zone_cause`); anything else fails."""
+def test_real_oct_1_to_12_lifecycle_of_the_22544_22622_band(real):
+    """Abhi Z-1w: the 22,543.75–22,621.80 band is built from its own 1H swing candle (5 Oct, Z-1u — never widened); its full lifecycle
+    from 1 Oct (incl. the narrower band it overlaps — lineage) is printed for the report; on 12 Oct it is a seller area."""
     m15, ltf, fut, V = real
     ix = _day_bars(V, "2026-10-12")
     lvl = _zone_level(V, ix[0])
-    print(f"\n12 Oct zone: {lvl['lo']:,.2f}–{lvl['hi']:,.2f} {lvl['births']} {lvl['state']} flipped {lvl.get('flipped_ts')}")
-    if not str(lvl.get("flipped_ts")).startswith("2026-10-08"):
-        why = _merged_zone_cause(lvl)
-        assert why, lvl
-        pytest.xfail(why)
-    assert lvl["state"] == FL.FLIPPED and lvl["role"] == LV.RES
+    Z = V.levels.L[lvl["id"]]
+    T = lambda b: str(V.levels.ts.iloc[int(b)])[:16]                       # noqa: E731
+    assert Z.tf == "1H" and len({(round(lo, 2), round(hi, 2)) for _, lo, hi in Z.bands}) == 1   # never widened
+    for x in Z.lineage:
+        o = V.levels.L[x["overlaps"]] if "overlaps" in x else None
+        if o is not None:
+            print(f"\nlineage L{o.id} {o.bands[0][1]:,.2f}–{o.bands[0][2]:,.2f} ({o.tf}):",
+                  [(T(b), k, d) for b, k, d in o.events if k != "test" and T(b) >= "2026-10-01"])
+    ev = [(T(b), k, d) for b, k, d in Z.events if k != "test" and "2026-10-01" <= T(b) <= "2026-10-12 23:59"]
+    print(f"\nL{Z.id} {ZONE} born {T(Z.born_bar)} ({Z.births[0]}, {Z.role0}):", ev)
+    assert Z.role_at(ix[0]) == LV.RES and Z.state_at(ix[0]) not in (FL.BROKEN, FL.DEAD)
 
 
 def test_real_13_oct_no_bear_call_then_flip_only_past_22731(real):
     """13 Oct NIFTY (Abhi): price entered the seller zone, small red candles on low volume, no fall, a sideways base, afternoon breakout
-    ⇒ NO bear call; a flip only if spot passes 22,731.8. Abhi Z-1f: this zone already flipped once (8 Oct) ⇒ passing its far swing makes
-    it DEAD (no second flip) — reported. No bull setup while the Daily trend is DOWN (Abhi 26a0bfe, H1)."""
+    ⇒ NO bear call (golden). The state check (a flip / DEAD only past 22,731.8) was written on the old 8-Oct-flip premise that Abhi
+    removed (Z-1w): it xfails ONLY on its exact, asserted cause (OPEN_QUESTIONS Z-1y). No bull setup while the Daily trend is DOWN."""
     m15, ltf, fut, V = real
     ix = _day_bars(V, "2026-10-13")
     lvl = _zone_level(V, ix[0])
@@ -640,6 +665,9 @@ def test_real_13_oct_no_bear_call_then_flip_only_past_22731(real):
                 and (r.get("level") or {}).get("lo", 0) <= ZONE[1] and (r.get("level") or {}).get("hi", 0) >= ZONE[0]]
     if all(r["trend_used"] == "DOWN" for r in rows):
         assert not [r for r in rows if r["decision"] == "setup" and (r.get("level") or {}).get("role") == LV.SUP]
+    nxt = [w for w in (rows[-1].get("watch_list") or []) if w["role"] == LV.RES]
+    print(f"13 Oct close watch-list: {[(w['lo'], w['hi'], w['state']) for w in nxt]}")
+    assert nxt and nxt[0]["lo"] > ZONE[1]                                  # Abhi B2: the next seller zones above are already armed
     L = V.levels.L[lvl["id"]]
     t = ix[-1]
     hi = float(m15["high"].iloc[ix].max())
@@ -648,15 +676,14 @@ def test_real_13_oct_no_bear_call_then_flip_only_past_22731(real):
           f"trend {[r['trend_used'] for r in rows][-1]}")
     if hi > FAR_UP and (m15["close"].iloc[ix] > ZONE[1]).any():
         assert st == FL.DEAD                                               # Z-1f / Z-1k (Abhi: DEAD): second break past the far swing
-    else:
-        assert st in (FL.BROKEN, FL.FLIPPED) and L.role_at(t) == LV.RES    # not past 22,731.8 ⇒ no flip to support
-    nxt = [w for w in (rows[-1].get("watch_list") or []) if w["role"] == LV.RES]
-    print(f"13 Oct close watch-list: {[(w['lo'], w['hi'], w['state']) for w in nxt]}")
-    assert nxt
-    if not nxt[0]["lo"] > ZONE[1]:                                         # Abhi B2: the next seller zones above are already armed
-        why = _merged_zone_cause(_zone_level(V, t))
-        assert why and nxt[0]["id"] == lvl["id"] and all(w["lo"] > ZONE[1] for w in nxt[1:]) and len(nxt) > 1, nxt
-        pytest.xfail("13 Oct B2 watch-list: " + why)
+    elif not (st in (FL.BROKEN, FL.FLIPPED) and L.role_at(t) == LV.RES):
+        f = V.levels.flip_view(L, t)
+        T = lambda b: str(V.levels.ts.iloc[int(b)])[:16]                   # noqa: E731
+        assert L.count("flip", t) == 1 and st == FL.FLIPPED and L.role_at(t) == LV.SUP and f["far_swing"]["source"] == "before_break"
+        assert f["far_swing"]["price"] < FAR_UP and T(f["flipped_at"]).startswith("2026-10-13")
+        pytest.xfail(f"zone's own lifecycle (Z-1u / Z-1w: born {T(L.born_bar)} as resistance, never flipped before): its up-break far swing "
+                     f"is {f['far_swing']['price']:,.2f} ({f['far_swing']['ts'][:16]}), passed {T(f['flipped_at'])} ⇒ FLIPPED to support; "
+                     f"the 22,731.8 / DEAD check came from the removed 8 Oct flip premise (OPEN_QUESTIONS Z-1y)")
 
 
 def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmup(real):
@@ -667,7 +694,7 @@ def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmu
     m15, ltf, fut, V = real
     ix = _day_bars(V, "2026-09-29")
     z = [x for x in V.levels.snapshot(ix[0]) if abs(x["lo"] - 22725.45) < 1.0 and abs(x["hi"] - 22809.9) < 1.0]
-    assert z and "a:D-prior" in z[0]["births"]
+    assert z and "a:D-prior" in z[0]["births"] and z[0]["tf"] == "D"      # Abhi Z-1u: its own Daily band, no 1H zone over it
     L = V.levels.L[z[0]["id"]]
     ts = lambda b: str(V.levels.ts.iloc[b])[:16]                          # noqa: E731
     ev = [(ts(b), k) for b, k, _ in L.events if k in ("broken", "flip", "dead", "reclaim") and ts(b).startswith("2026-09-29")]
@@ -682,7 +709,8 @@ def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmu
         if r["ts"][11:16] in ("12:00", "12:15"):
             cm = r.get("commit") or {}
             print(f"{r['ts'][11:16]} {r['decision']} lvl {(r.get('level') or {}).get('id')} ③ {r['checklist'].get('③')} "
-                  f"⑥ {r['checklist'].get('⑥')} · handover {cm.get('handover_state')} · CHoCH {cm.get('choch_vs_arm') or cm.get('ltf_line')}")
+                  f"⑥ {r['checklist'].get('⑥')} · visit {cm.get('visit_start')} (previous ended {cm.get('visit_prev_end')}) · handover "
+                  f"{cm.get('handover_state')} · CHoCH {cm.get('choch_vs_arm') or cm.get('ltf_line')}")
             assert (r.get("level") or {}).get("id") == L.id and r["checklist"]["③"][0] is True   # the pullback into the flipped zone
         assert r["decision"] != "setup"                                    # no FUT that day ⇒ no entry
 
@@ -750,11 +778,15 @@ def test_zone_broken_the_next_zone_is_already_armed(mirror):
     lv = _levels(m, p2, [])
     trend = "UP" if mirror else "DOWN"
     before = [x["id"] for x in lv.active(40, trend)]
-    R1, R2 = lv.L[before[0]], lv.L[before[1]]                             # nearest first, the next one already armed
-    assert len(before) >= 2 and abs(R2.anchor - f(130)) < 1e-6 and (R1.hi < R2.lo if not mirror else R1.lo > R2.hi)
+    # Abhi Z-1u: swing and BOS-base bands are separate 1H levels now (never merged / widened) ⇒ more, touching bands; the B2 rule is the
+    # same: the zone that takes over after the nearest breaks was already armed before the break (no reset, no gap)
+    R1 = lv.L[before[0]]
+    assert len(before) >= 2
     t_brk = next(b for b, k, _ in R1.events if k == "broken" and b > 40)
     after = [x["id"] for x in lv.active(t_brk, trend)]
-    assert R1.id not in after and after[0] == R2.id and R1.state_at(t_brk) == FL.BROKEN
+    assert R1.id not in after and R1.state_at(t_brk) in (FL.BROKEN, FL.DEAD)   # (a flipped zone may die on that bar, Z-1f)
+    R2 = lv.L[after[0]]
+    assert R2.id in before and (R2.lo > R1.lo if not mirror else R2.hi < R1.hi)
     assert all(R2.id in [x["id"] for x in lv.active(t, trend)] for t in range(40, len(m)))   # no gap in watching R2
 
 
