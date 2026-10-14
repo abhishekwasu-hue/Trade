@@ -329,15 +329,41 @@ def _render_signal_symbols_panel():
     cur = cloud_db.get_signal_symbols()
     with st.expander(f"🎯 Signal symbols: {' / '.join(cur)} (signals · approvals · pre-open)", expanded=False):
         st.caption("फक्त या indexes वर engine signals, Vision ✅ approvals आणि pre-open ओळी. बाकी (उदा. SENSEX) फक्त data / charts. "
-                   "बदलल्यावर one-bot mode पुन्हा लावा: `python3 scripts/set_one_bot_mode.py` (Vision symbols + 15M SRv2 on/off).")
+                   "सेव्ह केल्यावर one-bot mode चा signal-symbols भाग आपोआप लागतो (15M SRv2 per symbol on/off, Vision srv2 symbols, PAPER "
+                   "instruments; LIVE combo ला हात नाही). सेव्ह ⇒ signal symbols साठी 15M SRv2 चा `signal_source` = engine (PAPER) — "
+                   "तिथे आधी 'own' किंवा 'both' निवडलं असेल तर ते बदलून engine होतं. अयशस्वी झाल्यास: `python3 scripts/set_one_bot_mode.py`.")
         pick = st.multiselect("Signal symbols", list(cloud_db.SIGNAL_SYMBOLS_CHOICES), default=cur, key="bdsr_signal_symbols")
         if st.button("💾 Signal symbols सेव्ह करा", key="bdsr_signal_symbols_save"):
             if not pick:
                 st.error("किमान एक symbol निवडा.")
             elif cloud_db.save_signal_symbols(pick):
                 st.success(f"✅ Signal symbols: {' / '.join(pick)}")
+                _apply_signal_symbols_one_bot(cur, pick)
             else:
                 st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
+
+
+def _apply_signal_symbols_one_bot(before, after):
+    """Abhi 9a (PF-3): signal_symbols सेव्ह ⇒ `bots_common.one_bot.apply_signal_symbols` (script चाच plan / apply, LIVE नकार तसाच) आणि
+    छोटा निकाल. अयशस्वी ⇒ symbols सेव्ह राहतात, त्रुटी + कोणते भाग लागले ते + script चालवायची सूचना."""
+    from bots_common import one_bot as OB
+    res = OB.apply_signal_symbols(before=before, after=after, by="dashboard")
+    changed = [c for c in res.get("changes") or [] if not c.get("skip") and c.get("before") != c.get("after")]
+    if res.get("ok"):
+        st.success(f"✅ One-bot mode लागू ({res.get('at') or '—'}): {len(res.get('applied') or [])} भाग लिहिले, {len(changed)} बदल"
+                   + (" — " + "; ".join(f"{c['label']} {c['symbol']} {c['key']}: {c['before']} → {c['after']}" for c in changed[:8])
+                      if changed else " (आधीच तसंच)"))
+        st.caption(f"ℹ️ signal symbols ({' / '.join(after)}) साठी 15M SRv2 चा `signal_source` = engine (PAPER) लावला — "
+                   "तिथे आधी 'own' किंवा 'both' निवडलं असेल तर ते बदलून engine झालं (LIVE combo ला हात नाही).")
+    else:
+        f = res.get("failed") or {}
+        st.error(f"❌ Signal symbols सेव्ह झाले, पण one-bot mode पूर्ण लागला नाही — {f.get('part')}: {f.get('error')}. "
+                 f"लागलेले भाग: {', '.join(res.get('applied') or []) or 'काहीच नाही'}; न चाललेले: {', '.join(res.get('not_run') or []) or '—'}. "
+                 "VPS वर चालवा: `python3 scripts/set_one_bot_mode.py`.")
+    for w in res.get("warnings") or []:
+        st.warning(w)
+    if res.get("skipped_live"):
+        st.warning(f"LIVE combo ला हात नाही: {', '.join(res['skipped_live'])}")
 
 
 def _render_vix_halt_alert_banner():
@@ -514,6 +540,31 @@ def render():
                 "Cooldown (मिनिटं)", settings, "sl_tsl_cooldown_minutes", strategy_key, symbol,
                 min_value=0, max_value=120, step=5,
             )
+
+        # 🎓 Abhi 7a ("loss नंतर lock-out नाही") — 15M SRv2 चा symbol-व्यापी post-SL cooldown (आधी hard-coded 30 मिनिटं) आता setting,
+        # default बंद. फक्त 15M SRv2 (5M Instant / Classic चा 30-मिनिट (level, role) cooldown आणि MCX चा SL cooldown वेगळे, बदल नाही).
+        post_sl_cooldown_enabled = bool(settings.get("post_sl_cooldown_enabled", False))
+        post_sl_cooldown_minutes = settings.get("post_sl_cooldown_minutes", 30)
+        if strategy_key == "15m_dynamic_sr":
+            with st.expander("⏸️ Post-SL Cooldown (symbol-व्यापी, default बंद)", expanded=False):
+                post_sl_cooldown_enabled = st.checkbox(
+                    "SL नंतर cooldown सक्रिय (डीफॉल्ट बंद — Abhi: loss नंतर lock-out नाही)",
+                    value=post_sl_cooldown_enabled,
+                    key=_widget_key(strategy_key, symbol, "post_sl_cooldown_enabled"),
+                )
+                st.caption(
+                    "चालू केल्यास: SL लागल्यावर या symbol वर (कुठल्याही level वर) इतकी मिनिटं नवीन entry नाही — जुनं वर्तन. "
+                    "बंद (डीफॉल्ट): असा cooldown नाही. वरचा 'SL/TSL Cooldown (त्याच level वर)' वेगळा आहे. "
+                    "फक्त bot च्या स्वतःच्या (own) मार्गाला लागतो; engine मार्गात loss lock-out नाही."
+                )
+                st.warning(
+                    "⚠️ सध्या हा switch चालू केला तरी काहीच फरक पडत नाही: SL लागल्याची वेळ (`last_sl_hit_time`) कोणताही code लिहीत नाही, "
+                    "त्यामुळे हा cooldown कधीच सुरू होत नाही (आधीही होत नव्हता). खरंच लागू व्हायला हवा असल्यास: OPEN_QUESTIONS B3."
+                )
+                post_sl_cooldown_minutes = _number_input(
+                    "Cooldown (मिनिटं, symbol-व्यापी)", settings, "post_sl_cooldown_minutes", strategy_key, symbol,
+                    min_value=1, max_value=240, step=5, disabled=not post_sl_cooldown_enabled,
+                )
 
         if strategy_key == "15m_dynamic_sr":
             with st.expander("⏱️ Minimum Level-Hold Duration Before Entry", expanded=False):
@@ -1476,6 +1527,8 @@ def render():
             new_settings["entry_min_hold_gate_enabled"] = bool(entry_min_hold_gate_enabled)
             new_settings["entry_min_hold_minutes"] = int(entry_min_hold_minutes)
             new_settings["entry_min_hold_first_trade_only"] = bool(entry_min_hold_first_trade_only)
+            new_settings["post_sl_cooldown_enabled"] = bool(post_sl_cooldown_enabled)
+            new_settings["post_sl_cooldown_minutes"] = int(post_sl_cooldown_minutes)
 
         ok = cloud_db.save_strategy_settings(strategy_key, symbol, new_settings)
         if ok:

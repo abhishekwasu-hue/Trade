@@ -18,7 +18,8 @@ Nifty SRv2 Momentum-Filter Reversal — आता Multi-Timeframe (15-मिन�
   - Exit-रचना (trading_engine.py मध्ये केंद्रीकृत) — Spot SL(0.10%, entry_level_price पासून) +
     Premium Target(80%) + Next-Level-Exit (15M/30M/60M पूल केलेले) — जे आधी घडेल ते.
 
-Multi-Hit (per-level, दिवसातून कमाल 2 वेळा) आणि Cooldown (SL नंतर 30 मिनिटं, symbol-व्यापी) — आधीचेच.
+Multi-Hit (per-level, दिवसातून कमाल 2 वेळा) — आधीचेच. Cooldown (SL नंतर symbol-व्यापी) — आता dashboard setting
+`post_sl_cooldown_enabled` (default बंद, Abhi 7a: "loss नंतर lock-out नाही"), चालू केल्यास `post_sl_cooldown_minutes` (default 30).
 """
 import argparse
 
@@ -49,6 +50,8 @@ from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_ex
 TOUCH_TOLERANCE_PCT = 0.0
 SL_PCT_OF_CREDIT = 30
 TARGET_PCT_OF_PREMIUM = 80
+# 🎓 Abhi 7a (loss नंतर lock-out नाही): हा symbol-व्यापी post-SL cooldown आता dashboard setting `post_sl_cooldown_enabled`
+# (cloud_db 15m_dynamic_sr, default False ⇒ cooldown नाही). चालू केल्यास `post_sl_cooldown_minutes` (default हाच 30) — जुनं वर्तन तंतोतंत.
 COOLDOWN_MINUTES = 30
 # 🎓 entry-gate review मध्ये सापडलेली bug — 5M Instant Trader व Classic SR मध्ये 14:45 नंतर नवीन entry
 # नाही (EOD exit जवळ आल्यावर उघडलेला trade लगेचच बंद व्हायचा), पण या 15M SRv2 मध्ये हा कट-ऑफ नव्हताच
@@ -99,12 +102,29 @@ def compute_sl_pct_from_absolute(sl_rupees, net_credit_total):
     return min((sl_rupees / net_credit_total) * 100, 100)
 
 
-def is_in_cooldown(last_sl_hit_time, now):
-    """Rule (Cooldown) — SL लागल्यावर COOLDOWN_MINUTES पर्यंत नवीन entry नाही."""
+def is_in_cooldown(last_sl_hit_time, now, minutes=COOLDOWN_MINUTES):
+    """Rule (Cooldown) — SL लागल्यावर `minutes` (default COOLDOWN_MINUTES) पर्यंत नवीन entry नाही."""
     if last_sl_hit_time is None:
         return False
     elapsed_minutes = (now - last_sl_hit_time).total_seconds() / 60
-    return elapsed_minutes < COOLDOWN_MINUTES
+    return elapsed_minutes < minutes
+
+
+def post_sl_cooldown_minutes(settings):
+    """Abhi 7a: post-SL cooldown चालू आहे का — settings `post_sl_cooldown_enabled` (default False ⇒ None = cooldown नाही);
+    चालू ⇒ `post_sl_cooldown_minutes` (default COOLDOWN_MINUTES)."""
+    settings = settings or {}
+    if not settings.get("post_sl_cooldown_enabled", False):
+        return None
+    raw = settings.get("post_sl_cooldown_minutes", COOLDOWN_MINUTES)
+    try:
+        minutes = float(raw)
+        if minutes != minutes or minutes < 0:                               # NaN / ऋण ⇒ बिघडलेली value
+            raise ValueError(raw)
+        return minutes
+    except (TypeError, ValueError):
+        print(f"⚠️ post_sl_cooldown_minutes बिघडलेली value ({raw!r}) ⇒ default {COOLDOWN_MINUTES} मिनिटं वापरली")
+        return float(COOLDOWN_MINUTES)
 
 
 def is_repeated_level(level_price, last_tested_level, tolerance_pct=LEVEL_REPEAT_TOLERANCE_PCT):
@@ -226,8 +246,10 @@ def process_symbol(access_token, symbol, lot_size=None):
     now = get_ist_now()
     state = cloud_db.get_srv2_state(symbol)
 
-    if is_in_cooldown(state["last_sl_hit_time"], now):
-        return f"{symbol}: Cooldown कालावधी चालू आहे (SL नंतर {COOLDOWN_MINUTES} मिनिटं विराम)"
+    # 🎓 Abhi 7a: setting बंद (default) ⇒ cooldown नाही; चालू ⇒ जुनं वर्तन (last_sl_hit_time पासून N मिनिटं, symbol-व्यापी).
+    _cooldown_min = post_sl_cooldown_minutes(settings)
+    if _cooldown_min is not None and is_in_cooldown(state["last_sl_hit_time"], now, _cooldown_min):
+        return f"{symbol}: Cooldown कालावधी चालू आहे (SL नंतर {_cooldown_min:g} मिनिटं विराम)"
 
     lots = settings["lots"]
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या, default

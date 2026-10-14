@@ -177,6 +177,228 @@ def test_signal_symbols_setting_drives_one_bot(env, capsys):
     assert "symbols NIFTY · mode PAPER" in OB.one_bot_status()["line"]
 
 
+class _Log:
+    """log_setup logger ऐवजी — (level, formatted message) नोंदी."""
+    def __init__(self):
+        self.lines = []
+
+    def info(self, msg, *a):
+        self.lines.append(("INFO", msg % a))
+
+    def error(self, msg, *a):
+        self.lines.append(("ERROR", msg % a))
+
+
+def _now():
+    return pd.Timestamp("2030-01-07 10:05:00")
+
+
+def test_dashboard_signal_symbols_save_applies_one_bot_part(env):
+    """Abhi 9a (PF-3): dashboard save ⇒ script चाच plan (signal-symbols भाग) लगेच: 15M SRv2 per symbol, Vision srv2 symbols, PAPER instruments.
+    बाकी bots (5M / Classic / MCX) ला हात नाही; before-state file नाही; log मध्ये before / after + by dashboard + वेळ."""
+    db, abhi, tmp = env
+    from vision import config as VC
+    assert cloud_db.save_signal_symbols(["NIFTY"]) is True
+    log = _Log()
+    res = OB.apply_signal_symbols(before=["NIFTY", "BANKNIFTY"], after=["NIFTY"], now_fn=_now, logger=log)
+    assert res["ok"] and res["failed"] is None and res["not_run"] == [] and res["at"] == "2030-01-07T10:05:00"
+    assert res["applied"] == ["15m_dynamic_sr NIFTY", "15m_dynamic_sr BANKNIFTY", "15m_dynamic_sr SENSEX", "Vision srv2 symbols",
+                              "PAPER instruments"]
+    n = cloud_db.get_strategy_settings("15m_dynamic_sr", "NIFTY")
+    assert n["symbol_enabled"] is True and n["signal_source"] == "engine" and n["trading_mode"] == "PAPER" and n["lots"] == abhi["lots"]
+    assert db.rows[("15m_dynamic_sr", "BANKNIFTY")] == {"symbol_enabled": False}
+    assert db.rows[("15m_dynamic_sr", "SENSEX")] == {"symbol_enabled": False}
+    assert VC.load(OB.VISION_BOT)["symbols"] == ["NIFTY"] and VC.load(OB.VISION_BOT)["approval_required"] is True
+    assert VC.history(OB.VISION_BOT)[-1]["by"] == "dashboard"
+    assert PC.enabled("NIFTY")
+    assert db.rows[("1m_instant", "NIFTY")]["symbol_enabled"] is True                      # signal-symbols भाग नाही ⇒ हात नाही
+    assert db.rows[("classic_sr_reversal", "BANKNIFTY")] == {"symbol_enabled": True}
+    assert not any(p.name.endswith(".json") for p in tmp.iterdir())                         # before-state file नाही (script चाच)
+    (lvl, msg), = log.lines
+    assert lvl == "INFO" and "signal_symbols apply OK at=2030-01-07T10:05:00" in msg and '"by": "dashboard"' in msg
+    assert '"before": ["NIFTY", "BANKNIFTY"], "after": ["NIFTY"]' in msg and '"key": "symbol_enabled"' in msg
+    again = OB.apply_signal_symbols(before=["NIFTY"], after=["NIFTY"], now_fn=_now, logger=log)    # दुसऱ्यांदा ⇒ बदल नाहीत (idempotent)
+    assert again["ok"] and all(c["before"] == c["after"] for c in again["changes"])
+
+
+def test_dashboard_signal_symbols_save_still_refuses_live(env):
+    db, _, tmp = env
+    db.rows[("15m_dynamic_sr", "BANKNIFTY")] = {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
+    assert cloud_db.save_signal_symbols(["NIFTY"]) is True
+    log = _Log()
+    res = OB.apply_signal_symbols(before=["NIFTY", "BANKNIFTY"], after=["NIFTY"], now_fn=_now, logger=log)
+    assert res["ok"] and "15m_dynamic_sr BANKNIFTY" not in res["applied"]
+    assert any("15M SRv2 BANKNIFTY: trading_mode LIVE" in w for w in res["warnings"])
+    assert db.rows[("15m_dynamic_sr", "BANKNIFTY")] == {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
+    assert any(c["symbol"] == "BANKNIFTY" and c["skip"] == "LIVE" for c in res["changes"])
+    # plan नंतर कुणी LIVE केलं (race) ⇒ लिहिण्याआधीचा तपास ⇒ skipped_live, लिहिलं नाही
+    db.rows[("15m_dynamic_sr", "NIFTY")] = {"symbol_enabled": False, "signal_source": "own"}
+    cloud_db._LAST_GOOD_STRATEGY_SETTINGS.clear()
+    io = OB.IO(by="dashboard")
+    changes, _ = OB.plan(io, parts=OB.SIGNAL_SYMBOL_PARTS)
+    assert any(c["symbol"] == "NIFTY" and c["key"] == "symbol_enabled" and c["after"] is True and not c["skip"] for c in changes)
+    db.rows[("15m_dynamic_sr", "NIFTY")]["trading_mode"] = "LIVE"
+    cloud_db._LAST_GOOD_STRATEGY_SETTINGS.clear()
+    rep = OB.apply_reported(io, changes)
+    assert rep["ok"] and "15m_dynamic_sr NIFTY" in rep["skipped_live"]
+    assert db.rows[("15m_dynamic_sr", "NIFTY")] == {"symbol_enabled": False, "signal_source": "own", "trading_mode": "LIVE"}
+
+
+def test_dashboard_signal_symbols_apply_failure_reports_parts(env):
+    """एखादा भाग अयशस्वी ⇒ पुढचे थांबतात, कोणते लागले / कोणते नाही ते निकालात + ERROR log; raise नाही. Plan च अयशस्वी ⇒ काहीच लिहिलं नाही."""
+    db, _, tmp = env
+
+    class BadVision(OB.IO):
+        def vision_save(self, bot, changes):
+            raise RuntimeError("vision db locked")
+    assert cloud_db.save_signal_symbols(["NIFTY"]) is True
+    log = _Log()
+    res = OB.apply_signal_symbols(before=["NIFTY", "BANKNIFTY"], after=["NIFTY"], io=BadVision(by="dashboard"), now_fn=_now, logger=log)
+    assert not res["ok"] and res["failed"] == {"part": "Vision srv2 symbols", "error": "RuntimeError: vision db locked"}
+    assert res["applied"] == ["15m_dynamic_sr NIFTY", "15m_dynamic_sr BANKNIFTY", "15m_dynamic_sr SENSEX"] and res["not_run"] == ["PAPER instruments"]
+    assert db.rows[("15m_dynamic_sr", "BANKNIFTY")] == {"symbol_enabled": False}               # लागलेला भाग खरंच लिहिला
+    assert not os.path.exists(os.environ["PAPER_LOCAL_CONFIG"])                               # न चाललेला भाग लिहिला नाही
+    assert log.lines[-1][0] == "ERROR" and "FAILED" in log.lines[-1][1] and "vision db locked" in log.lines[-1][1]
+
+    class BadRead(OB.IO):
+        def effective(self, strategy, symbol):
+            raise RuntimeError("supabase down")
+    before = repr(sorted(db.rows.items()))
+    res = OB.apply_signal_symbols(before=["NIFTY", "BANKNIFTY"], after=["NIFTY"], io=BadRead(), now_fn=_now, logger=log)
+    assert not res["ok"] and res["failed"]["part"].startswith("plan") and res["applied"] == []
+    assert repr(sorted(db.rows.items())) == before and log.lines[-1][0] == "ERROR"
+
+
+def test_dashboard_apply_uses_saved_symbols_and_refuses_stale_read(env, monkeypatch):
+    """Review #328 blocker: सेव्ह नंतरचं वाचन अयशस्वी ⇒ get_signal_symbols जुनी / default यादी देतो ⇒ काहीच लावायचं नाही, failed
+    "signal_symbols read" (✅ नाही). plan ला `after` हीच यादी (override) जाते."""
+    db, _, tmp = env
+    from vision import config as VC
+    db.rows[("15m_dynamic_sr", "BANKNIFTY")] = {"symbol_enabled": True, "signal_source": "engine", "trading_mode": "PAPER"}
+    before = repr(sorted(db.rows.items()))
+    monkeypatch.setattr(cloud_db, "get_signal_symbols", lambda: ["NIFTY", "BANKNIFTY"])          # read fail ⇒ जुनी यादी
+    log = _Log()
+    res = OB.apply_signal_symbols(before=["NIFTY", "BANKNIFTY"], after=["nifty"], now_fn=_now, logger=log)
+    assert not res["ok"] and res["failed"]["part"] == "signal_symbols read" and res["applied"] == [] and res["changes"] == []
+    assert "NIFTY', 'BANKNIFTY'] ≠ saved ['NIFTY']" in res["failed"]["error"]
+    assert repr(sorted(db.rows.items())) == before and db.rows[("15m_dynamic_sr", "BANKNIFTY")]["symbol_enabled"] is True
+    assert log.lines[-1][0] == "ERROR"
+
+    class BoomRead(OB.IO):
+        def signal_symbols(self):
+            raise RuntimeError("db down")
+    res = OB.apply_signal_symbols(after=["NIFTY"], io=BoomRead(), now_fn=_now, logger=log)
+    assert res["failed"]["part"] == "signal_symbols read" and "db down" in res["failed"]["error"]
+    res = OB.apply_signal_symbols(after=["NIFTY", "CRUDEOIL"], now_fn=_now, logger=log)          # अवैध ⇒ काहीच नाही
+    assert res["failed"]["part"] == "signal_symbols (after)" and repr(sorted(db.rows.items())) == before
+    # override: io काहीही म्हणो, plan ला दिलेली यादीच
+    changes, _ = OB.plan(OB.IO(), parts=OB.SIGNAL_SYMBOL_PARTS, symbols=["NIFTY"])
+    bn = next(c for c in changes if c["strategy"] == OB.ON_KEY and c["symbol"] == "BANKNIFTY")
+    assert bn["after"] is False and next(c for c in changes if c["key"] == "symbols")["after"] == ["NIFTY"]
+    assert VC.load(OB.VISION_BOT)["symbols"] == ["NIFTY"]                                       # (default; अजून काही लिहिलं नाही)
+
+
+def test_live_check_uses_raw_row_when_settings_read_falls_back(env):
+    """Review #328: get_strategy_settings read अयशस्वी ⇒ defaults (PAPER) दिसतात; raw row LIVE ⇒ combo skip, लिहिलं नाही — plan मध्ये आणि
+    लिहिण्याआधीच्या तपासात. Raw read अयशस्वी (लिहिण्याआधी) ⇒ तो टप्पा failed, लिहिलं नाही."""
+    db, _, tmp = env
+    db.rows[("15m_dynamic_sr", "BANKNIFTY")] = {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
+
+    class FallbackEff(OB.IO):                                         # read fail ⇒ cloud_db fallback = defaults (PAPER)
+        def effective(self, strategy, symbol):
+            return dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS.get(strategy, {}))
+    io = FallbackEff(by="dashboard")
+    changes, warns = OB.plan(io, parts=OB.SIGNAL_SYMBOL_PARTS, symbols=["NIFTY"])
+    assert any(c["symbol"] == "BANKNIFTY" and c["strategy"] == OB.ON_KEY and c["skip"] == "LIVE" for c in changes)
+    assert any("15M SRv2 BANKNIFTY: trading_mode LIVE" in w for w in warns)
+    rep = OB.apply_reported(io, changes)
+    assert rep["ok"] and "15m_dynamic_sr BANKNIFTY" not in rep["applied"]
+    assert db.rows[("15m_dynamic_sr", "BANKNIFTY")] == {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
+    # plan PAPER पाहून झाल्यावर raw मध्ये LIVE (race) — effective अजूनही PAPER fallback ⇒ लिहिण्याआधीचा तपास raw पाहतो
+    db.rows[("15m_dynamic_sr", "SENSEX")] = {"symbol_enabled": True}
+    changes, _ = OB.plan(io, parts=(OB.ON_KEY,), symbols=["NIFTY"])
+    db.rows[("15m_dynamic_sr", "SENSEX")]["trading_mode"] = "LIVE_PAPER"
+    rep = OB.apply_reported(io, changes)
+    assert "15m_dynamic_sr SENSEX" in rep["skipped_live"]
+    assert db.rows[("15m_dynamic_sr", "SENSEX")] == {"symbol_enabled": True, "trading_mode": "LIVE_PAPER"}
+
+    class RawFails(FallbackEff):
+        def raw(self, strategy, symbol):
+            raise RuntimeError("Supabase connection नाही")
+    db.rows[("15m_dynamic_sr", "SENSEX")] = {"symbol_enabled": True}
+    changes, _ = OB.plan(io, parts=(OB.ON_KEY,), symbols=["NIFTY"])
+    rep = OB.apply_reported(RawFails(), changes)
+    assert not rep["ok"] and "Supabase connection" in rep["failed"]["error"] and rep["applied"] == []
+    assert db.rows[("15m_dynamic_sr", "SENSEX")] == {"symbol_enabled": True}
+
+
+def test_apply_signal_symbols_never_raises_when_logger_or_clock_break(env, monkeypatch):
+    import log_setup
+
+    def boom(*a, **k):
+        raise RuntimeError("no log dir")
+    monkeypatch.setattr(log_setup, "get_logger", boom)
+    assert cloud_db.save_signal_symbols(["NIFTY"]) is True
+    res = OB.apply_signal_symbols(before=["NIFTY", "BANKNIFTY"], after=["NIFTY"], now_fn=boom)
+    assert res["ok"] and res["at"] is None and "15m_dynamic_sr BANKNIFTY" in res["applied"]
+
+
+def _signal_symbols_panel_app():
+    import page_bot_dynamic_sr_algo as P
+    P._render_signal_symbols_panel()
+
+
+def test_dashboard_panel_save_button_applies_and_shows_result(env):
+    """Dashboard 🎯 panel: सेव्ह ⇒ signal_symbols साठवले + one-bot भाग लागला + छोटा निकाल (mocked cloud_db = FakeDB)."""
+    from streamlit.testing.v1 import AppTest
+    db, _, tmp = env
+    at = AppTest.from_function(_signal_symbols_panel_app, default_timeout=60)
+    at.run()
+    assert not at.exception
+    pre = [x.value for x in at.caption]                                                         # सेव्ह आधीच सूचना
+    assert any("`signal_source` = engine" in x and "'own' किंवा 'both'" in x for x in pre)
+    at.multiselect(key="bdsr_signal_symbols").set_value(["NIFTY"])
+    at.button(key="bdsr_signal_symbols_save").click()
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert cloud_db.get_signal_symbols() == ["NIFTY"]
+    assert any("One-bot mode लागू" in x.value for x in at.success)
+    assert any(x.value.startswith("ℹ️ signal symbols (NIFTY)") and "बदलून engine झालं" in x.value for x in at.caption)
+    assert db.rows[("15m_dynamic_sr", "BANKNIFTY")] == {"symbol_enabled": False}
+
+
+def test_dashboard_panel_stale_read_shows_error_not_success(env, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    db, _, tmp = env
+    monkeypatch.setattr(OB.IO, "signal_symbols", lambda self: ["NIFTY", "BANKNIFTY"])            # सेव्ह नंतरचं वाचन जुनं
+    at = AppTest.from_function(_signal_symbols_panel_app, default_timeout=60)
+    at.run()
+    at.multiselect(key="bdsr_signal_symbols").set_value(["NIFTY"])
+    at.button(key="bdsr_signal_symbols_save").click()
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert not any("One-bot mode लागू" in x.value for x in at.success)
+    assert not any("बदलून engine झालं" in x.value for x in at.caption)
+    assert any("signal_symbols read" in x.value and "set_one_bot_mode.py" in x.value for x in at.error)
+    assert ("15m_dynamic_sr", "BANKNIFTY") not in db.rows
+
+
+def test_dashboard_panel_shows_error_and_keeps_symbols_when_apply_fails(env, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    db, _, tmp = env
+    monkeypatch.setattr(OB.IO, "vision_save", lambda self, bot, changes: (_ for _ in ()).throw(RuntimeError("vision db locked")))
+    at = AppTest.from_function(_signal_symbols_panel_app, default_timeout=60)
+    at.run()
+    at.multiselect(key="bdsr_signal_symbols").set_value(["NIFTY"])
+    at.button(key="bdsr_signal_symbols_save").click()
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert cloud_db.get_signal_symbols() == ["NIFTY"]                                          # symbols सेव्ह राहिले
+    err = " ".join(x.value for x in at.error)
+    assert "vision db locked" in err and "set_one_bot_mode.py" in err and "15m_dynamic_sr BANKNIFTY" in err
+    assert not any("बदलून engine झालं" in x.value for x in at.caption)                          # failure ⇒ after-save सूचना नाही
+
+
 def test_status_flags_auto_trader_cron_and_missing_engine(env, monkeypatch):
     db, _, tmp = env
     (tmp / "cron").write_text("* 4-10 * * 1-5 python3 srv2_momentum_reversal_strategy.py\n*/5 4-9 * * 1-5 python3 oi_signal_auto_trader.py\n")

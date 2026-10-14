@@ -10,6 +10,8 @@ Vision settings, PAPER instruments local override) ⇒ dashboard तेच द�
   python3 scripts/set_one_bot_mode.py --revert       # before-state ⇒ तंतोतंत आधीचं
   python3 scripts/set_one_bot_mode.py --status       # one_bot_status() (pre-open ओळ)
 Auto traders (oi_signal / credit_spread / oi_greeks — settings flag नाही) ⇒ `scripts/install_engine_schedule.sh` (cron).
+Dashboard वर `signal_symbols` सेव्ह ⇒ याच plan चा signal-symbols भाग आपोआप लागतो (`one_bot.apply_signal_symbols`, Abhi 9a) — ही script
+पहिल्या deploy / revert / status साठी, किंवा dashboard ने "पूर्ण लागला नाही" सांगितलं तर.
 """
 import argparse
 import json

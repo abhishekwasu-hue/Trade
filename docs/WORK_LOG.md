@@ -2639,3 +2639,31 @@ legs owner वि. reader2 gate).
   `fold_*` (.tmp सह) files; keep_days किमान 1, चुकीचं / ऋण ⇒ 3.
 - Tests: `tests/test_engine3_1m.py` +11 functions (सुट्टी cache, 15M नवा दिवस, watched_levels 1m / OFF / retry, pre-open + सारांश settings, complete count +
   ⚠️, V22 retry, tmp नाव, prune, dashboard parser); tag test spec बदल. Replay 1m (`replay_day --source upstox`) प्रश्न उघडाच.
+
+## 2026-10-14 · Abhi 7a (SRv2 post-SL cooldown setting) + 9a / PF-3 (signal_symbols सेव्ह ⇒ one-bot आपोआप) (branch `claude/srv2-cooldown-symbols-apply`)
+
+- **7a — loss नंतर lock-out नाही:** 15M SRv2 च्या स्वतःच्या (own, non-engine) मार्गातला symbol-व्यापी post-SL cooldown (`COOLDOWN_MINUTES`
+  30, `srv2_strategy_state.last_sl_hit_time` पासून, `pre_cycle` नंतर) आता setting: `15m_dynamic_sr.post_sl_cooldown_enabled` (default
+  **False** ⇒ cooldown नाही) + `post_sl_cooldown_minutes` (default 30, फक्त ON असताना; ON ⇒ जुनं वर्तन तंतोतंत). Dashboard: 15M SRv2 →
+  🚪 Entry Gate → "⏸️ Post-SL Cooldown". हा code path फक्त 15M SRv2 चा (`is_in_cooldown` / `srv2_strategy_state` दुसरं कोणी वापरत नाही);
+  5M Instant / Classic चा (level, role) 30-मिनिट re-entry gap (शेवटच्या खऱ्या trade पासून, #91), `sl_tsl_cooldown_minutes` आणि MCX चा
+  `sl_cooldown_minutes` — बदल नाही. **टीप:** `last_sl_hit_time` कधीच नवीन मूल्याने लिहिला जात नाही (फक्त तसाच परत लिहिला जातो) ⇒ हा
+  cooldown live मध्ये आधीही व्यवहारात लागत नव्हता; ON केलं तरी तसंच (replay मध्ये SRv2 symbol cooldown 0 — बदल नाही).
+- **9a / PF-3 — `signal_symbols` dashboard सेव्ह ⇒ one-bot आपोआप:** 🎯 panel वर सेव्ह ⇒ `bots_common/one_bot.apply_signal_symbols()` —
+  script चाच `plan()` (नवीन `parts=SIGNAL_SYMBOL_PARTS`) + `apply` चे टप्पे (`_steps` / `apply_reported`): 15M SRv2 per symbol on/off
+  (+ engine, PAPER), Vision srv2 symbols / approval_required (इतिहासात by = dashboard), PAPER instruments. LIVE / LIVE_PAPER combo ⇒ skip +
+  इशारा, लिहिण्याआधी पुन्हा तपास (script सारखंच). बाकी bots (5M / Classic / MCX / auto traders) ला हात नाही; before-state file लिहीत नाही
+  (script चा `--revert` तसाच). Log `data/app.log` (`amw_a1.one_bot`): before / after symbols, प्रत्येक बदल, by dashboard, वेळ (logger +
+  `get_ist_now`). अयशस्वी ⇒ symbols सेव्ह राहतात; पहिल्या त्रुटीवर थांबतो, UI मध्ये कोणते भाग लागले / न चाललेले + "`python3
+  scripts/set_one_bot_mode.py` चालवा". Script स्वतः: वर्तन बदल नाही.
+- **Tests:** `test_srv2_momentum_reversal_strategy` (default OFF, OFF ⇒ SL नंतर block नाही, ON ⇒ N मिनिटं block, ON default = जुने 30;
+  जुना cooldown test आता setting ON करून — spec बदल), `test_one_bot` (+6: apply, LIVE नकार + race, failure टप्पे, dashboard panel
+  AppTest सेव्ह / त्रुटी).
+- **Deploy:** git pull + dashboard restart पुरे (नवीन settings default ⇒ DB migration नाही). Signal symbols बदलल्यावर script हाताने चालवायची
+  गरज नाही (dashboard "पूर्ण लागला नाही" सांगेल तेव्हाच).
+- **Review #328 fixes:** (1) dashboard apply आता सेव्ह केलेली यादी (`after`, `clean_signal_symbols`) थेट plan ला देतो; पुन्हा वाचलेली यादी
+  जुळली नाही (read अयशस्वी ⇒ जुनी / default) ⇒ काहीच लिहीत नाही, failed "signal_symbols read" (✅ नाही). (2) LIVE तपास effective **आणि**
+  साठवलेली raw row दोन्हीकडून (`_safe_mode` / `_combo_mode`) — plan, लिहिण्याआधी आणि revert मध्ये; raw read अयशस्वी ⇒ तो टप्पा failed,
+  लिहिलं नाही. (3) `apply_signal_symbols` चे logger / clock imports try मध्ये (कधीच raise नाही). (4) बिघडलेला `post_sl_cooldown_minutes` ⇒
+  30 + ⚠️ ओळ. (5) Dashboard: "हा switch चालू केला तरी सध्या फरक नाही (`last_sl_hit_time` कोणी लिहीत नाही) — B3". (6) 🎯 निकालात: सेव्ह ⇒
+  signal symbols साठी 15M SRv2 `signal_source` = engine ('own' / 'both' बदलतं).
