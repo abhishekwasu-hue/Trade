@@ -107,7 +107,8 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
 
 
 def _m1_tag(r):
-    """Z-1o: payload `m1` ⇒ " · 1m ✓" / " · 1m off" / " · 1m fallback: …" (decision3 फक्त; नसेल ⇒ "")."""
+    """Z-1o: payload `m1` ⇒ " · 1m ✓ (complete n/m)" / " · 1m off" / " · 1m fallback: …" (decision3 फक्त; नसेल ⇒ ""). n = swings2
+    m1_status "complete" 15M bars (1m चे high / low जुळतात); जुनी row (m15_complete नाही) ⇒ 1m rows असलेले bars."""
     try:
         import json
         m = (json.loads(r.get("payload") or "{}") or {}).get("m1")
@@ -116,7 +117,8 @@ def _m1_tag(r):
     if not m:
         return ""
     if m.get("used"):
-        return f" · 1m ✓ ({m.get('m15_covered')}/{m.get('m15_bars')})" + (f" {m['note']}" if m.get("note") else "")
+        n = f"complete {m['m15_complete']}" if m.get("m15_complete") is not None else m.get("m15_covered")
+        return f" · 1m ✓ ({n}/{m.get('m15_bars')})" + (f" {m['note']}" if m.get("note") else "")
     return " · 1m off" if not m.get("setting") else f" · 1m fallback: {m.get('note')}"
 
 

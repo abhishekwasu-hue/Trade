@@ -194,7 +194,8 @@ def default_zones(sym):
         if not token:
             raise L3.EngineDataError("Upstox login missing")
         now = ES._naive(ES.now_ist())
-        return PO.engine_zone_rows(L3.watched_levels(sym, L3.UpstoxFeed(token, now.date()), now))
+        # Z-1o: live engine सारखाच 1m (engine3_* settings याच पानाचे ⇒ तेच s पुन्हा वाचत नाही)
+        return PO.engine_zone_rows(L3.watched_levels(sym, L3.UpstoxFeed(token, now.date()), now, ES.engine3_settings(sym, lambda *_: s)))
     zones = cloud_db.get_market_zones(sym)
     if zones is None or len(zones) == 0:
         return zones

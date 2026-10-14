@@ -28,7 +28,8 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULTS = {"engine3_m15_days": 90, "engine3_daily_days": 3650, "engine3_ltf_days": 10,
             "engine3_fut_days": 45,                                       # Abhi Z-1: volume ÷ slot median of 20 sessions ⇒ ≥ 21 sessions FUT
-            "engine3_use_1m": True}                                       # Abhi Z-1o (a): 1m spot ⇒ swings2 (1m चा window = engine3_m15_days)
+            "engine3_use_1m": True,                                       # Abhi Z-1o (a): 1m spot ⇒ swings2 (1m चा window = engine3_m15_days)
+            "engine3_cache_keep_days": 3}                                 # data/engine3_cache: इतक्या दिवसांपेक्षा जुन्या files (mtime) run सुरू होताना काढतो
 FUT_REQUIRED = ("NIFTY", "BANKNIFTY")                                     # Abhi Z-1c: FUT volume नाही = data error (entry नाही + Telegram)
 DATA_PROBLEM_FUT = "data problem: FUT volume missing"
 SESSION_OPEN, SESSION_CLOSE = (9, 15), (15, 30)
@@ -86,9 +87,12 @@ class UpstoxFeed:
             raise EngineDataError("Upstox token नाही")
         self.token = token
         self.today = today or dt.date.today()
+        self.last_session = None                                         # 15M history मधला शेवटचा (आजच्या आधीचा) session दिवस
 
     def _series(self, key, interval, days, contract=None):
         out = self._history(key, interval, days)
+        if interval == "15minute":                                       # 1m history cache ची "पूर्ण" खूण (सुट्टी ⇒ तोच शेवटचा दिवस)
+            self.last_session = _last_date(out, self.today) or self.last_session
         if interval != "day":
             out = out + self._intraday(key, interval)
         return candles_df(out, contract)
@@ -121,10 +125,23 @@ class UpstoxFeed:
             raise EngineDataError(f"{key} {interval} intraday HTTP {st} ({str(err)[:80]})")
         return list(((body or {}).get("data") or {}).get("candles") or [])
 
+    def expected_last_session(self):
+        """History मध्ये असायलाच हवा तो शेवटचा दिवस: 15M history चा शेवटचा session (सुट्टी असेल तर तो आपोआप आधीचा दिवस); 15M अजून
+        मागवला नसेल ⇒ कालचा weekday (जुना नियम)."""
+        if self.last_session is not None:
+            return self.last_session
+        prev = self.today - dt.timedelta(days=1)
+        while prev.weekday() >= 5:
+            prev -= dt.timedelta(days=1)
+        return prev
+
     def _history_cached(self, key, interval, days):
-        """आधीचे दिवस बदलत नाहीत ⇒ history दिवसातून एकदा (disk cache: key + interval + days + आजची तारीख). Cache त्रुटी ⇒ साधा fetch."""
+        """आधीचे दिवस बदलत नाहीत ⇒ history दिवसातून एकदा (disk cache: key + interval + days + आजची तारीख + अपेक्षित शेवटचा session).
+        अपेक्षित दिवस = 15M history चा शेवटचा session ⇒ सुट्टीनंतर cache भरतो (आधी कालचा weekday ⇒ सुट्टी दिवशी cache कधीच नाही ⇒ 90 दिवस
+        1m प्रत्येक cycle). 15M ला नंतर नवा दिवस आला ⇒ नवी key ⇒ पुन्हा fetch. Cache त्रुटी ⇒ साधा fetch."""
         tag = "".join(ch if ch.isalnum() else "_" for ch in f"{key}_{interval}_{int(days)}")
-        p = os.path.join(cache_dir(), f"hist_{tag}_{self.today.isoformat()}.pkl")
+        want = self.expected_last_session()
+        p = os.path.join(cache_dir(), f"hist_{tag}_{self.today.isoformat()}_{want.isoformat()}.pkl")
         try:
             if os.path.exists(p):
                 with open(p, "rb") as f:
@@ -132,17 +149,15 @@ class UpstoxFeed:
         except Exception:                                                # noqa: BLE001
             pass
         out = self._history(key, interval, days)
-        prev = self.today - dt.timedelta(days=1)
-        while prev.weekday() >= 5:
-            prev -= dt.timedelta(days=1)
-        last = max((pd.Timestamp(str(c[0])[:10]).date() for c in out), default=None)
-        if last is None or last < prev:                                  # कालचा दिवस अजून नाही (उशीर / सुट्टी) ⇒ cache नाही, पुढच्या cycle ला पुन्हा
+        last = _last_date(out, self.today)
+        if last is None or last < want:                                  # अपेक्षित शेवटचा दिवस अजून नाही (उशीर) ⇒ cache नाही, पुढच्या cycle ला पुन्हा
             return out
         try:
             os.makedirs(cache_dir(), exist_ok=True)
-            with open(p + ".tmp", "wb") as f:
+            tmp = f"{p}.{os.getpid()}.tmp"                               # process प्रमाणे tmp (दोन runs एकाच वेळी ⇒ एकमेकांची tmp नाही)
+            with open(tmp, "wb") as f:
                 pickle.dump(out, f)
-            os.replace(p + ".tmp", p)
+            os.replace(tmp, p)
             for old in os.listdir(cache_dir()):                          # जुन्या दिवसांच्या history files
                 if old.startswith(f"hist_{tag}_") and old.endswith(".pkl") and old != os.path.basename(p):
                     os.remove(os.path.join(cache_dir(), old))
@@ -176,6 +191,11 @@ class UpstoxFeed:
         info = resolve_future(self.token, symbol, self.today)
         f = self._series(info["instrument_key"], interval, days, contract=info["trading_symbol"])
         return f.assign(expiry=pd.Timestamp(info["expiry"])) if len(f) else f     # legs2.volume.near_month साठी
+
+
+def _last_date(candles, today):
+    """Candles list मधला आजच्या आधीचा शेवटचा दिवस (नाही ⇒ None)."""
+    return max((d for d in (pd.Timestamp(str(c[0])[:10]).date() for c in candles or []) if d < today), default=None)
 
 
 # ------------------------------------------------------------------------------------------------ frames
@@ -251,9 +271,10 @@ class fold_cache:
             try:
                 if p:
                     os.makedirs(d, exist_ok=True)
-                    with open(p + ".tmp", "wb") as f:
+                    tmp = f"{p}.{os.getpid()}.tmp"
+                    with open(tmp, "wb") as f:
                         pickle.dump(res, f)
-                    os.replace(p + ".tmp", p)
+                    os.replace(tmp, p)
             except Exception:                                            # noqa: BLE001
                 pass
             return res
@@ -265,7 +286,13 @@ class fold_cache:
         return False
 
 
-def prune_cache(keep_days=3, now=None):
+def prune_cache(keep_days=None, now=None):
+    """data/engine3_cache मधल्या `keep_days` (default setting `engine3_cache_keep_days`) पेक्षा जुन्या files (mtime) काढतो — एक listdir,
+    स्वस्त. आजच्या hist_ / fold_ files नव्या ⇒ राहतात. कधीच raise नाही."""
+    try:
+        keep_days = float(DEFAULTS["engine3_cache_keep_days"] if keep_days in (None, "") else keep_days)
+    except (TypeError, ValueError):
+        keep_days = float(DEFAULTS["engine3_cache_keep_days"])
     d = cache_dir()
     if not os.path.isdir(d):
         return
@@ -331,17 +358,21 @@ def build_inputs(feed, symbol, now, s=None, levels_only=False):
 
 
 def use_1m(s=None):
-    """Setting `engine3_use_1m` (dashboard, default True — Abhi Z-1o (a)). "false" / "0" / "no" / "off" ⇒ False."""
-    v = {**DEFAULTS, **(s or {})}["engine3_use_1m"]
+    """Setting `engine3_use_1m` (dashboard, default True — Abhi Z-1o (a)). "false" / "0" / "no" / "off" ⇒ False; None / "" (रिकामं) ⇒
+    default (True)."""
+    v = (s or {}).get("engine3_use_1m")
+    if v is None or (isinstance(v, str) and not v.strip()):
+        v = DEFAULTS["engine3_use_1m"]
     if isinstance(v, str):
-        return v.strip().lower() not in ("false", "0", "no", "off", "")
+        return v.strip().lower() not in ("false", "0", "no", "off")
     return bool(v)
 
 
 def load_m1(feed, symbol, m15, now, s=None):
     """Abhi Z-1o (a): spot 1m ⇒ (df1m | None, info). फक्त बंद 1m (start + 1 ≤ now), session मधले, m15 च्या पहिल्या bar पासून शेवटच्या
     बंद 15M bar च्या bar_end पर्यंत (त्यानंतरचा 1m कधीच नाही ⇒ look-ahead नाही); NIFTY ⇒ holdout rows नाहीत. 1m नाही / त्रुटी ⇒ None +
-    कारण (जुना मार्ग; data error नाही). info = payload `m1`: used, setting, rows, m15_covered / m15_bars, note."""
+    कारण (जुना मार्ग; data error नाही). info = payload `m1`: used, setting, rows, m15_covered (1m rows असलेले 15M bars) / m15_bars,
+    m15_complete (V22 नंतर: swings2 m1_status "complete" bars — 1m चे high / low 15M शी जुळतात), note."""
     from decision3 import history as HI
     from elliott import data_policy as DP
     s = {**DEFAULTS, **(s or {})}
@@ -376,18 +407,45 @@ def load_m1(feed, symbol, m15, now, s=None):
     return m1, info
 
 
-def evaluate(symbol, m15, daily, ltf=None, fut=None, s3=None, m1=None):
-    """V22 ⇒ शेवटच्या बंद 15M bar चा निर्णय (dict, decide() चा). m1 = spot 1m (Z-1o) ⇒ V22 df1m (swings2 ⇒ levels + rsi2)."""
+def evaluate(symbol, m15, daily, ltf=None, fut=None, s3=None, m1=None, m1_info=None):
+    """V22 ⇒ शेवटच्या बंद 15M bar चा निर्णय (dict, decide() चा). m1 = spot 1m (Z-1o) ⇒ V22 df1m (swings2 ⇒ levels + rsi2).
+    m1_info (load_m1 चा payload `m1`) ⇒ m15_complete भरतो / V22 1m सह त्रुटी ⇒ fallback नोंद."""
     import instruments as INS
     prev = INS._current["name"]
     INS.set_current(symbol)                                              # PE.guard चा holdout नियम त्याच instrument चा (NIFTY फक्त)
     try:
-        return _evaluate(symbol, m15, daily, ltf, fut, s3, m1)
+        return _evaluate(symbol, m15, daily, ltf, fut, s3, m1, m1_info)
     finally:
         INS._current["name"] = prev                                      # process-wide instrument पुढच्या caller ला गळू नये
 
 
-def _evaluate(symbol, m15, daily, ltf, fut, s3, m1=None):
+def m1_complete(symbol, V, info):
+    """V22 (swings2) नंतर: किती 15M bars चा 1m "complete" (m1_status — ≥ 15 rows, high / low तंतोतंत जुळतात) ⇒ info["m15_complete"].
+    Rows आहेत पण complete 0 ⇒ ⚠️ log + note (1m चे high / low 15M शी जुळत नाहीत ⇒ swings2 1m क्रम कुठेच वापरत नाही)."""
+    if info is None:
+        return
+    res = getattr(V, "res", None)
+    stream = res.get("stream") if isinstance(res, dict) else None
+    if stream is None:
+        return
+    n = sum(1 for x in stream if x.get("m1_status") == "complete")
+    info["m15_complete"] = int(n)
+    if n == 0 and info.get("rows"):
+        note = (f"1m rows {info['rows']} पण complete 0/{info.get('m15_bars')} — 1m चे high / low 15M candles शी जुळत नाहीत "
+                "(वेगळा source / adjustment?) ⇒ swings2 1m क्रम वापरत नाही (परिणाम 1m शिवाय सारखाच)")
+        print(f"⚠️ {str(symbol).upper()} engine3: {note}")
+        info["note"] = f"{info['note']}; {note}" if info.get("note") else note
+
+
+def m1_v22_failed(symbol, info, exc):
+    """V22 1m सह त्रुटी ⇒ 1m शिवाय पुन्हा (1m आवश्यक input नाही ⇒ fail-closed नाही); कारण payload `m1` मध्ये + log."""
+    note = f"V22 1m सह त्रुटी ⇒ 1m शिवाय (जुना मार्ग): {type(exc).__name__}: {str(exc)[:120]}"
+    print(f"⚠️ {str(symbol).upper()} engine3: {note}")
+    if info is not None:
+        info.update(used=False, fallback=True, note=note)
+
+
+def _evaluate(symbol, m15, daily, ltf, fut, s3, m1=None, m1_info=None):
     from decision3 import engine as E3
     from decision3 import history as HI
     m15 = m15.drop(columns=[c for c in ("volume",) if c in m15.columns])   # index volume 0 ≠ खरा volume (NA हवा)
@@ -401,9 +459,20 @@ def _evaluate(symbol, m15, daily, ltf, fut, s3, m1=None):
         kw["ltf"] = ltf
     if "futures" in params and fut is not None:
         kw["futures"] = fut
-    with fold_cache(symbol.upper()):
-        V = E3.V22(m15, m1, daily, **kw)
-    return V.decide(len(V.m15) - 1)
+
+    def run(df1m):
+        with fold_cache(symbol.upper()):
+            V = E3.V22(m15, df1m, daily, **kw)
+        return V, V.decide(len(V.m15) - 1)
+    if m1 is None:
+        return run(None)[1]
+    try:
+        V, r = run(m1)
+    except Exception as exc:                                             # noqa: BLE001 — 1m मुळे fail-closed नाही: एकदा 1m शिवाय
+        m1_v22_failed(symbol, m1_info, exc)
+        return run(None)[1]
+    m1_complete(symbol, V, m1_info)
+    return r
 
 
 TRADEABLE_STATES = ("ACTIVE", "TESTED", "FLIPPED")                         # BROKEN / DEAD (किंवा अज्ञात) ⇒ pre-open मध्ये नाही
@@ -417,8 +486,9 @@ def tradeable_levels(levels):
 
 def watched_levels(symbol, feed, now, s=None):
     """Pre-open (Abhi): engine (V22 ② Levels) चे शेवटच्या बंद 15M bar ला जिवंत levels — [{"role", "lo", "hi", …}] (`Levels.snapshot`).
-    पट्टे swing / base candles वरून (TA4, lo < hi). 15M + Daily पुरे (levels ला LTF / FUT लागत नाही ⇒ c1 इशारा दाबला). Data नाही ⇒
-    EngineDataError (caller NA + कारण)."""
+    पट्टे swing / base candles वरून (TA4, lo < hi). 15M + Daily (+ 1m, live `compute` सारखंच — Z-1o: s = `ES.engine3_settings(sym)`,
+    `engine3_use_1m` False ⇒ 1m मागवत नाही) पुरे (levels ला LTF / FUT लागत नाही ⇒ c1 इशारा दाबला). 1m नाही / V22 1m सह त्रुटी ⇒ 1m
+    शिवाय (कारण log). Data नाही ⇒ EngineDataError (caller NA + कारण)."""
     import contextlib
     import io
     import warnings
@@ -426,13 +496,26 @@ def watched_levels(symbol, feed, now, s=None):
     from decision3 import engine as E3
     from decision3 import history as HI
     m15, daily, _l, _f, _n = build_inputs(feed, symbol, now, s, levels_only=True)
+    m1, info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)           # live compute सारखाच 1m ⇒ pre-open = engine चे पट्टे
     m15 = m15.drop(columns=[c for c in ("volume",) if c in m15.columns])
     prev = INS._current["name"]
     INS.set_current(symbol)
-    try:
+
+    def build(df1m):
         with fold_cache(symbol.upper()), warnings.catch_warnings(), contextlib.redirect_stdout(io.StringIO()):
             warnings.simplefilter("ignore")
-            V = E3.V22(m15, None, daily, sealed=HI.sealed_fn(symbol))
+            return E3.V22(m15, df1m, daily, sealed=HI.sealed_fn(symbol))
+    try:
+        if m1 is None:
+            V = build(None)
+        else:
+            try:
+                V = build(m1)
+            except Exception as exc:                                     # noqa: BLE001 — 1m मुळे NA नाही: एकदा 1m शिवाय
+                m1_v22_failed(symbol, info, exc)
+                V = build(None)
+            else:
+                m1_complete(symbol, V, info)
     finally:
         INS._current["name"] = prev
     return tradeable_levels(V.levels.snapshot(len(V.m15) - 1))
@@ -513,7 +596,7 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
 def compute(symbol, feed, now, s=None):
     m15, daily, ltf, fut, note = build_inputs(feed, symbol, now, s)
     m1, m1_info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)
-    r = evaluate(symbol, m15, daily, ltf, fut, m1=m1)
+    r = evaluate(symbol, m15, daily, ltf, fut, m1=m1, m1_info=m1_info)
     r["volume_note"] = note
     r["m1"] = m1_info                                                    # Z-1o: 1m वापरला का / fallback कारण (row payload)
     return r

@@ -98,6 +98,8 @@ def test_setting_off_is_the_old_behaviour_and_does_not_fetch_1m(fake_v22, off):
     r = L.compute("BANKNIFTY", f, NOW, {"engine3_use_1m": off})
     assert fake_v22["df1m"] is None and f.asked == [] and r["m1"] == {"used": False, "setting": False, "note": r["m1"]["note"]}
     assert L.use_1m(None) is True and L.use_1m({"engine3_use_1m": "True"}) is True
+    assert L.use_1m({"engine3_use_1m": None}) is True and L.use_1m({"engine3_use_1m": ""}) is True   # रिकामं ⇒ default ON
+    assert L.use_1m({"engine3_use_1m": " "}) is True and L.use_1m({"engine3_use_1m": "FALSE"}) is False
 
 
 def test_engine3_settings_from_dashboard_and_run_script_passes_them(monkeypatch):
@@ -125,7 +127,8 @@ def test_engine3_settings_from_dashboard_and_run_script_passes_them(monkeypatch)
 def test_m1_tag_in_run_log():
     from scripts import engine_signal_run as ESR
     tag = lambda m: ESR._m1_tag({"payload": json.dumps({"m1": m})})     # noqa: E731
-    assert tag({"used": True, "m15_covered": 9, "m15_bars": 9, "note": None}) == " · 1m ✓ (9/9)"
+    assert tag({"used": True, "m15_covered": 9, "m15_bars": 9, "note": None}) == " · 1m ✓ (9/9)"      # old row (no m15_complete)
+    assert tag({"used": True, "m15_covered": 9, "m15_complete": 7, "m15_bars": 9, "note": None}) == " · 1m ✓ (complete 7/9)"
     assert tag({"used": False, "setting": False}) == " · 1m off"
     assert "fallback" in tag({"used": False, "setting": True, "note": "x"}) and ESR._m1_tag({"payload": "{}"}) == ""
 
@@ -187,3 +190,155 @@ def test_upstox_1m_history_not_cached_while_previous_day_missing(monkeypatch, tm
     n = len([c for c in calls if c[0] == "hist"])
     L.UpstoxFeed("tok", today).index("NIFTY", "1minute", 90)
     assert len([c for c in calls if c[0] == "hist"]) == 2 * n and not list(tmp_path.iterdir())
+
+
+# ------------------------------------------------------------------------------------------------ review #327
+def _hist_1m(calls):
+    return [c for c in calls if c[0] == "hist" and c[1] == "1minute"]
+
+
+def test_upstox_1m_history_cached_after_a_weekday_holiday(monkeypatch, tmp_path):
+    """Monday holiday: history ends Friday. Expected last day = the 15M history's last session (Friday), not the previous weekday
+    (Monday) ⇒ the cache fills on the first cycle; the next cycles fetch only the intraday (not 90 days of 1m every cycle)."""
+    import verify_opportunity_data_availability as V
+    monkeypatch.setenv("ENGINE3_CACHE_DIR", str(tmp_path))
+    today, holiday = dt.date(2026, 10, 13), dt.date(2026, 10, 12)          # Tue; Mon = holiday (no candles)
+    calls = _fake_http(monkeypatch, today)
+    window = V.fetch_candles_window
+
+    def no_holiday(token, key, interval, frm, to, expired=False):
+        r = window(token, key, interval, frm, to)
+        return {**r, "candles": [c for c in r["candles"] if not c[0].startswith(str(holiday))]}
+    monkeypatch.setattr(V, "fetch_candles_window", no_holiday)
+    for _cycle in range(3):                                                # run3 ⇒ new feed per cycle; 15M first (build_inputs), then 1m
+        f = L.UpstoxFeed("tok", today)
+        f.index("NIFTY", "15minute", 90)
+        assert f.last_session == dt.date(2026, 10, 9)                       # Friday
+        f.index("NIFTY", "1minute", 90)
+    first = len(_hist_1m(calls))
+    assert first == 5                                                       # cycle 1 only: 4 chunks + 1 gap-fill (holiday ⇒ empty)
+    assert len([p for p in tmp_path.iterdir() if p.name.startswith("hist_")]) == 1
+    assert not [p for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
+    assert sum(c[0] == "intraday" and c[1][0] == "minutes" and c[1][1] == "1" for c in calls) == 3
+
+
+def test_upstox_1m_cache_refetches_when_15m_gets_a_newer_day(monkeypatch, tmp_path):
+    """15M history later shows a newer session than the cached 1m history ⇒ new cache key ⇒ 1m history fetched again."""
+    monkeypatch.setenv("ENGINE3_CACHE_DIR", str(tmp_path))
+    today = dt.date(2026, 10, 13)
+    calls = _fake_http(monkeypatch, today)
+    f = L.UpstoxFeed("tok", today)
+    f.last_session = dt.date(2026, 10, 9)
+    f.index("NIFTY", "1minute", 90)
+    n = len(_hist_1m(calls))
+    g = L.UpstoxFeed("tok", today)
+    g.last_session = dt.date(2026, 10, 12)
+    g.index("NIFTY", "1minute", 90)
+    assert len(_hist_1m(calls)) == 2 * n and len([p for p in tmp_path.iterdir() if p.name.startswith("hist_")]) == 1
+
+
+@pytest.fixture
+def fake_v22_levels(monkeypatch):
+    """V22 stub with levels.snapshot + swings2-like res stream (m1_status per bar) — records df1m per build."""
+    from decision3 import engine as E3
+    seen = {"df1m": [], "status": "complete", "boom": False}
+
+    class FakeV22:
+        def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
+            seen["df1m"].append(df1m)
+            if df1m is not None and seen["boom"]:
+                raise ValueError("swings2 1m join failed (test)")
+            self.m15 = m15
+            self.res = {"stream": [{"ts": str(t), "m1_status": seen["status"] if df1m is not None else "absent"}
+                                   for t in m15["timestamp"]]}
+            self.levels = type("LV", (), {"snapshot": lambda _s, t: [{"role": "resistance", "lo": 1.0, "hi": 2.0,
+                                                                      "state": "ACTIVE", "m1": df1m is not None}]})()
+
+        def decide(self, t):
+            return {"bar_end": str(self.m15["bar_end"].iloc[t]), "decision": "wait"}
+    monkeypatch.setattr(E3, "V22", FakeV22)
+    return seen
+
+
+PRE = pd.Timestamp("2030-03-25 09:00")                                     # pre-open: yesterday's bars only
+
+
+def test_watched_levels_passes_1m_to_v22_same_as_live(fake_v22_levels):
+    f = Feed1m()
+    got = L.watched_levels("BANKNIFTY", f, PRE)
+    m1 = fake_v22_levels["df1m"][-1]
+    assert m1 is not None and len(m1) and f.asked == [L.DEFAULTS["engine3_m15_days"]] and got[0]["m1"] is True
+    assert (m1["timestamp"] + pd.Timedelta(minutes=1) <= PRE).all()      # closed 1m only (no look-ahead)
+
+
+@pytest.mark.parametrize("off", [False, "false"])
+def test_watched_levels_setting_off_does_not_fetch_1m(fake_v22_levels, off):
+    f = Feed1m()
+    got = L.watched_levels("BANKNIFTY", f, PRE, {"engine3_use_1m": off})
+    assert fake_v22_levels["df1m"] == [None] and f.asked == [] and got[0]["m1"] is False
+
+
+def test_watched_levels_v22_error_with_1m_retries_without(fake_v22_levels, capsys):
+    fake_v22_levels["boom"] = True
+    got = L.watched_levels("BANKNIFTY", Feed1m(), PRE)
+    assert [x is None for x in fake_v22_levels["df1m"]] == [False, True] and got[0]["m1"] is False
+    assert "V22 1m सह त्रुटी" in capsys.readouterr().out
+
+
+def test_preopen_and_summary_pass_engine3_settings_to_watched_levels(monkeypatch):
+    import inspect as _inspect
+    import cloud_db
+    from scripts import level_gate_preopen as PO
+    from scripts import paper_daily_summary as S
+    assert "ES.engine3_settings(sym)" in _inspect.getsource(PO.main)        # pre-open engine_areas ⇒ dashboard engine3_* settings
+    seen = []
+    monkeypatch.setattr(cloud_db, "get_strategy_settings", lambda k, s: {"signal_source": "engine", "engine3_use_1m": "false", "lots": 1})
+    monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda x: "t")
+    monkeypatch.setattr(L, "UpstoxFeed", lambda tok, today=None: object())
+    monkeypatch.setattr(L, "watched_levels", lambda sym, feed, now, s=None: seen.append(s) or [])
+    S.default_zones("NIFTY")
+    assert seen == [{"engine3_use_1m": "false"}]
+
+
+def test_complete_count_reported_and_mismatch_warned(fake_v22_levels, capsys):
+    r = L.compute("BANKNIFTY", Feed1m(), NOW)
+    assert r["m1"]["m15_complete"] == r["m1"]["m15_bars"] and r["m1"]["note"] is None
+    fake_v22_levels["status"] = "partial"                                  # 1m rows present, highs / lows never match the 15M
+    r = L.compute("BANKNIFTY", Feed1m(), NOW)
+    assert r["m1"]["used"] and r["m1"]["rows"] > 0 and r["m1"]["m15_complete"] == 0
+    assert "complete 0/" in r["m1"]["note"] and "जुळत नाहीत" in capsys.readouterr().out
+    from scripts import engine_signal_run as ESR
+    assert ESR._m1_tag(L.row_from_v22("BANKNIFTY", r, lambda: "x")).startswith(" · 1m ✓ (complete 0/")
+
+
+def test_v22_error_with_1m_retries_once_without_1m(fake_v22_levels, capsys):
+    fake_v22_levels["boom"] = True
+    r = L.compute("BANKNIFTY", Feed1m(), NOW)                              # no raise: 1m must never fail the cycle closed
+    assert [x is None for x in fake_v22_levels["df1m"]] == [False, True] and r["decision"] == "wait"
+    assert r["m1"]["used"] is False and r["m1"]["fallback"] is True and "ValueError" in r["m1"]["note"]
+    assert "V22 1m सह त्रुटी" in capsys.readouterr().out
+
+
+def test_cache_tmp_name_is_per_process():
+    src = open(L.__file__, encoding="utf-8").read()
+    assert src.count('f"{p}.{os.getpid()}.tmp"') == 2 and 'p + ".tmp"' not in src
+
+
+def test_run3_prunes_old_cache_files(monkeypatch, tmp_path, fake_v22):
+    import os
+    import time
+    monkeypatch.setenv("ENGINE3_CACHE_DIR", str(tmp_path))
+    old, new = tmp_path / "hist_old.pkl", tmp_path / "fold_new.pkl"
+    old.write_bytes(b"x")
+    new.write_bytes(b"x")
+    t = time.time() - (L.DEFAULTS["engine3_cache_keep_days"] + 1) * 86400
+    os.utime(old, (t, t))
+    monkeypatch.setattr(L, "UpstoxFeed", lambda tok, today=None: Feed1m())
+    ES.run3("BANKNIFTY", "tok", now=NOW, dry_run=True)
+    assert not old.exists() and new.exists()
+
+
+def test_dashboard_checkbox_uses_the_same_parser():
+    import os
+    src = open(os.path.join(os.path.dirname(L.__file__), "page_bot_dynamic_sr_algo.py"), encoding="utf-8").read()
+    assert 'bool(settings.get("engine3_use_1m"' not in src and '_L3.use_1m({"engine3_use_1m": settings.get("engine3_use_1m")})' in src

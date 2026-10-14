@@ -1343,7 +1343,8 @@ def render():
 
     signal_source = settings.get("signal_source", "own")
     srv3_signal_source = settings.get("srv3_signal_source", "own")
-    engine3_use_1m = bool(settings.get("engine3_use_1m", True))
+    import engine3_live as _L3                                       # तोच parser (stored "false" ⇒ unchecked; रिकामं ⇒ default ON)
+    engine3_use_1m = _L3.use_1m({"engine3_use_1m": settings.get("engine3_use_1m")})
     if strategy_key in ("1m_instant", "15m_dynamic_sr"):
         # 🎓 Abhi (Monday PAPER): signal कुठून — own (bot चा स्वतःचा, default) / engine (common analysis engine चा setup) / both (दोन्ही एकाच
         # दिशेला तरच). कुठलाही असो: Vision + ✅ approval शिवाय PAPER entry नाही; engine चं मत caption मध्ये नेहमी (shadow).

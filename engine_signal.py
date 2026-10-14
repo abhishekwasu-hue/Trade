@@ -271,6 +271,7 @@ def run3(symbol, access_token, feed=None, path=None, now=None, s=None, dry_run=F
     import engine3_live as L
     now = _naive(now or now_ist())
     if feed is None:
+        L.prune_cache((s or {}).get("engine3_cache_keep_days"))           # जुन्या cache files (hist_ / fold_) — एक listdir, स्वस्त
         feed = L.UpstoxFeed(access_token, now.date())
     r = L.compute(str(symbol).upper(), feed, now, s)
     row = L.row_from_v22(symbol, r, now_ist)
