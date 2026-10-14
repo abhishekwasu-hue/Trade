@@ -154,3 +154,24 @@ def test_summary_lines_show_width_flag_override_and_missing():
                             zones_fn=lambda s: zones, range_fn=lambda s, d: {"high": 22650.0, "low": 22500.0},
                             warn_fn=lambda s: 1 / 0)                         # setting वाचता नाही ⇒ default 150
     assert FLAG in bad
+
+
+def test_modify_ticket_shows_band_width_and_flag_after_decision_line():
+    """Abhi: पट्ट्याची रुंदी प्रत्येक approval संदेशात — ✏️ सुधारित ticket (पुन्हा approve) सुद्धा."""
+    import json
+    from bots_common import plain_text as PT
+    from vision import approval as AP
+    base = {"side": "BEARISH", "entry": 22700.0, "sl": 22790.0, "target": 22400.0, "rr": 3.33, "engine_entry": 22677.0,
+            "src": "engine", "warnings": []}
+    row = {"signal_id": "s1", "symbol": "NIFTY", "setup_tf": "15M", "setup_json": json.dumps({"tags": {"gate": {"area": [22300.0, 22750.0]}}})}
+    wide = AP.ticket_text(row, {**base, "area": [22300.0, 22750.0]}, "2026-10-09T12:40:00", 10)
+    lines = wide.split("\n")
+    assert lines[1].startswith(f"<b>{PT.DECISION_APPROVE}</b>")
+    assert lines[2].startswith("⚠️ merged band — check (width 450 pts &gt; 150)")
+    assert "area 22,300–22,750 (450 pts)" in wide
+    narrow = AP.ticket_text(row, {**base, "area": [22544.0, 22622.0]}, "2026-10-09T12:40:00", 10)
+    assert "area 22,544–22,622 (78 pts)" in narrow and "merged band" not in narrow
+    row_w = {**row, "setup_json": json.dumps({"tags": {"gate": {"area": [22300.0, 22750.0], "band_warn_pts": 500}}})}
+    assert "merged band" not in AP.ticket_text(row_w, {**base, "area": [22300.0, 22750.0]}, "2026-10-09T12:40:00", 10)
+    none = AP.ticket_text(row, {**base, "area": None}, "2026-10-09T12:40:00", 10)
+    assert "merged band" not in none and "pts)" not in none
