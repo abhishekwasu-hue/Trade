@@ -16,16 +16,18 @@ trade-बाजूला / पट्ट्यात; किंवा acceptance 
 
 KB K4 flip rule (Abhi, final — `level_flip_rule` = "far_swing", default; decision3/flip.py). State per level, bar by bar (bars ≤ t only):
   ACTIVE / TESTED (tests ≥ 1) ──acceptance (accept_closes closes beyond)──▶ BROKEN  (old role kept; NOT a trade location — `active` skips it)
-  ACTIVE / TESTED / BROKEN ──price trades past the far-side swing during the excursion (≥ 1 close beyond)──▶ FLIPPED (role reversed, "c")
+  ACTIVE / TESTED / BROKEN ──far-side swing reached during the excursion (≥ 1 close beyond)──▶ FLIPPED (role reversed, "c")
   BROKEN ──accept_closes closes back on the role's own side──▶ previous state ("reclaim" = the break failed, role kept; logged as a sweep ★)
   fewer than accept_closes closes beyond and back, far swing not reached ⇒ sweep ★ (old role).
-  FLIPPED ──broken again and past ITS far-side swing──▶ DEAD (Abhi Z-1f: once flipped the old role is over; no second flip, logged).
+  FLIPPED ──broken again and ITS far-side swing reached──▶ DEAD (Abhi Z-1f: once flipped the old role is over; no second flip, logged).
   Far-side swing (`flip.far_swing`): the nearest confirmed D`level_degree` pivot beyond the band on the break side that formed before the
-  excursion began; none (new highs / lows) ⇒ the first CONFIRMED such swing formed after the break (Abhi Z-1a). Known = confirm_bar ≤ t.
+  excursion began — reached when price trades past it; none (new highs / lows) ⇒ the first swing formed after the break, reached when it
+  is CONFIRMED (Abhi Z-1s, the corrected Z-1a wording; it need not be broken — `flip.reached`). Known = confirm_bar ≤ t.
   A new swing never merges into a DEAD level (it is born as its own level); `level_death_side` (TL1) is legacy only.
   Facts per level (snapshot): state, broken_at, break_dir, exc_start, far_swing {price, bar, ts, source}, flipped_at (DEAD: dead_at).
   "acceptance" = the old spec §5.4 (acceptance ⇒ flip at once; flip_failed back), kept only for old tests / what-if.
 """
+import logging
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -35,6 +37,8 @@ from . import flip as FL
 from . import settings as S3
 
 SUP, RES = "support", "resistance"
+PROV_WIDTH = "provisional width"            # Abhi PF-2: σ_1H missing ⇒ min width from the median 1H range (bars ≤ t) — labelled
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -51,6 +55,11 @@ class Level:
     merged_from: list = field(default_factory=list)
     bands: list = field(default_factory=list)       # [(bar, lo, hi)] — merge ने पट्टा बदलला तर इतिहास (truncation-safe snapshot)
     flip_facts: list = field(default_factory=list)  # [(bar, dict)] — K4 BROKEN / FLIPPED facts (broken_at, far_swing, flipped_at …)
+    prov: list = field(default_factory=list)        # Abhi PF-2: [(from bar, to bar | None)] — band min width provisional (σ_1H missing)
+
+    def provisional(self, t):
+        """PF-2: the band's min width at t is the provisional one (born / merged while σ_1H was missing, σ_1H not known yet)."""
+        return any(a <= t and (b is None or t < b) for a, b in self.prov)
 
     def band_at(self, t):
         lo, hi = self.lo, self.hi
@@ -148,6 +157,7 @@ class Levels:
         self.weekly_states = weekly_states or []
         self.weekly_df = weekly_df
         self.prior = []                     # Q40: 15M window आधीचे trend-degree Daily + Weekly swings (debug / count)
+        self.prior_note = None              # Abhi Z-1t: why Q40 prior levels were skipped (logged, never silent)
         self.L = []
         self.bos = []                       # [(bar, dir, origin pivot)] — ③ impulse साठी (known_at = bar चा close)
         self.known_by = []                  # प्रत्येक bar ला माहीत D2 pivots ची संख्या (confirm क्रमाने)
@@ -189,13 +199,16 @@ class Levels:
         """Q40 (Abhi): 15M window आधीचे महत्त्वाचे Daily levels — फक्त trend-degree swings (degree-aware Dow चे impulse origin / टोक =
         correction टोकं) + Weekly swings, window सुरुवातीच्या किंमतीपासून `prior_level_atr_mult` × ATR_D आत. bar 0 ला जन्म; भूमिका
         तेव्हाच्या किंमतीनुसार (वर ⇒ resistance, खाली ⇒ support). तारीख output मध्ये नाही (NIFTY holdout swing ⇒ फक्त किंमत, Q39)."""
-        if not self.n or self.daily_df is None or not len(self.daily_df):
+        self.prior_note = None
+        if not self.n:
             return []
-        dd = self.daily_df.reset_index(drop=True)
+        dd = None if self.daily_df is None else self.daily_df.reset_index(drop=True)
         day0 = self.ts.iloc[0].normalize()
         t0_end = self.bar_end.iloc[0]
-        before = dd[pd.to_datetime(dd["timestamp"]) < day0]
-        if not len(before):
+        before = dd[pd.to_datetime(dd["timestamp"]) < day0] if dd is not None and len(dd) else []
+        if not len(before):                                                # Abhi Z-1t: never silent
+            self.prior_note = "0 Daily bars before window ⇒ Q40 prior levels skipped"
+            log.warning("decision3 levels: %s (15M window starts %s)", self.prior_note, day0.date())
             return []
         nA = int(self.s["prior_level_atr_n"])
         b = before.tail(nA + 1)
@@ -350,6 +363,8 @@ class Levels:
                     if L.id in prov and L.alive(t) and L.hi - L.lo < w:
                         L.lo, L.hi = (L.hi - w, L.hi) if L.role0 == RES else (L.lo, L.lo + w)
                         L.bands.append((t, L.lo, L.hi))
+                    if L.id in prov and L.prov and L.prov[-1][1] is None:
+                        L.prov[-1] = (L.prov[-1][0], t)                    # PF-2: provisional width ends (σ_1H known)
                 prov.clear()
             # आधीचे levels: चाचणी / sweep / flip / मृत्यू (जन्म bar नंतरच)
             for L in self.L:
@@ -418,10 +433,17 @@ class Levels:
                 L = self._born(t, role, lo, hi, why, anchor)
                 if not np.isfinite(self.sig1h[t]):
                     prov.add(L.id)
+                    if not (L.prov and L.prov[-1][1] is None):
+                        L.prov.append((t, None))                           # PF-2: min width from the median 1H range (σ_1H missing)
+        npv = sum(1 for L in self.L if L.prov)
+        if npv:
+            log.info("decision3 levels: %d level(s) born with a %s (σ_1H missing; median 1H range × level_min_width_sigma)", npv, PROV_WIDTH)
 
     def _step_far_swing(self, L, t, role, known, beyond_wick, beyond_close, excursion, st, acc):
         """KB K4 (Abhi): one bar of one level — sweep / BROKEN / FLIPPED / reclaim / DEAD (module docstring). A never-flipped zone whose
-        far-side swing is passed flips; a FLIPPED zone broken again past its far-side swing is DEAD — no second flip (Abhi, Z-1f)."""
+        far-side swing is reached flips; a FLIPPED zone broken again with its far-side swing reached is DEAD — no second flip (Abhi,
+        Z-1f). Reached (Z-1s, `flip.reached`): a swing beyond the band from before the break ⇒ price trades past it; none ⇒ the first
+        swing formed after the break is CONFIRMED."""
         H, Lo, C = self.A["high"], self.A["low"], self.A["close"]
         exc = excursion.get(L.id, 0)
         up = role == RES                                                   # break direction: resistance ⇒ up, support ⇒ down
@@ -431,12 +453,13 @@ class Levels:
         hist = {"flipped_at": prev.get("flipped_at")} if prev.get("flipped_at") is not None else {}
         if st["brk"] or exc > 0 or beyond_close:                           # पलीकडे (≥ 1 close) ⇒ far swing पार? ⇒ FLIPPED
             fs = FL.far_swing(known, L.lo, L.hi, up, st["start"])
-            if fs is not None and ((H[t] > fs.price) if up else (Lo[t] < fs.price)):
-                src = FL.swing_source(fs, st["start"])
+            src = FL.swing_source(fs, st["start"])
+            if fs is not None and FL.reached(src, fs.price, H[t] if up else Lo[t], up):   # Z-1s: post-break swing ⇒ its confirmation
+                how = "past the far-side swing" if src == "before_break" else "the first swing after the break confirmed at"
                 if L.count("flip", t - 1) > 0:                             # Z-1f: flip नंतर जुनी भूमिका संपली ⇒ दुसरा flip नाही ⇒ DEAD
                     if not st["brk"]:
-                        L.events.append((t, "broken", f"beyond the band and past the far-side swing {fs.price:,.2f} on one excursion"))
-                    L.events.append((t, "dead", f"flipped zone broken again past its far-side swing {fs.price:,.2f} ({src}) ⇒ dead "
+                        L.events.append((t, "broken", f"beyond the band and {how} {fs.price:,.2f} on one excursion"))
+                    L.events.append((t, "dead", f"flipped zone broken again, {how} {fs.price:,.2f} ({src}) ⇒ dead "
                                                 f"(no second flip)"))
                     L.flip_facts.append((t, {**L.facts_at(t), "dead_at": t, "dead_far_swing": self._swing_fact(fs)}))
                     L.dead_bar = t
@@ -445,8 +468,8 @@ class Levels:
                 new_role = SUP if up else RES
                 brk_at = self._last_broken(L, t) if st["brk"] else t
                 if not st["brk"]:
-                    L.events.append((t, "broken", f"beyond the band and past the far-side swing {fs.price:,.2f} on one excursion"))
-                L.events.append((t, "flip", f"price past the far-side swing {fs.price:,.2f} ⇒ {new_role}"))
+                    L.events.append((t, "broken", f"beyond the band and {how} {fs.price:,.2f} on one excursion"))
+                L.events.append((t, "flip", f"{how} {fs.price:,.2f} ⇒ {new_role}"))
                 if "c" not in L.births:
                     L.births.append("c")
                 L.flip_facts.append((t, {"broken_at": brk_at, "break_dir": 1 if up else -1, "exc_start": st["start"],
@@ -537,7 +560,8 @@ class Levels:
                         "anchor": L.anchor, "tests": L.count("test", t), "sweeps": L.count("sweep", t), "flips": L.count("flip", t),
                         "fresh": L.count("test", t) == 0, "score": self.score(L, t, births), "dist": round(dist, 2),
                         "dist_sigma": round(dist / sg, 2) if np.isfinite(sg) and sg > 0 else None,
-                        "above": lo > c, "below": hi < c, "born_bar": L.born_bar, **self.flip_view(L, t)})
+                        "above": lo > c, "below": hi < c, "born_bar": L.born_bar, "provisional_width": L.provisional(t),
+                        "width_note": PROV_WIDTH if L.provisional(t) else None, **self.flip_view(L, t)})
         return out
 
     def active(self, t, trend, band=None):
@@ -588,12 +612,13 @@ def band_flip_facts(df, t, x, s=None, start=None):
     """KB K4 (Abhi) facts on a checked band x (facts.validity.check_band output): flip_state ACTIVE / BROKEN / FLIPPED / DEAD by Abhi's
     rule — the same state machine as the engine (Levels._step_far_swing), driven by the band check's own real breaks (in order, ≤ t):
       • a break AGAINST the band's current role (the first break sets it) ⇒ BROKEN; its segment runs to the next break (or t);
-      • while BROKEN, price past the break's far-side swing ⇒ FLIPPED (role changes; a break the other way is now "against"); the far
+      • while BROKEN, the break's far-side swing reached ⇒ FLIPPED (role changes; a break the other way is now "against"); the far
         swing = the nearest confirmed swing beyond the band on the break side formed before the break (`facts.validity.pivots`, confirmed
-        by the bar it is used on); none (new highs / lows) ⇒ the FIRST CONFIRMED such swing after the break (Abhi Z-1a, as flip.far_swing);
+        by the bar it is used on) — reached when price trades past it; none (new highs / lows) ⇒ the FIRST swing formed after the break,
+        reached when it is CONFIRMED (Abhi Z-1s, as flip.far_swing / flip.reached — the chart label mirrors the engine);
       • while BROKEN, a break back the other way before the far swing is passed = reclaim ⇒ sweep ★, the prior state and role are kept
         (ACTIVE, or FLIPPED with its flipped_at) — never a new break / flip;
-      • a FLIPPED band broken against its new role and passed past that break's far swing ⇒ DEAD, no second flip (Abhi Z-1f / Z-1k).
+      • a FLIPPED band broken against its new role and that break's far swing reached ⇒ DEAD, no second flip (Abhi Z-1f / Z-1k / Z-1s).
     Additive facts only: `valid` / `flipped` / `broken` of the shared check are not changed (open question Z-1b).
     Returns {flip_state, broken_at, far_swing (+ source), flipped_at, dead_at, sweeps} (bars + ts; bars ≤ t only)."""
     from facts import validity as FV
@@ -638,7 +663,7 @@ def band_flip_facts(df, t, x, s=None, start=None):
                 p, src = first[0], "first_confirmed_after_break"
             px = float(B.H[p] if up else B.L[p])
             out["far_swing"] = {"price": round(px, 2), "bar": int(p), "ts": str(B.ts.iloc[p]), "source": src}
-            if (B.H[i] > px) if up else (B.L[i] < px):
+            if FL.reached(src, px, B.H[i] if up else B.L[i], up):          # Z-1s: a post-break swing is reached by its confirmation
                 if prior == FL.FLIPPED:                                     # Z-1f / Z-1k: flipped once ⇒ passed again = DEAD
                     out.update(flip_state=FL.DEAD, dead_at=bar(i))
                     return out
@@ -664,6 +689,11 @@ def check_bands(df, t, items, s=None, start=None, magnet_df=None):
     out = [(x, FV.check_band(B, t, x["lo"], x["hi"], s, start=start, magnet_df=magnet_df)) for x in items]
     FV.latest_broken_only([f for _, f in out])
     return out
+
+
+def width_tag(x):
+    """Abhi PF-2: ", provisional width" for a level whose min band width is still the provisional one (σ_1H missing) — chart labels."""
+    return f", {PROV_WIDTH}" if x.get("provisional_width") else ""
 
 
 def band_label(x):

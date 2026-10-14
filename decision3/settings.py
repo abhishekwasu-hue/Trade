@@ -40,7 +40,8 @@ DEFAULTS = {
                                              # "role0" = जुना Q2 default (मूळ भूमिकेची बाजू, flip नंतरही) — revert साठी
     "level_flip_rule": "far_swing",          # KB K4 (Abhi, final): flip = पट्ट्यापलीकडे + पलीकडचा swing पार (trade ने) ⇒ FLIPPED; acceptance
                                              # (accept_closes) पण swing पार नाही ⇒ BROKEN (trade location नाही). पलीकडे swing नसेल ⇒ break नंतरचा
-                                             # पहिला confirmed swing (Z-1a). FLIPPED zone पुन्हा तुटून त्याचा far swing पार ⇒ DEAD (दुसरा flip नाही,
+                                             # पहिला swing confirm होताच FLIPPED (Z-1s; तोडायची गरज नाही). FLIPPED zone पुन्हा तुटून त्याचा far swing
+                                             # गाठला (पार / नसेल ⇒ break नंतरचा पहिला swing confirm) ⇒ DEAD (दुसरा flip नाही,
                                              # Z-1f). "acceptance" = जुना spec §5.4 (acceptance ⇒ लगेच flip) — फक्त जुने tests / what-if;
                                              # level_death_side फक्त "acceptance" सोबत लागू
     "flip_pullback_inner_degree": 1,         # G4 context (a): pullback ची आतली रचना या swings2 degree च्या pivots वर (level_degree च्या एक खाली)
@@ -51,6 +52,9 @@ DEFAULTS = {
     "c0_volume_required": True,              # Abhi Z-1c: commitment (c0) ला FUT volume हवाच — NA ⇒ "data problem", entry नाही (volume शिवाय
                                              # grade-B trade नाही). False = जुनी प्रथा (NA ⇒ कमाल B) — फक्त volume नसलेले जुने synthetic tests
     "vol_slot_min_sessions": 10,             # slot history इतक्यापेक्षा कमी ⇒ NA (कारणासह); 10–19 ⇒ उपलब्ध sessions चा median (OPEN_QUESTIONS)
+    "vol_gap_max_frac": 0.5,                 # Abhi RF-2 (b): in-zone window (arm … commitment) च्या इतक्यापेक्षा जास्त bars ला FUT volume नाही
+                                             # ⇒ data problem: entry नाही + Telegram "data problem: FUT volume gaps" (NIFTY / BANKNIFTY, दिवसातून
+                                             # एकदा); कमी ⇒ volume असलेल्या bars ची सरासरी + "gaps n/m" नोंद
     "show_distance_sigma": 12.0,             # chart वर फक्त इतक्या σ_1H अंतरातली levels (snapshot मधून कधीच prune नाही)
     "chart_old_box_sessions": 126,           # §5.1 (Abhi): Daily chart window यापेक्षा लांब (≈ 6 महिने) ⇒ जुने correction boxes नाहीत (फक्त chart)
     "chart_leg_path_points": 15,             # Abhi review: trend leg ची chart रेषा कमाल इतक्या बिंदूंतून (लांब leg ⇒ मोठे swings च)
@@ -144,13 +148,15 @@ REGISTER = {
     "range_state_gate": (False, "False / True", "Abhi नियम", "Abhi Z-1j: §5.3 range अवस्था context fact फक्त; True फक्त जुने tests"),
     "watch_levels_max": (3, "—", "Abhi नियम", "Abhi B2 watch-list (final) + KB K4 chart display (≤ 3 bands above / below price)"),
     "wave_gates": (False, "False / True", "Abhi नियम", "Abhi B1: no wave prediction — wave / maturity / C = a context only; True फक्त जुने tests"),
-    "level_flip_rule": ("far_swing", "far_swing / acceptance", "Abhi नियम", "KB K4 / G4 (Abhi final, Z-1): flip = पलीकडे + पलीकडचा swing पार (swing नसेल ⇒ break नंतरचा पहिला confirmed swing); नाहीतर BROKEN; flipped zone दुसऱ्यांदा ⇒ DEAD"),
+    "level_flip_rule": ("far_swing", "far_swing / acceptance", "Abhi नियम", "KB K4 / G4 (Abhi final, Z-1): flip = पलीकडे + पलीकडचा swing पार (swing नसेल ⇒ break नंतरचा पहिला swing confirm होताच — Z-1s, तोडायची गरज नाही); नाहीतर BROKEN; flipped zone दुसऱ्यांदा ⇒ DEAD"),
     "flip_pullback_inner_degree": (1, "0 / 1", "व्याख्या", "KB G4 context (a): pullback ची रचना एक degree खालच्या pivots वर (daily_legs.classify inner_seq) — फक्त fact"),
     "flip_pullback_vol_ratio": (1.0, "—", "setting", "KB G4 context (b) 'lower FUT volume than the impulse' ⇒ ratio < 1.0 — फक्त fact, gate नाही (Abhi Z-1)"),
     "flip_vol_min_coverage": (1.0, "—", "setting", "KB G4 context (b): volume NA कधीच शांत 'lower' नाही — सगळ्या bars ला volume हवा"),
     "vol_slot_sessions": (20, "—", "Abhi नियम", "Abhi (Z-1 volume): bar volume ÷ त्याच time-of-day slot चा मागच्या 20 sessions चा median"),
     "c0_volume_required": (True, "True / False", "Abhi नियम", "Abhi Z-1c: FUT volume नाही = data error ⇒ entry नाही; False फक्त जुने volume-नसलेले tests"),
     "vol_slot_min_sessions": (10, "5 / 10 / 20", "अंदाज", "slot history किमान (legs2 rvol_min_sessions सारखं); कमी ⇒ NA — OPEN_QUESTIONS Z-1h"),
+    "vol_gap_max_frac": (0.5, "0–1 (share of the window's bars)", "Abhi नियम", "Abhi RF-2 (b): FUT volume gaps > इतका भाग ⇒ data problem, "
+                         "entry नाही (default 50% — Abhi चा आकडा); commitment bar चाच volume नाही ⇒ Z-1c (entry नाही)"),
     "liq_marks_per_side": (3, "2/3/5", "अंदाज (फक्त chart)", "spec §7.6 pools लहान खुणा — गर्दी टाळायला; क्रम PWH/PWL > PDH/PDL > equal > swing (liquidity.pool_marks prio, फक्त display)"),
     "show_distance_sigma": (12.0, "8/12/20", "अंदाज (फक्त chart)", "spec ② दूरची levels chart वर लपवा"),
     "chart_old_box_sessions": (126, "—", "अंदाज (फक्त chart)", "§5.1 (Abhi): '~6 महिन्यांपेक्षा लांब window ⇒ जुने boxes नाहीत' (≈ 126 sessions)"),
