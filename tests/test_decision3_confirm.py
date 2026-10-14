@@ -144,7 +144,7 @@ def _A(tail, vol_commit=200.0, vol=True, mirror=False):
 @pytest.mark.parametrize("mirror", [False, True])
 def test_confirm_requires_all_three_and_reports_each_missing_piece(mirror):
     d = M.DOWN if mirror else M.UP
-    s = M.S3.DEFAULTS
+    s = {**M.S3.DEFAULTS, "a2_handover_required": False}                     # Z-1m आधीचा shared-confirm test (fixture ला handover नाही) — pin
     A, arm, t, lvl, L = _A(C1.CHOCH, mirror=mirror)
     times = (T0, T_ARR, T_END)
     ok = M.confirm(A, arm, t, d, lvl, s, ltf=L, ltf_times=times)
@@ -173,7 +173,10 @@ def _v22_setup_bar():
     from tests.test_decision3_method import _abc_m15
     m15 = _abc_m15()
     s = {"maturity_sigma_d": -1e6, "commit_dom_mult": 0.0}                 # fixture ला dominant candle नाही ⇒ c0 बंद; c1 default (चालू)
-    return m15, s, E3
+    s["level_flip_rule"] = "acceptance"                                    # fixture चा setup acceptance-flip level वर (जुना §5.4) — Z-1 pin;
+    s["a2_handover_required"] = False                                      # Z-1m आधीचा fixture (handover नसलेला) — pin
+    s["c0_volume_required"] = False                                        # volume-नसलेला fixture ⇒ जुनी NA प्रथा pin (Z-1c नवा नियम: flip tests)
+    return m15, s, E3                                                      # नवा K4 नियम: tests/test_decision3_flip.py
 
 
 def test_v22_without_ltf_fails_closed_with_reason():
@@ -220,3 +223,51 @@ def test_v22_futures_volume_feeds_c0_and_power_shift_e():
     assert all((r.get("commit") or {}).get("vol_mult") is None for r in V0.run())           # volume नाही ⇒ NA
     ok, n, items = M.power_shift(V.levels.A, rows[-1]["bar"], M.UP, None, V.s)
     assert items["e_handover_volume"] is not None                         # ④ (e): volume असेल तर handover-volume वाचन (NA नाही)
+
+
+# ------------------------------------------------------------------------------------------------ Abhi Z-1m: handover (a2) mandatory
+def _with_handover(A, arm, mirror, present=True):
+    """8 in-zone bars before `arm` (UP = bull put: trade side green). present ⇒ first half: big counter (red) candles on higher volume,
+    small green; second half: green candles grow on rising volume, red shrink ⇒ handover. present False ⇒ both sides shrink (the trade
+    side does not grow) ⇒ no handover, no absorption. Returns (A', arm')."""
+    f = (lambda x: 2000.0 - x) if mirror else (lambda x: float(x))
+    if present:
+        seq = [(998.0, 995.0, 90.0), (995.0, 995.6, 40.0), (995.6, 993.0, 95.0), (993.0, 993.4, 40.0),
+               (993.4, 995.4, 80.0), (995.4, 995.1, 30.0), (995.1, 997.6, 95.0), (997.6, 997.4, 25.0)]
+    else:
+        seq = [(997.0, 995.5, 200.0), (995.5, 996.7, 150.0), (996.7, 995.2, 200.0), (995.2, 996.4, 150.0),   # both sides shrink:
+               (996.4, 995.4, 100.0), (995.4, 995.7, 30.0), (995.7, 994.8, 100.0), (994.8, 995.1, 30.0)]    # no side takes over
+    o = np.array([f(x[0]) for x in seq])
+    c = np.array([f(x[1]) for x in seq])
+    k = len(seq)
+    B = {kk: np.array(v, float).copy() for kk, v in A.items()}
+    B["open"][arm - k:arm], B["close"][arm - k:arm] = o, c
+    B["high"][arm - k:arm], B["low"][arm - k:arm] = np.maximum(o, c) + 0.2, np.minimum(o, c) - 0.2
+    B["volume"][arm - k:arm] = [x[2] for x in seq]
+    return B, arm - k
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_no_handover_no_entry_even_with_commitment_and_choch(mirror):
+    d = M.DOWN if mirror else M.UP
+    s = M.S3.DEFAULTS
+    assert s["a2_handover_required"] is True
+    A, arm, t, lvl, L = _A(C1.CHOCH, mirror=mirror)
+    A, arm = _with_handover(A, arm, mirror, present=False)
+    r = M.confirm(A, arm, t, d, lvl, s, ltf=L, ltf_times=(T0, T_ARR, T_END))
+    assert not r["ok"] and r["wait"] == M.C_NO_HANDOVER and r["handover"] is False
+    assert r["c0"] and r["c1"]                                             # commitment AND CHoCH present — still no entry
+    old = M.confirm(A, arm, t, d, lvl, {**s, "a2_handover_required": False}, ltf=L, ltf_times=(T0, T_ARR, T_END))
+    assert old["ok"]                                                       # the old rule (a2 = absorption only) would have entered
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_handover_then_choch_then_commitment_is_an_entry(mirror):
+    d = M.DOWN if mirror else M.UP
+    s = M.S3.DEFAULTS
+    A, arm, t, lvl, L = _A(C1.CHOCH, mirror=mirror)
+    A, arm = _with_handover(A, arm, mirror, present=True)
+    r = M.confirm(A, arm, t, d, lvl, s, ltf=L, ltf_times=(T0, T_ARR, T_END))
+    assert r["handover"] is True and r["c1"] and r["c0"] and r["ok"], r["why"]
+    nc = M.confirm(A, arm, t, d, lvl, s, ltf=_ltf(C1.FALL, mirror), ltf_times=(T0, T_ARR, T_END))
+    assert not nc["ok"] and nc["wait"] == M.C_LTF_AGAINST                 # order: handover → CHoCH (missing ⇒ wait) → commitment

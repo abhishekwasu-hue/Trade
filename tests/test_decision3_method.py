@@ -77,7 +77,12 @@ def _synthetic_m15(seed=7, legs=None):
 # हा fixture 15M-only (5M LTF नाही) आणि त्याचा setup bar study window पेक्षा dominant नाही ⇒ ⑥ ची c0 dominance / c1 LTF CHoCH (Abhi,
 # LEVEL_BOTS_CONFIRMATION) इथे बंद — हे tests त्या नियमांचे नाहीत (setup invariants / charts / captions); c0 + c1 चे tests (आरशासह)
 # tests/test_decision3_confirm.py मध्ये.
-NO_MATURE = {"maturity_sigma_d": -1e6, "ltf_choch": False, "commit_dom_mult": 0.0}
+# या fixture चा एकमेव setup acceptance-flip झालेल्या level च्या retest वर होता (जुना spec §5.4); Abhi च्या K4 नियमाने (Z-1) तो level
+# far swing पार न झाल्याने BROKEN ⇒ trade location नाही. हे tests flip नियमाचे नाहीत (setup invariants / charts / captions) ⇒ जुना नियम
+# स्पष्ट pin (`level_flip_rule` = "acceptance"); नवा नियम tests/test_decision3_flip.py मध्ये. असर्ट बदलले नाहीत.
+# हे fixtures volume-नसलेले ⇒ Abhi Z-1c (volume नाही ⇒ data problem, entry नाही) इथे जुनी प्रथा pin (`c0_volume_required` False).
+NO_MATURE = {"maturity_sigma_d": -1e6, "ltf_choch": False, "commit_dom_mult": 0.0, "level_flip_rule": "acceptance",
+             "c0_volume_required": False, "a2_handover_required": False}   # Z-1m (handover अनिवार्य) आधीचे fixtures — pin
 LEGACY_RR = {**NO_MATURE, "rr_step": True}                                       # Abhi 13 Oct: ⑦ default मधून काढला — जुने असर्ट याने
 
 
@@ -373,6 +378,7 @@ def test_mature_cap_in_pipeline():
     from decision3 import method as M3
     m15 = _abc_m15()
     s = {k: v for k, v in NO_MATURE.items() if k != "maturity_sigma_d"}          # c0 / c1 बंद (हा test त्यांचा नाही), maturity default
+    s["wave_gates"] = True                                                       # Abhi 12 Oct नियम pin — B1 (default) test खाली
     V = E3.V22(m15, s=s)
     # Q44: या fixture ला trend-degree (A1) correction नाही ⇒ structural target नाही ⇒ default मध्ये mature नाही ⇒ Daily states mature केले.
     assert not any(x.mature for x in V.daily)
@@ -404,3 +410,35 @@ def test_power_shift_a_relative_contraction_both_directions():
     assert M.contraction(A_of(dn), 7, M.DOWN, k, S, lvl_dn)
     big = up[:5] + [(100, 101, 93, 94), (94, 95, 87, 88), (88, 89, 81, 82)]                    # area मध्ये मोठ्या ⇒ contraction नाही
     assert not M.contraction(A_of(big), 7, M.UP, k, S, {"lo": 80, "hi": 100.5})
+
+
+def test_maturity_and_leg_count_never_block_or_downgrade_by_default():
+    """Abhi B1 (trader's patience, 13 Oct final): wave count, maturity and projections are context only — with the Daily made mature (and
+    the structure not intact) every default decision, conviction and cap is exactly the same; the facts are in `wave_context`."""
+    import dataclasses
+    from decision3 import engine as E3
+    m15 = _abc_m15()
+    s = {k: v for k, v in NO_MATURE.items() if k != "maturity_sigma_d"}
+    V = E3.V22(m15, s=s)
+    assert V.s["wave_gates"] is False
+    bars = range(700, len(m15))
+    base = {t: V.decide(t) for t in bars}
+    assert any(r["decision"] == "setup" for r in base.values())
+    for patch in ({"mature": True}, {"mature": True, "origin_risk": True}, {"mature": True, "counter": "correction", "origin_risk": True}):
+        V.daily = [dataclasses.replace(x, **patch) if x.trend in ("UP", "DOWN") else x for x in V.daily]
+        for t, r0 in base.items():
+            r = V.decide(t)
+            assert r["decision"] == r0["decision"]                         # maturity / origin_risk / leg count never block
+            if "counter" not in patch:
+                assert r["conviction"] == r0["conviction"]                 # … and never downgrade
+            else:                                                          # the Q23 same-degree-correction cap (structure, not maturity)
+                assert r["conviction"] == r0["conviction"] or (r0["conviction"] == "A" and r["conviction"] == "B")
+            assert not r["mature_step_down"] and r["wave_context"].get("mature")
+            if "counter" not in patch:
+                assert r["trend_cap"] == r0["trend_cap"]
+            else:
+                assert r["trend_cap"] in (None, "B")                         # same-degree correction (Q23, structure) — never "weak"
+        V.daily = E3.DD.fold(V.daily_df, V.s)
+    for r in base.values():                                                       # leg count = context: never a no_trade / downgrade
+        assert r["evidence"] is None or (r["evidence"]["second_attempt"] is None and r["evidence"]["fourth_attempt"] is None)
+        assert "चौथा" not in str(r.get("why")) and "पहिला पाय" not in str(r.get("missing"))

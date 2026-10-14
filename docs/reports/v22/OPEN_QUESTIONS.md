@@ -421,6 +421,28 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | Z-2 | (b) सगळीकडे एकच flip नियम (G4 सकट). BROKEN (swing पार नाही) ⇒ retest trade location नाही, थांबा. FLIPPED ⇒ swing वरून परत येणं = pullback, flipped area = trade location; entry आधी (a) pullback corrective (zigzag / flat / triangle), (b) एकूण कमी FUT volume (flip करणाऱ्या impulse पेक्षा; सुरुवात वाढत्या volume ने चालते), (c) area वर handover (a2) + dominant commitment जास्त FUT volume (c0) + LTF CHoCH (c1) + RSI divergence पुरावा. Impulsive / जास्त volume ने परत ⇒ trade नाही. G4 चं नाव "flip retest" = नेमकं हेच | KB K4 + G4 + pack. ✅ निकाली |
 | Z-1 | decision3 BROKEN / FLIPPED code | वेगळा PR (fixtures: 12 Oct sweep, 13 Oct flip, 3 synthetic) |
 
+### Z-1 code (decision3 BROKEN / FLIPPED, branch `claude/decision3-flip-state`) — निकाल + पुढचे प्रश्न
+
+| # | प्रश्न / नोंद | सध्या code (default) | कोण |
+|---|---|---|---|
+| Z-1 | decision3 BROKEN / FLIPPED code | ✅ केलं (rework, Abhi अंतिम उत्तरं): BROKEN = trade location नाही; far swing पार ⇒ FLIPPED; FLIPPED पुन्हा far swing पार ⇒ DEAD; G4 (a) / (b) फक्त context; in-zone study (⑥ a2 + c0 + c1, RSI पुरावा) निर्णय; volume = slot-normalised per bar; FUT नाही ⇒ data problem. Live PAPER: 15M SRv2 engine मार्ग (engine3_live ⇒ V22) | ✅ निकाली (review बाकी) |
+| Z-1a | पलीकडे swing नसेल ⇒ break नंतरचा पहिला confirmed swing | ✅ Abhi ठरवलं — code केलं (`flip.far_swing`, source "first_confirmed_after_break") | ✅ निकाली |
+| Z-1b | Shared band check (`facts.validity.check_band`) चा "flipped" = real break + नव्या बाजूला ≥ 2 touches — Abhi च्या नियमापेक्षा वेगळा. `find_bands` ला `flip_state` / `far_swing` / `flipped_at` facts (additive); `valid` / `flipped` तसेच | facts जोडल्या, validity बदल नाही | Abhi / वेगळा PR |
+| Z-1c | NIFTY / BANKNIFTY FUT नाही = data error | ✅ Abhi ठरवलं — `engine3_live.FutVolumeMissing` ⇒ error row, entry नाही, Telegram "data problem: FUT volume missing" (symbol प्रमाणे दिवसातून एकदा); V22 c0 volume NA ⇒ "data problem" वाट (`c0_volume_required`); cap_b पर्याय काढला | ✅ निकाली |
+| Z-1d | Pullback आकार फक्त context; zone वाचन अस्पष्ट ⇒ थांबा | ✅ Abhi ठरवलं — checklist "G4" = [None, context], कधीच no_trade / wait नाही | ✅ निकाली |
+| Z-1e | 22,544–22,622 spot zone = FLIPPED seller area; 12 Oct bear call golden | ✅ Abhi ठरवलं — code: zone FLIPPED (8 Oct 11:15, 5 Oct low 22,397.1 पार), 12 Oct 09:15 sweep. पण golden bear call **code देत नाही** — Z-1j पाहा | ✅ नियम; निकाल Z-1j |
+| Z-1f | FLIPPED zone पुन्हा far swing पार ⇒ DEAD (दुसरा flip नाही) | ✅ Abhi ठरवलं — code केलं ("dead" event, log) | ✅ निकाली |
+| RSI-2 | किमान pivot अंतर 3 bars सगळ्या TF | ✅ `rsi2/settings.py` `div_bars` 3–50 / 3–35 / 3–60; dashboard "RSI div min bars" (chart overlay) | ✅ निकाली |
+| Z-1h | ~~Slot baseline: 20 sessions (`vol_slot_sessions`, Abhi); 20 पेक्षा कमी history ⇒ उपलब्ध sessions, किमान `vol_slot_min_sessions` 10 (legs2 rvol सारखं); त्याहून कमी ⇒ NA ⇒ data problem. Live: `engine3_fut_days` 45 calendar दिवस; Upstox फक्त चालू front-month contract देतो ⇒ rollover नंतर आधीचे दिवस next-month च्या (कमी) volume चे — baseline विकृत~~ **superseded ⇒ Z-1h row in "Abhi Z-1j / Z-1h / Z-1m — code" (short history ⇒ labelled raw per-bar fallback, not a data problem)** | 10 / NA | Abhi |
+| Z-1i | `_born` merge: नवा swing BROKEN level मध्ये merge होतो (DEAD मध्ये कधीच नाही). न-merge केल्यास Abhi चा 22,544–22,622 zone दोन levels मध्ये फुटतो आणि 12 Oct spike ने अरुंद demand band DEAD होतो (Z-1e विरुद्ध) ⇒ merge ठेवलं. Level list: DEAD snapshot बाहेर; न-flipped BROKEN levels राहतात (births इतकेच, bounded) | merge ठेवलं | Abhi |
+| Z-1j | ~~12 Oct golden bear call code देत नाही: (1) default — trade-data मध्ये FUT फक्त 30 Sep पासून ⇒ 12 Oct ला slot history 7 sessions < 10 ⇒ "data problem" वाट (09:30 strong_close body 6.0×; 10:15 inside_break body 2.54×). (2) what-if (min 5, फक्त अहवाल): 09:30 §5.3 range अवस्थेने अडला; 10:15 inside_break (A, vol 1.41×) + 5M CHoCH 09:40 + RSI bear div ⇒ **setup (bear call, grade B — Daily protected origin तुटला ⇒ कमाल B)**. RSI (1m order सह, phase 1 सारखं): D0 9 Oct 14:15 22,580.75 RSI 67.09 → 12 Oct 09:15 22,651.10 RSI 66.41, 4 bars, 09:15 forming / 09:30 + 09:45 confirmed~~ **superseded ⇒ Z-1p**: Z-1h (कमी history ⇒ raw per-bar fallback, data problem नाही) आणि Z-1j (§5.3 gate काढला) नंतर 12 Oct चं खरं कारण = no handover (09:30 buying candles दमल्या नाहीत; 10:15 दुसऱ्या अर्ध्यात counter candle नाही) | wait (data) | Abhi |
+| Z-1o | Live engine3 V22 ला 1m order data नाही (`V22(m15, None, …)`) ⇒ swings2 D0 pivots 1m-आधारित runs पेक्षा वेगळे. 12 Oct: 1m शिवाय 09:15 high D0 pivot होत नाही ⇒ वरचा RSI divergence live मध्ये सापडला नसता (तपासलेलं: 1m शिवाय D0 जोडी 9 Oct 11:15 → 14:15, "RSI made a new high"). Live ला 1m आणायचा का? (levels सुद्धा बदलतील) | 1m नाही (बदल नाही) | Abhi |
+| Z-1k | 13 Oct: Abhi "spot 22,731.8 पार ⇒ flip" पण Z-1f नुसार हा zone 8 Oct ला आधीच flip झाला ⇒ पार ⇒ DEAD (दुसरा flip नाही). 13 Oct spot high 22,721.95 < 22,731.8 ⇒ code: BROKEN (15:00), resistance; bear call नाही ✅ (absorption 13:30–14:15; 14:00–14:15 D0 bear div forming, नंतर RSI नवा high ने रद्द) | BROKEN | Abhi |
+| Z-1l | SENSEX FUT नाही ⇒ V22 data problem (entry नाही) पण Telegram नाही (FUT_REQUIRED = NIFTY / BANKNIFTY). Level bots (OFF) मध्ये volume NA ⇒ grade B अजून तसंच | असंच | Abhi |
+| Z-1m | ~~In-zone gate = विद्यमान ⑥ (a2 = absorption ⇒ वाट, c0, c1); handover आवश्यक केलेला नाही (पुरावा). RSI divergence पुरावा: सापडला ⇒ +, नसेल ⇒ NA (वजा नाही — gate होऊ नये)~~ **superseded ⇒ Z-1m row in "Abhi Z-1j / Z-1h / Z-1m — code" (handover mandatory, order a2 → c1 → c0)** | असंच | Abhi पुष्टी |
+| Z-1n | Flip वेग: real NIFTY वर जवळचा far swing बहुधा band पलीकडे फक्त 33–55 points ⇒ break च्याच bar ला flip शक्य. नियम बदलला नाही | — | Abhi |
+| Z-1g | व्याख्या: reclaim = BROKEN नंतर `accept_closes` closes परत भूमिकेच्या बाजूला ⇒ जुनी भूमिका (sweep ★ नोंद); approach context: flip impulse = excursion आधीच्या शेवटच्या उलट D2 swing नंतरचं टोक ⇒ flip टोक; approach volume = flip टोक नंतर … decision bar आधी, per-bar normalised सरासरी | असंच | Abhi पुष्टी |
+
 ### Abhi अंतिम उत्तरं — Z-1 / RSI-2 (in-zone study)
 
 | # | निर्णय |
@@ -439,3 +461,33 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | Z-1j | §5.3 range state (overlap / doji) entry gate **काढला** — zone मधल्या overlap / sideways candles = handover study; range कडेवर trade (bull put तळाला, bear call वरच्या कडेला). §5.1 first-leg cap सुद्धा काढला (wave gate). ✅ Abhi |
 | Z-1h | Volume normalise: 20 sessions (किमान 10); 10 पेक्षा कमी ⇒ "volume normalisation: insufficient history" + raw per-bar सरासरी (label सह). VPS वरून जुना FUT export. ✅ Abhi |
 | Z-1m | Handover (a2) **बंधनकारक**: zone मध्ये दिसणारा handover + LTF CHoCH (close) शिवाय entry नाही; commitment candle त्यानंतर. ✅ Abhi |
+
+### Abhi B (trader's patience) + Z-1k — code (branch `claude/decision3-flip-state`)
+
+| # | नोंद | code (default) | कोण |
+|---|---|---|---|
+| Z-1k | Flip झालेला zone पुन्हा far swing पार ⇒ DEAD (Abhi: (a)) | ✅ Z-1f तसंच; 13 Oct high 22,721.95 < 22,731.8 ⇒ BROKEN (close), पुढचे zones armed | ✅ निकाली |
+| B1 | Wave / maturity / projections फक्त context — काढलेले gates (`wave_gates` = False; True = जुने tests): `decision3/engine.py` step1 — mature ⇒ cap weak, mature + अखंड ⇒ grade step-down, origin_risk ⇒ cap weak; `_level_eval` — §5.1 पहिला पाय cap (★ ≥ 2 + मजबूत signal-bar नाही ⇒ weak), §5.1 चौथा+ प्रयत्न ⇒ no_trade, पुरावा second_attempt / fourth_attempt (leg count) ⇒ NA; `bots_common/level_reaction.mature_cap` ⇒ नेहमी None; pre-open / 15:45 ओळ "daily move: mature (context only)". §5.1 (spec 08_थर_v22 §5.1) पाय-मोजणी = wave count ⇒ gate मानलं — Abhi ला चुकीचं वाटल्यास `wave_gates` | ✅ केलं | Abhi पुष्टी (§5.1) |
+| B1-a | ठेवलेले (wave prediction नाहीत, Dow रचना): Q23 origin close ने तुटला ⇒ कमाल B, A1 same-degree correction ⇒ कमाल B, weekly विरुद्ध ⇒ कमाल B, trend first (`st.rev`) ⇒ trade नाही; §5.3 range अवस्था (Z-1j, Abhi कडे). ~~Level bots (OFF): origin_risk ⇒ NO_TREND तसंच~~ **superseded ⇒ RF-1** (level gate: origin_risk = context only) | तसंच | Abhi |
+| B2 | Watch-list: trend दिशेचे पुढचे सगळे valid counter-side zones (BROKEN / DEAD नाहीत), जवळचे पहिले, `watch_levels_max` 3 (KB K4 display ≤ 3); प्रत्येकावर in-zone study; zone तुटला ⇒ पुढचा आधीच यादीत; row / payload `watch_list` | ✅ केलं | — |
+| B3 | Loss नंतर lock-out: engine मार्गात (engine_entry) कोणताही loss lock-out नाही. SRv2 bot च्या स्वतःच्या (non-engine) मार्गात: `COOLDOWN_MINUTES` 30 (SL नंतर, hard-coded; `pre_cycle` नंतर ⇒ engine entry ला लागत नाही) आणि `sl_tsl_cooldown_minutes` 15 (dashboard, त्याच level वर SL/TSL नंतर) — LIVE-capable file ⇒ बदल नाही. वेगळे risk settings (बदल नाही): Kill switch enabled, max_daily_loss_pct 2.0, max_daily_profit_pct 3.0, max_trades_per_day 15, count_paper_pnl True (PAPER लाही लागू), MCX kill switch 1.0 %, vision shadow_cooldown_min | 30-min cooldown setting करायचा का (default OFF)? | Abhi |
+| D-29 | 29 Sep: trade-data मध्ये FUT 30 Sep पासून ⇒ 29 Sep ला FUT नाही (NIFTY live ⇒ data error); शिवाय decision3 1H levels मध्ये किंमतीजवळ zone नाही (जवळचा resistance 23,231–23,270, 12:15 close 22,677 पासून ~554 pts) ⇒ ③ ✘ दिवसभर ⇒ wait | wait | Abhi (29 Sep चा zone कोणता?) |
+
+### Abhi Z-1j / Z-1h / Z-1m — code
+
+| # | नोंद | code (default) | कोण |
+|---|---|---|---|
+| Z-1j | §5.3 range अवस्था entry gate नाही — context fact (`range_state` row / payload); `range_state_gate` True फक्त जुने tests | ✅ केलं | ✅ निकाली |
+| Z-1h | Slot normalisation 20 sessions (किमान 10); कमी history ⇒ "volume normalisation: insufficient history — raw per-bar average" (त्याच window मधली per-bar सरासरी; data error नाही); row / payload `volume_measure`, pre-open ℹ️ ओळ. FUT पूर्ण नसेल (NIFTY / BANKNIFTY) ⇒ data error तसाच. `live_export/2026-10-13-fut45/` अजून नाही ⇒ 12 Oct raw fallback वर | ✅ केलं | ✅ निकाली |
+| Z-1m | a2 handover अनिवार्य (`a2_handover_required`), क्रम a2 → c1 → c0. Handover present ⇔ `method.zone_study(arm … t − 1)["handover"]`: zone मधल्या window च्या पहिल्या / दुसऱ्या अर्ध्यात trade-side candles वाढतात (body ↑ आवश्यक + range ↑ / close trade-टोकाजवळ ↑ / volume ↑ पैकी उपलब्धांपैकी किमान अर्धे) **आणि** counter-side candles दमतात (body ↓ आवश्यक + उलट wick ↑ / close दूर ↑ / volume ↓ पैकी किमान अर्धे); window ≥ 4 bars. Level bots (OFF) जुनं वर्तन | ✅ केलं | ✅ निकाली |
+| Z-1p | Handover व्याख्येतली कडा: दुसऱ्या अर्ध्यात counter-side candle **नाहीच** ⇒ counter weakening NA ⇒ handover नाही (12 Oct 10:15). Counter बाजू पूर्ण गायब = दमली मानायचं का? 12 Oct 09:30: selling candles + selling volume वाढले, पण buying candles "दमल्या" नाहीत (body / wick majority) ⇒ handover नाही ⇒ golden bear call अजून नाही | असंच (बदल नाही) | Abhi |
+
+### Review follow-ups — घेतलेले default निर्णय (Abhi ने बदलावे)
+
+| # | नोंद | code (default) | कोण |
+|---|---|---|---|
+| RF-1 | Level gate (SRv2 / classic / MCX confirmation mode — PAPER default; LIVE touch mode ला लागत नाही): origin_risk आता entry अडवत नाही, फक्त context (B1-a मधली "Level bots: origin_risk ⇒ NO_TREND तसंच" ओळ यामुळे बदलली). Level bots OFF | context | Abhi |
+| RF-2 | FUT gaps in-zone window मध्ये: NA bars वगळून per-bar सरासरी + label मध्ये gap count / कारण. Decision bar (c0) चाच volume NA ⇒ data problem (entry नाही). Gaps जास्त असतील तर (उदा. अर्ध्याहून जास्त bars) entry थांबवायची का? | label फक्त, थांबवत नाही | Abhi |
+| RF-3 | FUT rollover दिवस (expiry + आधीचे 2 sessions) slot baseline मधून वगळले (legs2 प्रमाणे); त्या दिवसाचा स्वतःचा bar normalise होतो, label "FUT rollover day" | वगळले | Abhi |
+| Z-1q | Handover एकदा दिसला की commitment पर्यंत वैध राहतो का, की commitment bar च्या window मध्ये (arm … t − 1) तो पुन्हा दिसायला हवा? Code आज commitment bar ला पुन्हा तपासतो. 12 Oct: 09:45 / 10:00 ला handover होता (doji / inside bar ⇒ commitment नाही), 10:15 ला window बदलल्यावर नाही (Z-1p) | commitment bar ला पुन्हा तपास (बदल नाही) | Abhi |
+| Z-1r | क्रम (handover → LTF CHoCH → commitment) फक्त commitment bar ला तपासला जातो ⇒ handover दिसण्याआधी छापलेला 5M CHoCH सुद्धा चालतो (12 Oct: CHoCH 09:40, handover 09:45). CHoCH handover नंतरच हवा का? | आधीचा CHoCH चालतो (बदल नाही) | Abhi |

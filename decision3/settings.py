@@ -27,12 +27,30 @@ DEFAULTS = {
     "level_degree": 2,                       # swings2 degree = 1H trend-degree (D2)
     "level_min_width_sigma": 0.15,           # पट्ट्याची किमान रुंदी = σ_1H × हे
     "liquidity_eq_sigma": 0.15,              # equal highs / lows = σ_1H च्या इतक्या अपूर्णांकात
-    "active_levels_max": 2,                  # trade-बाजूची जवळची levels
+    "active_levels_max": 2,                  # RANGE: प्रत्येक कडेचे जवळचे levels (UP / DOWN साठी watch_levels_max)
+    "watch_levels_max": 3,                   # Abhi B2 (watch-list): trend दिशेचे पुढचे सगळे counter-side zones armed, जवळचे पहिले, इतके
+                                             # (KB K4 chart display: किंमतीवर / खाली कमाल 3 bands) — zone तुटला ⇒ पुढचा आधीच armed
+    "wave_gates": False,                     # Abhi B1 (trader's patience): wave count / maturity / projections फक्त context — maturity cap,
+                                             # mature step-down, origin_risk cap, §5.1 first-leg cap, 4th-attempt no-trade, leg-count पुरावा
+                                             # नाहीत. True = जुने gates (फक्त जुने tests / what-if)
     "prior_level_atr_mult": 8.0,             # Q40: window आधीचे trend-degree Daily / Weekly swings — किंमतीपासून इतक्या ATR_D आत
     "prior_level_atr_n": 14,                 # Q40: ATR_D = window आधीच्या इतक्या Daily candles चा सरासरी true range
     "accept_closes": 3,                      # पलीकडे सलग इतके closes ⇒ acceptance (flip पक्का); कमी आणि परत ⇒ sweep ★
     "level_death_side": "role",              # Q2 / TL1 (✅ Abhi मंजूर): मृत्यू-swing चालू भूमिकेच्या बाजूचा (flipped support = supply ⇒ वरचा D2 H);
                                              # "role0" = जुना Q2 default (मूळ भूमिकेची बाजू, flip नंतरही) — revert साठी
+    "level_flip_rule": "far_swing",          # KB K4 (Abhi, final): flip = पट्ट्यापलीकडे + पलीकडचा swing पार (trade ने) ⇒ FLIPPED; acceptance
+                                             # (accept_closes) पण swing पार नाही ⇒ BROKEN (trade location नाही). पलीकडे swing नसेल ⇒ break नंतरचा
+                                             # पहिला confirmed swing (Z-1a). FLIPPED zone पुन्हा तुटून त्याचा far swing पार ⇒ DEAD (दुसरा flip नाही,
+                                             # Z-1f). "acceptance" = जुना spec §5.4 (acceptance ⇒ लगेच flip) — फक्त जुने tests / what-if;
+                                             # level_death_side फक्त "acceptance" सोबत लागू
+    "flip_pullback_inner_degree": 1,         # G4 context (a): pullback ची आतली रचना या swings2 degree च्या pivots वर (level_degree च्या एक खाली)
+    "flip_pullback_vol_ratio": 1.0,          # G4 context (b): pullback ची सरासरी (normalised) FUT volume < हे × flip impulse ची ⇒ "lower" (फक्त fact)
+    "flip_vol_min_coverage": 1.0,            # G4 context (b): impulse / pullback bars पैकी इतक्या bars ला volume हवा; कमी ⇒ (b) NA (फक्त fact)
+    "vol_slot_sessions": 20,                 # Abhi (Z-1): प्रत्येक bar चा volume ÷ त्याच 15M slot चा मागच्या इतक्या sessions चा median (09:15 / close
+                                             # bars नेहमी जड) — a2, c0 आणि in-zone facts सगळीकडे हाच normalised volume (सरासरी per bar, बेरीज नाही)
+    "c0_volume_required": True,              # Abhi Z-1c: commitment (c0) ला FUT volume हवाच — NA ⇒ "data problem", entry नाही (volume शिवाय
+                                             # grade-B trade नाही). False = जुनी प्रथा (NA ⇒ कमाल B) — फक्त volume नसलेले जुने synthetic tests
+    "vol_slot_min_sessions": 10,             # slot history इतक्यापेक्षा कमी ⇒ NA (कारणासह); 10–19 ⇒ उपलब्ध sessions चा median (OPEN_QUESTIONS)
     "show_distance_sigma": 12.0,             # chart वर फक्त इतक्या σ_1H अंतरातली levels (snapshot मधून कधीच prune नाही)
     "chart_old_box_sessions": 126,           # §5.1 (Abhi): Daily chart window यापेक्षा लांब (≈ 6 महिने) ⇒ जुने correction boxes नाहीत (फक्त chart)
     "chart_leg_path_points": 15,             # Abhi review: trend leg ची chart रेषा कमाल इतक्या बिंदूंतून (लांब leg ⇒ मोठे swings च)
@@ -47,6 +65,10 @@ DEFAULTS = {
     "commit_dom_mult": 1.5,                  # ⑥ c0 (Abhi): commitment candle "dominant" ⇔ body ≥ इतके × study window ची सरासरी body (window दिला तरच)
     "study_min_bars": 4,                     # a2 zone study: window मध्ये किमान इतक्या candles (पहिला / दुसरा अर्धा तुलना)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
+    "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.
+                                             # False = जुनं (a2 फक्त absorption ⇒ वाट) — जुने tests / what-if
+    "range_state_gate": False,               # Abhi Z-1j: §5.3 range अवस्था (overlap + doji) = context fact, gate नाही (sideways = handover study;
+                                             # range trades चालतात). True = जुना gate (फक्त जुने tests)
     "ltf_choch": True,                       # ⑥ c1 (Abhi, REQUIRED): lower-timeframe CHoCH by close (15M setup ⇒ 5M; method.LTF_OF). False = फक्त what-if
     "power_overlap": 0.5,                    # (b) bodies overlap
     # ⑤ Trendline (grade फक्त)
@@ -63,9 +85,9 @@ DEFAULTS = {
     "commit_close_frac": 2 / 3,              # signal-bar: close range च्या trend-बाजूच्या तृतीयांशात (§5.2)
     "touch_window_bars": 3,                  # ③ "level मध्ये / लगत": शेवटच्या इतक्या 15M bars पैकी एकाने पट्ट्याला स्पर्श (commitment + आधीचा)
     "entry_start": "09:30", "entry_end": "15:15",   # entry bar ची सुरुवात start ≤ hm < end (15:15 चा bar बाजार बंदला close ⇒ नाही)
-    "evidence_start": "09:15",               # Abhi (12 Oct): पुरावा-खिडकी (2-candle form / संदर्भ candle) सत्राच्या सुरुवातीपासून — opening candle चा
+    "evidence_start": "09:15",               # Abhi: पुरावा-खिडकी (2-candle form / संदर्भ candle) सत्राच्या सुरुवातीपासून — opening candle चा
                                              # sweep + wick = पुरावा; entry खिडकी (entry_start) तशीच
-    "entry_first_bar": True,                 # Abhi (13 Oct): सत्राची पहिली candle (evidence_start, 09:15) स्वतः commitment / entry candle असू शकते
+    "entry_first_bar": True,                 # Abhi: सत्राची पहिली candle (evidence_start, 09:15) स्वतः commitment / entry candle असू शकते
                                              # (निर्णय तिच्या close ला, bar_end 09:30); False = जुनं (entry फक्त entry_start पासून — जुने reports)
     # candle वाचन / §5.3
     "candle_avg_n": 5,                       # "मोठा / लहान" = मागच्या इतक्या candles च्या सरासरीशी तुलना (§5.2)
@@ -77,7 +99,7 @@ DEFAULTS = {
     # level score (फक्त माहिती, निर्णयात नाही)
     "score_daily_bonus": 1.0, "score_fresh_bonus": 1.0, "score_test_penalty": 0.5,
     # ⑦ Risk (C) — legacy फक्त
-    "rr_step": False,                        # Abhi (13 Oct): R:R engine मधून काढला — setup निर्णय ⑥ (commitment + c1) वर संपतो; SL / target dashboard चे,
+    "rr_step": False,                        # Abhi: R:R engine मधून काढला — setup निर्णय ⑥ (commitment + c1) वर संपतो; SL / target dashboard चे,
                                              # R:R = Abhi चा approval वेळचा निर्णय. True = जुना ⑦ (SL / target / R:R ≥ min_rr gate) — फक्त जुने reports /
                                              # golden tests reproduce; dashboard वर नाही
     "sl_buffer_sigma": 0.25,                 # SL buffer = σ_15M × हे (फक्त rr_step = True)
@@ -118,6 +140,17 @@ REGISTER = {
     "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
+    "a2_handover_required": (True, "True / False", "Abhi नियम", "Abhi Z-1m: handover (a2) अनिवार्य, क्रम a2 → c1 → c0; False फक्त जुने tests"),
+    "range_state_gate": (False, "False / True", "Abhi नियम", "Abhi Z-1j: §5.3 range अवस्था context fact फक्त; True फक्त जुने tests"),
+    "watch_levels_max": (3, "—", "Abhi नियम", "Abhi B2 watch-list (final) + KB K4 chart display (≤ 3 bands above / below price)"),
+    "wave_gates": (False, "False / True", "Abhi नियम", "Abhi B1: no wave prediction — wave / maturity / C = a context only; True फक्त जुने tests"),
+    "level_flip_rule": ("far_swing", "far_swing / acceptance", "Abhi नियम", "KB K4 / G4 (Abhi final, Z-1): flip = पलीकडे + पलीकडचा swing पार (swing नसेल ⇒ break नंतरचा पहिला confirmed swing); नाहीतर BROKEN; flipped zone दुसऱ्यांदा ⇒ DEAD"),
+    "flip_pullback_inner_degree": (1, "0 / 1", "व्याख्या", "KB G4 context (a): pullback ची रचना एक degree खालच्या pivots वर (daily_legs.classify inner_seq) — फक्त fact"),
+    "flip_pullback_vol_ratio": (1.0, "—", "setting", "KB G4 context (b) 'lower FUT volume than the impulse' ⇒ ratio < 1.0 — फक्त fact, gate नाही (Abhi Z-1)"),
+    "flip_vol_min_coverage": (1.0, "—", "setting", "KB G4 context (b): volume NA कधीच शांत 'lower' नाही — सगळ्या bars ला volume हवा"),
+    "vol_slot_sessions": (20, "—", "Abhi नियम", "Abhi (Z-1 volume): bar volume ÷ त्याच time-of-day slot चा मागच्या 20 sessions चा median"),
+    "c0_volume_required": (True, "True / False", "Abhi नियम", "Abhi Z-1c: FUT volume नाही = data error ⇒ entry नाही; False फक्त जुने volume-नसलेले tests"),
+    "vol_slot_min_sessions": (10, "5 / 10 / 20", "अंदाज", "slot history किमान (legs2 rvol_min_sessions सारखं); कमी ⇒ NA — OPEN_QUESTIONS Z-1h"),
     "liq_marks_per_side": (3, "2/3/5", "अंदाज (फक्त chart)", "spec §7.6 pools लहान खुणा — गर्दी टाळायला; क्रम PWH/PWL > PDH/PDL > equal > swing (liquidity.pool_marks prio, फक्त display)"),
     "show_distance_sigma": (12.0, "8/12/20", "अंदाज (फक्त chart)", "spec ② दूरची levels chart वर लपवा"),
     "chart_old_box_sessions": (126, "—", "अंदाज (फक्त chart)", "§5.1 (Abhi): '~6 महिन्यांपेक्षा लांब window ⇒ जुने boxes नाहीत' (≈ 126 sessions)"),
@@ -143,9 +176,9 @@ REGISTER = {
     "commit_close_frac": ("2/3", "—", "व्याख्या", "spec §5.2 close trend-बाजूच्या तृतीयांशात"),
     "touch_window_bars": (3, "1/2/3", "व्याख्या", "spec ⑥ 'level मध्ये / लगत' + §6.2 H2 'वर / जवळ' (Q18)"),
     "entry_start / entry_end": ("09:30 / 15:15", "settings", "setting", "spec ⑥ वेळ-खिडकी फक्त settings; v2.1 प्रमाणे end exclusive"),
-    "entry_first_bar": (True, "True / False", "Abhi नियम", "Abhi 13 Oct (12 Oct chart): 09:15 candle = entry candle शक्य; setup तिच्या "
+    "entry_first_bar": (True, "True / False", "Abhi नियम", "Abhi (chart review): 09:15 candle = entry candle शक्य; setup तिच्या "
                         "close ला (bar_end 09:30), entry 09:30. False = जुनं (09:15 फक्त पुरावा)"),
-    "evidence_start": ("09:15", "09:15 / entry_start", "व्याख्या", "Abhi (12 Oct): NSE सत्राची सुरुवात — opening candle पुरावा म्हणून मोजायची, entry नाही"),
+    "evidence_start": ("09:15", "09:15 / entry_start", "व्याख्या", "Abhi: NSE सत्राची सुरुवात — opening candle पुरावा म्हणून मोजायची, entry नाही"),
     "candle_avg_n": (5, "—", "Abhi नियम", "spec §5.2 मागच्या 5 candles ची सरासरी"),
     "doji_body_max": (0.1, "0.05/0.1/0.15", "अंदाज", "spec §5.2 / §5.3 doji (body लहान)"),
     "range_overlap_min": (0.5, "—", "व्याख्या", "spec §5.3 'बहुतांश overlap' (≥ 50%)"),
@@ -154,10 +187,10 @@ REGISTER = {
     "liquidity_lookback": (8, "4/8/12", "अंदाज", "spec §7.2 'लवकर' परत (काही candles)"),
     "score_daily_bonus / score_fresh_bonus / score_test_penalty": ("1 / 1 / 0.5", "—", "अंदाज",
                                                                    "spec §5.4 ★ provenance / freshness; निर्णयात नाही"),
-    "rr_step": (False, "False / True (legacy)", "Abhi नियम", "Abhi 13 Oct: R:R removed from the engine; R:R is Abhi's own judgement at "
+    "rr_step": (False, "False / True (legacy)", "Abhi नियम", "Abhi: R:R removed from the engine; R:R is Abhi's own judgement at "
                 "approval; SL / target from dashboard. True = जुना ⑦ (फक्त reproduce, dashboard वर नाही)"),
     "sl_buffer_sigma": (0.25, "0.1/0.25/0.5", "अंदाज", "spec ⑦ buffer σ_15M × अपूर्णांक (फक्त rr_step = True)"),
-    "min_rr": (3.0, "—", "Abhi नियम", "spec ⑦ R:R < 3 ⇒ trade नाही (फक्त rr_step = True; Abhi 13 Oct ने default मधून काढला)"),
+    "min_rr": (3.0, "—", "Abhi नियम", "spec ⑦ R:R < 3 ⇒ trade नाही (फक्त rr_step = True; Abhi ने default मधून काढला)"),
     "entry_tick": (0.05, "—", "व्याख्या", "spec §5.2 B2 'signal-bar extreme च्या 1 tick पलीकडे' (Q21)"),
     "evidence_weights": ("§6.3 यादी", "±0.5", "अंदाज", "spec §6.3–6.4 पुराव्यांचं वजन (Abhi च्या E1–E4 खुणांशी जुळवायचं, निकाल पाहून नाही)"),
     "conv_a / conv_b / conv_weak": ("0.6 / 0.4 / 0.2", "±0.1", "अंदाज", "spec §6.4 conviction स्तरांच्या सीमा"),

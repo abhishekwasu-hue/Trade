@@ -282,3 +282,11 @@
 
 अजून उघडे: K1 trend थकणं, K3 ending diagonal / combination, E16 X wave, टप्पा 6 correction channel break, chart_reader मध्ये σ strike,
 OE / PCS live trend market_state वर (K-10 नंतर), वेग: precompute (सध्या evaluate ~3 s, लक्ष्य ≤ 20 s आधीच पूर्ण — K-10 मध्ये मोजणी).
+
+
+## K4 / G4 flip नियम (Abhi, अंतिम) — decision3 (Z-1)
+
+| KB | नियम | Code | Test | स्थिती |
+|---|---|---|---|---|
+| K4 "A broken zone flips [Abhi]" / "Broken, not flipped [Abhi]" | पलीकडे + पलीकडचा swing पार ⇒ FLIPPED (swing नसेल ⇒ break नंतरचा पहिला confirmed swing); swing पार नाही ⇒ BROKEN (trade location नाही); FLIPPED पुन्हा far swing पार ⇒ DEAD | `decision3/levels.py:Levels._step_far_swing`, `state_at`, `flip_view`, `active`; `decision3/flip.py:far_swing`; `method.Pullbacks` (BROKEN वगळतो); `levels.band_flip_facts` | `tests/test_decision3_flip.py` (state machine, first confirmed swing, dead after second break, आरसा, no look-ahead, 9 Oct, 12 / 13 Oct real) | ✅ (Z-1b, Z-1i उघडे) |
+| G4 / K4 "Flip retest (G4 / S4) [Abhi]" + Abhi Z-1 अंतिम | येण्याची पद्धत (a) / (b) फक्त context; zone मधलं वाचन (बाजूनुसार candles, slot-normalised FUT volume per bar, patterns, RSI divergence पुरावा) ⇒ ⑥ dominant commitment + जास्त volume + LTF CHoCH = entry; FUT नाही ⇒ data error | `decision3/flip.py:approach_context`, `zone_read`; `decision3/method.py:slot_rel_volume`; `decision3/engine.py:V22.flip_context`, `rsi_divergence`, `_confirm` (data problem); `engine3_live.FutVolumeMissing`; `engine_signal.alert_data_problem` | `tests/test_decision3_flip.py` (context only end-to-end via decide(), FUT missing ⇒ data problem + Telegram, slot normalisation) | ✅ (Z-1h, Z-1j, Z-1m उघडे) |

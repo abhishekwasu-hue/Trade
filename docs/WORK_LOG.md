@@ -2500,11 +2500,88 @@ legs owner वि. reader2 gate).
   pullback + एकूण कमी FUT volume + area वर handover / commitment / LTF CHoCH / RSI divergence. G4 "flip retest" = हेच.
 - Fixtures (pack बाहेर, KB मराठी K4): 12 Oct sweep, 13 Oct flip. Pack version 5c23b29ca714. पुढे: decision3 BROKEN / FLIPPED code PR.
 
+## Z-1: decision3 BROKEN / FLIPPED code (Abhi चा अंतिम flip नियम)
+
+- `decision3/levels.py` (`level_flip_rule` = "far_swing", default): पट्ट्यापलीकडे acceptance (3 closes) ⇒ **BROKEN** (जुनी भूमिका,
+  trade location नाही — `Levels.active` आणि K उघडणं वगळतात). पलीकडचा swing (आधीच confirm झालेला D2 pivot, excursion आधीचा) trade
+  ने पार ⇒ **FLIPPED** (भूमिका उलट). BROKEN + 3 closes परत ⇒ reclaim (sweep, जुनी भूमिका). नव्या नियमात मृत्यू नाही (R0-2).
+  Facts: state, broken_at, far_swing (price, time), flipped_at. जुना नियम `level_flip_rule` = "acceptance" (फक्त जुने tests / what-if).
+- G4 (`decision3/flip.py`, `V22.flip_gate`): FLIPPED level च्या retest ला (a) pullback corrective (`daily_legs.classify`, legs2 C +
+  read_counter) आणि (b) pullback ची एकूण FUT volume flip impulse पेक्षा कमी (`opportunity_engine.volume`, near-month;
+  `flip_pullback_vol_ratio` 1.0). (a) / (b) ✘ ⇒ no trade; (a) वाचता येत नाही ⇒ वाट; (b) NA ⇒ कमाल B (`flip_volume_na`, decision3 प्रथा).
+  (c) = ⑥ तसाच.
+- Live PAPER परिणाम: 15M SRv2 (signal_source = engine) ⇐ `engine3_live` ⇐ V22 — BROKEN levels आता entry नाहीत, FLIPPED retest ला G4.
+  LIVE ला हात नाही.
+- Real data (trade-data, spot): 12 Oct — 22,667 FUT ≈ spot 22,612 (basis 55) ⇒ level 22,543.8–22,621.8 resistance (8 Oct ला demand ⇒
+  supply), 12 Oct 09:15 wick वर, close आत ⇒ sweep, supply कायम ✅. 13 Oct export अपूर्ण (10:00 पर्यंत 4 bars): far swing = 6 Oct 14:00 चा
+  D2 H 22,731.8 (Abhi चा 6 / 7 Oct high), अजून पार नाही ⇒ code: अजून resistance. Synthetic oct12 fixture चा supply नव्या नियमाने BROKEN
+  (खाली swing नाही) ⇒ जुने oct12 tests जुना नियम pin; प्रश्न Z-1a.
+
 ## Abhi: in-zone study हाच निर्णय (KB + pack)
 
 - G4 / S4: येण्याची पद्धत (corrective / volume कमी) फक्त context; निर्णय zone मध्ये आल्यानंतरच्या वाचनावर + commitment + CHoCH. वाचन अस्पष्ट ⇒ थांबा.
 - Volume: per-bar सरासरी, वेळेच्या slot (20 sessions median) ने normalise. FUT volume नाही (NIFTY / BANKNIFTY) ⇒ data error, entry नाही.
 - Flip: पलीकडे swing नसेल ⇒ break नंतरचा पहिला confirmed swing; FLIPPED zone पुन्हा तुटला ⇒ dead. RSI किमान 3 bars (K10.4, pending).
 - Fixtures (pack बाहेर): 12 Oct = flipped seller zone, bear call ✅; 13 Oct = no bear call, नंतर flip. Pack 1f0c37eed37f.
+
+## Z-1 rework: in-zone study ठरवतो (Abhi अंतिम उत्तरं) + RSI-2
+
+- G4 (a) pullback आकार / (b) pullback volume = फक्त context (checklist "G4" = [None, …]); निर्णय ⑥ (a2 + c0 + c1) — zone मध्ये आल्यानंतरचं
+  वाचन. `zone_read`: प्रत्येक candle (बाजू, body × window, raw / normalised FUT volume), कोणती बाजू वाढते / दमते, pattern, counter-side
+  volume, RSI divergence (rsi2, पुरावा). Payload / row_from_v22 मध्ये flip facts + context + in-zone summary.
+- Volume: bar FUT volume ÷ त्याच 15M slot चा मागच्या 20 sessions median (`method.slot_rel_volume`, किमान 10 sessions, नाहीतर NA); a2, c0,
+  context सगळीकडे per-bar सरासरी. Live FUT 45 दिवस (`engine3_fut_days`).
+- Z-1c: NIFTY / BANKNIFTY FUT नाही ⇒ `FutVolumeMissing` ⇒ entry नाही + Telegram "data problem: FUT volume missing" (दिवसातून एकदा);
+  V22 c0 volume NA ⇒ data problem वाट (grade-B नाही). cap_b काढला.
+- Z-1a: swing नसेल ⇒ break नंतरचा पहिला confirmed swing. Z-1f: FLIPPED zone पुन्हा far swing पार ⇒ DEAD. Reclaim ⇒ sweep ★ नोंद.
+- RSI-2: `div_bars` किमान 3 (15M / 1H / 5M); dashboard "RSI div min bars".
+- Real data (spot, 1m order सह): 12 Oct zone 22,543.75–22,621.8 FLIPPED (8 Oct), 09:15 sweep; RSI D0 bear div 9 Oct 14:15 → 12 Oct 09:15
+  (67.09 → 66.41, 4 bars). Golden bear call default मध्ये **नाही** — FUT history 7 sessions < 10 ⇒ data problem; what-if (min 5) ⇒ 10:15
+  setup (B). 13 Oct: high 22,721.95 < 22,731.8 ⇒ BROKEN, bear call नाही ✅. RSI फरक: आधीच्या अहवालात V22 1m शिवाय (D0 pivot वेगळा) —
+  live सुद्धा 1m शिवाय (Z-1o). OPEN_QUESTIONS Z-1h … Z-1o.
 - **Abhi B (patience):** wave / maturity फक्त context; watch-list = trend दिशेचे सगळे पुढचे zones armed; loss सामान्य, lock-out default OFF. Pack 4d96843284c6.
+
+## Abhi B (trader's patience): wave gates काढले, watch-list, loss lock-out तपास
+
+- B1: maturity cap / step-down, origin_risk cap, §5.1 पहिला-पाय cap, चौथा-प्रयत्न no_trade, leg-count पुरावा ⇒ फक्त context (`wave_gates` = False;
+  `wave_context` row मध्ये). Level gate `mature_cap` ⇒ None; pre-open / 15:45: "daily move: mature (context only)".
+- B2: `watch_levels_max` 3 — trend दिशेचे पुढचे सगळे zones armed (जवळचे पहिले), zone तुटला ⇒ पुढचा आधीच armed; row मध्ये `watch_list`.
+- B3: engine मार्गात loss lock-out नाही; SRv2 own-path cooldowns / kill switch फक्त यादी (OPEN_QUESTIONS B3).
+- Re-run (1m सह): 12 Oct — default data problem (FUT 7 sessions), what-if ⇒ 10:15 bear call (B); 13 Oct — bear call नाही, BROKEN,
+  पुढचे zones 22,715–22,732 / 22,778–22,809 armed; 29 Sep — FUT नाही + किंमतीजवळ 1H zone नाही ⇒ wait. Z-1k = DEAD (Abhi).
+
+## Abhi Z-1j / Z-1h / Z-1m
+
+- Z-1j: §5.3 range अवस्था फक्त context (`range_state`). Z-1h: slot history < 10 ⇒ raw per-bar सरासरी (label "volume normalisation:
+  insufficient history"), data error नाही; FUT पूर्ण नसेल ⇒ data error तसाच. Z-1m: a2 handover अनिवार्य, क्रम handover → LTF CHoCH →
+  commitment; level bots (OFF) जुनं.
+- Re-run (default, 1m सह, FUT 7–8 sessions ⇒ raw fallback): 12 Oct — 09:30 handover नाही (buying candles दमल्या नाहीत), 10:15 handover
+  नाही (दुसऱ्या अर्ध्यात buying candle नाही) ⇒ wait; 13 Oct — handover नाही / absorption ⇒ bear call नाही ✅; 29 Sep — zone ला
+  स्पर्श नाही ⇒ wait. OPEN_QUESTIONS Z-1p.
+
+## Review follow-ups (decision3 flip / volume / Telegram)
+
+- Level gate: origin_risk (trend च्या सुरुवातीजवळ किंमत) आता फक्त context — `level_reaction.context_from_state` मधली NO_TREND शाखा काढली
+  (engine प्रमाणे, Abhi B1); pre-open / 15:45 ओळ "context: price is near the trend's starting point". बाकी gate तसाच.
+- Volume baseline: FUT rollover दिवस (`legs2.volume.rollover_days`, roll_sessions_before 2) slot baseline मध्ये कधीच नाहीत; 15M bar
+  ला 3 पैकी < 3 FUT 5M bars ⇒ NA + कारण ("incomplete 15M FUT bar (2 of 3 5M bars)"), कमी बेरीज नाही; window मध्ये FUT gaps ⇒
+  `volume_measure` मध्ये "FUT volume gaps: n/m bars (कारण)"; rollover दिवस असेल तर तेही label मध्ये.
+- Telegram data-problem ओळ: send यशस्वी झाला तरच तो दिवस "sent"; फक्त NIFTY / BANKNIFTY (SENSEX कधीच नाही); payload 20000 पेक्षा
+  मोठा ⇒ मोठे context keys काढतो (`engine3_live.fit_payload`), JSON मधेच कापत नाही ⇒ data_problem हरवत नाही.
+- `levels.band_flip_facts`: Z-1a (पलीकडे आधीचा swing नाही ⇒ break नंतरचा पहिला confirmed swing) — chart labels = engine.
+- Tests: B1 test मधलं vacuous assert काढलं; DEFAULT मार्गाचा end-to-end decide() test (far_swing flip + c0 volume + handover अनिवार्य
+  + 5M CHoCH ⇒ setup; handover नाही / FUT नाही / कमी volume ⇒ wait); FUT incomplete, rollover, Telegram, payload tests.
 - **Abhi Z-1j / Z-1h / Z-1m:** entry क्रम = handover (बंधनकारक) → LTF CHoCH → dominant commitment (जास्त volume); overlap / sideways = handover study, gate नाही; volume normalise 20 (किमान 10) sessions, कमी ⇒ raw per-bar सरासरी (label). Pack bb237fb57225.
+
+## Re-review fixes (282d484 नंतर)
+
+- No-entry कारण (`plain_text.unclear_words`, `level_bots_replay.no_trend_detail`): क्रम gate सारखा — origin तुटला → रचना उलट → parent
+  correction; origin_risk कधीच no-entry कारण नाही (B1: context).
+- Setup chart (`setup_chart.NOTE_EN`): default maturity / origin notes ⇒ "context only … (no cap, no gate)", इंग्रजीत.
+- `levels.band_flip_facts`: सगळे breaks क्रमाने, engine सारखं — flip झालेला band पुन्हा far swing पार ⇒ DEAD (दुसरा flip नाही).
+- 12 Oct golden xfail फक्त Z-1p कारणावर (no handover, counter weakening NA); दुसरं कारण ⇒ fail.
+- FUT 15M पूर्णता: children = 15M ÷ FUT bar step (data वरून), bins legs2.volume चे OPEN / BAR (वर्तन बदल नाही).
+- OPEN_QUESTIONS: जुन्या Z-1h / Z-1m / B1-a ओळी struck (नव्या ओळीकडे बोट); नवे Z-1q, Z-1r.
+- `band_flip_facts` reclaim (re-review 2): BROKEN असताना far swing आधी उलट दिशेचा break = reclaim ⇒ sweep, आधीची अवस्था / भूमिका तशीच
+  (ACTIVE किंवा FLIPPED) — engine च्या `_step_far_swing` सारखं; फक्त role विरुद्धचा break नवा BROKEN. Chart label "swept".
+  OPEN_QUESTIONS जुनी Z-1j (12 Oct "data problem") ओळ struck ⇒ Z-1p.

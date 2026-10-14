@@ -136,16 +136,21 @@ def test_small_pivot_makes_no_level():
     assert lv.L == []
 
 
-def _support_case(after):
+def _support_case(after, s=None):
     """D2 L 100 (bar 4) ⇒ support; नंतरचे closes `after`."""
     closes = [110, 106, 103, 101, 100.5, 104, 108, 112, 115, 113] + after
     m = m15_from(closes, lows={4: 100.0})
     piv = [P("H", 116, 0, 2), P("L", 100.0, 4, 6)]
-    return m, LV.Levels(res_of(m, piv))
+    return m, LV.Levels(res_of(m, piv), s=s)
+
+
+# जुना spec §5.4 flip (acceptance ⇒ लगेच flip) — Abhi च्या K4 नियमाने (Z-1, default "far_swing") बदलला; खालचे जुने tests तो नियम
+# स्पष्ट pin करतात (असर्ट तसेच). नवा नियम (BROKEN / FLIPPED = far swing पार): tests/test_decision3_flip.py.
+OLD_FLIP = {"level_flip_rule": "acceptance"}
 
 
 def test_close_beyond_is_flip_not_death_and_sweep_star():
-    m, lv = _support_case([108, 104, 102, 105, 99, 95, 98])
+    m, lv = _support_case([108, 104, 102, 105, 99, 95, 98], OLD_FLIP)
     sup = [L for L in lv.L if "a:D2" in L.births and L.role0 == LV.SUP][0]
     t_end = len(m) - 1
     assert sup.alive(t_end)                                                    # close पलीकडे ⇒ मृत्यू नाही
@@ -162,14 +167,14 @@ def test_death_only_when_swing_beyond_breaks():
     closes = [110, 104, 96, 92, 90.5, 95, 99, 103, 108, 112, 109, 104, 101, 99, 97, 101, 105, 110, 108, 104, 100, 98, 86]
     m = m15_from(closes, lows={4: 90.0})
     piv = [P("H", 113, 0, 1), P("L", 90.0, 4, 6), P("H", 113, 9, 11), P("L", 96.5, 14, 16)]
-    lv = LV.Levels(res_of(m, piv))
+    lv = LV.Levels(res_of(m, piv), s=OLD_FLIP)
     upper = [L for L in lv.L if L.role0 == LV.SUP and abs(L.anchor - 96.5) < 1e-6][0]
     assert upper.dead_bar == len(closes) - 1 and upper.count("flip", upper.dead_bar) == 0
     # (ii) close फक्त पट्ट्यापलीकडे ⇒ flip (resistance), जिवंत; नंतर पलीकडचा swing (90) close ने तुटला ⇒ मेला — जुना Q2 नियम
     # (level_death_side = "role0", explicit; default "role" (TL1) चं वर्तन test_decision3_level_death_side.py मध्ये)
     closes2 = closes[:-2] + [94, 93, 92, 91.5, 89]
     m2 = m15_from(closes2, lows={4: 90.0})
-    lv2 = LV.Levels(res_of(m2, piv), s={"level_death_side": "role0"})
+    lv2 = LV.Levels(res_of(m2, piv), s={"level_death_side": "role0", **OLD_FLIP})
     up2 = [L for L in lv2.L if L.role0 == LV.SUP and abs(L.anchor - 96.5) < 1e-6][0]
     t_flip = next(b for b, k, _ in up2.events if k == "flip")
     assert closes2[t_flip] < up2.band_at(t_flip)[0] and up2.alive(len(closes2) - 2) and up2.role_at(len(closes2) - 2) == LV.RES
@@ -225,11 +230,11 @@ def test_register_covers_every_default_and_no_dates_in_code():
 
 def test_two_closes_beyond_then_back_is_sweep_three_is_flip_and_failed_flip_returns():
     # support पट्टा ≈ 100–101.5
-    m, lv = _support_case([105, 99, 98.5, 103, 106])                         # 2 closes खाली, परत ⇒ sweep, flip नाही
+    m, lv = _support_case([105, 99, 98.5, 103, 106], OLD_FLIP)               # 2 closes खाली, परत ⇒ sweep, flip नाही
     sup = [L for L in lv.L if L.role0 == LV.SUP and abs(L.anchor - 100.0) < 1e-6][0]
     t = len(m) - 1
     assert sup.count("flip", t) == 0 and sup.count("sweep", t) >= 1 and sup.role_at(t) == LV.SUP
-    m, lv = _support_case([105, 99, 98.5, 98, 97, 103, 104, 105])          # 3 closes ⇒ flip; मग 3 closes वर ⇒ flip अयशस्वी ⇒ support
+    m, lv = _support_case([105, 99, 98.5, 98, 97, 103, 104, 105], OLD_FLIP)  # 3 closes ⇒ flip; मग 3 closes वर ⇒ flip अयशस्वी ⇒ support
     sup = [L for L in lv.L if L.role0 == LV.SUP and abs(L.anchor - 100.0) < 1e-6][0]
     flips = [e for e in sup.events if e[1] == "flip"]
     assert len(flips) == 2 and "अयशस्वी" in flips[1][2] and sup.role_at(len(m) - 1) == LV.SUP and sup.alive(len(m) - 1)
