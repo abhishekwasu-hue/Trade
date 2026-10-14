@@ -169,7 +169,9 @@ def test_verdict_no_trend_first():
     nt = {"ok": False, "trend": "UP", "phase": "impulse", "counter": "correction", "reason": LR.R_NO_TREND + " (x)"}
     code, _, det = RP.verdict([], 0, BULL, nt, AREA, sig_bars={1})
     assert code == "SKIPPED_GATE_NO_TREND" and det == "Daily UP: parent correction (A1)"
-    assert RP.no_trend_detail({"trend": "NEUTRAL"}) == "Daily NEUTRAL" and "origin at risk" in RP.no_trend_detail({"trend": "DOWN", "origin_risk": True})
+    assert RP.no_trend_detail({"trend": "NEUTRAL"}) == "Daily NEUTRAL"
+    assert "origin" not in RP.no_trend_detail({"trend": "DOWN", "origin_risk": True})         # Abhi B1: origin_risk = context, never the reason
+    assert "parent correction" in RP.no_trend_detail({"trend": "UP", "origin_risk": True, "counter": "correction"})
 
 
 def _trades(rows):

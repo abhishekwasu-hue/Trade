@@ -30,6 +30,9 @@ LTF_MIN = 5                                                                 # 15
 LTF_BARS = 60
 
 NOTE_EN = [
+    # Abhi B1 (default): maturity / origin_risk = context only — matched first so the chart never shows a cap or a gate for them
+    ("context: impulse mature", lambda n: "context only: daily impulse mature - near Q44 target (no cap, no gate)"),
+    ("context: correction protected origin", lambda n: "context only: correction near the protected origin (no cap, no gate)"),
     ("Weekly", lambda n: n.split("=")[0].strip() + " runs against " + n.split("=")[1].split("विरुद्ध")[0].strip() + " (correction) => cap B"),
     ("protected origin close ने तुटला", lambda n: "protected origin broken on close - correction running, no reverse impulse yet => cap B"),
     ("impulse origin close ने तुटला", lambda n: "impulse origin broken on close, parent held - same-degree correction => cap B"),

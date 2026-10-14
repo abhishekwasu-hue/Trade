@@ -83,7 +83,7 @@ def pair(D, t, d=0, side="bear"):
 def test_settings_defaults_match_the_spec():
     s = RS.load()
     assert s["period"] == 14 and s["div_rsi_window"] == 2 and s["div_hidden"] is False and s["div_show"] is True
-    assert s["div_bars"] == {"15M": (5, 50), "1H": (5, 35), "5M": (5, 60)}
+    assert s["div_bars"] == {"15M": (3, 50), "1H": (3, 35), "5M": (3, 60)}             # Abhi RSI-2: किमान 3 bars
     for k in ("div_rsi_window", "div_bars", "div_hidden", "div_degrees", "div_show"):
         assert k in RS.REGISTER
     assert hasattr(RE.RSI, "known") and callable(RE.RSI.known)                   # facts.dossier API unchanged
@@ -149,11 +149,11 @@ def test_no_minimum_rsi_difference():
 
 
 # ------------------------------------------------------------------------------------------------ window / cap log
-@pytest.mark.parametrize("b,ok,cap", [(14, False, "min"), (15, True, None), (60, True, None), (61, False, "max")])
+@pytest.mark.parametrize("b,ok,cap", [(12, False, "min"), (13, True, None), (60, True, None), (61, False, "max")])   # Abhi RSI-2: min 3
 def test_bar_window_and_cap_rejected_log(b, ok, cap):
     n = 70
-    df = frame(n, highs={10: 110.0, b: 112.0}, lows={12: 95.0})
-    ps = [piv(df, "H", 10), piv(df, "L", 12), piv(df, "H", b)]
+    df = frame(n, highs={10: 110.0, b: 112.0}, lows={11: 95.0})
+    ps = [piv(df, "H", 10), piv(df, "L", 11), piv(df, "H", b)]
     D = build(df, ps, rsi_with(n, {10: 70.0, b: 65.0}))
     c = pair(D, b + 1)
     assert c["bars"] == b - 10 and c["is_div"] is ok and c["cap"] == cap
@@ -168,7 +168,7 @@ def test_window_per_timeframe_from_settings():
     ps = [piv(df, "H", 10), piv(df, "L", 20), piv(df, "H", 50)]
     r = rsi_with(n, {10: 70.0, 50: 65.0})
     one_h = RE.Divergence(df, "1H", s=S0, res=res_of(df, ps), rsi=r, areas=False)
-    assert one_h.win == (5, 35) and pair(one_h, 51)["cap"] == "max"           # 40 bars > 35
+    assert one_h.win == (3, 35) and pair(one_h, 51)["cap"] == "max"           # 40 bars > 35
     assert pair(build(df, ps, r), 51)["is_div"]                                  # 15M: 40 ≤ 50
 
 
@@ -321,7 +321,7 @@ def test_review_chart_has_rsi_pane_70_30_labels_and_cap_lines():
     n = 40
     df = frame(n, highs={10: 110.0, 25: 112.0, 29: 113.0}, lows={15: 95.0, 27: 96.0})
     ps = [piv(df, "H", 10), piv(df, "L", 15), piv(df, "H", 25), piv(df, "L", 27), piv(df, "H", 29)]
-    D = build(df, ps, rsi_with(n, {10: 70.0, 25: 65.0, 29: 60.0}))
+    D = build(df, ps, rsi_with(n, {10: 70.0, 25: 65.0, 29: 60.0}), div_bars={"15M": (5, 50)})   # a 5-bar minimum shows a cap line
     divs, caps = D.history(), D.cap_log()
     assert len(divs) == 1 and len(caps) == 1
     fig = RC.div_figure(D.df, D.rsi, divs, caps, "t")
@@ -363,7 +363,7 @@ def test_chart_html_unchanged_without_divergences(walk_frame):
 def test_dashboard_overlay_is_cached_per_data_and_settings(walk_frame, monkeypatch):
     import page_dashboard as PD
     calls = []
-    monkeypatch.setattr(PD, "rsi_div_overlay", lambda df, tf, now: calls.append(len(df)) or ([], None, "cap"))
+    monkeypatch.setattr(PD, "rsi_div_overlay", lambda df, tf, now, s=None: calls.append(len(df)) or ([], None, "cap"))
     PD._rsi_div_overlay_cached.clear()
     df = walk_frame.drop(columns=["bar_end"]).assign(volume=0)
     now = pd.Timestamp(df["timestamp"].iloc[-1]) + pd.Timedelta(hours=1)

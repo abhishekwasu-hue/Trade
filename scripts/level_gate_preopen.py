@@ -148,6 +148,20 @@ ENGINE_FIRST_RUN_GRACE = (9, 45)                                           # त
 ENGINE_CRON_MARK = "# one-bot-engine"                                      # install_engine_schedule.sh ची engine ओळ (warm ओळ नाही)
 
 
+def engine_volume_note(symbol, path=None):
+    """Abhi Z-1h: engine चा शेवटचा row "volume normalisation: insufficient history" (raw per-bar average) वापरत असेल तर ती ओळ; नाहीतर /
+    store वाचता नाही ⇒ None."""
+    try:
+        import json
+        import engine_signal as ES
+        with ES.connect(path) as c:
+            r = c.execute("SELECT payload FROM engine_signals WHERE symbol=? ORDER BY bar_ts DESC LIMIT 1", (str(symbol).upper(),)).fetchone()
+        vm = (json.loads(r["payload"] or "{}") or {}).get("volume_measure") if r else None
+    except Exception:                                                      # noqa: BLE001 — फक्त माहिती
+        return None
+    return f"ℹ️ {symbol}: {vm}." if vm and "insufficient history" in vm else None
+
+
 def engine_cron_installed(text):
     """crontab मध्ये चालू (comment नसलेली) one-bot engine ओळ आहे का. crontab वाचता नाही (None) ⇒ False (खात्री नाही ⇒ ❌ कायम)."""
     return any(x.rstrip().endswith(ENGINE_CRON_MARK) and "engine_signal_run.py" in x and not x.lstrip().startswith("#")
@@ -245,9 +259,9 @@ def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS, areas=None, na=None)
         return f"{mark}<b>{sym}</b>: NO NEW ENTRIES today — {html.escape(PT.unclear_words(ctx), quote=False)}, {wk}. Open trades still exit as usual."
     head = f"<b>{sym}</b>: {html.escape(PT.trend_words(ctx), quote=False)}, {wk}"
     if ctx.get("mature"):
-        head += f" (daily move is mature: {LR.mature_words(ctx)})"                 # cap engine च्याच नियमाने (B / weak)
+        head += f" (daily move: {LR.mature_words(ctx)})"                            # Abhi B1: context only, no grade cap
     elif ctx.get("origin_risk"):
-        head += " (price is near the trend's starting point, so new entries are weak)"
+        head += " (context: price is near the trend's starting point)"           # Abhi B1: context only, no block / downgrade
     if last is None:
         return "❌ " + head + ". Price data missing (no last close), so no area distances."
     ar = trade_side_areas(zones, tfs, last, ctx, n=3) if areas is None else nearest(areas, last, 3)
@@ -299,6 +313,9 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
                 plain.append(bad)
             if t is not None:
                 det.append(f"{sym} engine: last run {t:%d %b %H:%M}")
+            vnote = engine_volume_note(sym)                                # Abhi Z-1h: raw-volume fallback स्पष्ट
+            if vnote:
+                plain.append(vnote)
         head = f"{sym} · {html.escape(str(ctx.get('reason')), quote=False)}"
         if ctx.get("protected") is not None:
             head += f" · protected {ctx['protected']:,.0f}"

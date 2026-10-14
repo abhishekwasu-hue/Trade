@@ -501,9 +501,7 @@ def no_trend_detail(ctx):
         return f"Daily {tr}"
     if ctx.get("phase") == "origin_broken":
         return f"Daily {tr}: protected origin closed beyond"
-    if ctx.get("origin_risk"):
-        return f"Daily {tr}: origin at risk (Q47)"
-    if ctx.get("structure_against"):
+    if ctx.get("structure_against"):                                   # origin_risk = context only (Abhi B1) ⇒ never the reason
         return f"Daily {tr}: structure since the impulse end turned against the trend (trend first)"
     if ctx.get("counter") == "correction":
         return f"Daily {tr}: parent correction (A1)"

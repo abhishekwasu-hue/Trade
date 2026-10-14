@@ -843,14 +843,14 @@ _ZONE_TYPE_SHORT_LABELS = {
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
-def _rsi_div_overlay_cached(symbol, chart_tf, n_bars, last_ts, last_ohlc, last_done, settings_key, _chart_df, _now):
+def _rsi_div_overlay_cached(symbol, chart_tf, n_bars, last_ts, last_ohlc, last_done, settings_key, _chart_df, _now, _s=None):
     """🎓 K-RSI overlay (swings2 + scan + RSI ≈ 2 s / 126 sessions 15M) प्रत्येक Streamlit rerun ला नाही — फक्त data / settings बदलल्यावर.
     Key = (symbol, TF, bars, शेवटचा timestamp + OHLC, शेवटचा bar पूर्ण?, rsi2 settings); `_chart_df` / `_now` hash होत नाहीत (key मध्ये
     त्यांचा सारांश). Exception cache होत नाही (caller चा try/except तसाच)."""
-    return rsi_div_overlay(_chart_df, chart_tf, _now)
+    return rsi_div_overlay(_chart_df, chart_tf, _now, s=_s)
 
 
-def _rsi_div_overlay_keyed(symbol, chart_df, chart_tf, now):
+def _rsi_div_overlay_keyed(symbol, chart_df, chart_tf, now, s=None):
     """rsi_div_overlay ची cached आवृत्ती (key वरच्या docstring प्रमाणे). फक्त display."""
     last = chart_df.iloc[-1]
     naive = (lambda t: t.tz_localize(None) if t.tzinfo is not None else t)          # noqa: E731
@@ -858,8 +858,8 @@ def _rsi_div_overlay_keyed(symbol, chart_df, chart_tf, now):
         naive(pd.Timestamp(last["timestamp"])) + pd.Timedelta(minutes=LEG_TF_MINUTES[chart_tf])
     done = bool(naive(pd.Timestamp(now)) >= end)
     ohlc = tuple(float(last[k]) for k in ("open", "high", "low", "close"))
-    key = repr(sorted(RSI2_SETTINGS.load().items(), key=lambda kv: kv[0]))
-    return _rsi_div_overlay_cached(symbol, chart_tf, len(chart_df), str(last["timestamp"]), ohlc, done, key, chart_df, now)
+    key = repr(sorted(RSI2_SETTINGS.load(s).items(), key=lambda kv: kv[0]))
+    return _rsi_div_overlay_cached(symbol, chart_tf, len(chart_df), str(last["timestamp"]), ohlc, done, key, chart_df, now, s)
 
 
 def _category_wise_levels(zone_types):
@@ -1246,6 +1246,12 @@ def render():
             # 🎓 K-RSI (spec §8a): rsi2 owner च्या divergences 5M / 15M / 1H चार्टवर (डीफॉल्ट ON — verification; फक्त display, gate नाही)
             show_rsi_div = st.checkbox("Show RSI divergences", value=bool(RSI2_SETTINGS.DEFAULTS["div_show"]), key=f"tv_rsi_div_{symbol}") \
                 if chart_tf in RSI_DIV_TF else False
+            # 🎓 Abhi RSI-2: दोन divergence pivots मधले किमान bars (default 3, सगळ्या TF वर) — फक्त display / facts, gate नाही
+            rsi_div_s = None
+            if show_rsi_div:
+                _div_min = int(st.number_input("RSI div min bars", min_value=1, max_value=20, step=1, key=f"tv_rsi_div_min_{symbol}",
+                                               value=int(RSI2_SETTINGS.DEFAULTS["div_bars"][RSI_DIV_TF[chart_tf]][0])))
+                rsi_div_s = {"div_bars": {tf: (_div_min, cap) for tf, (_lo, cap) in RSI2_SETTINGS.DEFAULTS["div_bars"].items()}}
             if chart_symbol == symbol and chart_tf == timeframe_option:
                 chart_df, chart_spot = df_candles, underlying_price
             else:
@@ -1409,7 +1415,7 @@ def render():
             rsi_div_lines = []
             if show_rsi_div and not chart_df.empty:
                 try:
-                    rsi_div_lines, _rsi_owner, _rsi_cap = _rsi_div_overlay_keyed(chart_symbol, chart_df, chart_tf, get_ist_now())
+                    rsi_div_lines, _rsi_owner, _rsi_cap = _rsi_div_overlay_keyed(chart_symbol, chart_df, chart_tf, get_ist_now(), rsi_div_s)
                     if _rsi_owner is not None:
                         rsi_for_tv = _rsi_owner                  # RSI pane = owner चा Wilder RSI (divergence points रेषेवरच बसतात)
                         if bot_choice == NO_BOT:

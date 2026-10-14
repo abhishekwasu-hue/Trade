@@ -71,6 +71,7 @@ class Pullbacks:
                         piv = [p for p in self.p1 if p.confirm_bar <= t and p.bar >= imp["i_end_bar"]
                                and p.kind == ("H" if d == UP else "L")]
                         lvl = [x for x in self.lv.snapshot(t) if x["role"] == (LV.SUP if d == UP else LV.RES)
+                               and x.get("state") != "BROKEN"                 # K4: BROKEN ⇒ trade location नाही (`Levels.active` सारखं)
                                and (L[t] <= x["hi"] if d == UP else H[t] >= x["lo"]) and (x["hi"] < imp["i_end"] if d == UP else x["lo"] > imp["i_end"])]
                         if piv or lvl:
                             imp.update(open=True, k_open_bar=t, why_open="उलट D1 swing confirm" if piv else "trade-बाजूच्या level मध्ये")
@@ -160,6 +161,39 @@ def _vol(A):
         return None
     v = np.asarray(v, dtype=float)
     return v if np.isfinite(v).any() and np.nanmax(v) > 0 else None
+
+
+def slot_rel_volume(ts, vol, sessions=20, min_sessions=10, exclude_days=None):
+    """Abhi (Z-1 volume): per-bar volume ÷ the median volume of the SAME time-of-day slot over the previous `sessions` sessions that have
+    volume in that slot (the 09:15 and closing bars are always heavy). Fewer than `min_sessions` such sessions ⇒ NaN (NA). Only earlier
+    sessions are used (no look-ahead). exclude_days = sessions never used in a baseline (FUT rollover days, as legs2.volume.rvol).
+    Returns (rel array, history-count array). vol None ⇒ (None, None)."""
+    if vol is None:
+        return None, None
+    t = pd.to_datetime(pd.Series(ts)).reset_index(drop=True)
+    v = np.asarray(vol, float)
+    day = t.dt.normalize()
+    slot = (t - day).to_numpy()
+    days = day.to_numpy()
+    rel = np.full(len(v), np.nan)
+    cnt = np.zeros(len(v), int)
+    hist = {}                                                              # slot ⇒ [(day, vol)] of earlier sessions (in order)
+    skip = {pd.Timestamp(x).normalize() for x in (exclude_days or ())}
+    order = np.argsort(t.to_numpy(), kind="stable")
+    cur_day, pending = None, []
+    for i in order:
+        if days[i] != cur_day:                                             # a new session: the previous one becomes history
+            for j in ([] if cur_day is not None and pd.Timestamp(cur_day) in skip else pending):
+                if np.isfinite(v[j]) and v[j] > 0:
+                    hist.setdefault(slot[j], []).append(v[j])
+            pending, cur_day = [], days[i]
+        pending.append(i)
+        h = hist.get(slot[i], [])[-int(sessions):]
+        cnt[i] = len(h)
+        if len(h) >= int(min_sessions) and np.isfinite(v[i]) and v[i] > 0:
+            med = float(np.median(h))
+            rel[i] = v[i] / med if med > 0 else np.nan
+    return rel, cnt
 
 
 def contraction(A, t, d, k, s, lvl=None):
@@ -482,9 +516,10 @@ def commitment(A, t, d, lvl, s, tss=None, win=None):
 
 
 # ------------------------------------------------------------------------------------------------ c1 LTF CHoCH + एकच confirmation (a2 + c0 + c1)
-C_ABSORB, C_COMMIT = "absorption", "no_commitment"
+C_ABSORB, C_COMMIT, C_NO_HANDOVER = "absorption", "no_commitment", "no_handover"
 C_LTF_MISSING, C_LTF_AGAINST, C_LTF_PENDING = "ltf_missing", "ltf_against", "ltf_pending"
 REASON = {C_ABSORB: "absorption (counter side strengthening inside the area)", C_COMMIT: "no commitment",
+          C_NO_HANDOVER: "no handover yet (trade-side candles not growing while the counter side weakens inside the area)",
           "low_volume": "commitment on low volume", "not_dominant": "commitment candle not dominant",
           C_LTF_MISSING: "LTF data missing", C_LTF_AGAINST: "LTF still trending against",
           C_LTF_PENDING: "waiting for LTF CHoCH (no close beyond the last LTF swing)"}
@@ -607,17 +642,27 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None):
     प्रत्येक गहाळ भाग ⇒ वाट (code), कायमचा नकार नाही (timeout / disarm caller चे नियम). रिटर्न dict: ok, wait (code | None), why, commit (cm),
     study (zone_study), absorption, study_ran, c0, c1, choch, lines (ticket ओळी)."""
     out = {"ok": False, "wait": None, "why": "", "commit": {}, "study": None, "absorption": False, "study_ran": False, "c0": False,
-           "c1": None, "choch": None, "lines": []}
+           "c1": None, "choch": None, "lines": [], "handover": None}
+    zp = None
     if t - 1 >= arm:
         zp = zone_study(A, arm, t - 1, d, s, mr=mr)
         out["study_ran"] = True
         if zp.get("absorption"):
-            out.update(absorption=True, wait=C_ABSORB, why=REASON[C_ABSORB], study=zp)
+            out.update(absorption=True, wait=C_ABSORB, why=REASON[C_ABSORB], study=zp, handover=bool(zp.get("handover")))
             return out
+    # Abhi Z-1m: a2 handover is MANDATORY (setting `a2_handover_required`); order a2 handover → c1 LTF CHoCH → c0 commitment. Handover
+    # present ⇔ zone_study(arm … t − 1)["handover"]: trade-side candles growing (body ↑ required + majority of range ↑ / close near the
+    # trade-side end ↑ / volume ↑) AND counter-side candles weakening (body ↓ required + majority of opposite wick ↑ / close away ↑ /
+    # volume ↓), first half vs second half of the in-zone window (≥ study_min_bars bars).
+    hreq = bool(s.get("a2_handover_required", False))
+    handover = bool(zp.get("handover")) if zp else False
+    out["handover"] = handover
+    no_ho = hreq and not handover
+    ho_why = REASON[C_NO_HANDOVER] + (f" · {zp.get('line')}" if zp and zp.get("line") else "")
     ok, why, cm = commitment(A, t, d, lvl, s, tss, win=arm)
-    out.update(commit=cm, c0=bool(ok), why=why)
-    if callable(ltf) and not ok:                                           # lazy LTF (bots): commitment नाही ⇒ LTF fetch / वाचन नाही
-        out["wait"] = cm.get("wait") or C_COMMIT
+    out.update(commit=cm, c0=bool(ok), why=why, study=zp)
+    if callable(ltf) and (not ok or no_ho):                                # lazy LTF (bots): commitment / handover नाही ⇒ LTF fetch नाही
+        out.update(wait=C_NO_HANDOVER, why=ho_why) if no_ho else out.update(wait=cm.get("wait") or C_COMMIT)
         return out
     L = ltf() if callable(ltf) else ltf
     if L is not None and ltf_times is not None:
@@ -625,6 +670,12 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None):
     else:
         ch = {"done": False, "code": C_LTF_MISSING, "line": "LTF: LTF data missing"}
     out["choch"], out["c1"] = ch, bool(ch["done"])
+    if no_ho:
+        out.update(wait=C_NO_HANDOVER, why=ho_why)
+        return out
+    if hreq and bool(s.get("ltf_choch", True)) and not ch["done"]:         # Abhi Z-1m order: c1 before c0
+        out.update(wait=ch["code"], why=f"{REASON[ch['code']]} · {ch['line']}")
+        return out
     if not ok:
         out["wait"] = cm.get("wait") or C_COMMIT
         return out

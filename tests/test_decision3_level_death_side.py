@@ -20,7 +20,9 @@ def _flip_case(mirror, side=None):
     closes = [f(c) for c in CLOSES]
     m = m15_from(closes, **({"highs": {4: f(90.0)}} if mirror else {"lows": {4: 90.0}}))
     piv = [P(("L" if k == "H" else "H") if mirror else k, f(p), b, cb) for k, p, b, cb in PIV]
-    lv = LV.Levels(res_of(m, piv), s=None if side is None else {"level_death_side": side})
+    # जुना spec §5.4 flip (acceptance ⇒ लगेच flip) स्पष्ट pin — Abhi च्या K4 नियमाने (Z-1) हाच 9 Oct case: tests/test_decision3_flip.py
+    old_flip = {"level_flip_rule": "acceptance"}
+    lv = LV.Levels(res_of(m, piv), s=old_flip if side is None else {"level_death_side": side, **old_flip})
     L = [x for x in lv.L if abs(x.anchor - f(96.5)) < 1e-6][0]
     return m, lv, L
 

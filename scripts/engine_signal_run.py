@@ -79,6 +79,9 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
             r = run_fn(sym, tok)
             if not a.dry_run:
                 ES.alert_recovered(sym, send=send, state_path=alert_path, now=now)
+                dp = _data_problem(r, sym)
+                if dp:                                                   # Abhi Z-1c: volume NA at the decision ⇒ data problem (entry नाही)
+                    ES.alert_data_problem(sym, dp, send=send, state_path=alert_path, now=now)
             if r.get("skipped"):
                 print(f"⏭️ {sym} [{engine}] {r['bar_ts']}: {r['decision']} — {r['skipped']}")
                 continue
@@ -96,8 +99,29 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                     ES.save_error(sym, bar, msg, engine=engine)
                 except Exception as exc2:                                # noqa: BLE001
                     print(f"⚠️ {sym}: error row लिहिता आली नाही: {exc2}")
-                ES.alert_error(sym, msg, send=send, state_path=alert_path, now=now)
+                if getattr(exc, "data_problem", False) and _fut_required(sym):   # Abhi Z-1c: FUT volume missing ⇒ एकच ओळ, दिवसातून एकदा
+                    ES.alert_data_problem(sym, str(exc), send=send, state_path=alert_path, now=now)
+                else:
+                    ES.alert_error(sym, msg, send=send, state_path=alert_path, now=now)
     return rc
+
+
+def _fut_required(sym):
+    """Abhi Z-1c: the data-problem Telegram line only for the FUT-required symbols (NIFTY / BANKNIFTY) — never SENSEX."""
+    import engine3_live as L
+    return str(sym).upper() in L.FUT_REQUIRED
+
+
+def _data_problem(r, sym=None):
+    """engine row (payload JSON) मधली data-problem नोंद (V22 ⑥ c0 volume NA) — नाही / FUT_REQUIRED बाहेरचा symbol ⇒ None. Payload
+    engine3_live.fit_payload ने लहान केलेला असतो (कधीच मधेच कापलेला नाही) ⇒ flag हरवत नाही."""
+    if sym is not None and not _fut_required(sym):
+        return None
+    try:
+        import json
+        return (json.loads(r.get("payload") or "{}") or {}).get("data_problem")
+    except (TypeError, ValueError):
+        return None
 
 
 if __name__ == "__main__":

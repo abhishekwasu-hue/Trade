@@ -5,7 +5,8 @@
   • Daily (Upstox 'day', ~10 वर्षं, आजचा अपूर्ण Daily bar नाही) — Q33: Daily holdout candles फक्त warm-up input (level_reaction.daily_trend
     प्रमाणेच); output मध्ये sealed तारीख नाही (`history.sealed_fn`). Weekly = Daily वरून (V22 स्वतः).
   • 5M spot (LTF: c1 5M CHoCH) ⇒ V22 `ltf=`; नसेल ⇒ fail-closed. Front-month FUT 5M volume (c0 dominant candle + volume) ⇒ V22
-    `futures=` (expiry सह; जुना V22 ⇒ m15 joined `volume`); FUT नसेल ⇒ volume NA (grade कमाल B), fail-closed नाही.
+    `futures=` (expiry सह; जुना V22 ⇒ m15 joined `volume`; `engine3_fut_days` — volume ÷ त्याच slot चा 20 sessions median). Abhi Z-1c:
+    NIFTY / BANKNIFTY चा FUT नसेल ⇒ FutVolumeMissing (data error: entry नाही + दिवसातून एकदा Telegram); volume शिवाय grade-B entry नाही.
   • V22(m15, daily_df=…).decide(शेवटचा बंद bar) ⇒ engine_signal store row (decision2 च्याच columns) ⇒ bots चा adapter (`pending_entry`).
 Fail-closed: data नाही / अपूर्ण / exception ⇒ EngineDataError (caller "error" row + दिवसातून एकदा Telegram ओळ). Order / broker call नाही.
 Daily fold (सर्वात महाग भाग, ~50 s) दिवसाला एकदा: input hash वर disk cache (`data/engine3_cache/`) — शुद्ध function, निकाल तोच.
@@ -21,13 +22,22 @@ import urllib.parse
 import pandas as pd
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DEFAULTS = {"engine3_m15_days": 90, "engine3_daily_days": 3650, "engine3_ltf_days": 10}
+DEFAULTS = {"engine3_m15_days": 90, "engine3_daily_days": 3650, "engine3_ltf_days": 10,
+            "engine3_fut_days": 45}                                       # Abhi Z-1: volume ÷ slot median of 20 sessions ⇒ ≥ 21 sessions FUT
+FUT_REQUIRED = ("NIFTY", "BANKNIFTY")                                     # Abhi Z-1c: FUT volume नाही = data error (entry नाही + Telegram)
+DATA_PROBLEM_FUT = "data problem: FUT volume missing"
 SESSION_OPEN, SESSION_CLOSE = (9, 15), (15, 30)
 FUT_EXCHANGE = {"SENSEX": "BSE"}                                          # बाकी NSE (NIFTY / BANKNIFTY)
 
 
 class EngineDataError(RuntimeError):
     """Live data नाही / अपूर्ण ⇒ entry नाही (fail-closed)."""
+
+
+class FutVolumeMissing(EngineDataError):
+    """Abhi Z-1c: NIFTY / BANKNIFTY चा FUT volume नाही ⇒ data error ⇒ entry नाही; caller दिवसातून एकदा (symbol प्रमाणे) Telegram ओळ
+    "data problem: FUT volume missing" (engine_signal.alert_data_problem)."""
+    data_problem = True
 
 
 def cache_dir():
@@ -255,13 +265,17 @@ def build_inputs(feed, symbol, now, s=None, levels_only=False):
     if not len(ltf) or ltf["timestamp"].iloc[-1].normalize() != m15["timestamp"].iloc[-1].normalize():
         raise EngineDataError(f"{symbol}: 5M spot (LTF) data नाही ⇒ c1 CHoCH तपासता येत नाही")
     fut, note = None, None
-    try:                                                                 # c0 volume: FUT नाही ⇒ volume NA (grade कमाल B) — fail-closed नाही
-        fut = closed_session_bars(feed.futures(symbol, "5minute", s["engine3_ltf_days"]), 5, now)
+    try:                                                                 # c0 / a2 volume (Abhi Z-1: slot-normalised ⇒ ~45 दिवसांचा FUT)
+        fut = closed_session_bars(feed.futures(symbol, "5minute", s["engine3_fut_days"]), 5, now)
         today_fut = fut[fut["timestamp"].dt.normalize() == m15["timestamp"].iloc[-1].normalize()] if len(fut) else fut
         if not len(today_fut) or float(today_fut["volume"].sum()) <= 0:
-            fut, note = None, f"{symbol}: FUT 5M volume (आज) नाही ⇒ volume NA (grade कमाल B)"
+            fut, note = None, f"{symbol}: FUT 5M volume (आज) नाही"
     except Exception as exc:                                             # noqa: BLE001
-        fut, note = None, f"{symbol}: FUT volume नाही ({type(exc).__name__}: {str(exc)[:80]}) ⇒ volume NA (grade कमाल B)"
+        fut, note = None, f"{symbol}: FUT volume नाही ({type(exc).__name__}: {str(exc)[:80]})"
+    if fut is None:
+        if str(symbol).upper() in FUT_REQUIRED:                           # Abhi Z-1c: data error ⇒ entry नाही (+ Telegram, दिवसातून एकदा)
+            raise FutVolumeMissing(f"{DATA_PROBLEM_FUT} ({note})")
+        note += " ⇒ volume NA ⇒ c0 data problem (volume शिवाय entry नाही)"
     return m15, daily, ltf, fut, note
 
 
@@ -334,6 +348,23 @@ def _first_fail(chk):
     return None, None
 
 
+def _flip_ctx(g):
+    """G4 approach context (Abhi Z-1d: context only) ⇒ payload."""
+    if not g:
+        return None
+    return {"a": g.get("a"), "b": g.get("b"), "why": g.get("why"), "b_ratio": (g.get("b_read") or {}).get("ratio"),
+            "a_form": (g.get("a_read") or {}).get("form")}
+
+
+def _zone_sum(z):
+    """In-zone study summary ⇒ payload (candles वगळून; RSI divergence सह)."""
+    if not z:
+        return None
+    sm = dict(z.get("summary") or {})
+    sm.pop("commit_bar", None)
+    return {"from": z.get("from"), "to": z.get("to"), **sm}
+
+
 def row_from_v22(symbol, r, now_fn):
     """V22 decide dict ⇒ engine_signal store row (decision2 च्याच columns ⇒ adapter / bots बदलत नाहीत)."""
     lv = r.get("level") or {}
@@ -346,12 +377,39 @@ def row_from_v22(symbol, r, now_fn):
     payload = {"engine": "decision3", **{k: r.get(k) for k in ("ts", "bar_end", "daily_trend", "trend_used", "trend_resolution",
                                                             "weekly_trend", "daily_phase", "mature", "trend_notes", "trend_cap",
                                                             "mark", "conviction", "commitment_form", "missing", "checklist", "volume_note")},
-               "level": {k: lv.get(k) for k in ("id", "role", "lo", "hi", "births", "sweeps", "dist")} if lv else None,
-               "risk": rk or None}
+               "level": {k: lv.get(k) for k in ("id", "role", "lo", "hi", "births", "sweeps", "dist", "state", "broken_ts", "far_swing",
+                                                "flipped_ts")} if lv else None,
+               "risk": rk or None, "flip_context": _flip_ctx(r.get("flip_retest")), "zone_read": _zone_sum(r.get("zone_read")),
+               "data_problem": (r.get("commit") or {}).get("data_problem"), "volume_measure": r.get("volume_measure"),
+               "range_state": r.get("range_state"), "watch_list": r.get("watch_list")}
     return {"symbol": str(symbol).upper(), "bar_ts": str(pd.Timestamp(r["bar_end"])), "computed_at": str(now_fn()),
             "decision": r.get("decision"), "gate": gate, "direction": d, "level_lo": lv.get("lo"), "level_hi": lv.get("hi"),
             "entry": rk.get("entry"), "invalidation": rk.get("sl"), "target": rk.get("target"), "grade": r.get("conviction"),
-            "reason": str(reason)[:300], "payload": json.dumps(payload, ensure_ascii=False, default=str)[:20000]}
+            "reason": str(reason)[:300], "payload": fit_payload(payload)}
+
+
+PAYLOAD_MAX = 20000
+_PAYLOAD_DROP = ("checklist", "zone_read", "watch_list", "flip_context", "trend_notes", "level", "risk")   # bulky first; never data_problem
+
+
+def fit_payload(payload, limit=PAYLOAD_MAX):
+    """Payload JSON ≤ limit chars WITHOUT a blind cut (a cut string is invalid JSON ⇒ the data_problem flag would be lost): drop the
+    bulky context keys one by one (noted in "dropped"); still too long ⇒ only the flags (engine, data_problem, volume_measure)."""
+    dump = lambda d: json.dumps(d, ensure_ascii=False, default=str)  # noqa: E731
+    out = dump(payload)
+    if len(out) <= limit:
+        return out
+    p, dropped = dict(payload), []
+    for k in _PAYLOAD_DROP:
+        if k in p:
+            p.pop(k)
+            dropped.append(k)
+            out = dump({**p, "dropped": dropped})
+            if len(out) <= limit:
+                return out
+    keep = {k: payload.get(k) for k in ("engine", "ts", "bar_end", "data_problem")}
+    keep["volume_measure"] = str(payload.get("volume_measure") or "")[:500]
+    return dump({**keep, "dropped": "all context (payload too large)"})
 
 
 def compute(symbol, feed, now, s=None):

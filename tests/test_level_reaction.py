@@ -168,7 +168,8 @@ def test_trend_context_mapping(monkeypatch):
         return DD.DState(0, pd.Timestamp("2001-01-01"), pd.Timestamp("2001-01-01 15:30"), trend, **kw)
     d = pd.DataFrame({"timestamp": pd.date_range("2000-01-01", periods=40), "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5})
     cases = [(fake("UP", phase="impulse"), True, {LR.BULL}), (fake("DOWN", phase="correction", counter="pullback"), True, {LR.BEAR}),
-             (fake("DOWN", phase="origin_broken"), False, set()), (fake("UP", phase="impulse", origin_risk=True), False, set()),
+             (fake("DOWN", phase="origin_broken"), False, set()),
+             (fake("UP", phase="impulse", origin_risk=True), True, {LR.BULL}),     # Abhi B1: origin near = context only (was: no entries)
              (fake("DOWN", phase="correction", counter="correction"), False, set()), (fake("NEUTRAL"), False, set()),
              (fake("RANGE", band=(1.0, 2.0)), True, {LR.BULL, LR.BEAR})]
     for st, ok, sides in cases:
