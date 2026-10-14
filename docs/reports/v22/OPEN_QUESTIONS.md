@@ -409,6 +409,33 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 |---|---|---|
 | R1b-3 | Roll च्या दिवशी सुद्धा FUT volume = **फक्त near-month** contract (दोन contracts ची बेरीज कधीच नाही) | `opportunity_engine.volume.near_month_rows` + `attach_futures_volume(near_month=True)` (default False ⇒ जुने callers तसेच); facts dossier near-month वापरतो; KB K10.3 + pack 5b. ✅ निकाली |
 | R0-4 | BANKNIFTY a-b-c golden दिवस: **सोडून द्या** | Golden फक्त 12 Oct + 29 Sep NIFTY; 3 उमेदवार charts trade-data मध्ये तसेच (हटवले नाहीत). ✅ निकाली |
-| R0-2 (zone) | "Zone dead only beyond the far swing" **नाही**: तुटलेला zone **flip** होतो — मजबूत move (dominant commitment / displacement) ने तोडून **पुढच्या swing पर्यंत** पोचल्यावर; तसा नसेल तर sweep, zone जुनी भूमिका ठेवतो | KB K4 block (pending काढला) ⇒ Method Pack मध्ये (नवीन version). ✅ नियम निकाली |
-| Z-1 | Code: `decision3/levels.py` चा BROKEN / FLIPPED lifecycle या नियमाशी जुळवायचा (flip = strong move + next swing गाठला; नाहीतर sweep, भूमिका तशीच) | Abhi ने KB शब्द ✅ केल्यावर वेगळा PR (KB change control) — आत्ता code बदल नाही |
-| Z-2 | KB S4 / G4 आणि pack मध्ये "flip retest" हे नाव कोणत्याही real break नंतरच्या retest ला वापरलं आहे — Abhi च्या flip नियमापेक्षा सैल. नाव बदलायचं ("break retest") की G4 ला flip नियम लावायचा? | तसेच (pack मध्ये व्याख्या नाही, फक्त नाव) | Abhi ठरवतो |
+| ~~R0-2 (zone)~~ (खालच्या अंतिम उत्तरांनी बदलले) | "Zone dead only beyond the far swing" **नाही**: तुटलेला zone **flip** होतो — मजबूत move (dominant commitment / displacement) ने तोडून **पुढच्या swing पर्यंत** पोचल्यावर; तसा नसेल तर sweep, zone जुनी भूमिका ठेवतो | KB K4 block (pending काढला) ⇒ Method Pack मध्ये (नवीन version). ✅ नियम निकाली |
+| ~~Z-1~~ (खालच्या अंतिम उत्तरांनी बदलले) | Code: `decision3/levels.py` चा BROKEN / FLIPPED lifecycle या नियमाशी जुळवायचा (flip = strong move + next swing गाठला; नाहीतर sweep, भूमिका तशीच) | Abhi ने KB शब्द ✅ केल्यावर वेगळा PR (KB change control) — आत्ता code बदल नाही |
+| ~~Z-2~~ (खालच्या अंतिम उत्तरांनी बदलले) | KB S4 / G4 आणि pack मध्ये "flip retest" हे नाव कोणत्याही real break नंतरच्या retest ला वापरलं आहे — Abhi च्या flip नियमापेक्षा सैल. नाव बदलायचं ("break retest") की G4 ला flip नियम लावायचा? | तसेच (pack मध्ये व्याख्या नाही, फक्त नाव) | Abhi ठरवतो |
+
+### Abhi अंतिम उत्तरं (#322 नंतर) — flip नियम
+
+| # | निर्णय | परिणाम |
+|---|---|---|
+| "strong move" | "strong" आणि dominant candle / displacement अर्थ **काढला**. Zone flip = price zone पलीकडे **आणि** पलीकडच्या बाजूचा swing पार; swing पार होणं हाच पुरावा, candle ची वेगळी अट नाही. तोपर्यंत sweep | KB K4 + pack. ✅ निकाली |
+| Z-2 | (b) सगळीकडे एकच flip नियम (G4 सकट). BROKEN (swing पार नाही) ⇒ retest trade location नाही, थांबा. FLIPPED ⇒ swing वरून परत येणं = pullback, flipped area = trade location; entry आधी (a) pullback corrective (zigzag / flat / triangle), (b) एकूण कमी FUT volume (flip करणाऱ्या impulse पेक्षा; सुरुवात वाढत्या volume ने चालते), (c) area वर handover (a2) + dominant commitment जास्त FUT volume (c0) + LTF CHoCH (c1) + RSI divergence पुरावा. Impulsive / जास्त volume ने परत ⇒ trade नाही. G4 चं नाव "flip retest" = नेमकं हेच | KB K4 + G4 + pack. ✅ निकाली |
+| Z-1 | decision3 BROKEN / FLIPPED code | वेगळा PR (fixtures: 12 Oct sweep, 13 Oct flip, 3 synthetic) |
+
+### Abhi अंतिम उत्तरं — Z-1 / RSI-2 (in-zone study)
+
+| # | निर्णय |
+|---|---|
+| मुख्य | Zone कडे येण्याची पद्धत (जलद / हळू, कोणताही volume) trade ठरवत नाही. Pullback corrective का आणि volume कमी का = फक्त **context**. निर्णय **zone मध्ये आल्यानंतरच्या वाचनावर** (बाजूनुसार candles, प्रत्येक candle चा normalised FUT volume, zone मधले patterns, कोणती बाजू वाढते / कमी होते, selling / buying volume, RSI divergence) ⇒ dominant commitment (जास्त volume) + LTF CHoCH = entry. ✅ |
+| Volume | सरासरी per bar (बेरीज नाही), प्रत्येक bar त्याच्या वेळेच्या slot च्या मागच्या 20 sessions च्या median ने normalise. ✅ |
+| Z-1a | पलीकडे swing नसेल (नवे high / low) ⇒ break नंतरचा पहिला **confirmed** swing. ✅ |
+| Z-1c | NIFTY / BANKNIFTY FUT volume नाही = data error ⇒ entry नाही + Telegram "data problem: FUT volume missing". Volume शिवाय grade-B trade नाही. ✅ |
+| Z-1d | Pullback आकार फक्त context; zone वाचन अस्पष्ट ⇒ थांबा. ✅ |
+| Z-1e | (ii) 22,544–22,622 spot zone = FLIPPED seller area; zone मधलं वाचन ठरवतं. 12 Oct bear call = golden ✅. |
+| Z-1f | Flip झाल्यावर जुनी भूमिका संपते; FLIPPED zone पुन्हा पलीकडच्या swing पार तुटला ⇒ dead (दुसरा flip नाही), log. ✅ |
+| RSI-2 | किमान pivot अंतर 3 bars, सगळ्या timeframes (dashboard setting). ✅ |
+| Trend बाजू (13 Oct) | Daily trend बदलला नाही तोपर्यंत reversal पासूनची चाल correction (a-b-c); flip झालेल्या zone वर bull trade = S4 अपवाद **नाही**. पुढचा seller zone ≈ 5–6 Oct highs; correction च्या शेवटी zone वाचन ⇒ bear. ✅ Abhi |
+| B (Abhi, ZONE_STUDY_FINAL) | Trader's patience: wave count / maturity / c = a फक्त context — correction संपणं predict नाही, त्यावर block नाही. Watch-list: trend दिशेचे पुढचे सगळे counter-side zones armed (जवळचा आधी); zone तुटला ⇒ पुढचा आधीच armed. Loss सामान्य; rule / threshold जिंकवण्यासाठी बदलायचे नाहीत; loss नंतर lock-out नाही (setting, default OFF). ✅ KB + pack |
+| Z-1k | एकदा flip झालेला zone पुन्हा पलीकडच्या swing पार तुटला ⇒ **DEAD** (दुसरा flip नाही; Z-1f प्रमाणे). 13 Oct चा zone spot 22,731.8 पार झाला तर DEAD, मग वरचे armed zones. ✅ Abhi (a) |
+| Z-1j | §5.3 range state (overlap / doji) entry gate **काढला** — zone मधल्या overlap / sideways candles = handover study; range कडेवर trade (bull put तळाला, bear call वरच्या कडेला). §5.1 first-leg cap सुद्धा काढला (wave gate). ✅ Abhi |
+| Z-1h | Volume normalise: 20 sessions (किमान 10); 10 पेक्षा कमी ⇒ "volume normalisation: insufficient history" + raw per-bar सरासरी (label सह). VPS वरून जुना FUT export. ✅ Abhi |
+| Z-1m | Handover (a2) **बंधनकारक**: zone मध्ये दिसणारा handover + LTF CHoCH (close) शिवाय entry नाही; commitment candle त्यानंतर. ✅ Abhi |

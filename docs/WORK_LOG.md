@@ -2492,3 +2492,19 @@ legs owner वि. reader2 gate).
   FLIPPED फक्त Abhi च्या नियमाने (मजबूत move + पुढचा swing); "Role flip" ओळ आणि Area state त्याला जुळवले. 12 Oct चं उदाहरण pack मधून
   काढलं (golden दिवसाचं उत्तर reader ला दिसू नये). [Abhi] block मध्ये फक्त Abhi चे शब्द; "strong move" = K9 हे वाचन `pending Abhi`
   (pack बाहेर). `near_month_rows`: expiry ओळखता आली नाही ⇒ warning. Pack version 76e5dd6b7ff3.
+
+## Abhi: flip नियम अंतिम (KB + pack)
+
+- "Strong move" अट काढली: zone flip = price zone पलीकडे + पलीकडच्या बाजूचा swing पार (तोच पुरावा). तोपर्यंत sweep.
+- BROKEN (swing पार नाही) ⇒ retest trade location नाही. FLIPPED ⇒ pullback flipped area मध्ये = trade location, पण entry आधी: corrective
+  pullback + एकूण कमी FUT volume + area वर handover / commitment / LTF CHoCH / RSI divergence. G4 "flip retest" = हेच.
+- Fixtures (pack बाहेर, KB मराठी K4): 12 Oct sweep, 13 Oct flip. Pack version 5c23b29ca714. पुढे: decision3 BROKEN / FLIPPED code PR.
+
+## Abhi: in-zone study हाच निर्णय (KB + pack)
+
+- G4 / S4: येण्याची पद्धत (corrective / volume कमी) फक्त context; निर्णय zone मध्ये आल्यानंतरच्या वाचनावर + commitment + CHoCH. वाचन अस्पष्ट ⇒ थांबा.
+- Volume: per-bar सरासरी, वेळेच्या slot (20 sessions median) ने normalise. FUT volume नाही (NIFTY / BANKNIFTY) ⇒ data error, entry नाही.
+- Flip: पलीकडे swing नसेल ⇒ break नंतरचा पहिला confirmed swing; FLIPPED zone पुन्हा तुटला ⇒ dead. RSI किमान 3 bars (K10.4, pending).
+- Fixtures (pack बाहेर): 12 Oct = flipped seller zone, bear call ✅; 13 Oct = no bear call, नंतर flip. Pack 1f0c37eed37f.
+- **Abhi B (patience):** wave / maturity फक्त context; watch-list = trend दिशेचे सगळे पुढचे zones armed; loss सामान्य, lock-out default OFF. Pack 4d96843284c6.
+- **Abhi Z-1j / Z-1h / Z-1m:** entry क्रम = handover (बंधनकारक) → LTF CHoCH → dominant commitment (जास्त volume); overlap / sideways = handover study, gate नाही; volume normalise 20 (किमान 10) sessions, कमी ⇒ raw per-bar सरासरी (label). Pack bb237fb57225.
