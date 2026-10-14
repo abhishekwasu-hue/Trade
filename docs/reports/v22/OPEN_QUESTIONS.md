@@ -500,3 +500,9 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | PF-1 | ~~15:45 सारांश एकच-किंमत areas~~ — केलं (review #326): engine source ⇒ `watched_levels` पट्टे (BROKEN / DEAD नाहीत); own / both ⇒ bot चा gate पट्टा; symbols = `signal_symbols` (SENSEX ओळ नाही) | केलं | — |
 | PF-2 | decision3 levels: σ_1H नसताना (window चे पहिले 20 sessions) तात्पुरती किमान रुंदी = bars ≤ t चे 1H ranges चा median × 0.15; σ आल्यावर spec प्रमाणे | लावलं (नवा आकडा नाही, तोच `level_min_width_sigma`) | σ नसताना level जन्मच नाही |
 | PF-3 | ~~`signal_symbols` बदलल्यावर one-bot mode आपोआप लागत नाही~~ — केलं (Abhi 9a, branch `claude/srv2-cooldown-symbols-apply`): dashboard 🎯 panel वर सेव्ह ⇒ `bots_common/one_bot.apply_signal_symbols` = script चाच plan / apply, फक्त signal-symbols भाग (15M SRv2 per symbol on/off + engine + PAPER, Vision srv2 symbols / approval, PAPER instruments); सेव्ह केलेली यादीच वापरतो (पुन्हा वाचलेली जुळली नाही ⇒ काहीच नाही); signal symbols साठी `signal_source` = engine (own / both बदलतं); LIVE combo नाकार तसाच (effective + raw row); बाकी bots (5M / Classic / MCX / auto) ला हात नाही; log (`data/app.log`: before / after, by dashboard, वेळ); अयशस्वी ⇒ symbols सेव्ह राहतात, कोणते भाग लागले ते + script चालवायची सूचना | केलं | — |
+
+### Approval पट्ट्याची रुंदी (branch `claude/approval-band-width`)
+
+| # | प्रश्न | आत्ता काय (default) | पर्याय |
+|---|---|---|---|
+| BW-1 | approval_band_warn_pts default 150 (Abhi) | 15M SRv2 (`15m_dynamic_sr`) setting `approval_band_warn_pts` = **150**: पट्टा (hi − lo) 150 pts पेक्षा रुंद ⇒ approval caption, pre-open आणि 15:45 सारांशात "⚠️ merged band — check" ओळ. फक्त दाखवणं (निर्णय / gate / order बदलत नाही). Dashboard: 15M SRv2 → 🧭 Signal source. Own-path (non-engine) signals ⇒ नेहमी default 150 (setting फक्त engine मार्ग, pre-open आणि सारांश वाचतात). PR #329 (root cause) नंतर हा इशारा ठेवायचा का? | 150 ठीक / दुसरा आकडा (उदा. 100 / 200) / #329 नंतर इशारा काढा |
