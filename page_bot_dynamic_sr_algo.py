@@ -330,7 +330,8 @@ def _render_signal_symbols_panel():
     with st.expander(f"🎯 Signal symbols: {' / '.join(cur)} (signals · approvals · pre-open)", expanded=False):
         st.caption("फक्त या indexes वर engine signals, Vision ✅ approvals आणि pre-open ओळी. बाकी (उदा. SENSEX) फक्त data / charts. "
                    "सेव्ह केल्यावर one-bot mode चा signal-symbols भाग आपोआप लागतो (15M SRv2 per symbol on/off, Vision srv2 symbols, PAPER "
-                   "instruments; LIVE combo ला हात नाही). अयशस्वी झाल्यास: `python3 scripts/set_one_bot_mode.py`.")
+                   "instruments; LIVE combo ला हात नाही). सेव्ह ⇒ signal symbols साठी 15M SRv2 चा `signal_source` = engine (PAPER) — "
+                   "तिथे आधी 'own' किंवा 'both' निवडलं असेल तर ते बदलून engine होतं. अयशस्वी झाल्यास: `python3 scripts/set_one_bot_mode.py`.")
         pick = st.multiselect("Signal symbols", list(cloud_db.SIGNAL_SYMBOLS_CHOICES), default=cur, key="bdsr_signal_symbols")
         if st.button("💾 Signal symbols सेव्ह करा", key="bdsr_signal_symbols_save"):
             if not pick:
@@ -352,6 +353,8 @@ def _apply_signal_symbols_one_bot(before, after):
         st.success(f"✅ One-bot mode लागू ({res.get('at') or '—'}): {len(res.get('applied') or [])} भाग लिहिले, {len(changed)} बदल"
                    + (" — " + "; ".join(f"{c['label']} {c['symbol']} {c['key']}: {c['before']} → {c['after']}" for c in changed[:8])
                       if changed else " (आधीच तसंच)"))
+        st.caption(f"ℹ️ signal symbols ({' / '.join(after)}) साठी 15M SRv2 चा `signal_source` = engine (PAPER) लावला — "
+                   "तिथे आधी 'own' किंवा 'both' निवडलं असेल तर ते बदलून engine झालं (LIVE combo ला हात नाही).")
     else:
         f = res.get("failed") or {}
         st.error(f"❌ Signal symbols सेव्ह झाले, पण one-bot mode पूर्ण लागला नाही — {f.get('part')}: {f.get('error')}. "
@@ -361,8 +364,6 @@ def _apply_signal_symbols_one_bot(before, after):
         st.warning(w)
     if res.get("skipped_live"):
         st.warning(f"LIVE combo ला हात नाही: {', '.join(res['skipped_live'])}")
-    st.caption(f"ℹ️ सेव्ह ⇒ signal symbols ({' / '.join(after)}) साठी 15M SRv2 चा `signal_source` = engine (PAPER) लावला जातो — "
-               "तिथे आधी 'own' किंवा 'both' निवडलं असेल तर ते बदलून engine होतं (LIVE combo ला हात नाही).")
 
 
 def _render_vix_halt_alert_banner():

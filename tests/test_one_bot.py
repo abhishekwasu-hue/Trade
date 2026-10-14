@@ -355,13 +355,15 @@ def test_dashboard_panel_save_button_applies_and_shows_result(env):
     at = AppTest.from_function(_signal_symbols_panel_app, default_timeout=60)
     at.run()
     assert not at.exception
+    pre = [x.value for x in at.caption]                                                         # सेव्ह आधीच सूचना
+    assert any("`signal_source` = engine" in x and "'own' किंवा 'both'" in x for x in pre)
     at.multiselect(key="bdsr_signal_symbols").set_value(["NIFTY"])
     at.button(key="bdsr_signal_symbols_save").click()
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     assert cloud_db.get_signal_symbols() == ["NIFTY"]
     assert any("One-bot mode लागू" in x.value for x in at.success)
-    assert any("`signal_source` = engine" in x.value and "'own' किंवा 'both'" in x.value for x in at.caption)
+    assert any(x.value.startswith("ℹ️ signal symbols (NIFTY)") and "बदलून engine झालं" in x.value for x in at.caption)
     assert db.rows[("15m_dynamic_sr", "BANKNIFTY")] == {"symbol_enabled": False}
 
 
@@ -376,6 +378,7 @@ def test_dashboard_panel_stale_read_shows_error_not_success(env, monkeypatch):
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     assert not any("One-bot mode लागू" in x.value for x in at.success)
+    assert not any("बदलून engine झालं" in x.value for x in at.caption)
     assert any("signal_symbols read" in x.value and "set_one_bot_mode.py" in x.value for x in at.error)
     assert ("15m_dynamic_sr", "BANKNIFTY") not in db.rows
 
@@ -393,6 +396,7 @@ def test_dashboard_panel_shows_error_and_keeps_symbols_when_apply_fails(env, mon
     assert cloud_db.get_signal_symbols() == ["NIFTY"]                                          # symbols सेव्ह राहिले
     err = " ".join(x.value for x in at.error)
     assert "vision db locked" in err and "set_one_bot_mode.py" in err and "15m_dynamic_sr BANKNIFTY" in err
+    assert not any("बदलून engine झालं" in x.value for x in at.caption)                          # failure ⇒ after-save सूचना नाही
 
 
 def test_status_flags_auto_trader_cron_and_missing_engine(env, monkeypatch):
