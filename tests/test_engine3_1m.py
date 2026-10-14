@@ -342,3 +342,24 @@ def test_dashboard_checkbox_uses_the_same_parser():
     import os
     src = open(os.path.join(os.path.dirname(L.__file__), "page_bot_dynamic_sr_algo.py"), encoding="utf-8").read()
     assert 'bool(settings.get("engine3_use_1m"' not in src and '_L3.use_1m({"engine3_use_1m": settings.get("engine3_use_1m")})' in src
+
+
+def test_prune_cache_only_touches_engine3_cache_files_and_clamps_keep_days(monkeypatch, tmp_path):
+    import os
+    import time
+    monkeypatch.setenv("ENGINE3_CACHE_DIR", str(tmp_path))
+    old = time.time() - 30 * 86400
+    names = ["hist_a_2026-01-01_2025-12-31.pkl", "fold_NIFTY_abc.pkl", "hist_a.pkl.123.tmp", "fold_x.pkl.9.tmp", "notes.txt", "other.pkl"]
+    for n in names:
+        (tmp_path / n).write_bytes(b"x")
+        os.utime(tmp_path / n, (old, old))
+    fresh = tmp_path / "hist_today.pkl"
+    fresh.write_bytes(b"x")
+    hour_old = time.time() - 3600
+    os.utime(fresh, (hour_old, hour_old))
+    for bad in (-5, "-1", "abc", float("nan"), 0, 0.01):                  # negative / bad ⇒ default 3; 0–1 ⇒ clamp to 1 day
+        L.prune_cache(bad)
+        assert fresh.exists() and (tmp_path / "notes.txt").exists() and (tmp_path / "other.pkl").exists()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["hist_today.pkl", "notes.txt", "other.pkl"]   # old hist_ / fold_ (+ .tmp) gone
+    assert L.cache_keep_days(-2) == 3.0 and L.cache_keep_days("x") == 3.0 and L.cache_keep_days(None) == 3.0
+    assert L.cache_keep_days(0) == 1.0 and L.cache_keep_days(7) == 7.0

@@ -2635,6 +2635,7 @@ legs owner वि. reader2 gate).
 - Payload `m1.m15_complete` = swings2 `m1_status == "complete"` bars; log `1m ✓ (complete n/m)`; rows आहेत पण complete 0 ⇒ ⚠️ (1m व 15M चे
   high / low जुळत नाहीत). V22 1m सह त्रुटी ⇒ एकदा 1m शिवाय + `m1.note` (fallback), fail-closed नाही.
 - `use_1m`: None / "" ⇒ default ON; dashboard checkbox तोच parser (stored "false" ⇒ unchecked). Cache prune: run3 (खरा Upstox feed) सुरू होताना
-  `prune_cache`, नवी setting `engine3_cache_keep_days` (3 — आधीचं `prune_cache` default, आता setting).
+  `prune_cache`, नवी setting `engine3_cache_keep_days` (3 — आधीचं `prune_cache` default, आता setting). Review hardening: फक्त `hist_*` /
+  `fold_*` (.tmp सह) files; keep_days किमान 1, चुकीचं / ऋण ⇒ 3.
 - Tests: `tests/test_engine3_1m.py` +11 functions (सुट्टी cache, 15M नवा दिवस, watched_levels 1m / OFF / retry, pre-open + सारांश settings, complete count +
   ⚠️, V22 retry, tmp नाव, prune, dashboard parser); tag test spec बदल. Replay 1m (`replay_day --source upstox`) प्रश्न उघडाच.

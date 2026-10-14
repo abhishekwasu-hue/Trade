@@ -286,21 +286,35 @@ class fold_cache:
         return False
 
 
-def prune_cache(keep_days=None, now=None):
-    """data/engine3_cache मधल्या `keep_days` (default setting `engine3_cache_keep_days`) पेक्षा जुन्या files (mtime) काढतो — एक listdir,
-    स्वस्त. आजच्या hist_ / fold_ files नव्या ⇒ राहतात. कधीच raise नाही."""
+CACHE_PREFIXES = ("hist_", "fold_")                                        # फक्त हेच (आणि त्यांचे .tmp) prune होतात
+
+
+def cache_keep_days(v=None):
+    """`engine3_cache_keep_days` ⇒ float ≥ 1. रिकामं / चुकीचं / ऋण ⇒ default (3); 0–1 ⇒ 1 (आजच्या cache files कधीच नाही काढत)."""
+    dflt = float(DEFAULTS["engine3_cache_keep_days"])
     try:
-        keep_days = float(DEFAULTS["engine3_cache_keep_days"] if keep_days in (None, "") else keep_days)
+        k = dflt if v in (None, "") else float(v)
     except (TypeError, ValueError):
-        keep_days = float(DEFAULTS["engine3_cache_keep_days"])
+        return dflt
+    if k != k or k < 0:                                                  # NaN / ऋण ⇒ default
+        return dflt
+    return max(1.0, k)
+
+
+def prune_cache(keep_days=None, now=None):
+    """data/engine3_cache मधल्या फक्त engine3 cache files (`hist_*` / `fold_*`, .tmp उरलेल्यांसह) — `keep_days` (setting
+    `engine3_cache_keep_days`, किमान 1) पेक्षा जुन्या (mtime) — काढतो. इतर files ना हात नाही. एक listdir, स्वस्त. कधीच raise नाही."""
+    keep_days = cache_keep_days(keep_days)
     d = cache_dir()
     if not os.path.isdir(d):
         return
     cut = (now or pd.Timestamp.now()).timestamp() - keep_days * 86400
     for f in os.listdir(d):
+        if not f.startswith(CACHE_PREFIXES) or not (f.endswith(".pkl") or f.endswith(".tmp")):
+            continue
         try:
             p = os.path.join(d, f)
-            if os.path.getmtime(p) < cut:
+            if os.path.isfile(p) and os.path.getmtime(p) < cut:
                 os.remove(p)
         except OSError:
             pass
