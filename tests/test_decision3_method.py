@@ -208,8 +208,12 @@ def test_liquidity_by_the_method_equal_by_comparison_sweep_and_trap_by_structure
     trap = base + [(105, 112, 104, 111), (111, 111.5, 107, 108), (108, 109, 104, 105)]                # a close above, then back
     sw, tr = LQ.sweeps_and_traps(V_of(trap, [p0]), 6, start=1)
     assert sw and [x["kind"] for x in tr] == ["failed_breakout"]
-    acc = V_of(trap, [p0], known0=[NS(kind=k("H"), price=f(111.5), bar=5, confirm_bar=6)])            # a swing formed above ⇒ accepted
-    assert LQ.sweeps_and_traps(acc, 6, start=1) == ([], [])
+    held = base + [(105, 112, 104, 111), (111, 113, 110.5, 112.5), (112.5, 112.6, 110.2, 110.5), (110.5, 110.8, 108.5, 109)]
+    acc = V_of(held, [p0], known0=[NS(kind=k("H"), price=f(113.0), bar=5, confirm_bar=6)])            # a swing formed above while
+    assert LQ.sweeps_and_traps(acc, 7, start=1) == ([], [])                                          # price held beyond ⇒ accepted
+    poke = V_of(sweep + [(107, 107.5, 104, 104.5)], [p0], known0=[NS(kind=k("H"), price=f(112.0), bar=4, confirm_bar=6)])
+    sw, tr = LQ.sweeps_and_traps(poke, 6, start=1)                         # the poke's own wick confirmed as a swing AFTER the close back
+    assert [x["src"] for x in sw] == ["swing"] and sw[0]["back_at"] == 4   # inside ⇒ still a sweep (decided at the first close back)
     eq = V_of(base + [(105, 109.2, 104.8, 106)], [p0, NS(kind=k("H"), price=f(109.2), bar=4, confirm_bar=4)])
     assert [x["src"] for x in LQ.pools(eq, 4) if x["src"] != "swing"] == ["equal"]              # 109.2 inside 108.5–110 (wick to body)
     far = V_of(base + [(105, 108.0, 104.8, 106)], [p0, NS(kind=k("H"), price=f(108.0), bar=4, confirm_bar=4)])

@@ -66,8 +66,10 @@ def pools(V, t):
 
 def _sweeps_method(V, t, t0):
     """Method §3: a pool (structure swing / equal) poked beyond in t0 … t and back inside before any swing formed beyond it ⇒ sweep ⚡;
-    with at least one close beyond before coming back ⇒ trapped (failed breakout). A swing formed beyond ⇒ accepted (no sweep); still
-    beyond at t ⇒ not decided yet. Swings = the finest structure degree known by t."""
+    with at least one close beyond before coming back ⇒ trapped (failed breakout). Decided at the FIRST close back inside (as the area
+    lifecycle): a swing beyond confirmed by then ⇒ accepted (no sweep); a swing confirmed only later — usually the poke's own wick,
+    confirmed by the very reversal — never turns a sweep into acceptance. Still beyond at t ⇒ not decided yet. Swings = the finest
+    structure degree; bars ≤ t only."""
     A = V.levels.A
     known0 = [p for p in getattr(V.levels, "_known0", []) if p.confirm_bar <= t]
     sw, tr = [], []
@@ -78,12 +80,13 @@ def _sweeps_method(V, t, t0):
         if not bw:
             continue
         f = bw[0]
-        if ((A["close"][t] - pr) * sign > 0) or any(q.bar >= f and (q.price - pr) * sign > 0 and q.kind == ("H" if sign > 0 else "L")
-                                                    for q in known0):
+        u = next((i for i in range(f, t + 1) if (A["close"][i] - pr) * sign <= 0), None)   # the first close back inside
+        if u is None or any(q.bar >= f and q.confirm_bar <= u and (q.price - pr) * sign > 0 and q.kind == ("H" if sign > 0 else "L")
+                            for q in known0):
             continue
-        ext = max(A["high"][f:t + 1]) if sign > 0 else min(A["low"][f:t + 1])
-        sw.append({**p, "bar": int(f), "extreme": float(ext)})
-        if any((A["close"][i] - pr) * sign > 0 for i in range(f, t + 1)):
+        ext = max(A["high"][f:u + 1]) if sign > 0 else min(A["low"][f:u + 1])
+        sw.append({**p, "bar": int(f), "extreme": float(ext), "back_at": int(u)})
+        if any((A["close"][i] - pr) * sign > 0 for i in range(f, u)):
             tr.append({"lo": min(pr, ext), "hi": max(pr, ext), "kind": "failed_breakout", "side": p["side"], "bar": int(f)})
     return sw, tr
 
