@@ -125,6 +125,8 @@ COMPARE_FORMS = {                                                          # met
     "tweezer": [(103.5, 103.6, 102.4, 102.6), (102.6, 102.7, 100.3, 100.9), (100.9, 101.8, 100.5, 101.7)],
     "pin": [(103, 103.2, 102.6, 102.8), (102.8, 103.0, 101.9, 102.2), (102.3, 102.5, 100.1, 102.4)],
     "strong_close": [(103, 103.2, 102.6, 102.8), (102.0, 102.3, 101.9, 102.2), (101.0, 102.9, 100.9, 102.8)],
+    "inside_break": [(101.0, 102.5, 100.4, 102.2), (101.6, 102.0, 101.3, 101.8), (101.8, 102.8, 101.7, 102.7)],
+    "strong_close_2": [(102.0, 102.2, 101.8, 101.9), (101.0, 101.6, 100.8, 101.4), (101.4, 102.2, 101.0, 101.9)],
 }
 
 
@@ -176,3 +178,58 @@ def test_merged_form_graded_against_candle_before_pattern():
     assert a["form"] == b["form"] == "doji_confirm" and a["grade"] == "A" and b["grade"] == "B"
     c = M.commitment(A_of(pre + [(101.6, 102.2, 101.4, 101.9)]), 3, M.UP, LVL, S)                 # पुष्टी नाही (doji high खाली) ⇒ ✘
     assert not c[0]
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["demand", "supply"])
+def test_a_merged_form_that_fails_falls_back_to_the_one_candle_form(mirror):
+    """Review: a strong close whose low sits in the previous candle's lower wick also reads as a tweezer (2 candles) — measured against
+    t − 2 the merged read fails, so the candle is read as the 1-candle strong close it is (never lost)."""
+    rows = [(104, 104.2, 102.8, 103.0), (102.6, 102.7, 101.0, 101.5), (101.6, 103.0, 101.2, 102.9)]
+    lvl = {"lo": 100.5, "hi": 101.6}
+    d = M.UP
+    if mirror:
+        rows = [(2 * 101.5 - o, 2 * 101.5 - lo, 2 * 101.5 - h, 2 * 101.5 - c) for o, h, lo, c in rows]
+        lvl, d = {"lo": 2 * 101.5 - 101.6, "hi": 2 * 101.5 - 100.5}, M.DOWN
+    A = A_of(rows)
+    assert M.reversal_form(A, 2, d, S) == ("tweezer", 2)
+    ok, why, cm = M.commitment(A, 2, d, lvl, S)
+    assert ok and cm["form"] == "strong_close" and cm["merged"] == 1, why
+
+
+def test_doji_waits_and_big_is_judged_against_the_visit():
+    """Method §3: a doji (body smaller than each wick) on the area ⇒ wait for the next candle; "big" = larger than the other candles of
+    the same visit (no visit context ⇒ no reading)."""
+    A = A_of([(103, 103.2, 102.6, 102.8), (101.2, 101.9, 100.5, 101.25)])
+    assert M.commitment(A, 1, M.UP, LVL, S)[2].get("wait") == "doji"
+    B = A_of([(101.0, 101.3, 100.8, 101.1), (101.1, 101.4, 100.9, 101.0), (101.0, 102.6, 100.9, 102.5)])
+    assert M.candle_read(B, 2, S, 0)["big_body"] is True and M.candle_read(B, 1, S, 0)["big_body"] is False
+    assert M.candle_read(B, 2, S)["big_body"] is None                     # no visit context ⇒ no "big" reading
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bottom", "top"])
+def test_zone_pattern_double_by_comparison_in_time_order(mirror):
+    """Method §3 equal: the later low reaches the earlier swing candle's own band (wick to body) and does not go beyond it ⇒ double
+    bottom; a later low beyond the earlier one is a new low, not a double bottom. Mirror: tops."""
+    def A_lows(l2):
+        rows = [(103, 103.2, 102.4, 102.5), (102.5, 102.6, 101.5, 101.6), (101.6, 101.7, 100.0, 100.4), (100.4, 101.8, 100.3, 101.7),
+                (101.7, 102.4, 101.6, 102.3), (102.3, 102.4, 101.0, 101.1), (101.1, 101.2, l2, 100.6), (100.6, 102.0, 100.5, 101.9),
+                (101.9, 102.1, 101.5, 101.8)]
+        if mirror:
+            rows = [(2 * 101.5 - o, 2 * 101.5 - lo, 2 * 101.5 - h, 2 * 101.5 - c) for o, h, lo, c in rows]
+        return A_of(rows)
+    d = M.DOWN if mirror else M.UP
+    word = "double top" if mirror else "double bottom"
+    assert M.zone_pattern(A_lows(100.2), 0, 8, d, S) == word               # 100.2 inside 100.0–100.4 (the first low's wick to body)
+    assert M.zone_pattern(A_lows(99.5), 0, 8, d, S) != word                # beyond the first low ⇒ not equal
+
+
+def test_entry_window_is_applied_after_the_read_in_v22(monkeypatch):
+    """P2: the reading never looks at the clock; V22 applies the operational entry hours after it (⑥ names both)."""
+    from tests.test_decision3_flip import _HANDOVER, _default_case
+    from decision3 import engine as E3
+    V = _default_case(_HANDOVER)
+    assert V.decide(741)["decision"] == "setup"
+    monkeypatch.setattr(E3.V22, "entry_window", lambda self, t: False)
+    r = V.decide(741)
+    assert r["decision"] == "wait" and r["checklist"]["⑥"][1].startswith("entry वेळ-खिडकीबाहेर (operational schedule) · reading: commitment")
+

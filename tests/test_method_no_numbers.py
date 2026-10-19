@@ -21,10 +21,9 @@ LEGACY = {                       # used only by a non-default rule / gate (what-
     "sl_buffer_sigma": ("rr_step = True", {"method.py"}),
     "min_rr": ("rr_step = True", {"method.py"}),
     "max_attempts": ("wave_gates = True", {"engine.py"}),
-    "touch_window_bars": ("zone_visit_rule = touch_window / close_away (③ last touch)", {"engine.py", "method.py"}),
     "accept_closes": ("break_rule = closes / liquidity_rule = sigma", {"levels.py", "liquidity.py"}),
     "liquidity_eq_sigma": ("liquidity_rule = sigma", {"levels.py", "liquidity.py"}),
-    "liquidity_lookback": ("liquidity_rule = sigma (method: the pullback's own window)", {"engine.py"}),
+    "liquidity_lookback": ("liquidity_rule = sigma (method: the pullback's / leg's own window)", {"engine.py", "dossier.py"}),
     "candle_avg_n": ("candle_rule = ratio", {"method.py"}),
     "commit_body": ("candle_rule = ratio", {"method.py"}),
     "commit_close_frac": ("candle_rule = ratio", {"method.py"}),
@@ -52,8 +51,12 @@ PENDING = {                      # still a number in the reading path ⇒ remove
     "flip_pullback_inner_degree": 1, "k_reset_sigma": 1,
     "tl_touch_sigma": 4, "tl_min_touches": 4,
     "evidence_weights": 6, "conv_a": 6, "conv_b": 6, "conv_weak": 6,
-    # ④ power shift / §5.3 range state = context and evidence only (never a gate, C-8 / Z-1j) — their counts go with the evidence (layer 6)
+    # ④ power shift: its count still DECIDES verdicts through the evidence score (`ev["power_shift"]` ⇒ `conviction` weights ⇒ A / B /
+    # weak / against) until layer 6 removes the score (method §4 / §5: evidence listed, never scored); §5.3 range state = context only
+    # (`range_state_gate` off). Both go with the evidence in layer 6.
     "power_shift_min": 6, "power_overlap": 6, "power_fallback_bars": 6, "range_overlap_min": 6, "range_state_n": 6,
+    # decision3 reads touch_window_bars only behind the legacy visit rules, but facts/dossier `_visits` still counts it (layer 6)
+    "touch_window_bars": 6,
 }
 
 
@@ -73,6 +76,7 @@ def test_every_reading_number_is_classified():
 def test_legacy_numbers_are_read_only_where_their_switch_lives():
     """A LEGACY number must not leak into the default path: only the files named with its switch may read it (source scan)."""
     src = {f.name: f.read_text(encoding="utf-8") for f in D3.glob("*.py") if f.name != "settings.py"}
+    src["dossier.py"] = (D3.parent / "facts" / "dossier.py").read_text(encoding="utf-8")   # the vision facts read the same owners
     for k, (_, allowed) in LEGACY.items():
         readers = {n for n, txt in src.items() if re.search(rf"[\"']{k}[\"']", txt)}
         assert readers <= allowed, f"{k} ({LEGACY[k][0]}) is read outside its switch: {sorted(readers - allowed)} — classify it PENDING"

@@ -550,10 +550,14 @@ def zone_pattern(A, a, t, d, s, mr=None):
         if d < 0 and sh > 0 and sl > 0:
             return "rising wedge" if sl > sh else "rising channel / bear flag"
     ext = ls if d > 0 else hs
-    if len(ext) >= 2 and not _ratio_rules(s):                             # method §3 equal: reaches the extreme candle's own wick-to-body
-        bi, best = min(ext, key=lambda x: x[1]) if d > 0 else max(ext, key=lambda x: x[1])   # band and does not go beyond it
-        edge = min(A["open"][bi], A["close"][bi]) if d > 0 else max(A["open"][bi], A["close"][bi])
-        n = sum(1 for _, p in ext if (best <= p <= edge if d > 0 else edge <= p <= best))
+    if len(ext) >= 2 and not _ratio_rules(s):                             # method §3 equal, in time order: each later extreme reaches the
+        (ri, rp), n = ext[0], 1                                            # reference swing candle's own wick-to-body band and does not go
+        for i, p in ext[1:]:                                               # beyond it; one that goes beyond becomes the new reference
+            edge = min(A["open"][ri], A["close"][ri]) if d > 0 else max(A["open"][ri], A["close"][ri])
+            if (p < rp) if d > 0 else (p > rp):
+                (ri, rp), n = (i, p), 1
+            elif (p <= edge) if d > 0 else (p >= edge):
+                n += 1
         if n >= 2:
             return f"{'triple' if n >= 3 else 'double'} {'bottom' if d > 0 else 'top'}"
         return None
@@ -579,6 +583,19 @@ def _same_window(tss, t, i, s):
         return True
     ti, tt = pd.Timestamp(tss[i]), pd.Timestamp(tss[t])
     return ti.normalize() == tt.normalize() and ti.strftime("%H:%M") >= s.get("evidence_start", s["entry_start"])
+
+
+def _one_candle_form(A, t, d):
+    """The 1-candle forms by comparison: pin (rejection wick longer than the rest of the candle) or strong close (body larger than both
+    wicks together); None otherwise."""
+    o, h, lo, c = _ohlc(A, t)
+    rej = (min(o, c) - lo) if d == UP else (h - max(o, c))
+    opp = (h - max(o, c)) if d == UP else (min(o, c) - lo)
+    if rej > abs(c - o) + opp:
+        return "pin"
+    if (c - o) * d > 0 and (c - o) * d > rej + opp:
+        return "strong_close"
+    return None
 
 
 def _reversal_form_compare(A, t, d, s, tss=None):
@@ -711,11 +728,16 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
     if (c - o) * d < 0 and not beyond_close:
         return False, "candle अजून pullback-दिशेची — वाट", {"wait": "pullback"}
     fm = reversal_form(A, t, d, s, tss)
+    one = (beyond_close, beyond_ext)                                       # vs t − 1 (a 1-candle form)
     if fm is not None and fm[1] == 2 and t >= 2 and _same_window(tss, t, t - 2, s):
         r = t - 2                                                          # merged (≤ 2) = एक candle ⇒ "मागची" = pattern आधीची (Q30)
         qo, qh, ql, qc = _ohlc(A, r)
         beyond_close = (c - qc) * d > 0
         beyond_ext = (c - (qh if d == UP else ql)) * d > 0
+        need2 = beyond_close if s["commit_beyond"] == "close" else beyond_ext
+        f1 = _one_candle_form(A, t, d) if not _ratio_rules(s) else None
+        if not need2 and f1 is not None:                                   # the merged read fails but the candle is a pin / strong close on
+            fm, (beyond_close, beyond_ext) = (f1, 1), one                  # its own ⇒ read it as that 1-candle form (never lost to a tweezer)
     need = beyond_close if s["commit_beyond"] == "close" else beyond_ext
     if not (need and side):
         return False, "commitment candle नाही" + ("" if side else " (close level पलीकडे चुकीच्या बाजूला)"), {}

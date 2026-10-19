@@ -80,7 +80,7 @@ def test_first_bar_can_be_commitment_old_setting_keeps_window(d):
                     pd.Timestamp("2030-01-08 09:15")], dtype="datetime64[ns]")
     S = S3.load()
     ok, why, cm = M.commitment(A, 3, d, lvl, S, tss)                       # method P2: one continuous chart — the previous session's last
-    assert ok and cm["form"] in ("engulf", "inside_break"), why            # candle is the 09:15 candle's neighbour (2-candle form)
+    assert ok and cm["form"] == ("engulf" if d == M.DOWN else "inside_break"), why   # the 09:15 candle's neighbour (2-candle forms)
     L = {**S, "session_windows": True, "candle_rule": "ratio"}             # legacy (what-if): forms stop at the session ⇒ the pin alone
     ok, why, cm = M.commitment(A, 3, d, lvl, L, tss)
     assert ok and cm["form"] == "pin", why
