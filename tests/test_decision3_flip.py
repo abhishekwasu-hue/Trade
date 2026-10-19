@@ -613,21 +613,27 @@ def test_real_12_oct_seller_zone_in_zone_study_and_golden_bear_call(real):
         assert cm["handover_present"] is True and cm["choch"]["done"] and not cm.get("data_problem")
         assert pd.Timestamp(cm["choch"]["at"]) > pd.Timestamp(cm["visit_start"]) and cm["vol_mult"] > 1.0
         return
-    # the one known cause (OPEN_QUESTIONS Z-1z): the visit that day starts 12 Oct 09:15 (the 9 Oct visit ended at the 9 Oct 15:00 close
-    # below the band, Abhi Z-1v); the 09:30 dominant red candle has fewer than study_min_bars in-zone bars before it ⇒ no handover can be
-    # read; its close below the band ends the visit; no later visit that day
+    # the miss has THREE causes, each asserted (report, never tuned): (1) OPEN_QUESTIONS Z-1z — the visit starts 12 Oct 09:15 (the 9 Oct
+    # visit ended at the 9 Oct 15:00 close below the band, Abhi Z-1v); the 09:30 dominant red candle has fewer than study_min_bars in-zone
+    # bars before it ⇒ no handover can be read; (2) its FUT volume is BELOW the window average on the raw per-bar fallback (no slot
+    # normalisation: too few earlier FUT sessions); (3) OPEN_QUESTIONS Z-1v-a — that failed candidate's close below the band ends the
+    # visit; no later visit that day
     by = {r["ts"][11:16]: r for r in rows}
     c930 = by["09:30"]["commit"] or {}
     assert str(c930.get("visit_start")).startswith("2026-10-12 09:15") and str(c930.get("visit_prev_end")).startswith("2026-10-09 15:00")
     assert c930.get("handover_present") is False and (c930.get("handover_state") or {}).get("seen_at") is None
     assert c930.get("form") and int(by["09:30"]["bar"]) - int(c930["visit_start_bar"]) < int(V.s["study_min_bars"])
+    assert c930.get("vol_mult") is not None and c930["vol_mult"] < 1.0 and not c930.get("data_problem")          # cause (2)
+    assert "insufficient history" in str(c930.get("volume_measure")) and not (c930.get("vol_gaps") or {}).get("over")
     assert str(by["09:30"]["checklist"]["⑥"][1]).startswith(M.REASON[M.C_NO_HANDOVER]) and str(c930.get("visit_end")).startswith("2026-10-12 09:30")
     later = [r for r in rows if r["ts"][11:16] > "09:30" and (r["checklist"].get("③") or [None])[0]]
     assert all(((r.get("commit") or {}).get("confirm_wait") == "no_visit") for r in later), [(r["ts"], r["checklist"]["⑥"]) for r in later]
-    pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — Abhi Z-1v: the visit starts 12 Oct 09:15 (the 9 Oct visit "
-                 "ended at the 9 Oct 15:00 close below the band); the 09:30 dominant red candle (body "
+    pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — three causes: (1) Z-1z: the visit starts 12 Oct 09:15 (the "
+                 "9 Oct visit ended at the 9 Oct 15:00 close below the band); the 09:30 dominant red candle (body "
                  f"{c930.get('body_mult')}×) has only {int(by['09:30']['bar']) - int(c930['visit_start_bar'])} in-zone bar(s) before it "
-                 f"< study_min_bars {V.s['study_min_bars']} ⇒ no handover; its close below the band ends the visit (OPEN_QUESTIONS Z-1z)")
+                 f"< study_min_bars {V.s['study_min_bars']} ⇒ no handover; (2) its FUT volume {c930['vol_mult']}× the window average "
+                 "(raw per-bar fallback — too few earlier FUT sessions to normalise); (3) Z-1v-a: its close below the band ends the visit "
+                 "(OPEN_QUESTIONS Z-1z / Z-1v-a)")
 
 
 def test_real_oct_1_to_12_lifecycle_of_the_22544_22622_band(real):
@@ -649,10 +655,10 @@ def test_real_oct_1_to_12_lifecycle_of_the_22544_22622_band(real):
     assert Z.role_at(ix[0]) == LV.RES and Z.state_at(ix[0]) not in (FL.BROKEN, FL.DEAD)
 
 
-def test_real_13_oct_no_bear_call_then_flip_only_past_22731(real):
+def test_real_13_oct_no_bear_call(real):
     """13 Oct NIFTY (Abhi): price entered the seller zone, small red candles on low volume, no fall, a sideways base, afternoon breakout
-    ⇒ NO bear call (golden). The state check (a flip / DEAD only past 22,731.8) was written on the old 8-Oct-flip premise that Abhi
-    removed (Z-1w): it xfails ONLY on its exact, asserted cause (OPEN_QUESTIONS Z-1y). No bull setup while the Daily trend is DOWN."""
+    ⇒ NO bear call (golden). No bull setup while the Daily trend is DOWN. The zone's state that day (Abhi: still resistance while price
+    stays below 22,731.8) is the separate strict-xfail test below (OPEN_QUESTIONS Z-1y)."""
     m15, ltf, fut, V = real
     ix = _day_bars(V, "2026-10-13")
     lvl = _zone_level(V, ix[0])
@@ -668,22 +674,37 @@ def test_real_13_oct_no_bear_call_then_flip_only_past_22731(real):
     nxt = [w for w in (rows[-1].get("watch_list") or []) if w["role"] == LV.RES]
     print(f"13 Oct close watch-list: {[(w['lo'], w['hi'], w['state']) for w in nxt]}")
     assert nxt and nxt[0]["lo"] > ZONE[1]                                  # Abhi B2: the next seller zones above are already armed
+
+
+Z1Y = ("OPEN_QUESTIONS Z-1y (a question for Abhi, not a code answer): after the 6 Oct up-break, which far swing decides the flip — "
+       "Abhi's 22,731.8 (the 6 / 7 Oct high) or the nearest swing 22,651.10 (12 Oct 09:15) the engine uses? The engine flips the band to "
+       "support on 13 Oct 14:30; Abhi's expectation (still resistance on 13 Oct) is kept here unchanged until he answers.")
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=Z1Y)
+def test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731(real):
+    """Abhi's own expectation (Z-1y, kept as written): on 13 Oct price never closed past the far swing 22,731.8 ⇒ the 22,543.75–22,621.80
+    band is still resistance (not FLIPPED to support, not DEAD). Strict: if the engine ever meets it, this test fails and Z-1y is revisited.
+    Only the expectation itself may xfail — a missing band or a day past 22,731.8 is a hard failure."""
+    m15, ltf, fut, V = real
+    ix = _day_bars(V, "2026-10-13")
+    try:
+        lvl = _zone_level(V, ix[0])
+    except AssertionError as e:                                            # not the Z-1y expectation ⇒ never hidden by the xfail
+        pytest.fail(str(e))
     L = V.levels.L[lvl["id"]]
     t = ix[-1]
     hi = float(m15["high"].iloc[ix].max())
-    st = L.state_at(t)
-    print(f"\n13 Oct: {len(ix)} bars, spot high {hi:,.2f} vs far swing {FAR_UP:,.1f} ⇒ state {st}, role {L.role_at(t)}; "
-          f"trend {[r['trend_used'] for r in rows][-1]}")
-    if hi > FAR_UP and (m15["close"].iloc[ix] > ZONE[1]).any():
-        assert st == FL.DEAD                                               # Z-1f / Z-1k (Abhi: DEAD): second break past the far swing
-    elif not (st in (FL.BROKEN, FL.FLIPPED) and L.role_at(t) == LV.RES):
-        f = V.levels.flip_view(L, t)
-        T = lambda b: str(V.levels.ts.iloc[int(b)])[:16]                   # noqa: E731
-        assert L.count("flip", t) == 1 and st == FL.FLIPPED and L.role_at(t) == LV.SUP and f["far_swing"]["source"] == "before_break"
-        assert f["far_swing"]["price"] < FAR_UP and T(f["flipped_at"]).startswith("2026-10-13")
-        pytest.xfail(f"zone's own lifecycle (Z-1u / Z-1w: born {T(L.born_bar)} as resistance, never flipped before): its up-break far swing "
-                     f"is {f['far_swing']['price']:,.2f} ({f['far_swing']['ts'][:16]}), passed {T(f['flipped_at'])} ⇒ FLIPPED to support; "
-                     f"the 22,731.8 / DEAD check came from the removed 8 Oct flip premise (OPEN_QUESTIONS Z-1y)")
+    if hi > FAR_UP:
+        pytest.fail(f"13 Oct high {hi:,.2f} is past 22,731.8 — the Z-1y expectation is about a day that stays below it")
+    f = V.levels.flip_view(L, t)
+    T = lambda b: str(V.levels.ts.iloc[int(b)])[:16]                       # noqa: E731
+    fs = f.get("far_swing") or {}
+    print(f"\n13 Oct: spot high {hi:,.2f} < 22,731.8 · engine: state {L.state_at(t)}, role {L.role_at(t)}, far swing "
+          f"{fs.get('price')} ({str(fs.get('ts'))[:16]}, {fs.get('source')}), flipped at "
+          f"{None if f.get('flipped_at') is None else T(f['flipped_at'])}")
+    assert L.role_at(t) == LV.RES and L.state_at(t) != FL.DEAD, \
+        f"Abhi: below 22,731.8 ⇒ still resistance; engine: {L.state_at(t)} / {L.role_at(t)} via far swing {fs.get('price')}"
 
 
 def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmup(real):

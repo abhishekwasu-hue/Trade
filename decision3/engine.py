@@ -24,6 +24,7 @@ M_SETUP, M_WAIT, M_NO = "s", "w", "n"
 
 
 STEPS = ("③", "④", "⑤", "⑥", "⑦")
+VISIT_RULES = ("close_away", "touch_window")                              # Abhi Z-1v (+ legacy what-if); settings.zone_visit_rule
 
 
 def level_eval_brief(dd, part, extra, lvl):
@@ -77,6 +78,8 @@ def guard_sealed_bars(m15, sealed):
 class V22:
     def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
         self.s = S3.load(s)
+        if self.s.get("zone_visit_rule", "close_away") not in VISIT_RULES:  # fail at start, not at the first in-zone bar
+            raise ValueError(f"decision3 V22: unknown zone_visit_rule {self.s['zone_visit_rule']!r} (allowed: {', '.join(VISIT_RULES)})")
         self.sealed = sealed                                              # Q33: sealed (NIFTY holdout) तारखा output मध्ये नाहीत
         guard_sealed_bars(m15 if res is None else res["m15"], sealed)       # Abhi Z-1t: no 15M bar (⇒ no decision) on a sealed date
         self.df1m = df1m                                                  # फक्त advisory (elliott count) साठी
@@ -195,7 +198,10 @@ class V22:
         inside the same visit. Returns {start, prev_end, why} (start None ⇒ no visit in progress)."""
         A = self.levels.A
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
-        if self.s.get("zone_visit_rule", "close_away") == "touch_window":   # legacy only (old tests / what-if): the last group of touches
+        rule = self.s.get("zone_visit_rule", "close_away")
+        if rule not in VISIT_RULES:                                        # a typo must never silently pick a rule
+            raise ValueError(f"decision3 V22: unknown zone_visit_rule {rule!r} (allowed: {', '.join(VISIT_RULES)})")
+        if rule == "touch_window":                                         # legacy only (old tests / what-if): the last group of touches
             hits = [i for i in range(int(k0), t + 1) if A["low"][i] <= hi and A["high"][i] >= lo]
             arm = hits[-1] if hits else t
             for i in reversed(hits[:-1]):

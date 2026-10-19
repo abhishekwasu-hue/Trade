@@ -469,3 +469,27 @@ def test_live_watched_levels_show_only_location_bands_with_confluence_as_a_label
     from bots_common import level_reaction as LR
     areas = PO.trade_side_areas(rows, PO.ENGINE_TFS, 22400.0, {"ok": True, "trend": "DOWN", "sides": {LR.BEAR}}, 3)
     assert {round(a[1]) for a in areas} == {22544, 22725}
+
+
+def test_unknown_zone_visit_rule_fails_loudly():
+    """Reviewer (Z-1v): a typo in `zone_visit_rule` must never silently pick a visit rule — V22 refuses at start, and again if the setting
+    is changed later (visit() checks too)."""
+    from tests import oct12_fixture as F
+    m15, fut, ltf = F.build(mirror=False)
+    with pytest.raises(ValueError, match="unknown zone_visit_rule 'close-away'"):
+        E3.V22(m15, s={"zone_visit_rule": "close-away"}, ltf=ltf, futures=fut)
+    V = E3.V22(m15, ltf=ltf, futures=fut)
+    V.s["zone_visit_rule"] = "touch"
+    with pytest.raises(ValueError, match="unknown zone_visit_rule 'touch'"):
+        V.visit(len(m15) - 1, {"lo": 1.0, "hi": 2.0, "id": None}, -1)
+
+
+def test_live_row_payload_carries_the_level_timeframe_and_confluence_label():
+    """Abhi Z-1u: the engine_signal row payload keeps the 1H zone's own timeframe and its "confluence: Daily …" label (evidence only)."""
+    import json
+    import engine3_live as L
+    r = {"bar_end": "2030-03-04 10:00:00", "decision": "wait", "checklist": {"①": [True, ""]}, "conviction": None, "risk": None,
+         "level": {"id": 7, "tf": "1H", "role": "resistance", "lo": 22543.75, "hi": 22621.8,
+                   "confluence_label": "confluence: Daily 22,476–22,795"}}
+    lv = json.loads(L.row_from_v22("NIFTY", r, lambda: "2030-03-04 10:00:05")["payload"])["level"]
+    assert lv["tf"] == "1H" and lv["confluence_label"] == "confluence: Daily 22,476–22,795" and (lv["lo"], lv["hi"]) == (22543.75, 22621.8)

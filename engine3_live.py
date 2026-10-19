@@ -574,8 +574,8 @@ def row_from_v22(symbol, r, now_fn):
                                                             "weekly_trend", "daily_phase", "mature", "trend_notes", "trend_cap",
                                                             "mark", "conviction", "commitment_form", "missing", "checklist", "volume_note",
                                                             "m1")},
-               "level": {k: lv.get(k) for k in ("id", "role", "lo", "hi", "births", "sweeps", "dist", "state", "broken_ts", "far_swing",
-                                                "flipped_ts")} if lv else None,
+               "level": {k: lv.get(k) for k in ("id", "tf", "role", "lo", "hi", "births", "sweeps", "dist", "state", "broken_ts", "far_swing",
+                                                "flipped_ts", "confluence_label")} if lv else None,   # Abhi Z-1u: confluence = label
                "risk": rk or None, "flip_context": _flip_ctx(r.get("flip_retest")), "zone_read": _zone_sum(r.get("zone_read")),
                "data_problem": (r.get("commit") or {}).get("data_problem"), "volume_measure": r.get("volume_measure"),
                "range_state": r.get("range_state"), "watch_list": r.get("watch_list")}

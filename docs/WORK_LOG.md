@@ -2714,3 +2714,15 @@ legs owner वि. reader2 gate).
 - **Tests:** नवीन `tests/test_approval_band_width.py` (8: helpers, setting override, caption रुंदी / इशारा / इशारा नाही, missing पट्टा, pre-open,
   सारांश); `test_telegram_cleanup` ची सारांश ओळ ", 61 pts wide" ने (हेतुपूर्वक wording बदल). OPEN_QUESTIONS BW-1.
 - **Deploy:** git pull पुरे (नवीन setting default ⇒ DB migration नाही); dashboard restart केल्यावर setting बदलता येईल.
+
+## 2026-10-19 · #329 re-review fixes (branch `claude/zone-study-answers`)
+
+- **main merge:** #330 (approval band width) सोबत conflicts — दोन्ही ठेवले: pre-open `area_words` = confluence label + रुंदी; 15:45 "Nearest" ओळीत
+  आता confluence label सुद्धा (आधी zone type '' जात होता). Abhi चं "merged band — check" wording तसंच ठेवलं (Abhi चा शब्द).
+- **12 Oct xfail:** तिन्ही कारणं assert — (1) Z-1z: 09:30 आधी visit मध्ये 1 bar < study_min_bars 4; (2) 09:30 FUT volume raw 0.59× (slot
+  normalisation साठी आधीची FUT sessions पुरेशी नाहीत — VPS वरचा "45 दिवस" export सुद्धा फक्त 30 Sep पासून: 12 Oct आधी 7 sessions < 10);
+  (3) Z-1v-a: अपयशी dominant candidate चा close पट्ट्याखाली ⇒ visit संपते.
+- **Z-1y:** 22,731.8 ही Abhi ची स्वतःची अपेक्षा (जुना code नाही) — ती strict xfail म्हणून तशीच ठेवली, प्रश्न म्हणून
+  (`test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731`); 13 Oct "bear call नाही" golden वेगळ्या test मध्ये (pass).
+- **Non-blocking:** engine_signal payload `level` मध्ये `tf` + `confluence_label`; अज्ञात `zone_visit_rule` ⇒ V22 सुरू होतानाच ValueError
+  (आणि `visit()` मध्ये); KB: Daily पट्टा location कधी (1H zone BROKEN / DEAD ⇒ Daily location), PF-2 हाच एकमेव रुंदी-बदल.
