@@ -573,4 +573,5 @@ close पट्ट्याखाली ⇒ visit संपली; दिवस�
 C मधले मुख्य: C-1 swings2 degree (k × σ) = "खरा swing" ची व्याख्या; C-3 volume slot baseline; C-4 `accept_closes` 3 (break वि. sweep);
 C-5 ③ `touch_window_bars` 3 (प्रस्ताव: ③ = visit चालू); C-6 commitment candle-shape आकडे; C-12 trendline / chart-band (K5 / K6) MR आकडे;
 C-17 conviction weights; C-18 approval 150-pt इशारा.
+| Z-1z-d | Commitment volume = "visit मधल्या उलट बाजूच्या candles पेक्षा स्पष्ट मोठा". Visit मध्ये उलट बाजूची (रंगाने) candle नसेल तर? 12 Oct: opening push candle **लाल** close (upper wick), मग 09:30 लाल dominant — उलट बाजूची candle नाही ⇒ आत्ता "मात करायला काही नाही" (fail नाही). Raw पाहिलं तर 09:30 चा volume opening candle पेक्षा कमी | नोंद, fail नाही | (a) असंच; (b) push candle (wick ने नाकारलेली) = उलट बाजूची candle मानायची ⇒ तिच्यापेक्षा मोठा हवा |
 
