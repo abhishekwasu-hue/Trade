@@ -77,7 +77,7 @@ def test_higher_low_close_above_lh_dominant_higher_volume_is_entry(mirror):
     assert r["state"] == LR.CONFIRMED and r["entry"] and r["side"] == (LR.BEAR if mirror else LR.BULL), r["events"]
     word = "1M CHoCH: lower high 1,012, close below HL" if mirror else "1M CHoCH: higher low 988, close above LH"
     assert r["ltf_line"].startswith(word) and r["ltf_line"].endswith("at 09:53")
-    assert "volume 2.0× window avg" in r["commit_line"]
+    assert "volume above the opposite side" in r["commit_line"]                   # Abhi: the reading in words
 
 
 @pytest.mark.parametrize("mirror", [False, True])
