@@ -116,3 +116,55 @@ def zone_note(zone_type):
     """engine zone row चा label ("ENGINE_LEVEL_1H|confluence: Daily 22,725–22,810" ⇒ "confluence: Daily 22,725–22,810"); नाही ⇒ ""."""
     parts = str(zone_type or "").split("|", 1)
     return parts[1].strip() if len(parts) == 2 else ""
+
+
+# ------------------------------------------------------------------------------------------------ पट्ट्याची रुंदी (Abhi: merged band — check)
+# Setting `approval_band_warn_pts` (15M SRv2 = `15m_dynamic_sr` पान, cloud_db defaults): पट्टा यापेक्षा रुंद (points) ⇒ approval / pre-open /
+# 15:45 सारांशात "⚠️ merged band — check" ओळ. फक्त दाखवणं — कुठलाही निर्णय / gate / order बदलत नाही. Default 150 (Abhi; OPEN_QUESTIONS).
+BAND_WARN_KEY = "approval_band_warn_pts"
+BAND_WARN_PTS_DEFAULT = 150
+
+
+def band_warn_pts(value=None):
+    """Setting ची किंमत ⇒ float (> 0). नाही / चुकीची ⇒ BAND_WARN_PTS_DEFAULT. settings dict दिली ⇒ त्यातली BAND_WARN_KEY."""
+    if isinstance(value, dict):
+        value = value.get(BAND_WARN_KEY)
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return float(BAND_WARN_PTS_DEFAULT)
+    return v if v > 0 and v == v else float(BAND_WARN_PTS_DEFAULT)
+
+
+def band_width(lo, hi):
+    """|hi − lo| points; lo / hi नाहीत / आकडा नाही ⇒ None (कधीच raise नाही)."""
+    try:
+        lo, hi = float(lo), float(hi)
+    except (TypeError, ValueError):
+        return None
+    w = abs(hi - lo)
+    return w if w == w else None
+
+
+def band_range(lo, hi):
+    """"22,544–22,622 (78 pts)" — पट्टा नाही ⇒ ""."""
+    w = band_width(lo, hi)
+    if w is None:
+        return ""
+    lo, hi = sorted((float(lo), float(hi)))
+    return f"{lo:,.0f}–{hi:,.0f} ({w:,.0f} pts)"
+
+
+def band_flag(lo, hi, warn_pts=None):
+    """पट्टा setting पेक्षा रुंद ⇒ "⚠️ merged band — check (width 312 pts > 150)"; नाहीतर / पट्टा नाही ⇒ ""."""
+    w, lim = band_width(lo, hi), band_warn_pts(warn_pts)
+    return f"⚠️ merged band — check (width {w:,.0f} pts > {lim:,.0f})" if w is not None and w > lim else ""
+
+
+def band_wide_words(lo, hi, warn_pts=None):
+    """pre-open / सारांशाच्या ओळींसाठी: "61 pts wide" किंवा "312 pts wide ⚠️ merged band — check (over 150 pts)"; पट्टा नाही ⇒ "".
+    ">" नाही ⇒ HTML संदेशात escape लागत नाही."""
+    w, lim = band_width(lo, hi), band_warn_pts(warn_pts)
+    if w is None:
+        return ""
+    return f"{w:,.0f} pts wide" + (f" ⚠️ merged band — check (over {lim:,.0f} pts)" if w > lim else "")

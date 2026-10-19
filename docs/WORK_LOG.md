@@ -2696,3 +2696,21 @@ legs owner वि. reader2 gate).
 - **Re-run:** 12 Oct (78-pt पट्टा) bear call नाही ⇒ strict xfail (visit 09:15, 09:30 आधी फक्त 1 bar ⇒ handover नाही; Z-1z). 13 Oct bear
   call नाही; पट्टा 14:30 ला 22,651.10 पार ⇒ FLIPPED (Z-1y). 29 Sep Daily 22,725–22,810 FLIPPED 11:30; FUT नाही ⇒ entry नाही.
   Width distribution + प्रस्ताव 1.5 σ_1H (Z-1x). Charts: trade-data `review/oct12_zone/`, `review/sep29_zone/…_v2.png`.
+
+## 2026-10-14 · Approval संदेशात पट्ट्याची रुंदी + "merged band — check" (branch `claude/approval-band-width`)
+
+- **का:** live decision3 Daily / Weekly आधीचे levels 1H zones मध्ये मिसळतो ⇒ 300–650 pts चे पट्टे. मूळ fix PR #329 मध्ये; तोपर्यंत Abhi ला
+  प्रत्येक approval संदेशात पट्ट्याची रुंदी दिसावी. **फक्त दाखवणं** — कुठलाही निर्णय / gate / order बदलला नाही.
+- **Approval caption (`vision/worker.py`):** ओळ 1 "demand area 22,544–22,622 (78 pts)", details "Area 22,544–22,622 (78 pts) (…)". रुंदी
+  `approval_band_warn_pts` पेक्षा जास्त ⇒ निर्णय ओळीनंतर (ओळ 3, `── details ──` आधी) "⚠️ merged band — check (width 450 pts > 150)". V0 caption
+  सुद्धा. Setting engine मार्गात `paper/engine_entry.engine_gate_tags(..., settings)` ⇒ `tags["gate"]["band_warn_pts"]`; नाही ⇒ default 150.
+- **Pre-open (`scripts/level_gate_preopen.py`):** "supply 22,600–22,950 (1H, ≈35 pts above), 350 pts wide ⚠️ merged band — check (over 150 pts)";
+  details "watching supply 22,600–22,950 (350 pts) ⚠️ …". Setting = चालू bot च्या settings मधून (`bot_status`).
+- **15:45 सारांश (`scripts/paper_daily_summary.py`):** "Nearest supply … (1H, ≈50 pts above the high), 300 pts wide ⚠️ merged band — check (over
+  150 pts)." / "Price traded into … today, 300 pts wide." Setting = 15M SRv2 settings (वाचता नाही ⇒ 150).
+- **Setting:** `15m_dynamic_sr.approval_band_warn_pts` (default 150, `cloud_db` defaults + dashboard 15M SRv2 → 🧭 Signal source मध्ये
+  number input). Helpers: `bots_common/plain_text.py` (`band_warn_pts`, `band_range`, `band_flag`, `band_wide_words`). पट्टा नाही ⇒
+  काहीच जास्त नाही, crash नाही.
+- **Tests:** नवीन `tests/test_approval_band_width.py` (8: helpers, setting override, caption रुंदी / इशारा / इशारा नाही, missing पट्टा, pre-open,
+  सारांश); `test_telegram_cleanup` ची सारांश ओळ ", 61 pts wide" ने (हेतुपूर्वक wording बदल). OPEN_QUESTIONS BW-1.
+- **Deploy:** git pull पुरे (नवीन setting default ⇒ DB migration नाही); dashboard restart केल्यावर setting बदलता येईल.

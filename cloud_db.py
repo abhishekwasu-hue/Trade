@@ -465,6 +465,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "lots": 1,
         "signal_source": "own",          # 🎓 Abhi (Monday PAPER): own / engine / both
         "engine3_use_1m": True,          # 🎓 Abhi Z-1o (a): engine (decision3) ला 1m spot ⇒ swings2 candle आतला high / low क्रम (False ⇒ जुनं)
+        # 🎓 Abhi (merged band — check): approval संदेश / pre-open / 15:45 सारांशात पट्ट्याची रुंदी (pts) दाखवतो; रुंदी यापेक्षा जास्त ⇒
+        # "⚠️ merged band — check" ओळ. फक्त दाखवणं — निर्णय / gate / order बदलत नाही (bots_common/plain_text.band_warn_pts). Default 150.
+        "approval_band_warn_pts": 150,
         # 🎓 Level memory (वापरकर्त्याचा निर्णय: "levels तिथेच राहावेत, बदलू नयेत", डीफॉल्ट चालू) — Dynamic S/R refresh मध्ये जुने levels त्याच
         # किंमतीवर (बघा level_memory.py; logic तोच compute_dynamic_sr, फक्त स्मरण). बंद ⇒ जुनं वर्तन (ताजे top-5, बाकी STALE).
         "level_memory_enabled": True,

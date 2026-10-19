@@ -145,8 +145,14 @@ def modify_ticket(row, entry):
 
 
 def ticket_text(row, t, deadline, exec_min):
+    from bots_common import plain_text as PT
     eng = f" (engine: {t['engine_entry']:g})" if t.get("engine_entry") is not None else ""
-    area = f" · area {min(t['area']):,.0f}–{max(t['area']):,.0f}" if t.get("area") else ""
+    area = f" · area {PT.band_range(min(t['area']), max(t['area']))}" if t.get("area") else ""   # Abhi: पट्ट्याची रुंदी प्रत्येक approval मध्ये
+    try:
+        warn = (_tags(row).get("gate") or {}).get("band_warn_pts")
+    except Exception:                                                    # noqa: BLE001 — फक्त माहिती
+        warn = None
+    flag = PT.band_flag(min(t["area"]), max(t["area"]), warn) if t.get("area") else ""
     show_rr = bool(t.get("show_rr", True))                               # engine signal + R:R gate बंद ⇒ R:R कुठेच नाही (Abhi)
     rr = "NA" if t["rr"] is None else f"{t['rr']:g}"
     tgt = "NA" if t["target"] is None else f"{t['target']:g}"
@@ -159,12 +165,12 @@ def ticket_text(row, t, deadline, exec_min):
               "फक्त entry बदलली — SL / target / lots / strikes / hedge / expiry / risk: engine / dashboard चेच.",
               f"⏱ <b>{pd.Timestamp(deadline):%H:%M} पर्यंत</b> पुन्हा ✅ हवं. ✅ नंतर spot {t['entry']:g} ला पोहोचला तरच PAPER entry; "
               f"{exec_min} मिनिटांत नाही ⇒ position नाही (would-have नोंद)."]
-    from bots_common import plain_text as PT                             # Abhi (TELEGRAM_CLEANUP 3): ओळ 1 साधी, ओळ 2 निर्णय
     rr_txt = "" if not show_rr else (" — R:R not available" if t["rr"] is None else f" — reward is {t['rr']:g}× the risk")
     head = (f"{html.escape(str(row.get('symbol')))}: your changed entry {t['entry']:g} ({'engine reference ' if ref else ''}stop {t['sl']:g}, "
             f"target {tgt}){rr_txt}. "
             "Check the new numbers, then approve again.")
-    return f"{head}\n<b>{PT.DECISION_APPROVE}</b> by {pd.Timestamp(deadline):%H:%M}\n{PT.SEP}\n" + "\n".join(lines)
+    return (f"{head}\n<b>{PT.DECISION_APPROVE}</b> by {pd.Timestamp(deadline):%H:%M}\n" + (f"{html.escape(flag)}\n" if flag else "")
+            + f"{PT.SEP}\n" + "\n".join(lines))
 
 
 def start_modify(row, uid, answer, cq_id, send=None, path=None, now=None):

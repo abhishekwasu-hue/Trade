@@ -339,7 +339,8 @@ def test_summary_symbol_lines_plain_words_like_abhis_example():
     txt = _section(S)
     lines = txt.splitlines()
     assert lines[0] == ("<b>NIFTY</b>: no setup today. Trend DOWN (daily), but price never reached a supply area. Nearest supply "
-                        "22,715–22,776 (1H, ≈90 pts above the high). Daily move: mature (context only), near target 22,183.")
+                        "22,715–22,776 (1H, ≈90 pts above the high), 61 pts wide. Daily move: mature (context only), near target 22,183.")
+    # ↑ ", 61 pts wide" = Abhi (merged band — check): पट्ट्याची रुंदी दाखवणं (हेतुपूर्वक wording बदल, निर्णय नाही)
     assert lines[1].startswith("<b>BANKNIFTY</b>: no setup today. Trend UP (daily). Price reached a demand area 1 time; no entry because "
                                "the reward was too small for the risk.") and "Price traded into demand 50,800–50,900" in lines[1]
     assert len(lines) == 2 and "SENSEX" not in txt                       # default = signal_symbols (NIFTY, BANKNIFTY) — SENSEX ची ओळ नाही

@@ -465,7 +465,7 @@ def test_live_watched_levels_show_only_location_bands_with_confluence_as_a_label
     assert list(rows["zone_type"]) == ["ENGINE_LEVEL_1H|confluence: Weekly 22,476–22,795", "ENGINE_LEVEL_1D"]
     assert PT.tf_word(rows["zone_type"].iloc[0]) == "1H" and PT.zone_note(rows["zone_type"].iloc[0]) == "confluence: Weekly 22,476–22,795"
     words = PO.area_words("BEARISH", 22543.75, 22621.8, rows["zone_type"].iloc[0], 22400.0)
-    assert words.startswith("supply 22,544–22,622 (1H,") and words.endswith("; confluence: Weekly 22,476–22,795)")
+    assert words.startswith("supply 22,544–22,622 (1H,") and words.endswith("; confluence: Weekly 22,476–22,795), 78 pts wide")
     from bots_common import level_reaction as LR
     areas = PO.trade_side_areas(rows, PO.ENGINE_TFS, 22400.0, {"ok": True, "trend": "DOWN", "sides": {LR.BEAR}}, 3)
     assert {round(a[1]) for a in areas} == {22544, 22725}

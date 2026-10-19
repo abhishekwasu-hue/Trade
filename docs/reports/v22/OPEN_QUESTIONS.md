@@ -550,3 +550,9 @@ close पट्ट्याखाली ⇒ visit संपली; दिवस�
 | Z-1y | 13 Oct: 22,543.75–22,621.80 पट्टा स्वतःच्या lifecycle ने 5 Oct ला resistance म्हणून जन्मला (आधी flip नाही); वरच्या break चा far swing = 12 Oct high 22,651.10 ⇒ 13 Oct 14:30 पार ⇒ FLIPPED (support). जुनी "फक्त 22,731.8 पार ⇒ DEAD" अपेक्षा काढलेल्या 8 Oct flip वर आधारित होती | test strict xfail (कारण तपासून) | 22,731.8 अपेक्षा काढायची / तसाच नियम ठेवायचा |
 | Z-1z | Visit (Z-1v) + handover साठी किमान `study_min_bars` 4 bars ⇒ visit च्या पहिल्या 1–3 candles वर entry कधीच शक्य नाही (12 Oct: visit 09:15, 09:30 ची dominant red candle). 12 Oct golden म्हणूनच मिळत नाही | असंच (golden strict xfail) | लहान visit साठी handover वाचन (उदा. sweep / rejection candle = handover) / study_min_bars बदल — Abhi ठरवतील |
 | Z-1v-a | "पट्ट्याबाहेर close" = rejection candle सुद्धा (wick आत, close बाहेर): ती commitment नसेल तर visit संपते — synthetic 12-Oct fixture मध्ये 09:15 spike-rejection मुळे पुढची candle "no visit" | असंच | rejection candle ने visit संपू नये (उदा. पुढच्या candle पर्यंत) |
+
+### Approval पट्ट्याची रुंदी (branch `claude/approval-band-width`)
+
+| # | प्रश्न | आत्ता काय (default) | पर्याय |
+|---|---|---|---|
+| BW-1 | approval_band_warn_pts default 150 (Abhi) | 15M SRv2 (`15m_dynamic_sr`) setting `approval_band_warn_pts` = **150**: पट्टा (hi − lo) 150 pts पेक्षा रुंद ⇒ approval caption, pre-open आणि 15:45 सारांशात "⚠️ merged band — check" ओळ. फक्त दाखवणं (निर्णय / gate / order बदलत नाही). Dashboard: 15M SRv2 → 🧭 Signal source. Own-path (non-engine) signals ⇒ नेहमी default 150 (setting फक्त engine मार्ग, pre-open आणि सारांश वाचतात). PR #329 (root cause) नंतर हा इशारा ठेवायचा का? | 150 ठीक / दुसरा आकडा (उदा. 100 / 200) / #329 नंतर इशारा काढा |
