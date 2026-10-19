@@ -322,7 +322,7 @@ def abc():
     are at a FLIPPED zone (end-to-end G4 path through V22.decide). Volume-less fixture ⇒ c0_volume_required off except where tested."""
     from tests.test_decision3_method import _abc_m15
     m15 = _abc_m15()
-    s = {"maturity_sigma_d": -1e6, "ltf_choch": False, "commit_dom_mult": 0.0}
+    s = {"maturity_sigma_d": -1e6, "ltf_choch": False, "c0_dominance": False}
     return m15, s, E3.V22(m15, s={**s, "c0_volume_required": False}), E3.V22(m15, s=s)
 
 
@@ -406,9 +406,9 @@ def test_slot_normalised_volume_0915_bar_is_not_high_just_because_of_its_slot():
     A9["open"][t0], A9["high"][t0], A9["low"][t0], A9["close"][t0] = 100.0, 104.5, 99.8, 104.0
     lvl = {"lo": 99.0, "hi": 100.6}
     A9["volume"] = vol[: t0 + 1]                                           # raw: 09:15 looks like 3× the window
-    raw_ok, _, raw_cm = M.commitment(A9, t0, UP, lvl, {**S, "commit_dom_mult": 0.0}, win=t0 - 2)
+    raw_ok, _, raw_cm = M.commitment(A9, t0, UP, lvl, {**S, "c0_dominance": False}, win=t0 - 2)
     A9["volume"] = rel[: t0 + 1]                                           # normalised: just its usual slot volume
-    ok, why, cm = M.commitment(A9, t0, UP, lvl, {**S, "commit_dom_mult": 0.0}, win=t0 - 2)
+    ok, why, cm = M.commitment(A9, t0, UP, lvl, {**S, "c0_dominance": False}, win=t0 - 2)
     assert raw_ok and raw_cm["vol_mult"] > 2.0
     assert not ok and cm.get("wait") == "low_volume" and cm["vol_mult"] <= 1.0
 
@@ -614,30 +614,27 @@ def test_real_12_oct_seller_zone_in_zone_study_and_golden_bear_call(real):
         assert pd.Timestamp(cm["choch"]["at"]) > pd.Timestamp(cm["visit_start"]) and cm["vol_mult"] > 1.0
         return
     # the miss — each cause asserted (report, never tuned). The visit starts 12 Oct 09:15 (the 9 Oct visit ended at the 9 Oct 15:00 close
-    # below the band, Abhi Z-1v), so the in-zone study cannot run (1 bar < study_min_bars, never lowered — Z-1z). Abhi Z-1z (c): the
-    # 09:15 → 09:30 pair is read as a two-candle sharp reversal and it is NOT one by structure:
-    #   (1) candle 2's body does not engulf candle 1's (09:30 opened below 09:15's open); (2) its close is not beyond candle 1's low;
-    #   (3) slot-normalised FUT volume is NA (too few earlier FUT sessions — raw is never used for this read);
-    # then (Z-1v-a (a), Abhi) the failed dominant candle's close below the band ends the visit; no later visit that day.
+    # below the band, Abhi Z-1v). Abhi Z-1z: the whole visit is read; the 09:15 push and the 09:30 dominant red candle are read as "a push
+    # rejected and swallowed by a dominant opposite candle" — by structure it is NOT swallowed: 09:30's body does not cover 09:15's body
+    # (it opened below 09:15's body top) and it closes short of 09:15's low. The commitment's volume is not larger than the visit's earlier
+    # candle (no opposite-side candle in the visit). Then (Z-1v-a) the failed dominant candle's close below the zone ends the visit.
     by = {r["ts"][11:16]: r for r in rows}
     c930 = by["09:30"]["commit"] or {}
     assert str(c930.get("visit_start")).startswith("2026-10-12 09:15") and str(c930.get("visit_prev_end")).startswith("2026-10-09 15:00")
     assert c930.get("handover_present") is False and (c930.get("handover_state") or {}).get("seen_at") is None
-    assert c930.get("form") and int(by["09:30"]["bar"]) - int(c930["visit_start_bar"]) < int(V.s["study_min_bars"])
     sr = (c930.get("handover_state") or {}).get("sharp") or {}
     P = sr.get("parts") or {}
-    print(f"\n09:15 → 09:30 two-candle read: {P} · rel {sr.get('rel1')} → {sr.get('rel2')} · {sr.get('why')}")
+    print(f"\n09:15 → 09:30 two-candle read: {P} · {sr.get('why')} · commitment volume vs {c930.get('vol_vs')}: ×{c930.get('vol_mult')}")
     assert P.get("c1_rejected") is True and P.get("c2_dominant") is True                       # the shape is there…
-    assert P.get("c2_engulfs_body") is False and P.get("c2_closes_beyond_c1") is False         # …but not an engulf closing beyond
-    assert P.get("volume_higher") is None and sr.get("rel1") is None and sr.get("rel2") is None  # normalised volume NA
-    assert "insufficient history" in str(c930.get("volume_measure")) and not c930.get("data_problem")
+    assert P.get("c2_engulfs_body") is False and P.get("c2_closes_beyond_c1") is False         # …but it does not swallow the push
+    assert c930.get("vol_mult") is not None and c930["vol_mult"] < 1.0 and c930.get("vol_vs") == "earlier candles of the visit"
     assert str(by["09:30"]["checklist"]["⑥"][1]).startswith(M.REASON[M.C_NO_HANDOVER]) and str(c930.get("visit_end")).startswith("2026-10-12 09:30")
-    assert float(m15["close"].iloc[int(by["09:30"]["bar"])]) < ZONE[0]   # Z-1v-a (a): the failed candidate closed below the band
+    assert float(m15["close"].iloc[int(by["09:30"]["bar"])]) < ZONE[0]   # Z-1v-a: the failed dominant candle closed below the zone
     later = [r for r in rows if r["ts"][11:16] > "09:30" and (r["checklist"].get("③") or [None])[0]]
     assert all(((r.get("commit") or {}).get("confirm_wait") == "no_visit") for r in later), [(r["ts"], r["checklist"]["⑥"]) for r in later]
-    pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — the visit is the 09:15 spike + the 09:30 dominant red candle "
-                 "(1 bar before it < study_min_bars, Z-1z); read as a two-candle sharp reversal (Abhi Z-1z (c)) it fails by structure: "
-                 f"{sr.get('why')}; the 09:30 close below the band ends the visit (Abhi Z-1v-a (a)) — OPEN_QUESTIONS Z-1z-a")
+    pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — the 09:30 dominant red candle does not swallow the 09:15 "
+                 f"push by structure ({sr.get('why')}); its volume is not larger than the visit's earlier candle; its close below the zone "
+                 "ends the visit (Abhi Z-1v-a) — OPEN_QUESTIONS Z-1z-a")
 
 
 def test_real_oct_1_to_12_lifecycle_of_the_22544_22622_band(real):
@@ -717,7 +714,6 @@ def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmu
     f = V.levels.flip_view(L, t_flip)
     assert f["far_swing"]["price"] == pytest.approx(22569.65) and f["far_swing"]["source"] == "first_confirmed_after_break"
     assert float(m15["low"].iloc[t_flip:ix[-1] + 1].min()) >= 22569.65 - 1e-6   # reached by confirmation, never traded through
-    wide = []
     for t in ix:
         r = V.decide(t)
         if r["ts"][11:16] in ("12:00", "12:15"):
@@ -725,17 +721,8 @@ def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmu
             print(f"{r['ts'][11:16]} {r['decision']} lvl {(r.get('level') or {}).get('id')} ③ {r['checklist'].get('③')} "
                   f"⑥ {r['checklist'].get('⑥')} · visit {cm.get('visit_start')} (previous ended {cm.get('visit_prev_end')}) · handover "
                   f"{cm.get('handover_state')} · CHoCH {cm.get('choch_vs_arm') or cm.get('ltf_line')}")
-            if (r.get("level") or {}).get("id") != L.id:                   # Abhi Z-1x: only the exact cause may hide the pullback read
-                me = [x for x in V.levels.snapshot(t) if x["id"] == L.id]
-                assert me and me[0]["too_wide"] is True and me[0]["width_sigma"] > float(V.s["trade_band_max_sigma"]), me
-                wide.append((r["ts"][11:16], me[0]["width"], me[0]["width_sigma"]))
-            else:
-                assert r["checklist"]["③"][0] is True                     # the pullback into the flipped zone
+            assert (r.get("level") or {}).get("id") == L.id and r["checklist"]["③"][0] is True   # the pullback into the flipped zone
         assert r["decision"] != "setup"                                    # no FUT that day ⇒ no entry
-    if wide:
-        pytest.xfail(f"29 Sep: the Daily band 22,725.45–22,809.90 is {wide[0][1]:,.2f} pts = {wide[0][2]}σ_1H > trade_band_max_sigma "
-                     f"{V.s['trade_band_max_sigma']} (Abhi Z-1x) ⇒ no trade location, 'check' — the 12:00 / 12:15 pullback is not read on "
-                     "it (OPEN_QUESTIONS Z-1x-a: does the 1.5σ_1H cap apply to a Daily location band?)")
 
 
 # ------------------------------------------------------------------------------------------------ Abhi A / B: in-zone study, watch-list

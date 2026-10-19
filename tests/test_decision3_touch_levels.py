@@ -57,7 +57,7 @@ def test_sep29_read_is_touch_buyers_exhausting_dominant_engulf(mirror):
     assert ok3, why3
     assert not M.at_level_or_confirm(A, T_1215, d, _lvl(FAR, mirror), s)[0]  # दूरचा level: स्पर्श नाही
     ok6, why6, cm = M.commitment(A, T_1215, d, lvl, s, None, win=T_1100)       # c0: study window 11:00 पासून
-    assert ok6 and cm["form"] == "engulf" and cm["body_mult"] >= float(s["commit_dom_mult"]), why6
+    assert ok6 and cm["form"] == "engulf" and cm["body_mult"] > 1.0, why6
     assert cm["vol_na"] and cm["grade"] == "B"                                # volume नाही (NA) ⇒ कमाल B
     zs = M.zone_study(A, T_1100, T_1215, d, s)
     assert zs["counter_weakening"] is True and not zs["absorption"]           # a2: buying (mirror: selling) candles दमल्या
@@ -154,5 +154,5 @@ def test_real_sep29_1215_touch_and_dominant_engulf():
     assert A["high"][T_1215] >= SUPPLY["lo"]                                  # 12:15 high पट्ट्यात
     assert M.at_level_or_confirm(A, T_1215, M.DOWN, SUPPLY, s)[0]
     ok6, _, cm = M.commitment(A, T_1215, M.DOWN, SUPPLY, s, None, win=T_1100)
-    assert ok6 and cm["form"] == "engulf" and cm["body_mult"] >= float(s["commit_dom_mult"])
+    assert ok6 and cm["form"] == "engulf" and cm["body_mult"] > 1.0
     assert M.zone_study(A, T_1100, T_1215, M.DOWN, s)["counter_weakening"] is True

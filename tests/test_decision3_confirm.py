@@ -172,7 +172,7 @@ def _v22_setup_bar():
     from decision3 import engine as E3
     from tests.test_decision3_method import _abc_m15
     m15 = _abc_m15()
-    s = {"maturity_sigma_d": -1e6, "commit_dom_mult": 0.0}                 # fixture ला dominant candle नाही ⇒ c0 बंद; c1 default (चालू)
+    s = {"maturity_sigma_d": -1e6, "c0_dominance": False}                 # fixture ला dominant candle नाही ⇒ c0 बंद; c1 default (चालू)
     s["level_flip_rule"] = "acceptance"                                    # fixture चा setup acceptance-flip level वर (जुना §5.4) — Z-1 pin;
     s["a2_handover_required"] = False                                      # Z-1m आधीचा fixture (handover नसलेला) — pin
     s["c0_volume_required"] = False                                        # volume-नसलेला fixture ⇒ जुनी NA प्रथा pin (Z-1c नवा नियम: flip tests)
