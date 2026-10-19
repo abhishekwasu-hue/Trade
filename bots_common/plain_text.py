@@ -113,7 +113,7 @@ def tf_word(zone_type):
 
 
 def zone_note(zone_type):
-    """engine zone row चा label ("ENGINE_LEVEL_1H|confluence: Daily 22,725–22,810" ⇒ "confluence: Daily 22,725–22,810"); नाही ⇒ ""."""
+    """engine zone row चा label ("ENGINE_LEVEL_1H|confluence: Daily <low–high>" ⇒ "confluence: Daily <low–high>"); नाही ⇒ ""."""
     parts = str(zone_type or "").split("|", 1)
     return parts[1].strip() if len(parts) == 2 else ""
 
@@ -147,7 +147,7 @@ def band_width(lo, hi):
 
 
 def band_range(lo, hi):
-    """"22,544–22,622 (78 pts)" — पट्टा नाही ⇒ ""."""
+    """"<low>–<high> (<width> pts)" — पट्टा नाही ⇒ ""."""
     w = band_width(lo, hi)
     if w is None:
         return ""

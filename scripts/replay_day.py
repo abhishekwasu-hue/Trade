@@ -434,7 +434,7 @@ def _main(argv=None):
     nv = int(np.isfinite(vol[bars]).sum()) if vol is not None else 0
     print(f"{a.symbol} {day.date()} source={src}{' (SYNTHETIC FIXTURE, खरा data नाही)' if src == 'synthetic' else ''} · bars {lo}–{hi}: "
           f"{len(bars)} · FUT volume on {nv}/{len(bars)} bars · LTF 5M {'yes' if V.ltf is not None else 'MISSING'} · "
-          f"c0 dominant ×{V.s['commit_dom_mult']} · c1 LTF CHoCH {'required' if V.s.get('ltf_choch', True) else 'off'} · "
+          f"c0 dominant {'(largest candle of the visit)' if V.s.get('c0_dominance', True) else 'off'} · c1 LTF CHoCH {'required' if V.s.get('ltf_choch', True) else 'off'} · "
           f"level_death_side {V.s.get('level_death_side', '—')} · 09:15 entry {'on' if V.s.get('entry_first_bar') else 'off'}"
           f"{' · legacy ⑦ R:R' if V.rr_step else ''}")
     rows = V.run(bars)

@@ -2,7 +2,8 @@
 
 जन्म (known_at = त्या घटनेचा 15M close; त्याआधी level अस्तित्वात नाही):
   (a) 1H trend-degree swing = थर 1 D2 pivot (swings2) किंवा Daily swing. पट्टा = त्या swing candle (1H / Daily) चा wick-to-body
-      (H ⇒ [body वरची कडा, high], L ⇒ [low, body खालची कडा]); किमान रुंदी σ_1H × level_min_width_sigma (टोकापासून body कडे वाढवून).
+      (H ⇒ [body वरची कडा, high], L ⇒ [low, body खालची कडा]) — त्या candle चा स्वतःचा पट्टा (Abhi Z-1x: आकड्याने रुंद नाही;
+      `level_min_width_sigma` > 0 = जुनी किमान रुंदी, फक्त what-if).
   (b) BOS: 15M close शेवटच्या confirmed D2 H वर (↑) / L खाली (↓) ⇒ त्या impulse चा origin = BOS आधीचा उलट D2 pivot; base = origin नंतरची
       पहिली trend-दिशेची 1H candle — तिचा पट्टा ↑ [low, open] / ↓ [open, high] (base चा उगम-भाग; किमान रुंदी). Role: ↑ support, ↓ resistance.
   (c) S/R flip (spec §5.4): पट्ट्यापलीकडे सलग `accept_closes` 15M closes (acceptance) ⇒ भूमिका उलट (support ⇄ resistance) — मृत्यू नाही.
@@ -459,7 +460,7 @@ class Levels:
                     births.setdefault(t, []).append((SUP if d > 0 else RES, lo, hi, "b", origin.price))
             for role, lo, hi, why, anchor in births.get(t, []):
                 L = self._born(t, role, lo, hi, why, anchor)
-                if not np.isfinite(self.sig1h[t]):
+                if not np.isfinite(self.sig1h[t]) and float(self.s["level_min_width_sigma"]) > 0:   # PF-2 only with the legacy min width
                     prov.add(L.id)
                     if not (L.prov and L.prov[-1][1] is None):
                         L.prov.append((t, None))                           # PF-2: min width from the median 1H range (σ_1H missing)
@@ -575,8 +576,8 @@ class Levels:
     def snapshot(self, t):
         """t च्या close ला जिवंत levels (dict), किंमतीपासूनच्या अंतरासह. Abhi Z-1u: each with its own `tf`; a 1H level lists the
         overlapping alive Daily / Weekly bands as `confluence` (+ `confluence_label`, evidence); `trade_location` = 1H, or Daily with no
-        overlapping 1H zone (not BROKEN / DEAD), never Weekly (context only) — and no wider than `trade_band_max_sigma` × σ_1H (Abhi Z-1x,
-        default 1.5; wider ⇒ `too_wide` True, "check", no trade).
+        overlapping 1H zone (not BROKEN / DEAD), never Weekly (context only) — `trade_band_max_sigma` × σ_1H (Abhi Z-1x,
+        default None = no cap — a zone that looks too wide is fixed in its construction; a cap is a what-if only).
         `width` (points) / `width_sigma` are facts for the width report (Abhi: max width — the setting stays None until he decides)."""
         c = float(self.A["close"][t])
         sg = self.sig1h[t]
@@ -748,7 +749,7 @@ def tf_word(x):
 
 
 def confluence_label(conf):
-    """Abhi Z-1u: "confluence: Daily 22,725–22,810" (and / or Weekly) for a 1H zone overlapped by higher-timeframe bands — evidence."""
+    """Abhi Z-1u: "confluence: Daily <low–high>" (and / or Weekly) for a 1H zone overlapped by higher-timeframe bands — evidence."""
     if not conf:
         return None
     return "confluence: " + "; ".join(f"{TF_WORD.get(x['tf'], x['tf'])} {x['lo']:,.0f}–{x['hi']:,.0f}" for x in conf)

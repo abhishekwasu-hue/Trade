@@ -228,18 +228,15 @@ def engine_problem(sym, engine_fn, now, stale_hours=ENGINE_STALE_HOURS, cron_ins
 
 def engine_zone_rows(levels):
     """engine levels (`watched_levels`: role / lo / hi) ⇒ market_zones सारख्या rows (zone_type …_1H) — trade_side_areas तेच वापरते.
-    फक्त tradeable (`engine3_live.tradeable_levels`: BROKEN / DEAD नाहीत) + रुंदीमुळे वगळलेले (`too_wide`, Abhi Z-1x) — label "check, no trade"."""
-    from engine3_live import display_levels
+    फक्त tradeable (`engine3_live.tradeable_levels`: BROKEN / DEAD नाहीत)."""
+    from engine3_live import tradeable_levels
     tf = {"1H": "1H", "D": "1D", "W": "W"}
 
-    def note(x):                                                           # Abhi Z-1u: confluence = label only; Z-1x: too wide = "check"
-        parts = [x["confluence_label"]] if x.get("confluence_label") else []
-        if x.get("too_wide"):
-            parts.append(f"too wide ({x.get('width_sigma')}σ) — check, no trade")
-        return ("|" + "; ".join(parts)) if parts else ""
+    def note(x):                                                           # Abhi Z-1u: confluence = label only
+        return f"|{x['confluence_label']}" if x.get("confluence_label") else ""
     return pd.DataFrame([{"zone_type": f"ENGINE_LEVEL_{tf.get(x.get('tf'), '1H')}" + note(x),
                           "zone_low": float(x["lo"]), "zone_high": float(x["hi"]), "status": "ACTIVE"}
-                         for x in display_levels(levels)], columns=["zone_type", "zone_low", "zone_high", "status"])
+                         for x in tradeable_levels(levels)], columns=["zone_type", "zone_low", "zone_high", "status"])
 
 
 def active_bot_areas(sym, active, ctx, last, zones, engine_fn=None, n=3):

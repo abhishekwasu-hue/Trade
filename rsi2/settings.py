@@ -19,6 +19,8 @@ DEFAULTS = {
     "div_rsi_window": 2,                                 # RSI extreme = price pivot ± इतके bars (RSI peak 1 bar lead / lag करू शकतो)
     "div_bars": {"15M": (3, 50), "1H": (3, 35), "5M": (3, 60)},   # दोन pivots मधले bars (min, cap): Abhi RSI-2 ⇒ किमान 3 सगळ्या TF वर
                                                                   # (dashboard: "RSI div min bars"); cap फक्त safety; मुख्य मर्यादा = लागोपाठचे pushes
+    "div_bar_window": False,                             # Abhi (final): consecutive real swings, no bar counts / minimum gaps. True = जुना
+                                                         # div_bars window (what-if only)
     "div_hidden": False,                                 # hidden divergence फक्त fact म्हणून, default बंद (Abhi ने वापर सांगितलेला नाही)
     "div_degrees": (0, 1, 2),                            # swings2 degrees (प्रत्येक degree वेगळी; same pair दोन degrees ⇒ दोन्ही नोंद)
     "div_show": True,                                    # dashboard toggle "Show RSI divergences" default (फक्त display)
@@ -42,6 +44,7 @@ REGISTER = {
     "div_rsi_window": ("±2 bars", "1/2/3", "Abhi spec (K-RSI §3)", "RSI extreme price pivot च्या ± N bars मध्ये (फक्त read / confirm bar पर्यंतचे)"),
     "div_bars": ("15M 3–50 · 1H 3–35 · 5M 3–60", "dashboard (min)", "Abhi नियम (RSI-2: किमान 3 bars)",
                  "bar window (safety cap ≈ 3–4 × RSI period); cap ने नाकारलेल्या जोड्या `cap_rejected` मध्ये नोंद"),
+    "div_bar_window": ("off", "on / off", "Abhi नियम (final)", "RSI divergence = लागोपाठचे खरे swings; bar counts / gaps नाहीत (on = जुनं what-if)"),
     "div_hidden": ("off", "on / off", "Abhi spec (K-RSI §4)", "hidden divergence: फक्त fact, verdict मध्ये कधीच नाही"),
     "div_degrees": ("D0, D1, D2", "—", "व्याख्या (RSI-1 उघडा)", "swings2 degrees: प्रत्येक degree चे लागोपाठचे same-kind pivots (open question RSI-1)"),
     "div_show": ("on", "on / off", "Abhi spec (K-RSI §8a)", "dashboard toggle 'Show RSI divergences' — display only, trading वर परिणाम नाही"),

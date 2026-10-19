@@ -283,11 +283,9 @@ class V22:
         L = self.levels.L[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(self.levels.L) else None
         broken = None if L is None else (lambda u: L.state_at(int(u)) in (FL.BROKEN, FL.DEAD))
         sharp = None
-        if bool(self.s.get("sharp_reversal_handover", True)):              # Abhi Z-1z (c): slot-normalised volume only (never raw)
-            LA = self.levels.A
-            rel = LA["volume"] if LA.get("volume_raw") is not None else np.full(len(LA["close"]), np.nan)   # no FUT ⇒ NA
+        if bool(self.s.get("sharp_reversal_handover", True)):              # Abhi Z-1z: push rejected + swallowed by a dominant candle
             lo, hi = float(lvl["lo"]), float(lvl["hi"])
-            sharp = lambda i, a0: M.sharp_reversal(A, i, d, lo, hi, self.s, a0=a0, rel=rel)  # noqa: E731
+            sharp = lambda i, a0: M.sharp_reversal(A, i, d, lo, hi, self.s, a0=a0)  # noqa: E731
         return M.handover_episode(A, arm, t, d, self.s, broken=broken, sharp=sharp)
 
     def step1(self, t):
