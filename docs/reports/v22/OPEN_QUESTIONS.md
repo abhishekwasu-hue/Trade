@@ -594,10 +594,10 @@ Implementation per layer: `docs/reports/v22/METHOD_MAP.md`.
 | C-12 | Lines from two separate reactions on the structure's own swings (§3 Lines) | 4 |
 | C-17 | No scores: A = the required set + ≥ 1 confirming piece; B = the required set only (§5) | 6 |
 | C-18 | Approval width alert = operational display; decided with the output (layer 6) | 6 |
-| C-24 | My own definitions are replaced by the method's wording in their layers | 1–6 |
-| C-8 | Power shift (evidence) = comparisons: pullback candles smaller than the impulse candles, overlapping bodies — listed as confirming evidence, not scored (§3, §4) | 3 |
+| C-24 | Definitions coded earlier without Abhi's wording are replaced by the method's wording in their layers | 1–6 |
+| C-8 | Power shift is not in the method's confirming-evidence list (§4) ⇒ reported as context only, never scored or required; its sub-checks by comparison (§3 Structure) | 3 |
 | C-11 | K extreme reset when price makes a new extreme beyond the old one (§3 Structure) | 1 |
-| C-14 | Prior Daily / Weekly swings kept as levels by structure (the trend-degree swings the current range can reach), not by an ATR distance (§3 Areas) | 2 |
+| C-14 | Prior Daily / Weekly swings are areas like any other (§3 Areas: built from their own base, armed ahead of price in the trend direction, §4 Watch) — no ATR-distance filter | 2 |
 | C-15 | Fourth-attempt / wave-count gates removed (§6 Never: wave-count gates) | 6 |
 | C-16 | G4 approach volume = comparison only; context, never a gate (§3 Volume: "the approach does not decide") | 3 |
 | C-19 | RSI compares consecutive real swings of the same degree (§3 RSI) | 5 |
