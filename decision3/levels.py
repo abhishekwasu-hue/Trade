@@ -421,7 +421,8 @@ class Levels:
         k = 0
         known = []
         from swings2 import settings as S2                                 # method §3: "a swing" = a swing of the STRUCTURE — the finest
-        low = min(S2.DEFAULTS["structure_degrees"])                        # structure degree (Abhi's approved D1 / D2); D0 = wiggles
+        low = min((self.res.get("settings") or S2.DEFAULTS).get("structure_degrees", S2.DEFAULTS["structure_degrees"]))   # structure
+        # degree as the swings were built (Abhi's approved D1 / D2); D0 = wiggles
         fin = next((d for d in sorted(self.res["pivots"]) if d >= low and self.res["pivots"].get(d)), None)   # inside a leg, not swings
         pv0 = sorted(self.res["pivots"].get(fin, []) if fin is not None else [], key=lambda p: p.confirm_bar)
         k0 = 0

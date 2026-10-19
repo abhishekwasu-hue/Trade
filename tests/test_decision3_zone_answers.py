@@ -616,6 +616,18 @@ def test_structural_break_needs_a_swing_formed_beyond_the_area(mirror):
         LV.Levels(res_of(m, [P("H", 118, 8, 10)]), s={"break_rule": "two_closes"})
 
 
+def test_a_d0_wiggle_beyond_the_area_is_not_a_swing_for_the_break():
+    """Method §3 "small wiggles inside a leg are not swings": the swing formed beyond must be of the structure (Abhi's approved D1 / D2,
+    swings2 `structure_degrees`). The same turn beyond the band only at D0 ⇒ sweep; at D1 ⇒ broken."""
+    m, _, f = _break_case(False)
+    res = res_of(m, [P("H", 118, 8, 10)], [P("H", 118, 8, 10), P("L", 112, 14, 16)])
+    res["pivots"][0] = [P("H", 120.5, 20, 22)]
+    Z = _zone(LV.Levels(res), f)
+    assert not [b for b, k, _ in Z.events if k == "broken"] and Z.count("sweep", len(m) - 1) >= 1
+    res["pivots"][1] = res["pivots"][1] + [P("H", 120.5, 20, 22)]
+    assert [b for b, k, _ in _zone(LV.Levels(res), f).events if k == "broken"] == [22]
+
+
 @pytest.mark.parametrize("mirror", [False, True], ids=["resistance", "support"])
 def test_structural_reclaim_mirrors_the_break(mirror):
     """The break's mirror (OPEN_QUESTIONS L2-b): a BROKEN area is reclaimed by a close back on its role side (outside the band) AND a
