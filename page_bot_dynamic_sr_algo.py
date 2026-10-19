@@ -1398,7 +1398,6 @@ def render():
     engine3_use_1m = _L3.use_1m({"engine3_use_1m": settings.get("engine3_use_1m")})
     from bots_common import plain_text as _PT
     approval_band_warn_pts = _PT.band_warn_pts(settings)
-    engine3_band_max_sigma = _L3.band_max_sigma(settings)            # Abhi Z-1x: default 1.5 × σ_1H
     if strategy_key in ("1m_instant", "15m_dynamic_sr"):
         # 🎓 Abhi (Monday PAPER): signal कुठून — own (bot चा स्वतःचा, default) / engine (common analysis engine चा setup) / both (दोन्ही एकाच
         # दिशेला तरच). कुठलाही असो: Vision + ✅ approval शिवाय PAPER entry नाही; engine चं मत caption मध्ये नेहमी (shadow).
@@ -1422,11 +1421,6 @@ def render():
                                                          value=float(approval_band_warn_pts), step=10.0,
                                                          key=_widget_key(strategy_key, symbol, "approval_band_warn_pts"),
                                                          help="फक्त Telegram संदेशात इशारा — निर्णय / gate / order बदलत नाही. Default 150.")
-                # 🎓 Abhi Z-1x: engine चा trade पट्टा जास्तीत जास्त इतके × σ_1H; रुंद ⇒ trade नाही, "check" (पट्टा कधीच गुपचूप रुंद / अरुंद नाही)
-                engine3_band_max_sigma = st.number_input("Engine: कमाल पट्टा रुंदी (× σ_1H)", min_value=0.1,
-                                                         value=float(engine3_band_max_sigma), step=0.1,
-                                                         key=_widget_key(strategy_key, symbol, "engine3_band_max_sigma"),
-                                                         help="यापेक्षा रुंद पट्टा ⇒ engine trade करत नाही, pre-open / 15:45 मध्ये 'check'. Default 1.5 (Abhi Z-1x).")
 
     st.markdown("---")
     if st.button("💾 Settings जतन करा", key="bdsr_save_btn", type="primary"):
@@ -1474,7 +1468,6 @@ def render():
         if strategy_key == "15m_dynamic_sr":
             new_settings["engine3_use_1m"] = bool(engine3_use_1m)
             new_settings["approval_band_warn_pts"] = float(approval_band_warn_pts)
-            new_settings["engine3_band_max_sigma"] = float(engine3_band_max_sigma)
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_support_max"] = int(rsi_support_max)
