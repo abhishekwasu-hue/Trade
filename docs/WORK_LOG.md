@@ -2726,3 +2726,15 @@ legs owner वि. reader2 gate).
   (`test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731`); 13 Oct "bear call नाही" golden वेगळ्या test मध्ये (pass).
 - **Non-blocking:** engine_signal payload `level` मध्ये `tf` + `confluence_label`; अज्ञात `zone_visit_rule` ⇒ V22 सुरू होतानाच ValueError
   (आणि `visit()` मध्ये); KB: Daily पट्टा location कधी (1H zone BROKEN / DEAD ⇒ Daily location), PF-2 हाच एकमेव रुंदी-बदल.
+
+## 2026-10-19 · Abhi Z-1z (c), Z-1v-a (a), Z-1y (a), Z-1x (branch `claude/zone-study-answers`, #329)
+
+- **KB आधी:** K4 मध्ये चार ओळी — structural far swing (sweep wick नाही), दोन-candle sharp reversal = handover, अपयशी dominant candle ⇒ visit
+  संपली, कमाल पट्टा 1.5σ_1H ("check", कधीच गुपचूप रुंद नाही). Method Pack `--check` ✅ (pack मध्ये हे भाग नाहीत).
+- **Code:** `flip.structural` + `far_swing(closes)` (engine, `flip_view`, chart `band_flip_facts` सारखंच); `method.sharp_reversal` (प्रत्येक गहाळ भाग
+  नावाने; volume फक्त slot-normalised — NA ⇒ वाचन नाही, raw कधीच नाही) + `handover_episode(sharp=…)` (commitment bar सुद्धा candle 2 असू शकतो);
+  `trade_band_max_sigma` default 1.5 + `too_wide`; live `engine3_band_max_sigma` (dashboard, cloud_db default 1.5) ⇒ V22 overrides; pre-open /
+  15:45 मध्ये रुंद पट्टे "too wide (Nσ) — check, no trade".
+- **Re-run:** 13 Oct — पट्टा BROKEN, resistance, far swing 22,731.85 ✅ (Abhi ची अपेक्षा, test आता pass). 12 Oct — bear call नाही: 09:15 → 09:30
+  दोन-candle वाचन रचनेने अपयशी (engulf नाही; close 09:15 low च्या 0.15 pt वर; normalised volume NA — 7 sessions < 10) ⇒ xfail त्या तथ्यांवर
+  (Z-1z-a / Z-1z-c). 29 Sep — Daily पट्टा 1.65σ > 1.5 ⇒ "too wide — check" ⇒ xfail त्याच कारणावर (Z-1x-a). FUT export 30 Sep पासूनच.
