@@ -3,19 +3,44 @@
 Pools (t च्या close ला माहीत तेवढेच):
   • buy-side (वर): confirmed D2 swing highs, equal highs (σ_1H × liquidity_eq_sigma), मागच्या दिवसाचा / आठवड्याचा high (PDH / PWH).
   • sell-side (खाली): swing lows, equal lows, PDL / PWL.
-Sweep: किंमत pool पलीकडे (wick किंवा < accept_closes closes) आणि लवकर परत आत close ⇒ ⚡ (acceptance नाही).
-Trapped zone: (a) failed breakout — pool पलीकडे ≥ 1 close, मग परत आत `accept_closes` closes ⇒ breakout traders अडकले; पट्टा = [pool, पलीकडचं टोक].
+Method (default, `liquidity_rule = equal`): equal highs / lows by comparison (the later swing reaches the earlier swing candle's band,
+not beyond); sweep ⚡ = beyond and back inside before any swing formed beyond; trapped = with a close beyond (failed breakout); no day /
+week pools (P2). Legacy: σ tolerance, PDH / PWH, `accept_closes` closes ⇒ acceptance, `lookback` bars.
 फक्त पुरावा / chart (gate नाही). Order / broker call नाही.
 """
 import numpy as np
 
 
+def _method(V):
+    """Abhi's method (default, `liquidity_rule = equal`): equal by comparison, sweep / trap by structure, no day / week pools (P2)."""
+    return V.s.get("liquidity_rule", "equal") == "equal"
+
+
+def _equal(A, p1, p2):
+    """Method §3 "equal": the later swing (p2) reaches the earlier swing candle's own wick-to-body band and does not go beyond it."""
+    o, c = float(A["open"][p1.bar]), float(A["close"][p1.bar])
+    if p1.kind == "H":
+        return max(o, c) <= p2.price <= p1.price
+    return p1.price <= p2.price <= min(o, c)
+
+
 def pools(V, t):
-    """t ला माहीत pools: [{price, side: buy|sell, src}]"""
+    """t ला माहीत pools: [{price, side: buy|sell, src}]. Method: structure swings + equal highs / lows by comparison. Legacy
+    (`liquidity_rule = sigma`): σ_1H × liquidity_eq_sigma equal pools + PDH / PDL / PWH / PWL (day / week pools)."""
     lv = V.levels
     out = []
-    for p in lv.known_pivots(t):
+    known = list(lv.known_pivots(t))
+    for p in known:
         out.append({"price": float(p.price), "side": "buy" if p.kind == "H" else "sell", "src": "swing"})
+    if _method(V):                                                         # an equal pair is ONE pool (the earlier, outer extreme)
+        eq, drop = [], set()
+        for kind in ("H", "L"):
+            ps = sorted((p for p in known if p.kind == kind), key=lambda p: p.bar)
+            for p1, p2 in zip(ps[:-1], ps[1:]):
+                if _equal(lv.A, p1, p2):
+                    eq.append({"price": float(p1.price), "side": "buy" if kind == "H" else "sell", "src": "equal"})
+                    drop |= {id(p1), id(p2)}
+        return [x for p, x in zip(known, out) if id(p) not in drop] + eq
     eq = float(V.s["liquidity_eq_sigma"]) * (lv.sig1h[t] if np.isfinite(lv.sig1h[t]) else 0.0)
     for side in ("buy", "sell"):
         xs = sorted(x["price"] for x in out if x["side"] == side and x["src"] == "swing")
@@ -39,11 +64,38 @@ def pools(V, t):
     return out
 
 
-def sweeps_and_traps(V, t, lookback):
-    """शेवटच्या `lookback` bars मधले sweeps ⚡ आणि trapped zones (pools t-lookback ला माहीत असलेले)."""
+def _sweeps_method(V, t, t0):
+    """Method §3: a pool (structure swing / equal) poked beyond in t0 … t and back inside before any swing formed beyond it ⇒ sweep ⚡;
+    with at least one close beyond before coming back ⇒ trapped (failed breakout). A swing formed beyond ⇒ accepted (no sweep); still
+    beyond at t ⇒ not decided yet. Swings = the finest structure degree known by t."""
+    A = V.levels.A
+    known0 = [p for p in getattr(V.levels, "_known0", []) if p.confirm_bar <= t]
+    sw, tr = [], []
+    for p in pools(V, t0):
+        pr = p["price"]
+        sign = 1 if p["side"] == "buy" else -1
+        bw = [i for i in range(t0, t + 1) if ((A["high"][i] if sign > 0 else A["low"][i]) - pr) * sign > 0]
+        if not bw:
+            continue
+        f = bw[0]
+        if ((A["close"][t] - pr) * sign > 0) or any(q.bar >= f and (q.price - pr) * sign > 0 and q.kind == ("H" if sign > 0 else "L")
+                                                    for q in known0):
+            continue
+        ext = max(A["high"][f:t + 1]) if sign > 0 else min(A["low"][f:t + 1])
+        sw.append({**p, "bar": int(f), "extreme": float(ext)})
+        if any((A["close"][i] - pr) * sign > 0 for i in range(f, t + 1)):
+            tr.append({"lo": min(pr, ext), "hi": max(pr, ext), "kind": "failed_breakout", "side": p["side"], "bar": int(f)})
+    return sw, tr
+
+
+def sweeps_and_traps(V, t, lookback=None, start=None):
+    """Sweeps ⚡ आणि trapped zones in the window start … t (method: the caller's structure window — V22 passes the pullback's start;
+    pools known at its start). Legacy (`liquidity_rule = sigma`): the last `lookback` bars, `accept_closes` closes ⇒ acceptance."""
+    t0 = max(1, int(start)) if start is not None else max(1, t - int(lookback))
+    if _method(V):
+        return _sweeps_method(V, t, t0)
     A = V.levels.A
     acc = int(V.s["accept_closes"])
-    t0 = max(1, t - lookback)
     ps = pools(V, t0)
     sw, tr = [], []
     for p in ps:
@@ -83,7 +135,7 @@ def pool_marks(V, t, per_side=None, max_sigma=None):
     per_side = int(per_side or V.s["liq_marks_per_side"])
     sg = lv.sig1h[t] if np.isfinite(lv.sig1h[t]) else 0.0
     lim = float(max_sigma or V.s["show_distance_sigma"]) * sg if sg > 0 else np.inf
-    tol = float(V.s["liquidity_eq_sigma"]) * sg
+    tol = float(V.s["liquidity_eq_sigma"]) * sg if not _method(V) else 0.0   # method: the equal pool sits at its swing's own price
     c = float(lv.A["close"][t])
     prio = {"PWH": 0, "PWL": 0, "PDH": 1, "PDL": 1, "equal": 2, "swing": 3}
     out = []

@@ -291,6 +291,15 @@ class V22:
         return {"start": start, "prev_end": prev_end, "why": why, "ended_by": ended_by,
                 "approach_from": approach_from if start is not None else None}
 
+    def entry_window(self, t):
+        """Operational schedule (dashboard settings, method P1 / P2 — never part of the reading): the commitment bar may open an entry only
+        when it starts within `entry_open(s)` … `entry_end` (end exclusive: the last bar closes with the market). Legacy
+        `session_windows = True` keeps the old check inside `method.commitment` instead."""
+        if bool(self.s.get("session_windows", False)):
+            return True
+        hm = pd.Timestamp(self._ts[int(t)]).strftime("%H:%M")
+        return M.entry_open(self.s) <= hm < self.s["entry_end"]
+
     def _at_area(self, t, d, lvl):
         """③ (method §3 Visit, §4 "at a visit to an armed area"): a visit to the area is in progress at bar t (structure, never a count
         of candles since the last touch); price came into it from the side away from the trade (a pullback); bar t did not gap or close
@@ -519,6 +528,8 @@ class V22:
         chk["④"] = [ok4, f"power shift {n4}/4 ({', '.join(x for x in ('a_shrinking', 'b_overlap', 'c_no_new_extreme_or_sweep', 'd_rejection_wick') if items[x]) or '—'})"]
         rng = M.range_state(A, t, self.s) and not M.range_broken_by(A, t, d, self.s)   # Q24: पट्ट्याबाहेर close ⇒ range संपली
         ok6, why6, cm = self._confirm(t, d, lvl, k)                         # ⑥ a2 + c0 + c1 (shared, method.confirm)
+        if not self.entry_window(t):                                       # method P2: time is never in the reading — the entry hours are
+            ok6, why6 = False, f"entry वेळ-खिडकीबाहेर (operational schedule) · reading: {why6}"   # an operational schedule after it
         chk["⑥"] = [ok6, why6]
         arm = int(cm.get("arm_bar", t))
         rsi = self.rsi_divergence(t, d, arm)                               # zone evidence (Abhi): never a gate
@@ -534,11 +545,12 @@ class V22:
               "commit_strong": bool(cm.get("big_body") and cm.get("big_range")) if cm else False,   # signal-bar ताकद (आकार); grade वेगळी
               "engulf": bool(cm.get("engulf")) if cm else False,
               "rsi_div": True if rsi.get("found") else None, "volume_low": None, "pattern": None,   # RSI: evidence + only
-              "against_bodies": any((A["close"][i] - A["open"][i]) * d < 0 and M.candle_read(A, i, self.s)["big_body"] for i in last3),
+              "against_bodies": any((A["close"][i] - A["open"][i]) * d < 0 and M.candle_read(A, i, self.s, arm)["big_body"] for i in last3),
               "fourth_attempt": (k["legs"] > int(self.s["max_attempts"])) if self.s.get("wave_gates", False) else None,
               "tl_break": True if (tl and tl["broken"]) else None,           # ⑤ "(असल्यास) तुटली ⇒ grade +": अखंड / नाही ⇒ NA (वजा नाही)
               "tl_confluence": True if "tl" in lvl["births"] else None}      # फक्त नोंद (वजन नाही ⇒ grade वाढत नाही; D12-6)
-        sw, tr = LQ.sweeps_and_traps(self, t, int(self.s["liquidity_lookback"]))                           # §7: pullback ने pool (bear call ⇒ buy-side वर, bull put ⇒ खाली) sweep?
+        sw, tr = (LQ.sweeps_and_traps(self, t, start=k.get("k_open_bar") if k.get("k_open_bar") is not None else arm)
+                  if self.s.get("liquidity_rule", "equal") == "equal" else LQ.sweeps_and_traps(self, t, int(self.s["liquidity_lookback"])))                           # §7: pullback ने pool (bear call ⇒ buy-side वर, bull put ⇒ खाली) sweep?
         side = "buy" if d == M.DOWN else "sell"
         mine = [x for x in sw if x["side"] == side]
         ev["trap_sweep"] = bool(ev["trap_sweep"] or mine or [x for x in tr if x["side"] == side])

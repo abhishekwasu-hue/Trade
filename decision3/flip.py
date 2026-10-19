@@ -145,12 +145,15 @@ def approach_context(A, ts, t, lvl, pivots, s, legs_A=None):
         else:
             pa, ia = float(np.mean(v[ok_p])), float(np.mean(v[ok_i]))
             r = pa / ia if ia > 0 else float("inf")
-            lim = float(s["flip_pullback_vol_ratio"])
-            out["b"] = bool(r < lim)
+            legacy = s.get("candle_rule", "compare") == "ratio"            # method §3: "lower than" by comparison, no ratio limit
+            lim = float(s["flip_pullback_vol_ratio"]) if legacy else None
+            out["b"] = bool(r < lim) if legacy else bool(pa < ia)
+            slot = s.get("volume_baseline", "raw") == "slot"
             out["b_read"] = {"pullback_avg_rel": round(pa, 3), "impulse_avg_rel": round(ia, 3), "ratio": round(r, 3), "limit": lim,
-                             "pullback_bars": len(pb), "impulse_bars": len(ib), "measure": "per-bar average of slot-normalised FUT volume"}
-            out["b_why"] = (f"(b) approach volume {'lower' if out['b'] else 'not lower'} than the flip impulse: {pa:.2f}× vs {ia:.2f}× "
-                            f"slot median per bar (ratio {r:.2f})")
+                             "pullback_bars": len(pb), "impulse_bars": len(ib),
+                             "measure": "per-bar average of " + ("slot-normalised FUT volume" if slot else "raw FUT volume bars")}
+            out["b_why"] = (f"(b) approach volume {'lower' if out['b'] else 'not lower'} than the flip impulse (per-bar average"
+                            + (f", slot median: {pa:.2f}× vs {ia:.2f}×" if slot else "") + ")")
     out["why"] = "G4 context (not a gate): " + " · ".join(x for x in (out["a_why"], out["b_why"]) if x)
     return out
 

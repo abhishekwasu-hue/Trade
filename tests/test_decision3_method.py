@@ -1,6 +1,7 @@
 """थर v2.2 पायरी C — ③ breakout नाही, ④ power shift (2 of a–d; RSI एकटा नाही), ⑥ commitment (body, beyond prev, reclaim, कमकुवत ✘),
 §5.3 range अवस्था, §6 conviction (H1–H3 बाहेर एकटा पुरावा trade नाकारत नाही; trap + commitment ⇒ A; NA पुरावे बेरजेत नाहीत)."""
 import numpy as np
+import pytest
 
 from decision3 import method as M
 from decision3 import settings as S3
@@ -164,7 +165,7 @@ def test_liquidity_sweep_vs_acceptance_and_trap():
     from types import SimpleNamespace as NS
     import pandas as pd
     from decision3 import liquidity as LQ
-    S2 = {**S, "accept_closes": 3, "liquidity_eq_sigma": 0.15}
+    S2 = {**S, "accept_closes": 3, "liquidity_eq_sigma": 0.15, "liquidity_rule": "sigma"}   # the legacy liquidity read (what-if)
 
     def V_of(rows):
         A = A_of(rows)
@@ -180,6 +181,40 @@ def test_liquidity_sweep_vs_acceptance_and_trap():
     trap = [(105, 106, 104, 105), (105, 112, 104, 111), (111, 111.5, 107, 108), (108, 109, 104, 105), (105, 106, 103, 104),
             (104, 105, 102, 103)]                                                                             # 1 close वर, मग 3+ आत
     assert any(x["kind"] == "failed_breakout" for x in LQ.sweeps_and_traps(V_of(trap), 5, 5)[1])
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["buy-side", "sell-side"])
+def test_liquidity_by_the_method_equal_by_comparison_sweep_and_trap_by_structure(mirror):
+    """Abhi's method §3 (default `liquidity_rule = equal`): equal = the later swing reaches the earlier swing candle's own band and does
+    not go beyond it; sweep = beyond and back inside before any swing formed beyond; a close beyond and back = trapped (failed breakout);
+    a swing formed beyond = accepted. No σ tolerance, no close count, no day / week pools."""
+    import pandas as pd
+    from types import SimpleNamespace as NS
+    from decision3 import liquidity as LQ
+    f = (lambda x: 220.0 - x) if mirror else (lambda x: float(x))
+    k = (lambda q: "L" if q == "H" else "H") if mirror else (lambda q: q)
+
+    def V_of(rows, piv, known0=()):
+        rows = [(f(o), max(f(h), f(lo)), min(f(h), f(lo)), f(c)) for o, h, lo, c in rows]
+        A = A_of(rows)
+        ts = pd.Series(pd.date_range("2030-01-07 09:15", periods=len(rows), freq="15min"))
+        lv = NS(A=A, ts=ts, sig1h=np.full(len(rows), 10.0), known_pivots=lambda t: piv, _known0=list(known0))
+        return NS(levels=lv, s=S3.load())
+    base = [(108.0, 110.0, 107.5, 108.5)] + [(105, 106, 104, 105)] * 3
+    p0 = NS(kind=k("H"), price=f(110.0), bar=0, confirm_bar=0)
+    sweep = base + [(105, 112, 104, 108), (108, 109, 106, 107)]                                     # wick above, close back inside
+    sw, tr = LQ.sweeps_and_traps(V_of(sweep, [p0]), 5, start=1)
+    assert [x["src"] for x in sw] == ["swing"] and not tr
+    trap = base + [(105, 112, 104, 111), (111, 111.5, 107, 108), (108, 109, 104, 105)]                # a close above, then back
+    sw, tr = LQ.sweeps_and_traps(V_of(trap, [p0]), 6, start=1)
+    assert sw and [x["kind"] for x in tr] == ["failed_breakout"]
+    acc = V_of(trap, [p0], known0=[NS(kind=k("H"), price=f(111.5), bar=5, confirm_bar=6)])            # a swing formed above ⇒ accepted
+    assert LQ.sweeps_and_traps(acc, 6, start=1) == ([], [])
+    eq = V_of(base + [(105, 109.2, 104.8, 106)], [p0, NS(kind=k("H"), price=f(109.2), bar=4, confirm_bar=4)])
+    assert [x["src"] for x in LQ.pools(eq, 4) if x["src"] != "swing"] == ["equal"]              # 109.2 inside 108.5–110 (wick to body)
+    far = V_of(base + [(105, 108.0, 104.8, 106)], [p0, NS(kind=k("H"), price=f(108.0), bar=4, confirm_bar=4)])
+    assert [x for x in LQ.pools(far, 4) if x["src"] != "swing"] == []                          # below the band ⇒ not equal
+    assert not [x for x in LQ.pools(eq, 4) if x["src"] in ("PDH", "PDL", "PWH", "PWL")]        # P2: no day / week pools
 
 
 def test_chart_text_is_english_only():
@@ -269,14 +304,19 @@ def test_pool_marks_nearest_per_side_dedup_and_priority():
            NS(kind="H", price=106.0, bar=12, confirm_bar=13), NS(kind="L", price=97.0, bar=14, confirm_bar=15),
            NS(kind="H", price=180.0, bar=16, confirm_bar=17)]
     lv = NS(A=A, ts=ts, sig1h=np.full(n, 2.0), known_pivots=lambda t: piv)
-    V = NS(levels=lv, s={**S, "liq_marks_per_side": 2, "show_distance_sigma": 12.0, "liquidity_eq_sigma": 0.15})
-    mk = LQ.pool_marks(V, n - 1)
+    V = NS(levels=lv, s={**S, "liq_marks_per_side": 2, "show_distance_sigma": 12.0, "liquidity_eq_sigma": 0.15, "liquidity_rule": "sigma"})
+    mk = LQ.pool_marks(V, n - 1)                                          # the legacy σ read (what-if); the method read below
     buy = [m for m in mk if m["side"] == "buy"]
     assert len(buy) <= 2 and all(m["price"] >= 100 for m in buy)
     assert not any(abs(m["price"] - 180) < 1 for m in mk)                               # दूरचं (> 12 σ) chart वर नाही
     near103 = [m for m in buy if abs(m["price"] - 103) < 0.2]
     assert len(near103) == 1 and near103[0]["src"] == "equal"                          # 103 / 103.05 ⇒ एकच, EQ ला प्राधान्य
     assert all(m["label"].endswith("BSL") for m in buy) and any(m["side"] == "sell" for m in mk)
+    Vm = NS(levels=lv, s={**S, "liq_marks_per_side": 2, "show_distance_sigma": 12.0})   # method: 103.05 goes beyond 103 ⇒ not equal
+    assert not [m for m in LQ.pool_marks(Vm, n - 1) if m["src"] == "equal"]
+    piv[1] = NS(kind="H", price=102.9, bar=10, confirm_bar=11)               # reaches 103's own band (body 100 … high 103), not beyond
+    near = [m for m in LQ.pool_marks(Vm, n - 1) if abs(m["price"] - 103) < 0.2]
+    assert len(near) == 1 and near[0]["src"] == "equal"                      # one mark, EQ first
 
 
 def test_charts_with_liquidity_layer_render_english_only():

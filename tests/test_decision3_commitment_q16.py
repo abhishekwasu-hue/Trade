@@ -35,7 +35,7 @@ def test_each_reversal_form_passes_at_level_and_fails_away(form):
     A = A_of([(107, 107.5, 105, 106)] + rows)                                       # आधीचा bar level वर ⇒ "उलट बाजूने आलेली"
     t = len(rows)
     ok3, _ = M.at_level(A, t, M.UP, LVL, int(S["touch_window_bars"]))
-    ok6, why6, cm = M.commitment(A, t, M.UP, LVL, S)
+    ok6, why6, cm = M.commitment(A, t, M.UP, LVL, {**S, "candle_rule": "ratio"})   # the legacy ratio forms (what-if); method forms below
     assert ok3 and ok6, (form, why6)
     assert cm["form"] == form and cm["grade"] == grade, cm
     assert not M.at_level_or_confirm(A, t, M.UP, FAR, S)[0]                          # engine चा ③ gate: level पासून दूर ⇒ ✘
@@ -106,9 +106,41 @@ def test_entry_window_end_exclusive():
     A = A_of(rows)
     day = pd.Timestamp("2030-01-07")
     tss = lambda hm: [day + pd.Timedelta(hours=9, minutes=45), day + pd.Timedelta(hours=10), pd.Timestamp(f"2030-01-07 {hm}")]  # noqa: E731
-    assert M.commitment(A, 2, M.UP, LVL, S, tss("15:00"))[0]
-    assert not M.commitment(A, 2, M.UP, LVL, S, tss("15:15"))[0]
-    assert not M.commitment(A, 2, M.UP, LVL, {**S, "entry_first_bar": False}, tss("09:15"))[0]   # जुना नियम (pin, Abhi 13 Oct)
+    L = {**S, "session_windows": True}                                     # legacy: the window inside the reading (what-if)
+    assert M.commitment(A, 2, M.UP, LVL, L, tss("15:00"))[0]
+    assert not M.commitment(A, 2, M.UP, LVL, L, tss("15:15"))[0]
+    assert not M.commitment(A, 2, M.UP, LVL, {**L, "entry_first_bar": False}, tss("09:15"))[0]   # जुना नियम (pin, Abhi 13 Oct)
+    assert M.commitment(A, 2, M.UP, LVL, S, tss("15:15"))[0]               # method P2: the reading never looks at the clock …
+    from types import SimpleNamespace as NS
+    from decision3 import engine as E3
+    V = NS(s=S, _ts=np.array([pd.Timestamp(f"2030-01-07 {hm}") for hm in ("09:15", "09:30", "15:00", "15:15")], dtype="datetime64[ns]"))
+    win = [E3.V22.entry_window(V, i) for i in range(4)]                   # … the entry hours are the operational schedule after it
+    assert win == [True, True, True, False] and E3.V22.entry_window(NS(s={**S, "entry_first_bar": False}, _ts=V._ts), 0) is False
+
+
+COMPARE_FORMS = {                                                          # method §3: body and wicks compared — demand (UP) at 100–101
+    "engulf": [(103, 103.2, 102.6, 102.8), (102.6, 102.7, 101.0, 101.2), (101.1, 103.0, 100.9, 102.9)],
+    "star": [(104.0, 104.1, 101.4, 101.5), (101.4, 101.6, 100.4, 101.45), (101.3, 102.9, 101.2, 102.8)],
+    "doji_confirm": [(103, 103.2, 102.6, 102.7), (101.6, 102.2, 100.6, 101.6), (101.7, 102.5, 101.5, 102.4)],
+    "tweezer": [(103.5, 103.6, 102.4, 102.6), (102.6, 102.7, 100.3, 100.9), (100.9, 101.8, 100.5, 101.7)],
+    "pin": [(103, 103.2, 102.6, 102.8), (102.8, 103.0, 101.9, 102.2), (102.3, 102.5, 100.1, 102.4)],
+    "strong_close": [(103, 103.2, 102.6, 102.8), (102.0, 102.3, 101.9, 102.2), (101.0, 102.9, 100.9, 102.8)],
+}
+
+
+@pytest.mark.parametrize("form", sorted(COMPARE_FORMS))
+@pytest.mark.parametrize("mirror", [False, True], ids=["demand", "supply"])
+def test_commitment_forms_by_comparing_body_and_wicks(form, mirror):
+    """Method §3 Commitment: "any recognised reversal form … described by comparing body and wicks, never by ratios". Mirror: supply."""
+    rows = COMPARE_FORMS[form]
+    if mirror:
+        rows = [(2 * 101.5 - o, 2 * 101.5 - lo, 2 * 101.5 - h, 2 * 101.5 - c) for o, h, lo, c in rows]
+    A = A_of(rows)
+    d = M.DOWN if mirror else M.UP
+    assert M.reversal_form(A, 2, d, S) [0] == form
+    for k in ("commit_body", "commit_close_frac", "pin_wick_min", "star_body_max", "tweezer_tol", "doji_body_max", "candle_avg_n"):
+        assert k in S3.DEFAULTS                                            # legacy what-if values stay registered, never read here
+    assert M.is_doji(101.6, 102.2, 100.6, 101.6, S) and not M.is_doji(101.0, 102.9, 100.9, 102.8, S)
 
 
 def test_range_state_released_when_commitment_closes_beyond_cluster():

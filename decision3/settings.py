@@ -87,6 +87,9 @@ DEFAULTS = {
     "commit_volume_rule": "approach_and_opposite",   # method §3 Commitment: approach leg + visit मधल्या opposite candles पेक्षा मोठा (push +
                                              # commitment वगळून); "opposite" = जुनं (#329, opposite नाही ⇒ grade cap B)
     "volume_baseline": "raw",                # method §3 Volume: raw bars; "slot" = जुनं time-of-day slot baseline (Z-1) — what-if
+    "candle_rule": "compare",                # method §3: candle forms / doji / "big" by comparing body and wicks (big = vs the visit); "ratio" = जुनं
+    "session_windows": False,                # method P2: एकच सलग chart — 2-candle forms दिवस ओलांडतात; entry तास = operational schedule (engine);
+                                             # True = जुनं (form खिडकी + entry खिडकी commitment मध्ये) — what-if
     "sharp_reversal_handover": True,         # Abhi Z-1z: zone मध्ये push नाकारला + dominant उलट candle ने गिळला = handover (तुलना, आकडा नाही)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
     "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.
@@ -199,6 +202,8 @@ REGISTER = {
     "commit_volume_rule": ("approach_and_opposite", "approach_and_opposite / opposite (legacy)", "Abhi नियम",
                            "method §3: larger than the approach leg and the visit's opposite side; push + commitment excluded"),
     "volume_baseline": ("raw", "raw / slot (legacy)", "Abhi नियम", "method §3 Volume: raw bars, no time-slot baselines"),
+    "candle_rule": ("compare", "compare / ratio (legacy)", "Abhi नियम", "method §3: body and wicks compared, never ratios; big = vs the visit"),
+    "session_windows": (False, "False / True (legacy)", "Abhi नियम", "method P2: no session / day split in reading; entry hours = operational"),
     "sharp_reversal_handover": (True, "—", "Abhi नियम", "Abhi Z-1z: zone मध्ये push नाकारला आणि dominant उलट candle ने लगेच गिळला = handover"),
     "pattern_eq_mr": (0.5, "0.3/0.5/0.75", "अंदाज", "a2: double / triple top-bottom टोकं median range च्या इतक्या आत"),
     "ltf_choch": (True, "True / False (what-if)", "Abhi नियम", "LEVEL_BOTS_CONFIRMATION c1: LTF CHoCH by close आवश्यक; mapping 1H/15M ⇒ 5M, 5M ⇒ 1M (method.LTF_OF); swings = साधे 1-bar pivots (zone_pattern सारखेच)"),
