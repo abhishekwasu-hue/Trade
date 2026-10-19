@@ -21,7 +21,8 @@ from tests import oct12_fixture as F
 # नव्या नियमाने BROKEN (trade location नाही). हे tests a2 / c0 / c1 / confluence चे ⇒ जुना flip नियम स्पष्ट pin (असर्ट तसेच);
 # default नियमावर हाच fixture: tests/test_decision3_flip.py::test_oct12_synthetic_fixture_supply_flips_when_the_first_swing_after_the_break_is_confirmed.
 S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False,   # Z-1m आधीचा fixture — pin
-          "level_merge": True, "zone_visit_rule": "touch_window"}   # Abhi Z-1u / Z-1v आधीचा fixture — legacy pin, असर्ट तसेच
+          "level_merge": True, "zone_visit_rule": "touch_window",
+          "commit_volume_rule": "opposite"}   # Abhi Z-1u / Z-1v आधीचा fixture — legacy pin, असर्ट तसेच
 S_OLD = {**S_ROLE, "rr_step": True, "entry_first_bar": False}              # Abhi 13 Oct आधीचे नियम (⑦ R:R + 09:15 फक्त पुरावा) — जुने असर्ट pin
 
 

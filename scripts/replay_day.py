@@ -427,8 +427,9 @@ def _main(argv=None):
         return 2
     es = {**ENGINE_S, **({"rr_step": True} if a.legacy_rr else {}), **({"entry_first_bar": False} if a.no_first_bar_entry else {}),
           **({"level_flip_rule": a.flip_rule} if a.flip_rule else {}),
-          **({"a2_handover_required": False, "range_state_gate": True} if a.legacy_zone_gates else {}),
-          **({"level_merge": True, "zone_visit_rule": "touch_window"} if a.legacy_bands else {})}
+          **({"a2_handover_required": False, "range_state_gate": True, "fast_form_rule": "engulf", "slow_form_rule": "majority",
+              "absorption_rule": "strengthening"} if a.legacy_zone_gates else {}),
+          **({"level_merge": True, "zone_visit_rule": "touch_window", "commit_volume_rule": "opposite"} if a.legacy_bands else {})}
     V = E3.V22(m15, m1, daily, s=es, sealed=HI.sealed_fn(a.symbol) if src != "synthetic" else None, ltf=ltf, futures=fut)
     vol = V.levels.A.get("volume")
     nv = int(np.isfinite(vol[bars]).sum()) if vol is not None else 0

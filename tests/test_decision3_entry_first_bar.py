@@ -18,7 +18,8 @@ from tests.ltf_fixtures import split_bars
 from tests.test_decision3_method import NO_MATURE, _abc_m15
 
 S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False,
-          "level_merge": True, "zone_visit_rule": "touch_window"}   # Z-1 acceptance-flip + Z-1u / Z-1v आधीचा fixture — legacy pin
+          "level_merge": True, "zone_visit_rule": "touch_window",
+          "commit_volume_rule": "opposite"}   # Z-1 acceptance-flip + Z-1u / Z-1v आधीचा fixture — legacy pin
 S_OLD = {**S_ROLE, "rr_step": True, "entry_first_bar": False}
 
 

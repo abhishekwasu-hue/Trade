@@ -150,7 +150,7 @@
 - **Candles ची मालिका:** कोणाचं नियंत्रण? Bodies आणि wicks कोणत्या बाजूला? (K9)
 - **Correction कमकुवत होतोय का:** legs लहान, overlap वाढतोय, spreads आकुंचन, closes पुन्हा वर सरकत आहेत (rising CLV) (K10, K12).
 - **Sweep / spring / upthrust:** A चा low किंवा equal lows थोडे तोडून परत आत close? (K5)
-- **Volume (NIFTY futures, वेळेनुसार normalise):** pullback मध्ये volume सुकतोय का? C-end ला absorption spike? Reversal candle ला volume? (K10.3)
+- **Volume (NIFTY futures, raw bars — method §3):** pullback मध्ये volume सुकतोय का? C-end ला absorption spike? Reversal candle ला volume? (K10.3)
 - **RSI divergence** (फक्त पुरावा): C-end ला regular, किंवा pullback मध्ये hidden (K10).
 - **Chart pattern वाचन:** flag (pullback) की double top / H&S (reversal warning)? (K11)
 
@@ -470,12 +470,12 @@ completed pattern allows, the count is wrong.
   - **PF-2 (जुनं):** "provisional width" फक्त जुन्या किमान-रुंदी what-if मध्ये; Z-1x नंतर पट्टा कधीच रुंद होत नाही.
 - **Zone मधलं वाचन — Abhi ची अंतिम उत्तरं [Abhi]:**
   - **Counter बाजू गायब (Z-1p):** in-zone window च्या दुसऱ्या अर्ध्यात counter-side candle **एकही नाही** (पहिल्या अर्ध्यात होती) ⇒ counter बाजू दमली (दमण्याचं टोक); मग फक्त trend बाजू वाढतेय का ते पाहायचं.
-  - **Handover टिकतो (Z-1q):** handover एकदा दिसला की commitment candle पर्यंत वैध; रद्द फक्त नंतरच्या absorption ने (counter बाजू पुन्हा मजबूत) किंवा zone तुटल्याने. Commitment bar च्या window मध्ये तो पुन्हा दिसायची गरज नाही. प्रत्येक armed zone भेटीसाठी वेगळा; look-ahead नाही.
+  - **Handover टिकतो (Z-1q):** handover एकदा दिसला की commitment candle पर्यंत वैध; रद्द फक्त नंतरच्या absorption ने (उलट बाजू लहान candles मध्ये येत राहते आणि किंमत area पासून दूर जात नाही — sideways base, method §3) किंवा zone तुटल्याने. Commitment bar च्या window मध्ये तो पुन्हा दिसायची गरज नाही. प्रत्येक armed zone भेटीसाठी वेगळा; look-ahead नाही.
   - **क्रम महत्त्वाचा नाही (Z-1r):** handover, LTF CHoCH आणि commitment — तिन्ही commitment bar ला हजर हवेत. अट: CHoCH price zone मध्ये **आल्यानंतरचा** हवा (त्या भेटीच्या arm bar नंतर); zone मध्ये येण्याआधीचा CHoCH मोजायचा नाही.
-  - **Visit (Z-1v):** zone मधलं वाचन फक्त त्याच **भेटीत** (visit): किंमत zone मध्ये शिरते तेव्हापासून structure ने zone सोडेपर्यंत. Visit संपते = निर्णयाच्या candle आधी किंमत zone बाहेर, ज्या बाजूने आली त्या बाजूला close करते (commitment शिवाय). पुढचा प्रवेश = नवी visit, नवं वाचन; आधीच्या visit चा handover पुढे चालत नाही.
-  - **अपयशी dominant candle (Z-1v-a):** dominant candle अपयशी ठरून zone बाहेर close झाली ⇒ visit संपली. पुढचा प्रवेश = नवी visit, नवं वाचन.
-  - **Handover — पूर्ण visit चं वाचन (Z-1z):** zone मधलं वर्तन पूर्ण visit भर वाचायचं — प्रवेशापासून structure ने बाहेर जाईपर्यंत. Zone मध्ये एखादा push नाकारला गेला (push-बाजूची wick, close परत) आणि **लगेच** उलट बाजूच्या dominant candle ने तो गिळला (तिची body push candle ची body झाकते आणि तिच्या टोकापलीकडे close) ⇒ तोच handover. हळू visit मध्ये handover = एका बाजूच्या candles मोठ्या होत आणि दुसरी बाजू दमत. Candles ची किमान संख्या कधीच नाही. Zone बाहेरच्या candles zone study मध्ये नाहीत. LTF CHoCH (close ने) तरीही हवा. वाचन तारीख / session / वेळेवर अवलंबून नाही.
-  - **Volume — trader सारखी तुलना [Abhi]:** volume bars पाहून तुलना: commitment candle चा volume त्याच visit मधल्या उलट बाजूच्या candles पेक्षा स्पष्ट मोठा आहे का? (visit मध्ये उलट बाजूची candle नसेल ⇒ मात करायला काही नाही — नोंद; OPEN_QUESTIONS Z-1z-d.) Zone मध्ये selling (किंवा buying) volume वाढतोय की ओसरतोय? आकडे / गुणोत्तरं नाहीत.
+  - **Visit [Abhi, method §3]:** zone मधलं वाचन फक्त त्याच **भेटीत** (visit): किंमत area मध्ये शिरते तेव्हा सुरू. संपते फक्त रचनेने — किंमत दूर जाऊन area पासून दूर (आली त्या बाजूला) swing बांधते, किंवा area तुटतो / flip होतो, किंवा handover नंतरची commitment candle अपयशी ठरून बाहेर close होते (move गेला; पाठलाग नाही). बाहेर close करून परत येणाऱ्या candles = तीच visit; वेळ visit कधीच संपवत नाही. पुढचा प्रवेश = नवी visit, नवं वाचन; आधीच्या visit चा handover पुढे चालत नाही. "At the area" (③) = visit चालू आहे आणि commitment candle area मध्ये trade करते (merged जोडीची पहिली candle चालते) — area पासून दूरची candle = पाठलाग, entry नाही (P4); candles ची संख्या नाही.
+  - **Approach leg [Abhi, method §3]:** visit आधी area पासून दूर बांधलेल्या शेवटच्या swing नंतरच्या candles पासून visit पर्यंत = किंमत area मध्ये आणणारा leg.
+  - **Handover — पूर्ण visit चं वाचन (Z-1z):** zone मधलं वर्तन पूर्ण visit भर वाचायचं — प्रवेशापासून structure ने बाहेर जाईपर्यंत. **Fast form:** zone मध्ये एखादा push नाकारला गेला (push-बाजूची wick body पेक्षा लांब, close परत) आणि **लगेच** उलट बाजूच्या dominant candle ने तो परत घेतला — ती push candle च्या **body पलीकडे** close करते ⇒ तोच handover (method §3). **Slow form:** visit भर trend बाजूच्या candles मोठ्या होतात, उलट बाजूच्या लहान होतात, आणि volume trend बाजूला झुकतो (नंतरच्या भागात trend बाजूच्या candles चा volume उलट बाजूपेक्षा जास्त). **Absorption:** उलट बाजू लहान candles मध्ये येत राहते, trade बाजू वाढत नाही, आणि किंमत दूर जात नाही (नंतरचा एकही close आधीच्या closes पलीकडे trade बाजूला नाही) ⇒ trade नाही, area तुटेल अशी अपेक्षा. (Handover आणि absorption एकाच वेळी कधीच नाहीत.) Candles ची किमान संख्या कधीच नाही. Zone बाहेरच्या candles zone study मध्ये नाहीत. LTF CHoCH (close ने) तरीही हवा. वाचन तारीख / session / वेळेवर अवलंबून नाही.
+  - **Volume — trader सारखी तुलना [Abhi, method §3]:** raw volume bars पाहून तुलना: commitment candle चा volume approach leg च्या candles पेक्षा आणि त्याच visit मधल्या उलट बाजूच्या candles पेक्षा मोठा आहे का? नाकारलेला push आणि commitment स्वतः या तुलनेत नाहीत. तुलना करायला एकही candle नाही (approach gap, visit मध्ये फक्त push + commitment) ⇒ कोणतीच candle मोठी नाही ⇒ अट पूर्ण, वाचनात "nothing to compare" नोंद (assumed — OPEN_QUESTIONS L3-c). Zone मध्ये selling (किंवा buying) volume वाढतोय की ओसरतोय? आकडे / गुणोत्तरं नाहीत.
   - **RSI divergence [Abhi]:** price चे लागोपाठचे खरे swings आणि त्या swings वरचा RSI यांची तुलना — price नवं टोक करते पण RSI आधीच्या टोकाच्या पलीकडे जात नाही ⇒ divergence. Bar counts / किमान अंतर नाही.
   - **FUT volume gaps (RF-2):** volume असलेल्या bars ची सरासरी, आणि "gaps n/m" नोंद. Window मधल्या setting (default 50%) पेक्षा जास्त bars ला FUT volume नसेल ⇒ entry नाही + एक Telegram ओळ "data problem: FUT volume gaps" (NIFTY / BANKNIFTY, दिवसातून एकदा). Commitment candle चाच volume नसेल ⇒ entry नाही (आधीसारखं).
 
@@ -597,18 +597,19 @@ completed pattern allows, the count is wrong.
   does not count); (3) the dominant commitment candle on higher FUT volume = entry. The order does not matter: all three must be present
   at the commitment candle. No handover or no CHoCH ⇒ no entry. RSI divergence is evidence, not a trigger.
 - **A handover holds — within one visit [Abhi]:** once seen inside the zone, the handover holds until the commitment candle; it is
-  cancelled only by a later absorption (the counter side strengthening again) or by the zone breaking. It counts only within the same
-  VISIT to the zone: when price leaves the zone (closes outside the band, away from it, without a commitment), the visit ends, and the
-  next visit needs a new handover. A visit starts with the first candle that trades into the band and ends with the first candle before
-  the decision candle that closes outside the band on the side price came from. Judged from bars up to the decision only.
+  cancelled only by a later absorption (the opposite side keeps coming in small candles and price does not move away) or by the zone
+  breaking. It counts only within the same VISIT (method §3): a visit starts when price enters the area and ends only by structure —
+  a swing built away from the area, a break / flip, or a commitment after the handover that fails and closes outside (the move is gone;
+  no chasing). Candles that close just outside and come back are the same visit; time never ends it. The next visit needs a new
+  handover. Judged from bars up to the decision only.
 - **The counter side gone = exhausted [Abhi]:** if the counter side disappears from the zone (no counter-side candle in the second half
   of the in-zone study while the first half had one), it counts as exhausted, the extreme of weakening; then only the trade side
   growing is checked.
 - **Overlap / sideways candles inside the zone are the handover study, not a blocker [Abhi]:** a range or sideways base inside a zone is
   read, never used to skip; ranges are traded at their edges (bull put at the range low, bear call at the range high).
-- **Volume in the in-zone study [Abhi]:** compare the average per bar, never sums, and normalise each bar by its time-of-day slot (the
-  median of the same slot over the last 20 sessions, at least 10), because the opening and closing bars are always heavy. With fewer than
-  10 sessions say "volume normalisation: insufficient history" and compare raw per-bar averages, clearly labelled. NIFTY / BANKNIFTY with
+- **Volume in the in-zone study [Abhi, method §3]:** compare raw bars (the average per bar, never sums) — no time-of-day slot
+  baseline. The commitment's volume is larger than the approach leg's candles and the visit's opposite-side candles (the rejected
+  push and the commitment itself not compared); nothing to compare ⇒ no candle is larger ⇒ it holds, named (assumed, L3-c). NIFTY / BANKNIFTY with
   FUT volume missing = a data error ⇒ no entry. Gaps in FUT volume inside the zone: average over the bars that have it and report the
   gaps (n of m bars); more than a set share of the window's bars without FUT volume (a register setting, default half) ⇒ data problem,
   no entry; a commitment candle without its own FUT volume ⇒ no entry.
@@ -1025,7 +1026,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 **ओळख (code साठी).**
 - **स्रोत:** near-month NIFTY futures चे 5M candles (repo `collect_index_futures_volume.py`, रोज VPS वर). 15M साठी 3 candles ची बेरीज.
 - **Roll [Abhi]:** roll च्या दिवशी सुद्धा फक्त **near-month** contract चा volume (त्या दिवशी चालू असलेला सगळ्यात जवळचा expiry); दोन contracts चा volume कधीच बेरीज नाही. Roll च्या दिवसांची तुलना टाळायची.
-- **वेळेनुसार normalise (आवश्यक):** NSE वर volume U-आकाराचा आहे (K14). म्हणून volume ची तुलना **त्याच वेळेच्या slot च्या median** शी (उदा. 10:15 चा bar मागच्या 20 दिवसांच्या 10:15 bars शी). याला `rel_vol` म्हणू.
+- **Raw bars [Abhi, method §3 Volume]:** volume pane डोळ्याने जसा वाचतो तसा — raw bars ची तुलना; time-of-day slot baseline नाही (वाचनात वेळेचा तर्क नाही, P2). जुनं slot-normalisation (`rel_vol`) फक्त what-if; खालची `rel_vol` मोजमापं जुनी context आहेत (method च्या भाषेत पुन्हा लिहिणं: layer 6).
 - **मोजमापं:**
   - **Pullback dry-up:** pullback च्या bars चा सरासरी `rel_vol` ÷ impulse च्या bars चा सरासरी `rel_vol`. < 0.8 ⇒ healthy; > 1.0 ⇒ धोक्याचा. (फक्त पुरावा / context; flip झालेल्या area वर कधीच gate नाही — निर्णय zone मधल्या वाचनावर, K4 [Abhi].)
   - **C मध्ये घटता volume:** C चा `rel_vol` A पेक्षा कमी ⇒ थकवा.
@@ -1039,7 +1040,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 
 **विश्वासार्हता.**
 - "Pullback मध्ये volume कमी, impulse मध्ये जास्त": Wyckoff, Dow आणि practitioners मध्ये सर्वमान्य [अनुभव]. कठोर अभ्यास मर्यादित.
-- Volume U-shape (NSE): [पुरावा +]. म्हणून slot-normalisation अनिवार्य.
+- Volume U-shape (NSE): [पुरावा +]. तरीही Abhi ची method: वाचनात raw bars (method §3); slot-normalisation फक्त what-if.
 - **[NIFTY] मर्यादा:** expired futures चा जुना volume Upstox Plus शिवाय मिळत नाही (HTTP 401). Collector काही आठवड्यांपासूनच data गोळा करतोय, आणि तो सगळा holdout / contaminated काळातला आहे. **म्हणून IS/VAL backtest मध्ये volume तपासता येणार नाही.** त्याचं मूल्य फक्त live PAPER scorecard मधून कळेल. सुरुवातीला गुण लहान.
 
 <!-- pending:abhi -->
@@ -1097,8 +1098,8 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 <details><summary>Method Pack (English) — 5b. Futures volume and momentum inside the correction (source: K10.1, K10.2, K10.3)</summary>
 
 - Volume comes from the near-month index **futures** (the index itself has none; on roll days too, never summed across contracts);
-  price comes from spot. Compare volume only with the
-  median of the same time-of-day slot (`rel_vol`), because session volume is U-shaped.
+  price comes from spot. Read the raw bars the way the eye reads the volume pane — no time-of-day slot baseline (Abhi's method §3;
+  the old `rel_vol` slot median is a what-if only).
 - **Pullback dry-up:** average `rel_vol` of the pullback bars ÷ that of the impulse bars < 0.8 ⇒ healthy; > 1.0 ⇒ dangerous (the other
   side is really coming in). Falling volume in C versus A ⇒ exhaustion. Evidence / context only: never a gate at a flipped area —
   the in-zone study decides (K4, Abhi).

@@ -85,7 +85,7 @@ def _synthetic_m15(seed=7, legs=None):
 # (`level_merge`, `zone_visit_rule`); नवे नियम tests/test_decision3_zone_answers.py मध्ये. असर्ट बदलले नाहीत.
 NO_MATURE = {"maturity_sigma_d": -1e6, "ltf_choch": False, "c0_dominance": False, "level_flip_rule": "acceptance",
              "c0_volume_required": False, "a2_handover_required": False,   # Z-1m (handover अनिवार्य) आधीचे fixtures — pin
-             "level_merge": True, "zone_visit_rule": "touch_window"}
+             "level_merge": True, "zone_visit_rule": "touch_window", "commit_volume_rule": "opposite"}
 LEGACY_RR = {**NO_MATURE, "rr_step": True}                                       # Abhi 13 Oct: ⑦ default मधून काढला — जुने असर्ट याने
 
 

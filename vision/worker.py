@@ -312,6 +312,9 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
     extra = []
     if manual:                                                          # ✋ /paper: तुमचे strikes / SL / T / R:R (HTML आधीच escape केलेलं)
         extra.append(manual)
+    if (res or {}).get("verdict") in (None, "unavailable"):             # Vision status पहिली (लहान, निर्णयासाठी महत्त्वाची) — लांब reading
+        extra.append("Vision: NA" + (f" ({html.escape(str(res.get('error'))[:80])})" if (res or {}).get("error") else "") +   # ओळींमुळे
+                     " — बटणं तरीही चालतात")                            # 1024 मर्यादेत कधीच गळत नाही
     try:                                                                # level bots confirmation (§9): trend / area / form / entry / SL / target / R:R
         from bots_common import level_gate_bot as _LGB
         extra += [html.escape(x) for x in _LGB.gate_caption_lines(tags)]
@@ -319,8 +322,6 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
         pass
     if row.get("volume_line"):                                          # chart च्या volume pane ची एक ओळ (NA ⇒ "volume: NA (grade cap B)")
         extra.append(html.escape(str(row["volume_line"])))
-    if (res or {}).get("verdict") in (None, "unavailable"):
-        extra.append("Vision: NA" + (f" ({html.escape(str(res.get('error'))[:80])})" if (res or {}).get("error") else "") + " — बटणं तरीही चालतात")
     tail = ("SL / T: तुमचे spot SL / T (paper watcher) + backstop generic नियम." if manual else "SL / target / exits: bot चे नेहमीचे नियम (automatic).")
     dec = [x for x in s.split("\n") if x]                               # ⏱ / ⚠️ बटणं नाहीत / ✅ ❌ — header नंतर लगेच, कधीच गाळत नाही
     lines = lines[:1] + dec + extra + lines[1:2] + [engine_line(row)] + lines[2:] + [tail]
