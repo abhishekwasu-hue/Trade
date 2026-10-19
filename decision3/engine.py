@@ -120,8 +120,8 @@ class V22:
         self.ltf = M.ltf_frame(ltf, lm, f"{lm}M")
         if self.ltf is None and bool(self.s.get("ltf_choch", True)):
             M.warn_ltf_missing("decision3 V22")                            # fail-closed (⑥ "LTF data missing"), पण शांतपणे नाही
-        # Abhi (Z-1 volume): every in-zone comparison (a2, c0, in-zone facts, G4 context) uses the per-bar FUT volume ÷ the median of the
-        # same 15M slot over the previous `vol_slot_sessions` sessions (method.slot_rel_volume); averages per bar, never sums. Raw kept.
+        # Method §3 Volume (default `volume_baseline = raw`): every in-zone comparison (a2, c0, in-zone facts, G4 context) uses the raw
+        # per-bar FUT volume; averages per bar, never sums. Legacy "slot": ÷ the median of the same 15M slot (method.slot_rel_volume).
         raw, self.vol_src, roll = None, None, None
         self.vol_reason = {}                                               # bar ⇒ why its FUT volume is NA (incomplete / missing)
         if futures is not None:
@@ -210,7 +210,7 @@ class V22:
         inside the same visit. Returns {start, prev_end, why} (start None ⇒ no visit in progress)."""
         A = self.levels.A
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
-        rule = self.s.get("zone_visit_rule", "close_away")
+        rule = self.s.get("zone_visit_rule", "structure")
         if rule not in VISIT_RULES:                                        # a typo must never silently pick a rule
             raise ValueError(f"decision3 V22: unknown zone_visit_rule {rule!r} (allowed: {', '.join(VISIT_RULES)})")
         if rule == "touch_window":                                         # legacy only (old tests / what-if): the last group of touches
@@ -235,7 +235,7 @@ class V22:
             f"needs a new handover (Abhi Z-1v)" if u is not None else "no visit in progress")
         return {"start": start, "prev_end": u, "why": why}
 
-    def _away_swings(self, t, lo, hi, d, born):
+    def _away_swings(self, t, lo, hi, d, born=0):
         """Swings of the finest structure (known by bar t, formed at or after `born`) built AWAY from the area on the side price comes
         from: supply (d < 0) ⇒ swing lows below the area; demand ⇒ swing highs above it. Bars, in order."""
         kind = "L" if d < 0 else "H"
@@ -254,7 +254,11 @@ class V22:
             return False
         if not abs(c - o) > max(abs(float(A["close"][j]) - float(A["open"][j])) for j in range(start, i)):
             return False
-        return bool(self.handover_episode(self.vol_view(start, i)[0], start, i, d, lvl).get("present"))
+        key = (lvl.get("parent_level", lvl.get("id")), int(start), int(i), int(d))
+        memo = self.__dict__.setdefault("_fco_memo", {})                   # bars ≤ i only ⇒ the answer never changes later
+        if key not in memo:
+            memo[key] = bool(self.handover_episode(self.vol_view(start, i)[0], start, i, d, lvl).get("present"))
+        return memo[key]
 
     def _visit_structure(self, t, lvl, d, born):
         """Method §3 Visit (default `zone_visit_rule = structure`): a visit begins when price enters the area and ends only by structure —
@@ -265,8 +269,14 @@ class V22:
         ended_by}."""
         A = self.levels.A
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
-        piv = set(self._away_swings(t, lo, hi, d, born))
-        start, prev_end, ended_by, last_piv, approach_from = None, None, None, None, None
+        key = (lvl.get("parent_level", lvl.get("id")), int(t), int(d), lo, hi)
+        memo = self.__dict__.setdefault("_visit_memo", {})
+        if key in memo:                                                    # visit() is asked twice per level per bar (③ and ⑥)
+            return memo[key]
+        every = self._away_swings(t, lo, hi, d)                            # the approach leg may start before the area was born
+        piv = {p for p in every if p >= born}
+        before = [p for p in every if p < born]
+        start, prev_end, ended_by, last_piv, approach_from = None, None, None, (before[-1] if before else None), None
         for i in range(born, t + 1):
             if start is not None:
                 if i in piv and i > start:
@@ -279,8 +289,8 @@ class V22:
                 last_piv = i
             if A["low"][i] <= hi and A["high"][i] >= lo:
                 start = i
-                approach_from = max(born, (last_piv + 1) if last_piv is not None else born,   # the leg into the area: the candles
-                                    (prev_end + 1) if prev_end is not None else born)          # after its swing (that candle ends the leg before)
+                approach_from = max((last_piv + 1) if last_piv is not None else born,   # the leg into the area: the candles after its
+                                    (prev_end + 1) if prev_end is not None else 0)       # swing (that candle ends the leg before)
         ts = lambda i: str(pd.Timestamp(self._ts[i]))[:16]                 # noqa: E731
         why = None
         if start is None:
@@ -288,8 +298,9 @@ class V22:
                    f"no visit in progress: price built a swing away from the area at {ts(prev_end)}" if ended_by == "swing" else
                    f"no visit in progress: a commitment closed outside the area at {ts(prev_end)} without an entry (the move is gone; "
                    f"no chasing)")
-        return {"start": start, "prev_end": prev_end, "why": why, "ended_by": ended_by,
-                "approach_from": approach_from if start is not None else None}
+        memo[key] = {"start": start, "prev_end": prev_end, "why": why, "ended_by": ended_by,
+                     "approach_from": approach_from if start is not None else None}
+        return memo[key]
 
     def entry_window(self, t):
         """Operational schedule (dashboard settings, method P1 / P2 — never part of the reading): the commitment bar may open an entry only
@@ -303,7 +314,7 @@ class V22:
     def _at_area(self, t, d, lvl):
         """③ (method §3 Visit, §4 "at a visit to an armed area"): a visit to the area is in progress at bar t (structure, never a count
         of candles since the last touch); price came into it from the side away from the trade (a pullback); bar t did not gap or close
-        through the far side (never a breakout entry, P4)."""
+        through the far side (never a breakout entry, P4); bar t (or t − 1, a merged pair) trades in the area (never a chase, P4)."""
         A = self.levels.A
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
         vi = self.visit(t, lvl, d)
@@ -319,6 +330,9 @@ class V22:
         pc = float(A["close"][i1 - 1]) if i1 > 0 else float(A["close"][i1])
         if (pc - far) * d < 0:
             return False, "price came into the area from the trade side (not a pullback)"
+        touch = lambda i: A["low"][i] <= hi and A["high"][i] >= lo        # noqa: E731
+        if not (touch(t) or (t - 1 >= i1 and touch(t - 1))):               # P4: the commitment is AT the area (its candle, or the first of a
+            return False, "price has moved away from the area — no chasing"   # merged pair, trades in it) — never a chase away from it
         return True, f"pullback into the area — visit in progress since {str(pd.Timestamp(self._ts[i1]))[:16]}"
 
     def _confirm(self, t, d, lvl, k):

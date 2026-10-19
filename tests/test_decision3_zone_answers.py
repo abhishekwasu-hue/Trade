@@ -401,6 +401,7 @@ def test_a_close_outside_the_band_away_from_it_ends_the_visit_the_next_needs_a_n
     V = _visit_case(broken)
     r = V.decide(741)
     assert r["commit"]["visit_start_bar"] == 735 and r["commit"]["visit_prev_end"] != str(pd.Timestamp(V._ts[737]))   # same visit
+    assert r["decision"] == "wait" and r["commit"]["confirm_wait"] == M.C_ABSORB   # read on the whole visit: the buyers keep coming
     V.s = {**V.s, "zone_visit_rule": "close_away", "commit_volume_rule": "opposite"}
     cm = V._confirm(741, DOWN, r["level"], V.pb.at(741, DOWN))[2]
     assert pd.Timestamp(cm["visit_prev_end"]) == pd.Timestamp(V._ts[737])
@@ -450,6 +451,7 @@ def test_visit_ends_when_a_commitment_after_the_handover_closes_outside(monkeypa
     monkeypatch.setattr(V, "handover_episode", lambda A, a, t, d, l: {"present": False})
     assert V.visit(4, lvl, DOWN)["start"] == 1                              # no handover ⇒ the same visit
     monkeypatch.setattr(V, "handover_episode", lambda A, a, t, d, l: {"present": True})
+    V._visit_memo, V._fco_memo = {}, {}                                    # a new "world" for the same bars (the memo is per world)
     vi = V.visit(4, lvl, DOWN)
     assert (vi["start"], vi["prev_end"], vi["ended_by"]) == (4, 3, "commitment") and "no chasing" not in str(vi["why"])
     gone = V.visit(3, lvl, DOWN)                                            # at its own bar it is still the commitment being judged
@@ -625,8 +627,8 @@ def test_commitment_dominance_and_volume_are_comparisons_within_the_visit():
     assert "not larger than the visit's opposite-side candles" in why2      # no approach leg given ⇒ named as compared
     red = {k: v.copy() for k, v in A.items()}
     red["open"][0], red["close"][0] = 99.4, 99.2                             # candle 1 red too ⇒ no opposite-side candle in the visit
-    ok3, why3, cm3 = M.commitment(red, i, DOWN, lvl, S, win=0)
-    assert not ok3 and "nothing to compare" in why3                         # method: no grade-cap-B fail-safe — nothing compared ⇒ no
+    ok3, why3, cm3 = M.commitment(red, i, DOWN, lvl, S, win=0)              # OPEN_QUESTIONS L3-c: no candle to compare ⇒ none is larger ⇒
+    assert ok3 and cm3["vol_vs"].startswith("nothing to compare") and cm3["vol_mult"] is None   # holds, and is named
     legacy = {**S, "commit_volume_rule": "opposite"}
     ok4, _, cm4 = M.commitment(red, i, DOWN, lvl, legacy, win=0)
     assert ok4 and cm4["vol_vs"] == "no opposite-side candle in this visit" and cm4["grade"] == "B"   # the #329 fail-safe, what-if only
@@ -779,10 +781,11 @@ def test_at_the_area_is_a_visit_in_progress_never_a_count_of_candles():
     """③ (method §3 Visit / §4): at the area ⇔ a visit is in progress (structure) — not "the last touch within N candles"; bar t never
     gaps or closes through the far side (no breakout entry); price came in from the side away from the trade."""
     rows = [(98.0, 98.6, 97.8, 98.5), (98.5, 100.6, 98.4, 100.4), (100.4, 100.9, 99.6, 99.8), (99.8, 99.9, 98.9, 99.0),
-            (99.0, 99.5, 98.8, 99.3), (99.3, 99.6, 98.9, 99.1), (99.1, 99.4, 98.2, 98.4)]          # left the area, no swing built away yet
+            (99.0, 99.5, 98.8, 99.3), (99.3, 100.2, 98.9, 100.1), (100.1, 100.4, 98.2, 98.4)]        # bar 5 back in, bar 6 from inside
     V, lvl = _visit_v(rows)
     ok, why = V._at_area(6, DOWN, lvl)
     assert ok and "visit in progress since" in why and "touch_window_bars" not in S3.REGISTER["zone_visit_rule"][3]
+    assert V._at_area(4, DOWN, lvl) == (False, "price has moved away from the area — no chasing")   # P4: never away from the area
     up = rows[:3] + [(101.0, 103.5, 100.9, 103.2)]                          # closes through the supply's far side ⇒ breakout, no
     V2, _ = _visit_v(up)
     assert V2._at_area(3, DOWN, lvl) == (False, "close through the far side of the area (breakout) ⇒ no")
@@ -790,3 +793,86 @@ def test_at_the_area_is_a_visit_in_progress_never_a_count_of_candles():
     assert V3._at_area(1, DOWN, lvl)[1] == "price came into the area from the trade side (not a pullback)"
     V4, _ = _visit_v([(98.0, 98.6, 97.8, 98.5)])
     assert V4._at_area(0, DOWN, lvl) == (False, "no visit in progress")
+
+
+def test_absorption_and_the_slow_handover_exclude_each_other():
+    """Review probe (supply 100–103): buyers shrink, sellers grow, volume tilts to the sellers ⇒ a slow handover — never absorption on
+    the same window (absorption = the trade side NOT growing while small opposite candles keep coming and price stays). Mirror too."""
+    oc = [(99.5, 101.0, 900), (101.0, 102.0, 800), (102.0, 101.5, 500), (101.5, 101.8, 300), (101.8, 101.0, 900), (101.0, 101.2, 200),
+          (101.2, 99.4, 3000)]
+    for mirror in (False, True):
+        A = _A([(o, c, v / 1000.0) for o, c, v in oc], mirror)
+        d = UP if mirror else DOWN
+        t = len(oc) - 1
+        z = M.zone_study(A, 0, t - 1, d, S)
+        assert z["handover"] is True and z["absorption"] is False
+        ho = M.handover_episode(A, 0, t, d, S)
+        cf = M.confirm(A, 0, t, d, {"lo": min(2 * MID - 103, 100.0) if mirror else 100.0, "hi": max(2 * MID - 100, 103.0) if mirror else 103.0},
+                       {**S, "ltf_choch": False}, handover=ho)
+        assert cf["wait"] != M.C_ABSORB
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["supply", "demand"])
+def test_no_chase_a_commitment_far_from_the_area_is_not_at_the_area(mirror):
+    """Review probe: after a push into a supply (100–102) small red candles drift far below without a swing built away (the visit is
+    still open) — a big red candle there is a chase, never "at the area" (P4). Mirror: demand."""
+    rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 101.8, 97.4, 100.0), (100.0, 100.5, 99.3, 99.4), (99.4, 99.5, 98.6, 98.7),
+            (98.7, 98.8, 97.9, 98.0), (98.0, 98.1, 97.2, 97.3), (97.3, 97.4, 96.5, 96.6), (96.6, 96.7, 95.8, 95.9),
+            (95.9, 96.0, 95.1, 95.2), (95.2, 95.3, 92.0, 92.1)]
+    if mirror:
+        rows = [(202 - o, 202 - lo, 202 - h, 202 - c) for o, h, lo, c in rows]
+    d = UP if mirror else DOWN
+    V, lvl = _visit_v(rows, d=d)
+    t = len(rows) - 1
+    assert V.visit(t, lvl, d)["start"] == 1                                 # the visit itself is still open (no swing built away)
+    assert V._at_area(t, d, lvl) == (False, "price has moved away from the area — no chasing")
+
+
+def test_legacy_visit_rule_needs_the_legacy_volume_rule():
+    """A legacy visit rule knows no approach leg — paired with the method's volume rule V22 refuses to start (never a half-rule)."""
+    with pytest.raises(ValueError, match="approach leg"):
+        E3.V22(_abc(), s={"zone_visit_rule": "close_away"})
+    E3.V22(_abc(), s={"zone_visit_rule": "close_away", "commit_volume_rule": "opposite"})   # the legacy pair starts
+
+
+def _abc():
+    from tests.test_decision3_method import _abc_m15
+    return _abc_m15()
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["supply", "demand"])
+def test_commitment_volume_merged_pair_and_missing_volume(mirror):
+    """Method §3 Commitment volume: a merged (2-candle) commitment leaves both its candles out of the comparison; compared bars without
+    FUT volume are counted (`vol_ref_gaps`), never zero; all compared bars without volume ⇒ NA (the data-problem rule). Mirror too."""
+    f = (lambda x: 2 * MID - x) if mirror else (lambda x: float(x))
+    rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 98.4, 97.4, 98.3), (98.3, 99.2, 98.2, 99.1),                # approach (0–2)
+            (99.0, 101.5, 98.5, 99.2), (99.3, 99.6, 97.0, 97.2)]                                         # push (3), commitment (4)
+    rows = [(f(o), max(f(h), f(lo)), min(f(h), f(lo)), f(c)) for o, h, lo, c in rows]
+    A = {k: np.array([r[j] for r in rows], float) for j, k in enumerate(("open", "high", "low", "close"))}
+    d = UP if mirror else DOWN
+    lvl = {"lo": min(f(100.0), f(102.0)), "hi": max(f(100.0), f(102.0))}
+    A["volume"] = np.array([300.0, np.nan, 500.0, 2000.0, 900.0])
+    ok, _, cm = M.commitment(A, 4, d, lvl, S, win=3, approach=range(0, 3), exclude=[3])
+    assert ok and cm["vol_ref_bar"] == 2 and cm["vol_ref_gaps"] == 1        # bar 1 has no FUT volume: counted, not compared as zero
+    A["volume"] = np.array([np.nan, np.nan, np.nan, 2000.0, 900.0])
+    ok2, _, cm2 = M.commitment(A, 4, d, lvl, S, win=3, approach=range(0, 3), exclude=[3])
+    assert cm2["vol_na"] is True and cm2["grade"] == "B"                    # nothing with volume ⇒ NA (V22: data problem, no entry)
+    sr = M.sharp_reversal(A, 4, d, lvl["lo"], lvl["hi"], S, a0=3)           # the same pair read as the fast form, mirrored
+    assert sr["found"] is True and sr["parts"]["c2_closes_beyond_push_body"] is True
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["demand", "supply"])
+def test_merged_commitment_leaves_both_its_candles_out_of_the_volume_comparison(mirror):
+    """A merged (2-candle) commitment — here an inside bar broken in the trade direction — is one commitment: its first candle (t − 1)
+    is not compared with it, however heavy its volume."""
+    f = (lambda x: 2 * MID - x) if mirror else (lambda x: float(x))
+    rows = [(104.0, 104.2, 103.0, 103.2), (103.2, 103.4, 102.2, 102.4),                                   # approach down (0–1)
+            (102.4, 102.6, 100.2, 100.4), (100.5, 101.6, 100.4, 101.2), (101.2, 102.4, 101.1, 102.3)]   # q (2), inside (3), break (4)
+    rows = [(f(o), max(f(h), f(lo)), min(f(h), f(lo)), f(c)) for o, h, lo, c in rows]
+    A = {k: np.array([r[j] for r in rows], float) for j, k in enumerate(("open", "high", "low", "close"))}
+    A["volume"] = np.array([300.0, 300.0, 400.0, 5000.0, 900.0])            # the inside candle (part of the commitment) is the heaviest
+    d = DOWN if mirror else UP
+    lvl = {"lo": min(f(100.0), f(101.0)), "hi": max(f(100.0), f(101.0))}
+    ok, why, cm = M.commitment(A, 4, d, lvl, {**S, "c0_dominance": False}, win=2, approach=range(0, 2))
+    assert cm["merged"] == 2 and ok and cm["vol_ref_bar"] != 3, (why, cm)
+

@@ -16,7 +16,7 @@ Rule (KB K4 "A broken zone flips [Abhi]" / "Broken, not flipped [Abhi]"; G4; Abh
 
 Owners (no new classifier, no new volume source): far-side swing = swings2 D`level_degree` pivots (the 1H levels' own source);
 approach (a) = `decision3.daily_legs.classify` (legs2 anatomy C + read_counter; reader2 not imported); volume = the engine's per-bar
-FUT volume normalised by its time-of-day slot (`decision3.method.slot_rel_volume`); in-zone study = `decision3.method.zone_study` /
+FUT volume — raw bars (method §3; the legacy `volume_baseline = slot` divides by the time-of-day slot median); in-zone study = `decision3.method.zone_study` /
 `zone_pattern`; RSI divergence = `rsi2.engine.Divergence` (facts only).
 No look-ahead: everything at bar t reads bars ≤ t and pivots with confirm_bar ≤ t.
 """
@@ -203,4 +203,5 @@ def zone_read(A, ts, arm, t, d, lvl, s, rsi=None, handover=None):
                "pattern": zs.get("pattern") or M.zone_pattern(A, arm, t, d, s), "line": zs.get("line"),
                "commit_bar": rows[-1] if rows else None, "rsi_divergence": rsi}
     return {"from": _ts(ts, arm), "to": _ts(ts, t), "candles": rows, "summary": summary,
-            "volume_measure": "bar FUT volume ÷ median of the same 15M slot over the previous sessions (vol_slot_sessions)"}
+            "volume_measure": "raw FUT volume per bar" if (s or {}).get("volume_baseline", "raw") == "raw" else
+            "bar FUT volume ÷ median of the same 15M slot over the previous sessions (vol_slot_sessions)"}
