@@ -254,7 +254,7 @@ class V22:
             return False
         if not abs(c - o) > max(abs(float(A["close"][j]) - float(A["open"][j])) for j in range(start, i)):
             return False
-        key = (lvl.get("parent_level", lvl.get("id")), int(start), int(i), int(d))
+        key = (lvl.get("parent_level", lvl.get("id")), int(start), int(i), int(d), float(lvl["lo"]), float(lvl["hi"]))   # a TL area ≠ parent
         memo = self.__dict__.setdefault("_fco_memo", {})                   # bars ≤ i only ⇒ the answer never changes later
         if key not in memo:
             memo[key] = bool(self.handover_episode(self.vol_view(start, i)[0], start, i, d, lvl).get("present"))
@@ -305,7 +305,8 @@ class V22:
     def _at_area(self, t, d, lvl):
         """③ (method §3 Visit, §4 "at a visit to an armed area"): a visit to the area is in progress at bar t (structure, never a count
         of candles since the last touch); price came into it from the side away from the trade (a pullback); bar t did not gap or close
-        through the far side (never a breakout entry, P4); bar t (or t − 1, a merged pair) trades in the area (never a chase, P4)."""
+        through the far side (never a breakout entry, P4); bar t, or the candle just before it (a merged pair / right next to the area),
+        trades in the area (never a chase, P4)."""
         A = self.levels.A
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
         vi = self.visit(t, lvl, d)

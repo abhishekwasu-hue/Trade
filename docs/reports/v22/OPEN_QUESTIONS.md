@@ -613,5 +613,5 @@ Implementation per layer: `docs/reports/v22/METHOD_MAP.md`.
 | L3-d | Absorption = opposite-side candles in the later part of the visit, each smaller than the largest trend-side candle of the visit, the trend side NOT growing, and no later close beyond the earlier part's closes on the trade side (a sideways base) — so absorption and the slow handover exclude each other (§3 Absorption) | 3 |
 | L3-e | Approach leg = the candles after the last swing built away from the area (or after the previous visit's end) up to the visit; the swing candle itself ends the leg before (§3 Commitment) | 3 |
 
-| L3-j | "At the area" also means the commitment trades in the area: its candle (or the first candle of a merged pair) touches the band — a candle far below / above it inside a still-open visit is a chase, never an entry (§1 P4, §4 "a breakout away from an area") | 3 |
+| L3-j | "At the area" also means the commitment trades in the area: its candle, or the candle just before it (a merged pair, or a commitment right next to the area), touches the band — a candle far below / above it inside a still-open visit is a chase, never an entry (§1 P4, §4 "a breakout away from an area") | 3 |
 
