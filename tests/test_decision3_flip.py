@@ -725,7 +725,7 @@ def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmu
     ev = [(ts(b), k) for b, k, _ in L.events if k in ("broken", "flip", "dead", "reclaim") and ts(b).startswith("2026-09-29")]
     print(f"\n29 Sep zone {z[0]['lo']:,.2f}–{z[0]['hi']:,.2f}: {ev}")
     brk = [x for x, k in ev if k == "broken"]                              # method §3: broken = a close beyond + a swing formed beyond
-    assert brk and brk[0] == "2026-09-29 10:45" and ("2026-09-29 11:30", "flip") in ev   # broken when the swing below confirmed (layer 2;
+    assert brk and brk[0] == "2026-09-29 11:00" and ("2026-09-29 11:30", "flip") in ev   # broken when the D1 swing below confirmed (layer 2;
     # the old 3-close rule said 09:45); Abhi Z-1s: FLIPPED at 11:30 (unchanged)
     t_flip = next(b for b, k, _ in L.events if k == "flip")
     f = V.levels.flip_view(L, t_flip)

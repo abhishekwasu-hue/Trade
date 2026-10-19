@@ -2766,5 +2766,5 @@ legs owner वि. reader2 gate).
 - **Code:** `levels._step_far_swing` — `break_rule = structure` (default; `closes` = जुना 3-close what-if); reclaim त्याचा आरसा; liquidity (d)
   `liquidity_rule = equal`; `prior_level_rule = all`; `active()` / confluence areas वर cap नाही. CI test `tests/test_method_no_numbers.py`:
   reading path मधला प्रत्येक आकडा वर्गीकृत (legacy what-if / operational / data-quality / pending + layer).
-- **Golden:** 12 Oct zone — 10-07 broken (close + swing पलीकडे), 10-08 reclaim, 10-12 sweep; 13 Oct — broken नाही, resistance; 29 Sep — 10:45
+- **Golden:** 12 Oct zone — 10-07 broken (close + D1 swing पलीकडे), 10-09 09:15 reclaim, 10-12 sweep; 13 Oct — broken नाही, resistance; 29 Sep — 11:00
   broken, 11:30 flip. Charts trade-data `review/method_layer2/`. Assumptions L2-a / b / c (OPEN_QUESTIONS).
