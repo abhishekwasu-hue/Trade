@@ -501,8 +501,7 @@ class Divergence:
         if ra is None or rb is None:
             rec["reason"] = "RSI not available at a pivot (warm-up)"
             return rec
-        tol = 0.0                                                          # Abhi: a NEW extreme — strictly beyond, no tolerance band
-        dp = float(b_price - a.price)
+        dp = float(b_price - a.price)                                      # Abhi: a NEW extreme — strictly beyond, no tolerance band
         if kind == "H":
             rel = "equal high" if dp == 0 else ("higher high" if dp > 0 else "lower high")
             between = self.B.H[a.bar + 1:b_bar]
@@ -512,7 +511,7 @@ class Divergence:
             between = self.B.L[a.bar + 1:b_bar]
             clear = not len(between) or float(between.min()) >= min(a.price, b_price) - 1e-9
         r1, r2 = rec["L1"]["rsi"], rec["L2"]["rsi"]
-        rec.update(price_rel=rel, tolerance=round(tol, 2), rsi_diff=round(r2 - r1, 2), consecutive=bool(clear))
+        rec.update(price_rel=rel, tolerance=0.0, rsi_diff=round(r2 - r1, 2), consecutive=bool(clear))
         if not clear:
             rec["reason"] = "not consecutive pushes (a more extreme price between the pivots)"
             return rec

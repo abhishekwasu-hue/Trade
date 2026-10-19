@@ -500,7 +500,7 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
                 grade = "B"                                                # c0: volume NA ⇒ grade कमाल B
             kind = "demand" if side == BULL else "supply"
             vtxt = ("volume: NA" if cm.get("vol_na") else "volume above the opposite side" if cm.get("vol_mult") is not None
-                    else "no opposite-side candle")                         # Abhi: the reading in words (c0 = comparisons)
+                    else "no opposite-side candle (grade cap B)")           # Abhi: the reading in words (c0 = comparisons)
             btxt = "largest of the visit" if cm.get("body_mult") is not None else ""
             plan = {"entry_price": round(float(c), 2), "sl": round(float(sl), 2), "target": None if tgt is None else round(float(tgt), 2),
                     "rr": None if rr is None else round(float(rr), 2), "form": cm.get("form"), "commit_grade": cm.get("grade"),

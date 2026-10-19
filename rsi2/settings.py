@@ -41,7 +41,7 @@ REGISTER = {
     "onk_trough_lo / onk_trough_hi": ("40–55", "—", "Cardwell", "थर 6 §4 'K संपतोय' (RSI trough 40–55)"),
     "shift_trough / shift_peak": ("40 / 60", "—", "Cardwell", "थर 6 §3 range_shift"),
     "edge_recent_bars": ("4", "2/4/8", "अंदाज", "थर 6 §4 range-fade: divergence L2 range-कड zone वर अलीकडे"),
-    "div_rsi_window": ("±2 bars", "1/2/3", "Abhi spec (K-RSI §3)", "RSI extreme price pivot च्या ± N bars मध्ये (फक्त read / confirm bar पर्यंतचे)"),
+    "div_rsi_window": ("±2 bars (unused)", "—", "legacy", "Abhi (final): RSI at the swing = its extreme inside the swing's own span — no ±bar window; kept only for the old read API"),
     "div_bars": ("15M 3–50 · 1H 3–35 · 5M 3–60", "dashboard (min)", "Abhi नियम (RSI-2: किमान 3 bars)",
                  "bar window (safety cap ≈ 3–4 × RSI period); cap ने नाकारलेल्या जोड्या `cap_rejected` मध्ये नोंद"),
     "div_bar_window": ("off", "on / off", "Abhi नियम (final)", "RSI divergence = लागोपाठचे खरे swings; bar counts / gaps नाहीत (on = जुनं what-if)"),

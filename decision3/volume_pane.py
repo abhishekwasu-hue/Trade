@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 NA_LINE = "volume: NA (grade cap B)"
+NO_OPP_LINE = "volume: no opposite-side candle in the visit (grade cap B)"   # engine c0 compared nothing (OPEN_QUESTIONS Z-1z-d)
 INDEX_FUT = {"NIFTY": "NIFTY FUT", "BANKNIFTY": "BANKNIFTY FUT", "SENSEX": "SENSEX FUT", "FINNIFTY": "FINNIFTY FUT",
              "MIDCPNIFTY": "MIDCPNIFTY FUT"}
 MAX_WINDOW_BARS = 48                    # fallback arrival शोध: commitment पासून इतके bars मागे (engine चं window नसेल तेव्हाच)
@@ -215,7 +216,7 @@ def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, s
         arm, how = _resolve(times, ni["arm_ts"], ni["arm_bar"], n)
         if how == "clamped":
             computed.append("window starts before the first bar shown")
-    eng = bool(engine_numbers and from_engine and (ni["vol_mult"] is not None or ni["vol_na"] is True))
+    eng = bool(engine_numbers and from_engine and (ni["vol_mult"] is not None or ni["vol_na"] is not None))
     out = {"vol": vol, "n": n, "symbol": symbol, "source": source_label(symbol) if symbol else None, "d": d, "arm": None,
            "commit": None, "side": [None] * n, "avg": None, "commit_mult": None, "trend_mult": None, "counter_mult": None,
            "ok": False, "pane": available(vol), "computed": computed, "line": NA_LINE, "engine": eng}
@@ -244,8 +245,11 @@ def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, s
     avg = float(pv.mean()) if len(pv) else None
     out["avg"] = avg if avg and avg > 0 else None
     if eng:                                                                # engine (c0) चे आकडे — तेच दाखवायचे
-        if ni["vol_na"] is True or ni["vol_mult"] is None:
+        if ni["vol_na"] is True:
             return out                                                     # engine: volume NA ⇒ NA (grade cap B)
+        if ni["vol_mult"] is None:                                         # engine compared nothing: no opposite-side candle (Z-1z-d)
+            out["line"] = NO_OPP_LINE
+            return out
         out.update(ok=True, commit_mult=round(float(ni["vol_mult"]), 2), trend_mult=ni["vol_trend_mult"],
                    counter_mult=ni["vol_counter_mult"])
         out["line"] = line(out)

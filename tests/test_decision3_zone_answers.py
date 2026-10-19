@@ -541,6 +541,10 @@ def test_commitment_dominance_and_volume_are_comparisons_within_the_visit():
     A["volume"] = np.array([900.0, 500.0])
     ok2, why2, cm2 = M.commitment(A, i, DOWN, lvl, S, win=0)
     assert ok and cm["vol_vs"] == "opposite-side candles" and not ok2 and "not larger than the opposite-side candles" in why2 and "low volume" in why2
+    red = {k: v.copy() for k, v in A.items()}
+    red["open"][0], red["close"][0] = 99.4, 99.2                             # candle 1 red too ⇒ no opposite-side candle in the visit
+    ok3, _, cm3 = M.commitment(red, i, DOWN, lvl, S, win=0)
+    assert ok3 and cm3["vol_vs"] == "no opposite-side candle in this visit" and cm3["grade"] == "B"   # nothing compared ⇒ fail-safe cap B
 
 
 def test_far_swing_is_the_structural_swing_a_sweep_wick_beyond_the_band_is_not():

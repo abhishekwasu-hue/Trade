@@ -47,6 +47,7 @@ the pieces they call). Each one is in one of three groups:
   - `level_merge`, `zone_visit_rule = touch_window`, `level_flip_rule = acceptance`, `corr_degree_frac`.
   - `daily_swing_method = dc` / `daily_dc_k`, `wave_gates`, `range_state_gate`, `div_bar_window`.
   - `trade_band_max_sigma` (None), `level_min_width_sigma` > 0.
+- **Still in the code, not used:** rsi2 `div_rsi_window` (old ±2-bar search; kept only for the read API, marked unused).
 - **Indicator definitions:**
   - RSI `period` 14 (Wilder).
   - Cardwell bands in the old rsi2 `RSI` class (`bull_min` …). The decision path does not use these.
@@ -73,6 +74,11 @@ the pieces they call). Each one is in one of three groups:
 | C-16 | `flip_pullback_vol_ratio` 1.0, `flip_vol_min_coverage` 1.0 | G4 context (b) volume lower/higher | Context only (comparison at 1.0 = "lower"). | Already a comparison; coverage = every bar has volume (data rule). |
 | C-17 | `evidence_weights`, `conv_a` / `conv_b` / `conv_weak`, `score_*` | Conviction grade A / B / weak from weighted evidence | Grading is a sum of numbers. | Grade by which pieces of evidence are present (e.g. A = handover + commitment + LTF + a confirming piece), with no weights. Abhi to define. |
 | C-18 | `approval_band_warn_pts` 150 (dashboard) | Telegram "merged band — check" when a band is wider than 150 pts | Temporary display alert from before #329 fixed the construction. | Flag only when a band's lineage shows two bases (structural), or remove now that bands are never merged. |
+| C-20 | `range_overlap_min` 0.5, `range_state_n` 3 | §5.3 range state (context fact) | Context only (`range_state_gate` False). | Range = candles overlapping each other, none making a new extreme. |
+| C-21 | `level_degree` 2, `tl_degree` 1, `flip_pullback_inner_degree` 1 | Which swings2 degree a level / trendline / pullback uses | Tied to C-1 (what "the same structure" is). | The zone's own structure degree; one degree below for the pullback inside it. |
+| C-22 | rsi2 `RSI` class `min_price_sigma` 0.25, `min_rsi` 3, `line_skip` 2, `pivot_k` 3, `gaps` | The older layer-6 RSI detector and RSI pivots | Not on the decision path (decision3 uses `Divergence`), but still numeric. | Retire, or align with `Divergence` (consecutive real swings, new extreme, no gaps). |
+| C-23 | `_majority` "at least half of the other sub-checks" in `zone_study` | trade side growing / counter side weakening = the required check plus at least half of the others | A count rule inside the zone reading. | "Required check true and no sub-check against it", or Abhi's wording. |
+| C-24 | Definitions I coded that are not Abhi's words | Two-candle read: "rejected" = push-side wick longer than the body; "swallowed" = body covers body **and** close beyond candle 1's extreme. Far swing: a swing whose own candle closed back inside the zone is a sweep. RSI at a swing = its extreme inside the swing's span. No opposite-side candle in the visit ⇒ volume not compared, grade cap B (fail-safe). Zone study / dominance windows include visit candles that closed beyond the zone. | Implementations of Abhi's words; each needs his yes / no. | OPEN_QUESTIONS Z-1z-a, Z-1z-d; Abhi to confirm the rest. |
 | C-19 | rsi2 `div_degrees` (0, 1, 2) | Which swing degrees are compared | Tied to C-1 (what a "real swing" is). | Only the structure degree used for the zone (one degree). |
 
 ## KB / Method Pack

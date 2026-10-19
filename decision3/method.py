@@ -619,6 +619,8 @@ def commitment(A, t, d, lvl, s, tss=None, win=None):
                       vol_vs="opposite-side candles" if ref else "no opposite-side candle in this visit")
             if ref and not V[t] > max(ref):                                # Abhi: clearly larger than the opposite side's candles
                 return False, "commitment on low volume (not larger than the opposite-side candles in this visit)", {"wait": "low_volume", **cm}
+            if not ref:                                                    # nothing compared (OPEN_QUESTIONS Z-1z-d) ⇒ fail-safe: grade cap B
+                grade = cm["grade"] = "B"
         else:
             cm.update(vol_mult=None, vol_na=True)                          # volume NA ⇒ चालतं, पण grade कमाल B
             grade = cm["grade"] = "B"
@@ -815,8 +817,8 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None, h
         return out
     zs = zone_study(A, arm, t, d, s, mr=mr)
     vtxt = ("volume: NA (grade cap B)" if cm.get("vol_na") else "volume above the opposite side"
-            if cm.get("vol_mult") is not None else "no opposite-side candle")   # Abhi: the reading in words, not ratios
-    btxt = "largest of the visit" if cm.get("body_mult") is not None else ""
+            if cm.get("vol_mult") is not None else "no opposite-side candle (grade cap B)")   # Abhi: the reading in words, not ratios
+    btxt = "largest of the visit" if cm.get("body_mult") is not None and bool(s.get("c0_dominance", True)) else ""
     kind = "demand" if d > 0 else "supply"
     sr = (hs.get("sharp") or {}) if hs.get("form") == "sharp_reversal" else {}
     lines = [f"inside {kind}: " + (sr.get("why") if sr.get("found") else (zs.get("line") or "no clear handover read")),

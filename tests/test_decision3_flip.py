@@ -612,7 +612,8 @@ def test_real_12_oct_seller_zone_in_zone_study_and_golden_bear_call(real):
     if bear:
         cm = bear[0]["commit"]
         assert cm["handover_present"] is True and cm["choch"]["done"] and not cm.get("data_problem")
-        assert pd.Timestamp(cm["choch"]["at"]) > pd.Timestamp(cm["visit_start"]) and cm["vol_mult"] > 1.0
+        assert pd.Timestamp(cm["choch"]["at"]) > pd.Timestamp(cm["visit_start"])
+        assert cm.get("vol_vs") and (cm.get("vol_mult") is None or cm["vol_mult"] > 1.0)   # compared with the opposite side (or none: Z-1z-d)
         return
     # the miss — each cause asserted (report, never tuned). The visit starts 12 Oct 09:15 (the 9 Oct visit ended at the 9 Oct 15:00 close
     # below the band, Abhi Z-1v). Abhi Z-1z: the whole visit is read; the 09:15 push and the 09:30 dominant red candle are read as "a push
