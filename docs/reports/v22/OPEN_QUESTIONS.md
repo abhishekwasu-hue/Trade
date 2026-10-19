@@ -595,4 +595,13 @@ Implementation per layer: `docs/reports/v22/METHOD_MAP.md`.
 | C-17 | No scores: A = the required set + ≥ 1 confirming piece; B = the required set only (§5) | 6 |
 | C-18 | Approval width alert = operational display; decided with the output (layer 6) | 6 |
 | C-24 | My own definitions are replaced by the method's wording in their layers | 1–6 |
+| C-8 | Power shift (evidence) = comparisons: pullback candles smaller than the impulse candles, overlapping bodies — listed as confirming evidence, not scored (§3, §4) | 3 |
+| C-11 | K extreme reset when price makes a new extreme beyond the old one (§3 Structure) | 1 |
+| C-14 | Prior Daily / Weekly swings kept as levels by structure (the trend-degree swings the current range can reach), not by an ATR distance (§3 Areas) | 2 |
+| C-15 | Fourth-attempt / wave-count gates removed (§6 Never: wave-count gates) | 6 |
+| C-16 | G4 approach volume = comparison only; context, never a gate (§3 Volume: "the approach does not decide") | 3 |
+| C-19 | RSI compares consecutive real swings of the same degree (§3 RSI) | 5 |
+| C-22 | The old rsi2 `RSI` class is not on the reading path; retired in a clean-up (§7 one owner) | 5 |
+| C-23 | Slow handover = trend-side candles grow, opposite-side shrink, volume tilts to the trend side — no "at least half" count (§3 Handover) | 3 |
+| BW-1 | Approval width alert = operational display, decided with the output (layer 6) | 6 |
 
