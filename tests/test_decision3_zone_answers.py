@@ -575,47 +575,88 @@ def test_zone_width_has_no_number_cap_and_no_min_width():
 
 
 # ------------------------------------------------------------------------------------------------ Abhi's method §3: sweep / broken
-def _break_case(beyond_swing):
+def _mirror(mirror):
+    f = (lambda x: 2 * MID - x) if mirror else (lambda x: float(x))     # noqa: E731
+    sw = (lambda k: ("L" if k == "H" else "H")) if mirror else (lambda k: k)   # noqa: E731
+    return f, sw
+
+
+def _break_case(beyond_swing, mirror=False, tail=None, last=None):
     """resistance 116.3–118 (a D2 high at 118); price closes above it; with `beyond_swing` a finer swing forms above the band before
-    price returns, otherwise price returns inside first."""
-    closes = list(np.linspace(110, 118, 9)) + list(np.linspace(118, 112, 7))[1:] + [114, 116, 118.6, 119.4, 120.2, 119.0, 118.4, 117.0, 115.0, 113.0]
-    m = m15_from(closes, wick=0.3)
-    p2 = [P("H", 118, 8, 10)]
-    p1 = [P("H", 118, 8, 10), P("L", 112, 14, 16)] + ([P("H", 120.5, 20, 22)] if beyond_swing else [])
-    return m, LV.Levels(res_of(m, p2, p1))
+    price returns, otherwise price returns inside first. `tail` = closes after that (with `last` = an extra finer swing). mirror ⇒
+    support breaking down (every price reflected, H ⇄ L)."""
+    f, sw = _mirror(mirror)
+    closes = list(np.linspace(110, 118, 9)) + list(np.linspace(118, 112, 7))[1:] + [114, 116, 118.6, 119.4, 120.2, 119.0, 118.4] + \
+        (tail if tail is not None else [117.0, 115.0, 113.0])
+    m = m15_from([f(c) for c in closes], wick=0.3)
+    p2 = [P(sw("H"), f(118), 8, 10)]
+    p1 = [P(sw("H"), f(118), 8, 10), P(sw("L"), f(112), 14, 16)] + ([P(sw("H"), f(120.5), 20, 22)] if beyond_swing else []) + \
+        ([P(sw(last[0]), f(last[1]), last[2], last[3])] if last else [])
+    return m, LV.Levels(res_of(m, p2, p1)), f
 
 
-def test_structural_break_needs_a_swing_formed_beyond_the_area():
+def _zone(lv, f):
+    return [L for L in lv.L if abs(L.anchor - f(118)) < 1e-6][0]
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["resistance-up", "support-down"])
+def test_structural_break_needs_a_swing_formed_beyond_the_area(mirror):
     """Abhi's method §3: broken = a close beyond AND a swing formed beyond; a poke that returns inside before any swing forms beyond is
-    a sweep (role kept). No count of closes."""
-    m, lv = _break_case(beyond_swing=True)
-    Z = [L for L in lv.L if abs(L.anchor - 118) < 1e-6][0]
+    a sweep (role kept). No count of closes. Mirror: support breaking down."""
+    m, lv, f = _break_case(True, mirror)
+    Z = _zone(lv, f)
     brk = [b for b, k, _ in Z.events if k == "broken"]
-    assert brk and brk[0] >= 22 and "a swing formed beyond it" in [d for b, k, d in Z.events if k == "broken"][0]
-    m, lv = _break_case(beyond_swing=False)
-    Z = [L for L in lv.L if abs(L.anchor - 118) < 1e-6][0]
-    assert not [k for _, k, _ in Z.events if k in ("broken", "flip")] and Z.count("sweep", len(m) - 1) >= 1 and Z.role_at(len(m) - 1) == LV.RES
+    assert brk == [22] and "a swing formed beyond it" in [d for b, k, d in Z.events if k == "broken"][0]   # the swing's confirm bar
+    m, lv, f = _break_case(False, mirror)
+    Z = _zone(lv, f)
+    assert not [k for _, k, _ in Z.events if k in ("broken", "flip")] and Z.count("sweep", len(m) - 1) >= 1
+    assert Z.role_at(len(m) - 1) == (LV.SUP if mirror else LV.RES)
     assert S3.DEFAULTS["break_rule"] == "structure"
     with pytest.raises(ValueError, match="break_rule"):
         LV.Levels(res_of(m, [P("H", 118, 8, 10)]), s={"break_rule": "two_closes"})
 
 
+@pytest.mark.parametrize("mirror", [False, True], ids=["resistance", "support"])
+def test_structural_reclaim_mirrors_the_break(mirror):
+    """The break's mirror (OPEN_QUESTIONS L2-b): a BROKEN area is reclaimed by a close back on its role side (outside the band) AND a
+    swing formed there. Like the break, the swing counts when it is confirmed on a bar that itself closes back inside the band; a close
+    back inside BEFORE the swing is confirmed ends the attempt (as a poke back inside ends the break's excursion ⇒ sweep)."""
+    # bars 22 … 28: the break confirms at 22; closes below the band from 23; the swing low at 25 confirms at 28, which closes inside
+    m, lv, f = _break_case(True, mirror, tail=[117.0, 115.0, 113.0, 111.0, 112.5, 114.0, 117.3], last=("L", 110.7, 25, 28))
+    Z = _zone(lv, f)
+    ev = [(b, k) for b, k, _ in Z.events if k in ("broken", "reclaim", "flip")]
+    assert ev == [(22, "broken"), (28, "reclaim")] and Z.state_at(len(m) - 1) != "BROKEN"
+    assert Z.role_at(len(m) - 1) == (LV.SUP if mirror else LV.RES)
+    # the same swing, but price closes back inside the band (bar 26) before it is confirmed ⇒ no reclaim yet: still BROKEN
+    m, lv, f = _break_case(True, mirror, tail=[117.0, 115.0, 113.0, 111.0, 117.2, 117.4, 117.3], last=("L", 110.7, 25, 28))
+    Z = _zone(lv, f)
+    assert [(b, k) for b, k, _ in Z.events if k in ("broken", "reclaim", "flip")] == [(22, "broken")]
+    assert Z.state_at(len(m) - 1) == "BROKEN"
+    # the break side behaves the same way: a swing beyond confirmed only after price is back inside ⇒ sweep, not broken
+    m, lv, f = _break_case(False, mirror, last=("H", 120.5, 20, 23))     # closes inside at 22, the swing above confirms at 23
+    Z = _zone(lv, f)
+    assert not [k for _, k, _ in Z.events if k == "broken"] and Z.count("sweep", len(m) - 1) >= 1
 
-def test_equal_highs_by_comparison_and_every_area_ahead_is_armed():
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["equal-highs", "equal-lows"])
+def test_equal_highs_by_comparison_and_every_area_ahead_is_armed(mirror):
     """Abhi's method §3 "equal": a later swing high that reaches the earlier swing's own band and does not go beyond it ⇒ the same area
-    reacted twice (liquidity "d"), no σ tolerance. §4 Watch: every valid area ahead in the trend direction is armed, nearest first."""
+    reacted twice (liquidity "d"), no σ tolerance. §4 Watch: every valid area ahead in the trend direction is armed, nearest first.
+    Mirror: equal lows, support areas armed below price in a rising trend."""
+    f, sw = _mirror(mirror)
     closes = list(np.linspace(110, 118, 9)) + list(np.linspace(118, 112, 7))[1:] + list(np.linspace(112, 117.9, 7))[1:] + \
         list(np.linspace(117.9, 111, 6))[1:]
-    m = m15_from(closes, wick=0.3)
-    lv = LV.Levels(res_of(m, [P("H", 118, 8, 10), P("L", 112, 14, 16), P("H", 117.9, 20, 22)]))
-    Z = [L for L in lv.L if abs(L.anchor - 118) < 1e-6][0]
+    m = m15_from([f(c) for c in closes], wick=0.3)
+    lv = LV.Levels(res_of(m, [P(sw("H"), f(118), 8, 10), P(sw("L"), f(112), 14, 16), P(sw("H"), f(117.9), 20, 22)]))
+    Z = _zone(lv, f)
     assert "d" in Z.births or any(x.get("inside") == "d" for x in Z.lineage)   # the second top is inside the first top's band
     assert S3.DEFAULTS["liquidity_rule"] == "equal"
-    far = LV.Levels(res_of(m, [P("H", 118, 8, 10), P("L", 112, 14, 16), P("H", 116.5, 20, 22)]))   # 116.5 is below the band ⇒ not equal
-    Zf = [L for L in far.L if abs(L.anchor - 118) < 1e-6][0]
+    far = LV.Levels(res_of(m, [P(sw("H"), f(118), 8, 10), P(sw("L"), f(112), 14, 16), P(sw("H"), f(116.5), 20, 22)]))   # not equal
+    Zf = _zone(far, f)
     assert "d" not in Zf.births and not any(x.get("inside") == "d" for x in Zf.lineage)
     t = len(m) - 1
-    act = lv.active(t, "DOWN")
-    assert [x["dist"] for x in act] == sorted(x["dist"] for x in act)          # nearest first, no count cap
-    assert len(act) == len([x for x in lv.snapshot(t) if x["role"] == LV.RES and not x["below"] and x.get("state") != "BROKEN"
+    act = lv.active(t, "UP" if mirror else "DOWN")
+    assert act and [x["dist"] for x in act] == sorted(x["dist"] for x in act)   # nearest first, no count cap
+    side = LV.SUP if mirror else LV.RES
+    assert len(act) == len([x for x in lv.snapshot(t) if x["role"] == side and x["below"] == mirror and x.get("state") != "BROKEN"
                             and x.get("trade_location", True)])

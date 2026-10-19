@@ -703,8 +703,12 @@ def test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731(real):
     print(f"\n13 Oct: spot high {hi:,.2f} < 22,731.8 · state {L.state_at(t)}, role {L.role_at(t)}, far swing {fs.get('price')} "
           f"({str(fs.get('ts'))[:16]}, {fs.get('source')})")
     assert L.role_at(t) == LV.RES and L.state_at(t) not in (FL.FLIPPED, FL.DEAD) and L.count("flip", t) == 0
-    if L.state_at(t) == FL.BROKEN:                                         # method §3: broken only once a swing formed beyond
-        assert fs.get("price") == pytest.approx(FAR_UP, abs=0.1) and fs.get("source") == "before_break"
+    # method §3 (layer 2): broken = a close beyond AND a swing formed beyond — on 13 Oct no swing formed above the area, so it is not
+    # BROKEN (the old 3-close rule called it BROKEN); Abhi's expectation (resistance while price stays below the far swing) is unchanged
+    assert L.state_at(t) in (FL.ACTIVE, FL.TESTED) and not [b for b, k, _ in L.events if k == "broken" and b <= t and b >= ix[0]]
+    known = [p for p in V.levels._pv_sorted if p.confirm_bar <= t]          # the far-side swing an upward break would have to pass
+    far = FL.far_swing(known, L.lo, L.hi, True, ix[0], V.levels.A["close"])
+    assert far is not None and far.price == pytest.approx(FAR_UP, abs=0.1)
 
 
 def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmup(real):
@@ -721,7 +725,8 @@ def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmu
     ev = [(ts(b), k) for b, k, _ in L.events if k in ("broken", "flip", "dead", "reclaim") and ts(b).startswith("2026-09-29")]
     print(f"\n29 Sep zone {z[0]['lo']:,.2f}–{z[0]['hi']:,.2f}: {ev}")
     brk = [x for x, k in ev if k == "broken"]                              # method §3: broken = a close beyond + a swing formed beyond
-    assert brk and brk[0] < "2026-09-29 11:30" and ("2026-09-29 11:30", "flip") in ev   # Abhi Z-1s: FLIPPED at 11:30 (unchanged)
+    assert brk and brk[0] == "2026-09-29 10:45" and ("2026-09-29 11:30", "flip") in ev   # broken when the swing below confirmed (layer 2;
+    # the old 3-close rule said 09:45); Abhi Z-1s: FLIPPED at 11:30 (unchanged)
     t_flip = next(b for b, k, _ in L.events if k == "flip")
     f = V.levels.flip_view(L, t_flip)
     assert f["far_swing"]["price"] == pytest.approx(22569.65) and f["far_swing"]["source"] == "first_confirmed_after_break"
@@ -1002,8 +1007,9 @@ def test_end_to_end_default_path_flipped_zone_handover_choch_commitment_with_vol
         ("far_swing", True, True, True, False)
     r = V.decide(741)
     lv = r["level"]
-    assert lv["state"] == FL.FLIPPED and lv["far_swing"]["source"] == "before_break" and lv["broken_at"] <= lv["flipped_at"] < 735   # method:
-    # flipped = beyond the area AND beyond the far swing — a separate BROKEN bar before it is not required
+    assert lv["state"] == FL.FLIPPED and lv["far_swing"]["source"] == "before_break" and lv["broken_at"] <= lv["flipped_at"] < 735   # rule
+    # change (layer 2, was <): flipped = beyond the area AND beyond the far swing — the swing beyond may form on the flip bar itself, so a
+    # separate, earlier BROKEN bar is no longer required
     assert r["decision"] == "setup" and r["checklist"]["⑥"][0] is True and r["conviction"] in ("A", "B")
     cm = r["commit"]
     assert cm["handover_present"] is True and cm["arm_bar"] == 735 and cm["choch"]["done"] and cm["vol_mult"] > 1.0

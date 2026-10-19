@@ -6,9 +6,10 @@
       `level_min_width_sigma` > 0 = जुनी किमान रुंदी, फक्त what-if).
   (b) BOS: 15M close शेवटच्या confirmed D2 H वर (↑) / L खाली (↓) ⇒ त्या impulse चा origin = BOS आधीचा उलट D2 pivot; base = origin नंतरची
       पहिली trend-दिशेची 1H candle — तिचा पट्टा ↑ [low, open] / ↓ [open, high] (base चा उगम-भाग; किमान रुंदी). Role: ↑ support, ↓ resistance.
-  (c) S/R flip (spec §5.4): पट्ट्यापलीकडे सलग `accept_closes` 15M closes (acceptance) ⇒ भूमिका उलट (support ⇄ resistance) — मृत्यू नाही.
-      त्यापेक्षा कमी closes पलीकडे आणि परत आत ⇒ sweep (§7.2). Flip नंतर closes पुन्हा जुन्या बाजूला टिकले ⇒ flip अयशस्वी ⇒ जुनी भूमिका.
-  (d) liquidity: दोन D2 pivots (त्याच प्रकारचे) σ_1H × liquidity_eq_sigma मध्ये ⇒ equal highs / lows पट्टा.
+  (c) S/R flip: K4 खाली (far-side swing पार ⇒ भूमिका उलट). Broken / sweep (method §3, `break_rule = structure`): पट्ट्यापलीकडे close
+      आणि पलीकडे swing तयार ⇒ BROKEN; swing तयार होण्याआधी परत आत ⇒ sweep. (`break_rule = closes` = जुना `accept_closes` नियम, what-if.)
+  (d) liquidity (method §3 equal, `liquidity_rule = equal`): नंतरचं टोक आधीच्या swing च्या स्वतःच्या पट्ट्यात पोहोचतं, पलीकडे जात नाही ⇒
+      equal highs / lows. (`liquidity_rule = sigma` = जुनी σ_1H × liquidity_eq_sigma tolerance, what-if.)
   लहान pivot (D0 / D1, 15M) पासून level नाही. Merge: नवा पट्टा जिवंत level ला overlap ⇒ एकच (पट्टा एकत्र, जन्म-कारणं एकत्र).
 जीवनक्रम (प्रत्येक बंद 15M bar, जन्मानंतरच्या bars): चाचणी (किंमत पट्ट्यात / पलीकडे — एका भेटीला एकदा), sweep (wick पलीकडे, close परत
 trade-बाजूला / पट्ट्यात; किंवा acceptance शिवाय 1–2 closes पलीकडे आणि परत) ⇒ ★ +1, flip (acceptance ⇒ भूमिका उलट), मृत्यू फक्त: level पलीकडचा (चालू भूमिकेच्या बाजूचा, TL1) structural swing
@@ -16,10 +17,13 @@ trade-बाजूला / पट्ट्यात; किंवा acceptance 
 गुण: Daily confluence (+1), fresh (+1), अनेक चाचण्या (−0.5 प्रत्येक दुसऱ्या पासून), sweep ★; impulse retracement / trendline (C पायरी).
 
 KB K4 flip rule (Abhi, final — `level_flip_rule` = "far_swing", default; decision3/flip.py). State per level, bar by bar (bars ≤ t only):
-  ACTIVE / TESTED (tests ≥ 1) ──acceptance (accept_closes closes beyond)──▶ BROKEN  (old role kept; NOT a trade location — `active` skips it)
+  ACTIVE / TESTED (tests ≥ 1) ──a close beyond AND a swing formed beyond (method §3)──▶ BROKEN  (old role kept; NOT a trade location —
+  `active` skips it)
   ACTIVE / TESTED / BROKEN ──far-side swing reached during the excursion (≥ 1 close beyond)──▶ FLIPPED (role reversed, "c")
-  BROKEN ──accept_closes closes back on the role's own side──▶ previous state ("reclaim" = the break failed, role kept; logged as a sweep ★)
-  fewer than accept_closes closes beyond and back, far swing not reached ⇒ sweep ★ (old role).
+  BROKEN ──a close back on the role's own side AND a swing formed there (the break's mirror)──▶ previous state ("reclaim" = the break
+  failed, role kept; logged as a sweep ★)
+  beyond and back inside before any swing forms beyond, far swing not reached ⇒ sweep ★ (old role).
+  (`break_rule = closes` = the legacy `accept_closes` count for both, what-if only.)
   FLIPPED ──broken again and ITS far-side swing reached──▶ DEAD (Abhi Z-1f: once flipped the old role is over; no second flip, logged).
   Far-side swing (`flip.far_swing`): the nearest confirmed D`level_degree` pivot beyond the band on the break side that formed before the
   excursion began — reached when price trades past it; none (new highs / lows) ⇒ the first swing formed after the break, reached when it
@@ -240,7 +244,8 @@ class Levels:
 
     def _prior_levels(self):
         """Q40 (Abhi): 15M window आधीचे महत्त्वाचे Daily levels — फक्त trend-degree swings (degree-aware Dow चे impulse origin / टोक =
-        correction टोकं) + Weekly swings, window सुरुवातीच्या किंमतीपासून `prior_level_atr_mult` × ATR_D आत. bar 0 ला जन्म; भूमिका
+        correction टोकं) + Weekly swings — method (`prior_level_rule = all`): अंतराची मर्यादा नाही; "atr" = जुनं (`prior_level_atr_mult` ×
+        ATR_D आत), what-if. bar 0 ला जन्म; भूमिका
         तेव्हाच्या किंमतीनुसार (वर ⇒ resistance, खाली ⇒ support). तारीख output मध्ये नाही (NIFTY holdout swing ⇒ फक्त किंमत, Q39)."""
         self.prior_note = None
         if not self.n:
@@ -553,10 +558,13 @@ class Levels:
         if st["brk"]:
             back = (C[t] > L.hi) if role == SUP else (C[t] < L.lo)         # close परत भूमिकेच्या बाजूला, पट्ट्याबाहेर
             st["rc"] = st["rc"] + 1 if back else 0
-            if self._structural_break():                                   # method §3 (mirror): back + a swing built on the role side
-                st["back"] = (st.get("back") if st.get("back") is not None else t) if back else None
-                done = back and self._swing_beyond(L, st["back"], not up, t) is not None
-                why = f"closed back on the {role} side and built a swing there ⇒ break failed, role kept (sweep)"
+            if self._structural_break():                                   # method §3, the break's mirror: a close back on the role side
+                if back and st.get("back") is None:                        # (outside the band) starts the attempt; a swing formed there,
+                    st["back"] = t                                         # confirmed by bar t, completes it — even when bar t itself
+                done = st.get("back") is not None and self._swing_beyond(L, st["back"], not up, t) is not None   # closes inside (as the
+                if not done and not back:                                  # break counts it); a close inside / beyond again before the
+                    st["back"] = None                                      # swing ends the attempt (as a poke back ends an excursion)
+                why = f"closed back on the {role} side and a swing formed there ⇒ break failed, role kept (sweep)"
             else:
                 done = st["rc"] >= acc
                 why = f"{acc} closes back on the {role} side ⇒ break failed, role kept (sweep)"
@@ -609,8 +617,8 @@ class Levels:
         for p in reversed(getattr(self, "_known0", [])):
             if p.confirm_bar > t:
                 continue
-            if p.bar < start:
-                break
+            if p.bar < start:                                              # confirm order ≠ bar order in general ⇒ check every swing
+                continue
             if (p.price > L.hi) if up else (p.price < L.lo):
                 return p
         return None
