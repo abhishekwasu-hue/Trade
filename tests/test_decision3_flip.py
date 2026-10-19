@@ -70,8 +70,14 @@ def _build(name, mirror=False, vol_pullback=600.0, vol_impulse=1000.0, vol_start
     return m, p2, p1, vol
 
 
+# These synthetic fixtures build their breaks from closes beyond the band and give no finer swings, so they test the flip / dead /
+# far-swing mechanics under the legacy break rule; the method's structural break (a close beyond + a swing formed beyond) has its own
+# tests (test_structural_break_*).
+LEGACY_BREAK = {"break_rule": "closes"}
+
+
 def _levels(m, p2, p1, s=None):
-    return LV.Levels(res_of(m, p2, p1), s=s)
+    return LV.Levels(res_of(m, p2, p1), s={**LEGACY_BREAK, **(s or {})})
 
 
 def _zone(lv, mirror):
@@ -82,6 +88,7 @@ def _v(m, p2, p1, vol=None, s=None):
     """V22 without the Daily / K machinery: only what the G4 context / in-zone read need (levels, pivots, settings, volume)."""
     res = res_of(m, p2, p1)
     V = E3.V22.__new__(E3.V22)
+    s = {**LEGACY_BREAK, **(s or {})}
     V.s = S3.load(s)
     V.res = res
     V.levels = LV.Levels(res, s=s)
@@ -267,7 +274,7 @@ def test_nine_oct_case_flips_at_the_far_swing_not_at_acceptance():
     the swing low 90 ⇒ FLIPPED to supply there (not at acceptance), alive for the retest from below."""
     from tests.test_decision3_level_death_side import CLOSES, PIV, T_BREAK
     m = m15_from(CLOSES, lows={4: 90.0})
-    lv = LV.Levels(res_of(m, [P(*x) for x in PIV]))
+    lv = LV.Levels(res_of(m, [P(*x) for x in PIV]), s=LEGACY_BREAK)          # fixture breaks by closes (legacy rule)
     Z = [x for x in lv.L if abs(x.anchor - 96.5) < 1e-6][0]
     t_flip = next(b for b, k, _ in Z.events if k == "flip")
     t_brk = next(b for b, k, _ in Z.events if k == "broken")
@@ -696,7 +703,8 @@ def test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731(real):
     print(f"\n13 Oct: spot high {hi:,.2f} < 22,731.8 · state {L.state_at(t)}, role {L.role_at(t)}, far swing {fs.get('price')} "
           f"({str(fs.get('ts'))[:16]}, {fs.get('source')})")
     assert L.role_at(t) == LV.RES and L.state_at(t) not in (FL.FLIPPED, FL.DEAD) and L.count("flip", t) == 0
-    assert fs.get("price") == pytest.approx(FAR_UP, abs=0.1) and fs.get("source") == "before_break"
+    if L.state_at(t) == FL.BROKEN:                                         # method §3: broken only once a swing formed beyond
+        assert fs.get("price") == pytest.approx(FAR_UP, abs=0.1) and fs.get("source") == "before_break"
 
 
 def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmup(real):
@@ -712,7 +720,8 @@ def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmu
     ts = lambda b: str(V.levels.ts.iloc[b])[:16]                          # noqa: E731
     ev = [(ts(b), k) for b, k, _ in L.events if k in ("broken", "flip", "dead", "reclaim") and ts(b).startswith("2026-09-29")]
     print(f"\n29 Sep zone {z[0]['lo']:,.2f}–{z[0]['hi']:,.2f}: {ev}")
-    assert ("2026-09-29 09:45", "broken") in ev and ("2026-09-29 11:30", "flip") in ev
+    brk = [x for x, k in ev if k == "broken"]                              # method §3: broken = a close beyond + a swing formed beyond
+    assert brk and brk[0] < "2026-09-29 11:30" and ("2026-09-29 11:30", "flip") in ev   # Abhi Z-1s: FLIPPED at 11:30 (unchanged)
     t_flip = next(b for b, k, _ in L.events if k == "flip")
     f = V.levels.flip_view(L, t_flip)
     assert f["far_swing"]["price"] == pytest.approx(22569.65) and f["far_swing"]["source"] == "first_confirmed_after_break"
@@ -993,7 +1002,8 @@ def test_end_to_end_default_path_flipped_zone_handover_choch_commitment_with_vol
         ("far_swing", True, True, True, False)
     r = V.decide(741)
     lv = r["level"]
-    assert lv["state"] == FL.FLIPPED and lv["far_swing"]["source"] == "before_break" and lv["broken_at"] < lv["flipped_at"] < 735
+    assert lv["state"] == FL.FLIPPED and lv["far_swing"]["source"] == "before_break" and lv["broken_at"] <= lv["flipped_at"] < 735   # method:
+    # flipped = beyond the area AND beyond the far swing — a separate BROKEN bar before it is not required
     assert r["decision"] == "setup" and r["checklist"]["⑥"][0] is True and r["conviction"] in ("A", "B")
     cm = r["commit"]
     assert cm["handover_present"] is True and cm["arm_bar"] == 735 and cm["choch"]["done"] and cm["vol_mult"] > 1.0

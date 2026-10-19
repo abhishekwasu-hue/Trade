@@ -431,7 +431,10 @@ def test_engine_reclaim_before_the_first_post_break_swing_confirms_is_a_sweep_no
         closes += list(np.linspace(p0, p1, b1 - b0 + 1)[1:])
     m = m15_from([f(c) for c in closes], wick=0.3)
     p2 = [P(sw("H"), f(118), 8, 10), P(sw("L"), f(106), 16, 18), P(sw("H"), f(121), 22, 30)]   # confirmed late (bar 30)
-    lv = LV.Levels(res_of(m, p2))
+    dz = [L for L in LV.Levels(res_of(m, p2)).L if abs(L.anchor - f(118)) < 1e-6][0]   # method §3: back inside before a swing formed
+    assert not [k for _, k, _ in dz.events if k in ("broken", "flip", "dead")] and dz.count("sweep", len(m) - 1) >= 1   # beyond ⇒ sweep
+    assert dz.role_at(len(m) - 1) == (LV.SUP if mirror else LV.RES)
+    lv = LV.Levels(res_of(m, p2), s={"break_rule": "closes"})             # legacy break rule: broken, then reclaimed ⇒ sweep, no flip
     Z = [L for L in lv.L if abs(L.anchor - f(118)) < 1e-6][0]
     ev = [(b, k) for b, k, _ in Z.events if k in ("broken", "reclaim", "flip", "dead")]
     t_rc = next(b for b, k in ev if k == "reclaim")
@@ -569,3 +572,50 @@ def test_zone_width_has_no_number_cap_and_no_min_width():
     assert LV._band_swing("H", 10.0, 12.0, 9.0, 10.5, 12.0, 0.0) == (10.5, 12.0)   # wick-to-body only
     assert LV._band_swing("H", 10.0, 12.0, 9.0, 12.0, 12.0, 0.0) == (10.0, 12.0)   # closed at its high ⇒ its body (never one price)
     assert LV._band_swing("L", 9.0, 12.0, 9.0, 9.0, 9.0, 0.0) == (9.0, 12.0)       # no wick, no body ⇒ the whole candle
+
+
+# ------------------------------------------------------------------------------------------------ Abhi's method §3: sweep / broken
+def _break_case(beyond_swing):
+    """resistance 116.3–118 (a D2 high at 118); price closes above it; with `beyond_swing` a finer swing forms above the band before
+    price returns, otherwise price returns inside first."""
+    closes = list(np.linspace(110, 118, 9)) + list(np.linspace(118, 112, 7))[1:] + [114, 116, 118.6, 119.4, 120.2, 119.0, 118.4, 117.0, 115.0, 113.0]
+    m = m15_from(closes, wick=0.3)
+    p2 = [P("H", 118, 8, 10)]
+    p1 = [P("H", 118, 8, 10), P("L", 112, 14, 16)] + ([P("H", 120.5, 20, 22)] if beyond_swing else [])
+    return m, LV.Levels(res_of(m, p2, p1))
+
+
+def test_structural_break_needs_a_swing_formed_beyond_the_area():
+    """Abhi's method §3: broken = a close beyond AND a swing formed beyond; a poke that returns inside before any swing forms beyond is
+    a sweep (role kept). No count of closes."""
+    m, lv = _break_case(beyond_swing=True)
+    Z = [L for L in lv.L if abs(L.anchor - 118) < 1e-6][0]
+    brk = [b for b, k, _ in Z.events if k == "broken"]
+    assert brk and brk[0] >= 22 and "a swing formed beyond it" in [d for b, k, d in Z.events if k == "broken"][0]
+    m, lv = _break_case(beyond_swing=False)
+    Z = [L for L in lv.L if abs(L.anchor - 118) < 1e-6][0]
+    assert not [k for _, k, _ in Z.events if k in ("broken", "flip")] and Z.count("sweep", len(m) - 1) >= 1 and Z.role_at(len(m) - 1) == LV.RES
+    assert S3.DEFAULTS["break_rule"] == "structure"
+    with pytest.raises(ValueError, match="break_rule"):
+        LV.Levels(res_of(m, [P("H", 118, 8, 10)]), s={"break_rule": "two_closes"})
+
+
+
+def test_equal_highs_by_comparison_and_every_area_ahead_is_armed():
+    """Abhi's method §3 "equal": a later swing high that reaches the earlier swing's own band and does not go beyond it ⇒ the same area
+    reacted twice (liquidity "d"), no σ tolerance. §4 Watch: every valid area ahead in the trend direction is armed, nearest first."""
+    closes = list(np.linspace(110, 118, 9)) + list(np.linspace(118, 112, 7))[1:] + list(np.linspace(112, 117.9, 7))[1:] + \
+        list(np.linspace(117.9, 111, 6))[1:]
+    m = m15_from(closes, wick=0.3)
+    lv = LV.Levels(res_of(m, [P("H", 118, 8, 10), P("L", 112, 14, 16), P("H", 117.9, 20, 22)]))
+    Z = [L for L in lv.L if abs(L.anchor - 118) < 1e-6][0]
+    assert "d" in Z.births or any(x.get("inside") == "d" for x in Z.lineage)   # the second top is inside the first top's band
+    assert S3.DEFAULTS["liquidity_rule"] == "equal"
+    far = LV.Levels(res_of(m, [P("H", 118, 8, 10), P("L", 112, 14, 16), P("H", 116.5, 20, 22)]))   # 116.5 is below the band ⇒ not equal
+    Zf = [L for L in far.L if abs(L.anchor - 118) < 1e-6][0]
+    assert "d" not in Zf.births and not any(x.get("inside") == "d" for x in Zf.lineage)
+    t = len(m) - 1
+    act = lv.active(t, "DOWN")
+    assert [x["dist"] for x in act] == sorted(x["dist"] for x in act)          # nearest first, no count cap
+    assert len(act) == len([x for x in lv.snapshot(t) if x["role"] == LV.RES and not x["below"] and x.get("state") != "BROKEN"
+                            and x.get("trade_location", True)])

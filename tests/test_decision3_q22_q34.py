@@ -282,12 +282,14 @@ def test_q40_prior_trend_degree_levels_within_atr_distance():
     pre = pre[pre["timestamp"] < start]
     daily = pd.concat([pre[["timestamp", "open", "high", "low", "close", "bar_end"]], win[["timestamp", "open", "high", "low", "close",
                                                                                          "bar_end"]]], ignore_index=True)
-    V = E3.V22(m15, daily_df=daily)
+    V = E3.V22(m15, daily_df=daily, s={"prior_level_rule": "atr"})        # legacy what-if: within prior_level_atr_mult × ATR_D
     pr = V.levels.prior
     assert pr and {x["src"] for x in pr} <= {"a:D-prior", "a:W-prior"}
     assert all(abs(x["price"] - float(m15["open"].iloc[0])) < 30000 - float(m15["open"].iloc[0]) for x in pr)   # 30k टोक दूर ⇒ नाही
-    narrow = E3.V22(m15, daily_df=daily, s={"prior_level_atr_mult": 0.01}).levels.prior
+    narrow = E3.V22(m15, daily_df=daily, s={"prior_level_rule": "atr", "prior_level_atr_mult": 0.01}).levels.prior
     assert len(narrow) < len(pr)
+    every = E3.V22(m15, daily_df=daily).levels.prior                       # Abhi's method (default): every trend-degree prior swing, no
+    assert len(every) >= len(pr) and {(x["kind"], x["price"]) for x in pr} <= {(x["kind"], x["price"]) for x in every}   # distance
     n_all = len({(p.kind, p.bar) for st in V.daily for p in st.pivots if p.day < start})
     assert len([x for x in pr if x["src"] == "a:D-prior"]) <= n_all
 
