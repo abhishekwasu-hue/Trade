@@ -2749,3 +2749,12 @@ legs owner वि. reader2 gate).
   span मधलं टोक. उरलेले आकडे NUMBERS_INVENTORY (C-1 … C-19) — Abhi साठी, कारण आणि प्रस्तावासह.
 - **Re-run:** 12 Oct — bear call नाही (09:30 dominant candle 09:15 चा push गिळत नाही; volume visit मधल्या आधीच्या candle पेक्षा कमी; visit
   संपली). 13 Oct — bear call नाही ✅, zone BROKEN resistance ✅. 29 Sep — Daily zone पुन्हा location; FUT नाही ⇒ entry नाही.
+
+## 2026-10-19 · Abhi's chart-reading method — layer 0 (branch `claude/method-layer0`)
+
+- `docs/knowledge/CHART_READER_METHOD.md` = Abhi's one complete specification (replaces every earlier piece-by-piece answer); the KB
+  head points to it ("the method wins").
+- `docs/reports/v22/METHOD_MAP.md`: every reading concept → its one owner module, today's state, what contradicts the method, and the
+  layer PR that rebuilds it (1 swings / structure, 2 areas + lifecycle, 3 zone study + commitment + LTF, 4 lines, 5 RSI, 6 output).
+- OPEN_QUESTIONS: every earlier question resolved by the method's text ("assumed — no answer needed unless Abhi objects").
+- No code change in this PR.

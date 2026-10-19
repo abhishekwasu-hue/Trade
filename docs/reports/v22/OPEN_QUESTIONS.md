@@ -576,3 +576,32 @@ C-17 conviction weights; C-18 approval 150-pt इशारा.
 | Z-1z-d | Commitment volume = "visit मधल्या उलट बाजूच्या candles पेक्षा स्पष्ट मोठा". Visit मध्ये उलट बाजूची (रंगाने) candle नसेल तर? 12 Oct: opening push candle **लाल** close (upper wick), मग 09:30 लाल dominant — उलट बाजूची candle नाही ⇒ आत्ता "मात करायला काही नाही" (fail नाही). Raw पाहिलं तर 09:30 चा volume opening candle पेक्षा कमी | नोंद + fail-safe grade कमाल B (review) | (a) असंच; (b) push candle (wick ने नाकारलेली) = उलट बाजूची candle मानायची ⇒ तिच्यापेक्षा मोठा हवा |
 | Z-1v-c | 29 Sep: जुना test "buyers exhausting" zone study 11:00 पासून (touch-window) वाचतो; visit (Z-1v) 11:45 पासून वाचली तर buyers मजबूत (absorption). Visit मधलं वाचन हेच engine वापरतं | visit पासून (engine) | (a) visit पासून (Abhi Z-1v / Z-1z — test बदलायचा); (b) दुसरं |
 
+### Abhi's method (`docs/knowledge/CHART_READER_METHOD.md`) — all earlier questions resolved
+
+The method replaces every piece-by-piece answer. Each item below is **assumed — no answer needed unless Abhi objects**, resolved by the
+method's own text (resolution order: the method → Abhi's KB words → principles → an experienced trader's reading → the simpler reading).
+Implementation per layer: `docs/reports/v22/METHOD_MAP.md`.
+
+| # | Resolved as (method section) | Layer |
+|---|---|---|
+| Z-1z-a | Fast form = push rejected, then a dominant opposite candle that **closes beyond the push candle's body** (§3 Handover) | 3 |
+| Z-1z-d | Commitment volume larger than the **approach leg's** candles and the visit's opposite-side candles; the rejected push and the commitment excluded (§3 Commitment). The grade-cap-B fail-safe goes | 3 |
+| Z-1z-c / C-3 | Raw volume bars; no time-slot baselines (§3 Volume) | 3 |
+| Z-1v-b / Z-1v-c / C-5 | A visit ends only by structure: a swing built away from the area, a break / flip, or a failed commitment closing outside; candles closing just outside and coming back are the same visit; time never ends a visit (§3 Visit) | 3 |
+| C-4 | Broken = a close beyond **and** a swing formed beyond; sweep = back inside before any swing forms beyond (§3 Area lifecycle) | 2 |
+| C-1 / C-21 / C-2 / C-13 | Swings, degrees, impulse / correction, equal, trend — by structure (§3 Structure) | 1 |
+| C-6 / C-7 / C-9 / C-10 / C-20 | Candle forms, big / dominant, equal, range — by comparison (§3) | 1, 3 |
+| C-12 | Lines from two separate reactions on the structure's own swings (§3 Lines) | 4 |
+| C-17 | No scores: A = the required set + ≥ 1 confirming piece; B = the required set only (§5) | 6 |
+| C-18 | Approval width alert = operational display; decided with the output (layer 6) | 6 |
+| C-24 | Definitions coded earlier without Abhi's wording are replaced by the method's wording in their layers | 1–6 |
+| C-8 | Power shift is not in the method's confirming-evidence list (§4) ⇒ reported as context only, never scored or required; its sub-checks by comparison (§3 Structure) | 3 |
+| C-11 | K extreme reset when price makes a new extreme beyond the old one (§3 Structure) | 1 |
+| C-14 | Prior Daily / Weekly swings are areas like any other (§3 Areas: built from their own base, armed ahead of price in the trend direction, §4 Watch) — no ATR-distance filter | 2 |
+| C-15 | Fourth-attempt / wave-count gates removed (§6 Never: wave-count gates) | 6 |
+| C-16 | G4 approach volume = comparison only; context, never a gate (§3 Volume: "the approach does not decide") | 3 |
+| C-19 | RSI compares consecutive real swings of the same degree (§3 RSI) | 5 |
+| C-22 | The old rsi2 `RSI` class is not on the reading path; retired in a clean-up (§7 one owner) | 5 |
+| C-23 | Slow handover = trend-side candles grow, opposite-side shrink, volume tilts to the trend side — no "at least half" count (§3 Handover) | 3 |
+| BW-1 | Approval width alert = operational display, decided with the output (layer 6) | 6 |
+
