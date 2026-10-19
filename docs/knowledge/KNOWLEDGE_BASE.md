@@ -1,4 +1,8 @@
 # Trading Knowledge Base आणि Chart Reading Protocol
+
+> **⚖️ Governing specification (Abhi):** `docs/knowledge/CHART_READER_METHOD.md` — Abhi's one complete chart-reading method. Where any
+> line below disagrees with it, the method wins. This KB is being rewritten in the method's language, layer by layer
+> (`docs/reports/v22/METHOD_MAP.md`); until a section is rewritten, read it through the method.
 **Pullback credit spread (NIFTY 15M) साठी: bot, vision आणि Abhi साठी एकच संदर्भ**
 
 > **आवृत्ती:** 2026-10-08 · **स्रोत:**
