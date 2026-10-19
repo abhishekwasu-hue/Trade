@@ -55,7 +55,7 @@ def test_first_hour_setup_with_a2_c0_c1_active(case_old):
     assert r["level"]["role"] == ("support" if mirror else "resistance")
     assert r["risk"]["rr"] >= 3
     cm = r["commit"]
-    assert cm.get("vol_mult") is not None and cm["vol_mult"] > 1.0                # c0 volume (futures) खरंच वापरला
+    assert cm.get("vol_na") is False and cm.get("vol_vs")                         # c0 volume (futures) खरंच वापरला (Abhi: तुलना)
     assert "5M CHoCH" in r["checklist"]["⑥"][1]                                  # c1 LTF CHoCH
     assert rows[0]["decision"] != "setup" and "वेळ-खिडकी" in rows[0]["checklist"]["⑥"][1]   # 09:15 = entry नाही (फक्त पुरावा)
     k = r["bar"] + 1                                                              # setup bar वर कापलेलं data ⇒ तोच निर्णय

@@ -63,9 +63,8 @@ def test_level_band_never_zero_width_when_sigma_missing():
     lv = LV.Levels(_res(m, [NS(kind="H", price=103.0, bar=3, confirm_bar=5)]))
     L = [x for x in lv.L if x.role0 == LV.RES][0]
     lo0, hi0 = L.band_at(5)
-    assert hi0 == 103.0 and lo0 < hi0                                         # जन्म: तात्पुरती रुंदी (bars ≤ t चे 1H ranges)
-    lo1, hi1 = L.band_at(len(m) - 1)
-    assert hi1 == 103.0 and hi1 - lo1 >= 0.15 * 10.0 - 1e-9                   # σ_1H माहीत झाल्यावर spec ची किमान रुंदी (टोकापासून आत)
+    assert hi0 == 103.0 and lo0 < hi0                                         # closed at its high ⇒ its own body (never one price, Abhi TA4)
+    assert L.band_at(len(m) - 1) == (lo0, hi0)                                # Abhi Z-1x: never widened later
     assert all(x["hi"] > x["lo"] for t in range(5, len(m)) for x in lv.snapshot(t))
 
 
@@ -85,7 +84,7 @@ def test_level_band_unchanged_when_sigma_known():
     res = {"m15": m, "pivots": {0: [], 1: [], 2: [NS(kind="H", price=103.0, bar=3, confirm_bar=5)]},
            "sigma_1h": {pd.Timestamp(d): 10.0 for d in days}}
     L = LV.Levels(res).L[0]
-    assert L.bands == [(5, 101.5, 103.0)]                                     # σ असताना आधीसारखंच (एकच band, बदल नाही)
+    assert len(L.bands) == 1 and L.bands[0][2] == 103.0 and L.bands[0][1] < 103.0   # one band from the candle itself (no min width)
 
 
 # ------------------------------------------------------------------------------------------------ 2. engine ⇒ Vision / Telegram: पट्टा

@@ -117,11 +117,11 @@ def test_c1_can_complete_inside_the_0915_candle_with_5m_bars_closed_by_0930(mirr
 @pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put_mirror"])
 def test_0915_arrival_candle_reaches_c0_under_default(mirror):
     """09:15 = entry खिडकीत (default) ⇒ ⑥ commitment तपासला जातो; जुना नियम ⇒ "वेळ-खिडकी". नोंद (OPEN_QUESTIONS): 09:15 candle हीच area
-    मधली पहिली (arrival) candle असेल तर c0 चा study window = ती candle स्वतः ⇒ body 1.0× ⇒ "dominant नाही" (c0 बदललेला नाही)."""
+    मधली पहिली (arrival) candle असेल तर visit मध्ये तुलनेसाठी दुसरी candle नाही ⇒ c0 "nothing to compare" (Abhi: dominance = visit मधली तुलना)."""
     m15, fut, ltf, i0 = _variant(mirror, -40)
     r = E3.V22(m15, s=S_ROLE, ltf=ltf, futures=fut).decide(i0)
     assert r["checklist"]["③"][0] is True
-    assert "वेळ-खिडकी" not in r["checklist"]["⑥"][1] and "dominant नाही" in r["checklist"]["⑥"][1]
+    assert "वेळ-खिडकी" not in r["checklist"]["⑥"][1] and "nothing to compare it with in this visit" in r["checklist"]["⑥"][1]
     r0 = E3.V22(m15, s=S_OLD, ltf=ltf, futures=fut).decide(i0)
     assert "वेळ-खिडकी" in r0["checklist"]["⑥"][1]
 

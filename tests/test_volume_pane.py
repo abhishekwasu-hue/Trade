@@ -46,7 +46,7 @@ def test_study_uses_engine_window_and_vol_mult():
             "vol_mult": 1.9}
     st = VP.study(up, vol=v, info={"tags": {"gate": info}})
     assert (st["arm"], st["commit"], st["commit_mult"]) == (4, 7, 1.9) and not st["computed"]
-    assert st["engine"] and st["line"].startswith("volume: ") and "commitment 1.9× avg" in st["line"]
+    assert st["engine"] and st["line"].startswith("volume: ") and "commitment 1.9× the strongest opposite-side candle" in st["line"]
     ev = {"arm_bar": 4, "confirm_bar": 7, "area": SUP, "side": "BULLISH"}  # level_reaction.evaluate सारखा dict (ts नाही)
     st2 = VP.study(up, vol=v, info=ev)
     assert (st2["arm"], st2["commit"]) == (4, 7)
@@ -238,14 +238,14 @@ def test_engine_volume_numbers_carried_and_shown_once(mirror, monkeypatch):
     monkeypatch.setitem(LR.DEFAULTS, "ltf_choch", False)                    # हा test volume आकड्यांचा (a2 / c0); c1 चा करार test_level_reaction_c1 मध्ये
     from tests.test_level_reaction import HAND, HAND_V, UP_CTX, _mrun, _vbars
     r = _mrun(HAND, HAND_V, mirror)
-    assert r["entry"] and r["vol_mult"] == pytest.approx(2.4, abs=0.05) and not r["vol_na"]
+    assert r["entry"] and r["vol_mult"] > 1.0 and not r["vol_na"]       # Abhi c0: above the strongest opposite-side candle
     assert r["bar_volumes"][-1][1] == 250.0 and r["vol_trend_mult"] is not None and r["vol_counter_mult"] is not None
     g = LGB.gate_tags(r, UP_CTX, "5M")["gate"]
     assert g["vol_mult"] == r["vol_mult"] and g["bar_volumes"] == r["bar_volumes"]
     df, _ = _vbars(HAND, HAND_V, mirror)
     st = VP.study(df, vol=np.full(len(df), 7.0), info={"tags": {"gate": g}})   # chart चे (वेगळे) volume — आकडे तरी engine चे
     assert st["engine"] and st["commit_mult"] == r["vol_mult"]
-    assert f"commitment {r['vol_mult']:.1f}× avg" in st["line"] and f"volume {r['vol_mult']:.1f}× window avg" in r["commit_line"]
+    assert f"commitment {r['vol_mult']:.1f}× the strongest opposite-side candle" in st["line"] and "volume above the opposite side" in r["commit_line"]
     na = VP.study(df, vol=np.full(len(df), 7.0), info={"tags": {"gate": {**g, "vol_mult": None, "vol_na": True}}})
     assert na["line"] == VP.NA_LINE                                         # engine NA ⇒ NA (chart ने अंदाज नाही)
 

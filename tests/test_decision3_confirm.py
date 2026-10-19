@@ -150,7 +150,7 @@ def test_confirm_requires_all_three_and_reports_each_missing_piece(mirror):
     ok = M.confirm(A, arm, t, d, lvl, s, ltf=L, ltf_times=times)
     assert ok["ok"] and ok["c0"] and ok["c1"] and ok["wait"] is None
     assert ok["lines"][0].startswith("inside supply:" if mirror else "inside demand:")
-    assert "body 4.2× window avg · volume 2.0× window avg" in ok["lines"][1] and ok["lines"][2].startswith("1M CHoCH:")
+    assert "largest of the visit · volume above the opposite side" in ok["lines"][1] and ok["lines"][2].startswith("1M CHoCH:")
     miss = M.confirm(A, arm, t, d, lvl, s, ltf=None, ltf_times=times)
     assert not miss["ok"] and miss["wait"] == M.C_LTF_MISSING and miss["c0"]
     assert M.confirm(A, arm, t, d, lvl, s, ltf=_ltf(C1.FALL, mirror), ltf_times=times)["wait"] == M.C_LTF_AGAINST
@@ -252,7 +252,7 @@ def test_no_handover_no_entry_even_with_commitment_and_choch(mirror):
     d = M.DOWN if mirror else M.UP
     s = M.S3.DEFAULTS
     assert s["a2_handover_required"] is True
-    A, arm, t, lvl, L = _A(C1.CHOCH, mirror=mirror)
+    A, arm, t, lvl, L = _A(C1.CHOCH, vol_commit=250.0, mirror=mirror)   # commitment volume above the strong counter side (Abhi: comparison)
     A, arm = _with_handover(A, arm, mirror, present=False)
     r = M.confirm(A, arm, t, d, lvl, s, ltf=L, ltf_times=(T0, T_ARR, T_END))
     assert not r["ok"] and r["wait"] == M.C_NO_HANDOVER and r["handover"] is False

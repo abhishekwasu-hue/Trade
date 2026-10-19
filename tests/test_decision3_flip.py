@@ -404,6 +404,7 @@ def test_slot_normalised_volume_0915_bar_is_not_high_just_because_of_its_slot():
     t0 = len(ts) - 3                                                        # the last day's 09:15 bar: raw 3× the others, rel 1.0
     A9 = {k: v[: t0 + 1].copy() for k, v in A.items()}
     A9["open"][t0], A9["high"][t0], A9["low"][t0], A9["close"][t0] = 100.0, 104.5, 99.8, 104.0
+    A9["open"][t0 - 2:t0], A9["close"][t0 - 2:t0] = 100.5, 100.0              # the window's candles = the opposite (selling) side
     lvl = {"lo": 99.0, "hi": 100.6}
     A9["volume"] = vol[: t0 + 1]                                           # raw: 09:15 looks like 3× the window
     raw_ok, _, raw_cm = M.commitment(A9, t0, UP, lvl, {**S, "c0_dominance": False}, win=t0 - 2)
@@ -616,8 +617,9 @@ def test_real_12_oct_seller_zone_in_zone_study_and_golden_bear_call(real):
     # the miss — each cause asserted (report, never tuned). The visit starts 12 Oct 09:15 (the 9 Oct visit ended at the 9 Oct 15:00 close
     # below the band, Abhi Z-1v). Abhi Z-1z: the whole visit is read; the 09:15 push and the 09:30 dominant red candle are read as "a push
     # rejected and swallowed by a dominant opposite candle" — by structure it is NOT swallowed: 09:30's body does not cover 09:15's body
-    # (it opened below 09:15's body top) and it closes short of 09:15's low. The commitment's volume is not larger than the visit's earlier
-    # candle (no opposite-side candle in the visit). Then (Z-1v-a) the failed dominant candle's close below the zone ends the visit.
+    # (it opened below 09:15's body top) and it closes short of 09:15's low. Volume: the visit has no opposite-side (green) candle, so the
+    # commitment has nothing to beat (OPEN_QUESTIONS: is the push candle the opposite side?). Then (Z-1v-a) the failed dominant candle's
+    # close below the zone ends the visit.
     by = {r["ts"][11:16]: r for r in rows}
     c930 = by["09:30"]["commit"] or {}
     assert str(c930.get("visit_start")).startswith("2026-10-12 09:15") and str(c930.get("visit_prev_end")).startswith("2026-10-09 15:00")
@@ -627,13 +629,13 @@ def test_real_12_oct_seller_zone_in_zone_study_and_golden_bear_call(real):
     print(f"\n09:15 → 09:30 two-candle read: {P} · {sr.get('why')} · commitment volume vs {c930.get('vol_vs')}: ×{c930.get('vol_mult')}")
     assert P.get("c1_rejected") is True and P.get("c2_dominant") is True                       # the shape is there…
     assert P.get("c2_engulfs_body") is False and P.get("c2_closes_beyond_c1") is False         # …but it does not swallow the push
-    assert c930.get("vol_mult") is not None and c930["vol_mult"] < 1.0 and c930.get("vol_vs") == "earlier candles of the visit"
+    assert c930.get("vol_vs") == "no opposite-side candle in this visit" and c930.get("vol_na") is False   # nothing on the other side to beat
     assert str(by["09:30"]["checklist"]["⑥"][1]).startswith(M.REASON[M.C_NO_HANDOVER]) and str(c930.get("visit_end")).startswith("2026-10-12 09:30")
     assert float(m15["close"].iloc[int(by["09:30"]["bar"])]) < ZONE[0]   # Z-1v-a: the failed dominant candle closed below the zone
     later = [r for r in rows if r["ts"][11:16] > "09:30" and (r["checklist"].get("③") or [None])[0]]
     assert all(((r.get("commit") or {}).get("confirm_wait") == "no_visit") for r in later), [(r["ts"], r["checklist"]["⑥"]) for r in later]
     pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — the 09:30 dominant red candle does not swallow the 09:15 "
-                 f"push by structure ({sr.get('why')}); its volume is not larger than the visit's earlier candle; its close below the zone "
+                 f"push by structure ({sr.get('why')}); its close below the zone "
                  "ends the visit (Abhi Z-1v-a) — OPEN_QUESTIONS Z-1z-a")
 
 
@@ -996,7 +998,8 @@ def test_end_to_end_default_path_flipped_zone_handover_choch_commitment_with_vol
     assert cm["handover_present"] is True and cm["arm_bar"] == 735 and cm["choch"]["done"] and cm["vol_mult"] > 1.0
     assert r["volume_measure"].startswith("slot-normalised") and not cm.get("data_problem")
     assert r["zone_read"]["summary"]["handover"] is True and r["checklist"]["G4"][0] is None
-    early = V.decide(738)                                                  # CHoCH already done, handover not yet ⇒ wait (order: a2 first)
+    early = V.decide(736)                                                  # inside the visit, handover not yet ⇒ wait (a2 first). Z-1x: the BOS
+    # base band is no longer widened, so it is the same zone as the 1H band (lineage) and bars 737–738 open above it (③ gap breakout)
     assert early["decision"] == "wait" and "no handover" in early["checklist"]["⑥"][1]
 
 
@@ -1077,6 +1080,7 @@ def _bars_from_highs(hi, lows=None):
     lo = [h - 1.0 for h in hi]
     for i, v in (lows or {}).items():
         lo[i] = v
+        cl[i] = v + 0.4                                                     # a REAL swing low: its candle closes down there too (Abhi Z-1y)
     ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
     return FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
 
@@ -1127,7 +1131,7 @@ def test_band_flip_facts_far_swing_passed_on_the_reclaim_bar_flips_first_like_th
     cl = [h - 0.6 for h in hi]
     lo = [h - 1.0 for h in hi]
     lo[44], cl[44] = 92.0, 99.5                                            # reclaim bar trades past the far swing first
-    lo[5] = 93.0                                                           # the swing low below the band before the break
+    lo[5], cl[5] = 93.0, 93.4                                              # a REAL swing low below the band before the break (Z-1y)
     ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
     B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
@@ -1159,7 +1163,7 @@ def test_band_flip_facts_flip_bar_is_never_also_the_dead_bar():
     cl = [h - 0.6 for h in hi]
     lo = [h - 1.0 for h in hi]
     lo[44], cl[44] = 92.0, 99.5                                            # outside bar: past 93 (flip) and above every earlier high
-    lo[5] = 93.0                                                           # the swing low below the band before the break (Z-1s)
+    lo[5], cl[5] = 93.0, 93.4                                              # a REAL swing low below the band before the break (Z-1s / Z-1y)
     ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
     B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}

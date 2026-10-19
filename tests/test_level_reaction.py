@@ -341,7 +341,7 @@ def test_handover_with_volume_gives_grade_a_and_ticket_lines(mirror):
     tw, cw = ("selling", "buying") if mirror else ("buying", "selling")
     assert f"{tw} candles growing" in r["study"] and f"{cw} candles weakening" in r["study"]
     assert r["study"].startswith("inside supply:" if mirror else "inside demand:")
-    assert "body" in r["commit_line"] and "× window avg" in r["commit_line"] and "volume 2.4× window avg" in r["commit_line"]
+    assert "largest of the visit" in r["commit_line"] and "volume above the opposite side" in r["commit_line"]   # Abhi: words
     assert ("bearish" if mirror else "bullish") in r["commit_line"]
 
 

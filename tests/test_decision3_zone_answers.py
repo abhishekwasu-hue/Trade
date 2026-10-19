@@ -540,7 +540,7 @@ def test_commitment_dominance_and_volume_are_comparisons_within_the_visit():
     assert cm.get("body_mult") is not None and cm["body_mult"] > 1.0
     A["volume"] = np.array([900.0, 500.0])
     ok2, why2, cm2 = M.commitment(A, i, DOWN, lvl, S, win=0)
-    assert ok and cm["vol_vs"] == "opposite-side candles" and not ok2 and "not larger than the opposite-side candles" in why2
+    assert ok and cm["vol_vs"] == "opposite-side candles" and not ok2 and "not larger than the opposite-side candles" in why2 and "low volume" in why2
 
 
 def test_far_swing_is_the_structural_swing_a_sweep_wick_beyond_the_band_is_not():
@@ -563,3 +563,5 @@ def test_zone_width_has_no_number_cap_and_no_min_width():
     assert S3.DEFAULTS["trade_band_max_sigma"] is None and S3.DEFAULTS["level_min_width_sigma"] == 0.0
     assert "engine3_band_max_sigma" not in L3.DEFAULTS and "engine3_band_max_sigma" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]
     assert LV._band_swing("H", 10.0, 12.0, 9.0, 10.5, 12.0, 0.0) == (10.5, 12.0)   # wick-to-body only
+    assert LV._band_swing("H", 10.0, 12.0, 9.0, 12.0, 12.0, 0.0) == (10.0, 12.0)   # closed at its high ⇒ its body (never one price)
+    assert LV._band_swing("L", 9.0, 12.0, 9.0, 9.0, 9.0, 0.0) == (9.0, 12.0)       # no wick, no body ⇒ the whole candle
