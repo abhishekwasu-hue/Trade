@@ -617,5 +617,5 @@ Implementation per layer: `docs/reports/v22/METHOD_MAP.md`.
 | L3-h | P2 in the commitment: two-candle forms span sessions (a gap is the next candle); the entry hours stay an operational dashboard schedule, applied by V22 after the read, never inside it | 3 |
 | L3-i | Liquidity pools (§3 equal / sweep / broken applied to pools): the structure's swings + equal pairs (one pool); sweep = beyond and back inside before any swing formed beyond; a close beyond and back = trapped (failed breakout); window = the current pullback; no day / week pools (P2) | 3 |
 
-| L3-j | "At the area" also means the commitment trades in the area: its candle (or the first candle of a merged pair) touches the band — a candle far below / above it inside a still-open visit is a chase, never an entry (§1 P4, §4 "a breakout away from an area") | 3 |
+| L3-j | "At the area" also means the commitment trades in the area: its candle, or the candle just before it (a merged pair, or a commitment right next to the area), touches the band — a candle far below / above it inside a still-open visit is a chase, never an entry (§1 P4, §4 "a breakout away from an area") | 3 |
 

@@ -876,3 +876,20 @@ def test_merged_commitment_leaves_both_its_candles_out_of_the_volume_comparison(
     ok, why, cm = M.commitment(A, 4, d, lvl, {**S, "c0_dominance": False}, win=2, approach=range(0, 2))
     assert cm["merged"] == 2 and ok and cm["vol_ref_bar"] != 3, (why, cm)
 
+
+
+def test_failed_commitment_memo_never_mixes_a_tl_area_with_its_parent():
+    """Review: a TL confluence area shares its parent's id (`parent_level`) but has its own, narrower band — the failed-commitment read
+    depends on the band, so the answer must not depend on which of the two is read first."""
+    rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 98.4, 97.4, 98.3), (98.3, 100.4, 98.2, 100.2),
+            (100.2, 101.5, 99.0, 99.3), (99.3, 99.6, 97.0, 97.2)]
+    tl = {"id": "0+TL", "parent_level": 0, "lo": 101.6, "hi": 101.8}
+    fresh = {}
+    for key in ("parent", "tl"):
+        V, parent = _visit_v(rows)
+        fresh[key] = V._failed_commit_outside(4, 2, parent if key == "parent" else tl, DOWN)
+    for first in ("parent", "tl"):
+        V, parent = _visit_v(rows)
+        lv = {"parent": parent, "tl": tl}
+        order = [first, "tl" if first == "parent" else "parent"]
+        assert {k: V._failed_commit_outside(4, 2, lv[k], DOWN) for k in order} == fresh
