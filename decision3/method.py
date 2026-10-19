@@ -307,8 +307,8 @@ def zone_study(A, a, t, d, s, mr=None):
     (body ↓ आवश्यक; उलट wick ↑, close टोकापासून दूर ↑, volume ↓). absorption = उलट-बाजू मजबूत होत (body ↑, range ↑, volume असेल तर ↑).
     Method §3 (default `slow_form_rule = method`): handover = trend-side bodies grow AND opposite-side bodies shrink AND volume tilts to the
     trend side (later part: trend-side volume above the opposite side's; NA ⇒ not read). `absorption_rule = method`: the opposite side
-    keeps coming in the later part, in candles smaller than the trend side's, and no later close goes beyond the earlier part's closes
-    on the trade side (sideways base).
+    keeps coming in the later part, in candles smaller than the trend side's, the trade side is not growing, and no later close goes
+    beyond the earlier part's closes on the trade side (sideways base) — so absorption and the slow handover exclude each other.
     The legacy majority / strengthening reads above stay as what-if switches.
     Abhi Z-1p (a): उलट-बाजू zone मधून गायब (पहिल्या अर्ध्यात counter candle होती, दुसऱ्या अर्ध्यात एकही नाही) ⇒ दमली (दमण्याचं टोक) ⇒
     counter_weakening = True, `counter_gone` = True; handover = फक्त trend-बाजू वाढतेय का.
@@ -373,7 +373,8 @@ def zone_study(A, a, t, d, s, mr=None):
         small = bool(tb_all) and keeps and max(C[1]["body"]) < max(tb_all)  # …in candles smaller than the trend side's
         e0, e1 = halves                                                    # …and price does not move away: no later close beyond the
         stuck = (min(C_[i] for i in e1) >= min(C_[i] for i in e0)) if d < 0 else (max(C_[i] for i in e1) <= max(C_[i] for i in e0))
-        out["absorption"] = bool(keeps and small and stuck)                # earlier part's closes on the trade side (wicks = arrival)
+        out["absorption"] = bool(keeps and small and stuck and not out["trend_growing"])   # earlier part's closes on the trade side; the
+        # trade side NOT growing — a growing trade side with a shrinking opposite side is the handover, never absorption (they exclude)
     out["vol_trend_rising"] = None if tv is None else tv > 0
     out["pattern"] = zone_pattern(A, a, t, d, s, mr)
     tw, cw = ("buying", "selling") if d > 0 else ("selling", "buying")
@@ -612,7 +613,7 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
     पलीकडे) ⇒ B. वाट: चालू candle pullback-दिशेची / doji / inside bar ⇒ पुढच्या candle ची वाट. वेळ-खिडकी settings.
     Volume (method §3 Commitment, `commit_volume_rule = approach_and_opposite`): larger than every candle of the approach leg (`approach` =
     its bar indices, given by the caller) and every opposite-side candle of the visit (win … t − 1); the rejected push (`exclude`) and the
-    commitment itself (both candles when merged) are not compared. Nothing to compare ⇒ no commitment. Volume NA ⇒ vol_na (the caller's
+    commitment itself (both candles when merged) are not compared. Nothing to compare ⇒ holds, named (L3-c). Volume NA ⇒ vol_na (the caller's
     data-problem rule). "opposite" = the legacy #329 read (visit's opposite side only, none ⇒ grade cap B)."""
     if s["commit_beyond"] not in ("extreme", "close"):
         raise ValueError(f"commit_beyond {s['commit_beyond']!r} — extreme / close पैकी")
@@ -668,12 +669,13 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
             appr = {int(i) for i in (approach or ()) if int(i) < t and int(i) not in skip}
             refs = sorted(appr | set(opp))
             ref = [(float(V[i]), i) for i in refs if np.isfinite(V[i]) and V[i] > 0] if V is not None else []
+            cm["vol_ref_gaps"] = len(refs) - len(ref)                      # compared bars without FUT volume (reported, never zero)
             if V is None or not (np.isfinite(V[t]) and V[t] > 0) or (refs and not ref):
                 cm.update(vol_mult=None, vol_na=True)                      # volume NA ⇒ the caller's data-problem rule (V22: no entry)
                 grade = cm["grade"] = "B"
-            elif not refs:
-                return False, "commitment volume: nothing to compare it with (no approach-leg or opposite-side candle)", \
-                    {"wait": "low_volume", **cm, "vol_na": False, "vol_mult": None}
+            elif not refs:                                                 # OPEN_QUESTIONS L3-c: no candle to compare (the approach was a gap
+                cm.update(vol_mult=None, vol_na=False, vol_vs="nothing to compare (approach gap; only the push and the commitment)")   # and
+                # the visit holds only the push and the commitment) ⇒ no candle is larger ⇒ the comparison holds (named, never a silent pass)
             else:
                 top, top_i = max(ref)
                 cm.update(vol_mult=round(float(V[t]) / top, 2), vol_na=False, vol_ref_bar=int(top_i),
@@ -888,7 +890,8 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None, h
         out.update(wait=ch["code"], why=f"{REASON[ch['code']]} · {ch['line']}")
         return out
     zs = zone_study(A, arm, t, d, s, mr=mr)
-    vtxt = ("volume: NA (grade cap B)" if cm.get("vol_na") else f"volume above {cm['vol_vs']}"
+    vtxt = ("volume: NA (grade cap B)" if cm.get("vol_na") else f"volume: {cm['vol_vs']}" if str(cm.get("vol_vs", "")).startswith("nothing")
+            else f"volume above {cm['vol_vs']}"
             if cm.get("vol_mult") is not None and str(cm.get("vol_vs", "")).startswith("the ") else "volume above the opposite side"
             if cm.get("vol_mult") is not None else "no opposite-side candle (grade cap B)")   # Abhi: the reading in words, not ratios
     btxt = "largest of the visit" if cm.get("body_mult") is not None and bool(s.get("c0_dominance", True)) else ""

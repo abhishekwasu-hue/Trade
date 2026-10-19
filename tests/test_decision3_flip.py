@@ -623,41 +623,18 @@ def test_real_12_oct_seller_zone_in_zone_study_and_golden_bear_call(real):
         print(zone_table(r))
     assert at
     bear = [r for r in at if r["decision"] == "setup" and r["trend_used"] == "DOWN"]
-    if bear:
-        cm = bear[0]["commit"]
-        assert cm["handover_present"] is True and cm["choch"]["done"] and not cm.get("data_problem")
-        assert pd.Timestamp(cm["choch"]["at"]) > pd.Timestamp(cm["visit_start"])
-        assert cm.get("vol_vs") and (cm.get("vol_mult") is None or cm["vol_mult"] > 1.0)   # compared with the opposite side (or none: Z-1z-d)
-        return
-    # the miss — each cause asserted (report, never tuned). Method layer 3: on 9 Oct a fast-form handover was seen at 15:00 and that
-    # dominant red candle (the commitment) failed — volume below the approach leg's candles, no 5M CHoCH — and closed just below the band
-    # ⇒ "a commitment fails and closes outside" ends that visit (§3 Visit). 12 Oct 09:15 re-enters ⇒ a NEW visit, read fresh. 09:15 push
-    # + 09:30 dominant red candle closing beyond the push body = the fast-form handover ✅, the 5M CHoCH ✅; but the approach into the area
-    # was the gap (no candle after the 9 Oct swing / failed commitment) and the push is excluded ⇒ the commitment's volume has nothing to
-    # be compared with ⇒ no commitment (fail-closed, OPEN_QUESTIONS L3-c / Abhi batch). 09:30 closed below the band after the handover
-    # ⇒ that visit ends too.
-    by = {r["ts"][11:16]: r for r in rows}
-    c930 = by["09:30"]["commit"] or {}
-    assert str(c930.get("visit_start")).startswith("2026-10-12 09:15") and str(c930.get("visit_prev_end")).startswith("2026-10-09 15:00")
-    hs = c930.get("handover_state") or {}
-    sr = hs.get("sharp") or {}
-    P = sr.get("parts") or {}
-    print(f"\n09:15 → 09:30 fast form: {P} · {sr.get('why')} · commitment volume: {by['09:30']['checklist']['⑥'][1]}")
-    assert c930.get("handover_present") is True and hs.get("form") == "sharp_reversal" and str(hs.get("seen_ts")).startswith("2026-10-12 09:30")
-    assert P == {"c1_rejected": True, "c2_dominant": True, "c2_closes_beyond_push_body": True}
-    assert (c930.get("choch") or {}).get("done") is True                                     # the 5M change of character is there
-    assert c930.get("confirm_wait") == "low_volume" and "nothing to compare" in by["09:30"]["checklist"]["⑥"][1]
-    assert str(c930.get("visit_end")).startswith("2026-10-12 09:30")
-    assert float(m15["close"].iloc[int(by["09:30"]["bar"])]) < ZONE[0]   # the failed commitment closed below the zone
-    r9 = V.decide(int(by["09:15"]["bar"]) - 1)                           # 9 Oct 15:00: the earlier visit's failed commitment
-    c9 = r9["commit"] or {}
-    assert (c9.get("handover_state") or {}).get("form") == "sharp_reversal" and r9["decision"] != "setup"
-    assert float(m15["close"].iloc[int(r9["bar"])]) < ZONE[0]
-    later = [r for r in rows if r["ts"][11:16] > "09:30" and (r["checklist"].get("③") or [None])[0]]
-    assert all(((r.get("commit") or {}).get("confirm_wait") == "no_visit") for r in later), [(r["ts"], r["checklist"]["⑥"]) for r in later]
-    pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — fast-form handover ✅ + 5M CHoCH ✅ at 09:30, but the 9 Oct "
-                 "15:00 failed commitment closed just outside and ended that visit, so the 12 Oct visit's approach is a gap and its "
-                 "commitment volume has nothing to be compared with (no commitment) — OPEN_QUESTIONS L3-b / L3-c (Abhi batch)")
+    assert bear, [(r["ts"], r["checklist"]["⑥"]) for r in at]           # the golden bear call (method layer 3)
+    cm = bear[0]["commit"]
+    assert bear[0]["ts"].startswith("2026-10-12 09:30")
+    assert cm["handover_present"] is True and cm["choch"]["done"] and not cm.get("data_problem")
+    assert pd.Timestamp(cm["choch"]["at"]) > pd.Timestamp(cm["visit_start"])
+    hs = cm.get("handover_state") or {}
+    assert hs.get("form") == "sharp_reversal" and (hs.get("sharp") or {}).get("parts") == \
+        {"c1_rejected": True, "c2_dominant": True, "c2_closes_beyond_push_body": True}   # 09:15 push + 09:30 dominant red (fast form)
+    # the previous session's visit ended with a failed commitment after its handover (closed just outside) ⇒ 12 Oct is a new visit; its
+    # approach was a gap and the push is excluded ⇒ nothing to compare the commitment's volume with ⇒ it holds, named (OPEN_QUESTIONS L3-c)
+    assert str(cm.get("visit_start")).startswith("2026-10-12 09:15") and str(cm.get("visit_prev_end")).startswith("2026-10-09 15:00")
+    assert str(cm.get("vol_vs")).startswith("nothing to compare") and cm.get("vol_na") is False
 
 
 def test_real_oct_1_to_12_lifecycle_of_the_22544_22622_band(real):
@@ -1040,7 +1017,7 @@ def test_end_to_end_default_path_flipped_zone_handover_choch_commitment_with_vol
 
 def test_end_to_end_default_path_no_handover_or_no_fut_is_no_entry():
     r = _default_case(_NO_HANDOVER).decide(741)                             # same zone, CHoCH + commitment, but no handover: the buyers
-    assert r["decision"] == "wait" and (r["commit"] or {}).get("handover_present") is not True   # keep coming in smaller candles and
+    assert r["decision"] == "wait" and (r["commit"] or {}).get("handover_present") is False   # keep coming in smaller candles and
     assert M.REASON[M.C_ABSORB] in r["checklist"]["⑥"][1]                  # price stays in the area ⇒ method §3 absorption (no trade)
     assert r["commit"]["confirm_wait"] == M.C_ABSORB
     nf = _default_case(_HANDOVER, with_fut=False).decide(741)               # FUT missing ⇒ data problem, never a grade-B entry

@@ -5,7 +5,7 @@
   • Daily (Upstox 'day', ~10 वर्षं, आजचा अपूर्ण Daily bar नाही) — Q33: Daily holdout candles फक्त warm-up input (level_reaction.daily_trend
     प्रमाणेच); output मध्ये sealed तारीख नाही (`history.sealed_fn`). Weekly = Daily वरून (V22 स्वतः).
   • 5M spot (LTF: c1 5M CHoCH) ⇒ V22 `ltf=`; नसेल ⇒ fail-closed. Front-month FUT 5M volume (c0 dominant candle + volume) ⇒ V22
-    `futures=` (expiry सह; जुना V22 ⇒ m15 joined `volume`; `engine3_fut_days` — volume ÷ त्याच slot चा 20 sessions median). Abhi Z-1c:
+    `futures=` (expiry सह; जुना V22 ⇒ m15 joined `volume`; `engine3_fut_days` — raw FUT bars, method §3). Abhi Z-1c:
     NIFTY / BANKNIFTY चा FUT नसेल ⇒ FutVolumeMissing (data error: entry नाही + दिवसातून एकदा Telegram); volume शिवाय grade-B entry नाही.
   • V22(m15, daily_df=…).decide(शेवटचा बंद bar) ⇒ engine_signal store row (decision2 च्याच columns) ⇒ bots चा adapter (`pending_entry`).
 Fail-closed: data नाही / अपूर्ण / exception ⇒ EngineDataError (caller "error" row + दिवसातून एकदा Telegram ओळ). Order / broker call नाही.
@@ -27,7 +27,7 @@ import pandas as pd
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULTS = {"engine3_m15_days": 90, "engine3_daily_days": 3650, "engine3_ltf_days": 10,
-            "engine3_fut_days": 45,                                       # Abhi Z-1: volume ÷ slot median of 20 sessions ⇒ ≥ 21 sessions FUT
+            "engine3_fut_days": 45,                                       # FUT history window (raw bars, method §3; the legacy slot baseline needed ≥ 21 sessions)
             "engine3_use_1m": True,                                       # Abhi Z-1o (a): 1m spot ⇒ swings2 (1m चा window = engine3_m15_days)
             "engine3_cache_keep_days": 3}                                 # data/engine3_cache: इतक्या दिवसांपेक्षा जुन्या files (mtime) run सुरू होताना काढतो
 FUT_REQUIRED = ("NIFTY", "BANKNIFTY")                                     # Abhi Z-1c: FUT volume नाही = data error (entry नाही + Telegram)
@@ -357,7 +357,7 @@ def build_inputs(feed, symbol, now, s=None, levels_only=False):
     if not len(ltf) or ltf["timestamp"].iloc[-1].normalize() != m15["timestamp"].iloc[-1].normalize():
         raise EngineDataError(f"{symbol}: 5M spot (LTF) data नाही ⇒ c1 CHoCH तपासता येत नाही")
     fut, note = None, None
-    try:                                                                 # c0 / a2 volume (Abhi Z-1: slot-normalised ⇒ ~45 दिवसांचा FUT)
+    try:                                                                 # c0 / a2 volume (raw FUT bars, method §3; approach leg may reach back)
         fut = closed_session_bars(feed.futures(symbol, "5minute", s["engine3_fut_days"]), 5, now)
         today_fut = fut[fut["timestamp"].dt.normalize() == m15["timestamp"].iloc[-1].normalize()] if len(fut) else fut
         if not len(today_fut) or float(today_fut["volume"].sum()) <= 0:

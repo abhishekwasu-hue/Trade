@@ -2778,7 +2778,10 @@ legs owner वि. reader2 gate).
   (`slow_form_rule`, `absorption_rule`), `commitment(approach=, exclude=)` (`commit_volume_rule`), `volume_baseline = raw`. जुने नियम
   what-if switches; legacy visit rule + method volume rule एकत्र ⇒ V22 सुरूच होत नाही (ValueError). Level bots #329 reads वर pinned
   (METHOD_MAP "Level bots"). Approval caption: Vision status लांब reading ओळींआधी (1024 मर्यादेत गळत नाही).
-- **Golden:** 12 Oct — 09:30 fast-form handover ✅ + 5M CHoCH ✅ + dominant ✅, पण आदल्या सत्राच्या शेवटी अपयशी commitment बाहेर close ⇒ ती
-  visit संपली; 12 Oct ची visit नवी, approach = gap ⇒ volume ला तुलना नाही ⇒ entry नाही (xfail त्या कारणांवर; Abhi batch प्रश्न). 13 Oct —
-  bear call नाही, resistance. 29 Sep — FUT नाही ⇒ entry नाही.
+- **Golden:** 12 Oct — 09:30 **bear call** (golden ✅): fast-form handover + 5M CHoCH + dominant commitment; आदल्या सत्राची visit
+  (handover नंतर अपयशी commitment बाहेर close) संपलेली, 12 Oct ची visit नवी, approach = gap ⇒ volume तुलनेला candle नाही ⇒ अट पूर्ण
+  (L3-c, resolution order; Abhi हरकत घेऊ शकतात). 13 Oct — bear call नाही, resistance. 29 Sep — FUT नाही ⇒ entry नाही.
+- **Review fixes:** absorption आणि slow handover एकमेकांना वगळतात (absorption = trade बाजू वाढत नाही); commitment candle area मध्ये हवी
+  (पाठलाग नाही, P4); visit / failed-commitment memo (replay वेग); approach leg area च्या जन्माआधीच्या swing पासून; compared bars ला volume
+  नसेल ⇒ `vol_ref_gaps` नोंद.
 
