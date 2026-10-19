@@ -346,6 +346,22 @@ def test_handover_with_volume_gives_grade_a_and_ticket_lines(mirror):
 
 
 @pytest.mark.parametrize("mirror", [False, True])
+def test_no_opposite_side_candle_caps_the_bot_grade_at_b(mirror, monkeypatch):
+    """Review: c0 compared nothing (no opposite-side candle in the visit, Z-1z-d) ⇒ the bot grade (lot size) is capped at B too."""
+    from decision3 import method as DM
+    real = DM.commitment
+
+    def no_opp(*a, **k):
+        ok, why, cm = real(*a, **k)
+        if ok and k.get("win") is not None:
+            cm = {**cm, "vol_mult": None, "vol_na": False, "vol_vs": "no opposite-side candle in this visit", "grade": "B"}
+        return ok, why, cm
+    monkeypatch.setattr(DM, "commitment", no_opp)
+    r = _mrun(HAND, HAND_V, mirror)
+    assert r["entry"] and r["evidence"]["handover"] and r["grade"] == "B" and "no opposite-side candle (grade cap B)" in r["commit_line"]
+
+
+@pytest.mark.parametrize("mirror", [False, True])
 def test_commitment_on_low_volume_waits(mirror):
     r = _mrun(HAND, HAND_V[:-1] + [90], mirror)
     assert not r["entry"] and r["state"] == LR.ARMED and any(e[2] == LR.R_LOW_VOL for e in r["events"])

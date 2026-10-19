@@ -496,12 +496,12 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
                     "commit_grade_A": cm.get("grade") == "A", "volume_na": bool(cm.get("vol_na"))}
             n_ev = sum(1 for k in ("sweep", "corrective_approach", "pattern", "rsi_divergence") if evid[k])
             grade = "A" if (evid["handover"] or n_ev >= 2) else "B"       # handover (दोन्ही बाजू) = मजबूत पुरावा ⇒ A
-            if cm.get("vol_na"):
-                grade = "B"                                                # c0: volume NA ⇒ grade कमाल B
+            if cm.get("vol_na") or (cm.get("vol_vs") and cm.get("vol_mult") is None):
+                grade = "B"                                                # c0: volume NA / nothing compared (Z-1z-d) ⇒ grade कमाल B
             kind = "demand" if side == BULL else "supply"
             vtxt = ("volume: NA" if cm.get("vol_na") else "volume above the opposite side" if cm.get("vol_mult") is not None
                     else "no opposite-side candle (grade cap B)")           # Abhi: the reading in words (c0 = comparisons)
-            btxt = "largest of the visit" if cm.get("body_mult") is not None else ""
+            btxt = "largest of the visit" if cm.get("body_mult") is not None and bool(s3.get("c0_dominance", True)) else ""
             plan = {"entry_price": round(float(c), 2), "sl": round(float(sl), 2), "target": None if tgt is None else round(float(tgt), 2),
                     "rr": None if rr is None else round(float(rr), 2), "form": cm.get("form"), "commit_grade": cm.get("grade"),
                     "grade": grade, "evidence": evid, "confirm_bar": int(t),
