@@ -121,4 +121,4 @@ def confluence_areas(V, t, d, cands):
         dist = 0.0 if lo <= c <= hi else (lo - c if c < lo else c - hi)
         out.append({**x, "id": f"{x['id']}+TL", "lo": round(lo, 2), "hi": round(hi, 2), "births": list(x["births"]) + ["tl"],
                     "dist": round(dist, 2), "above": lo > c, "below": hi < c, "tl": ln, "parent_level": x["id"]})
-    return sorted(out, key=lambda a: a["dist"])[:int(V.s["active_levels_max"])]
+    return sorted(out, key=lambda a: a["dist"])                           # Abhi's method §4: every area ahead, nearest first
