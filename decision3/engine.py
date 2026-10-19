@@ -277,7 +277,7 @@ class V22:
 
     def handover_episode(self, A, arm, t, d, lvl):
         """Abhi Z-1q (a): `method.handover_episode` for this zone visit; "the zone breaking" = the level's K4 state turns BROKEN / DEAD
-        (accept_closes closes beyond — a sweep does not cancel) at a bar after the handover was seen. TL confluence areas use their parent
+        (method §3: a close beyond + a swing formed beyond — a sweep does not cancel) at a bar after the handover was seen. TL confluence areas use their parent
         level. Bars ≤ t only."""
         lid = lvl.get("parent_level", lvl.get("id"))
         L = self.levels.L[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(self.levels.L) else None
@@ -360,7 +360,7 @@ class V22:
         return True, f"{a['role']} {a['lo']:,.0f}–{a['hi']:,.0f} ({'+'.join(a['births'])}){star} · अंतर {a['dist']:,.0f}", act
 
     def tl_areas(self, t, trend, act=None):
-        """② Abhi (12 Oct): तिरकी trendline (trend-degree swings, t ला माहीत) + ② चेच active horizontal levels (जवळचे `active_levels_max`)
+        """② Abhi (12 Oct): तिरकी trendline (trend-degree swings, t ला माहीत) + ② चेच active horizontal levels (सगळे, method §4)
         ⇒ confluence area (`trendline.confluence_areas`). DOWN ⇒ उतरती रेघ + resistance; UP ⇒ चढती + support; RANGE / बाकी ⇒ नाही."""
         if trend not in ("UP", "DOWN"):
             return []

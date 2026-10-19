@@ -2758,3 +2758,13 @@ legs owner वि. reader2 gate).
   layer PR that rebuilds it (1 swings / structure, 2 areas + lifecycle, 3 zone study + commitment + LTF, 4 lines, 5 RSI, 6 output).
 - OPEN_QUESTIONS: every earlier question resolved by the method's text ("assumed — no answer needed unless Abhi objects").
 - No code change in this PR.
+
+## 2026-10-19 · Method layer 2: areas + lifecycle (branch `claude/method-layer2`)
+
+- **KB आधी:** K4 — sweep / broken रचनेने (close beyond + पलीकडे swing तयार ⇒ broken; त्याआधी परत आत ⇒ sweep), equal highs / lows तुलनेने,
+  पुढचं प्रत्येक valid area armed (cap नाही), मागचे Daily / Weekly swings अंतराशिवाय.
+- **Code:** `levels._step_far_swing` — `break_rule = structure` (default; `closes` = जुना 3-close what-if); reclaim त्याचा आरसा; liquidity (d)
+  `liquidity_rule = equal`; `prior_level_rule = all`; `active()` / confluence areas वर cap नाही. CI test `tests/test_method_no_numbers.py`:
+  reading path मधला प्रत्येक आकडा वर्गीकृत (legacy what-if / operational / data-quality / pending + layer).
+- **Golden:** 12 Oct zone — 10-07 broken (close + D1 swing पलीकडे), 10-09 09:15 reclaim, 10-12 sweep; 13 Oct — broken नाही, resistance; 29 Sep — 11:00
+  broken, 11:30 flip. Charts trade-data `review/method_layer2/`. Assumptions L2-a / b / c (OPEN_QUESTIONS).

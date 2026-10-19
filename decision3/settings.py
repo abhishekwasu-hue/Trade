@@ -34,6 +34,9 @@ DEFAULTS = {
     "wave_gates": False,                     # Abhi B1 (trader's patience): wave count / maturity / projections फक्त context — maturity cap,
                                              # mature step-down, origin_risk cap, §5.1 first-leg cap, 4th-attempt no-trade, leg-count पुरावा
                                              # नाहीत. True = जुने gates (फक्त जुने tests / what-if)
+    "prior_level_rule": "all",               # Abhi's method: every trend-degree prior Daily / Weekly swing is an area (role = its side of price);
+                                             # no distance filter. "atr" = जुनं (prior_level_atr_mult × ATR_D अंतर) — फक्त what-if
+    "liquidity_rule": "equal",               # Abhi's method §3 "equal": later extreme reaches the earlier swing's band, not beyond. "sigma" = जुनं
     "prior_level_atr_mult": 8.0,             # Q40: window आधीचे trend-degree Daily / Weekly swings — किंमतीपासून इतक्या ATR_D आत
     "prior_level_atr_n": 14,                 # Q40: ATR_D = window आधीच्या इतक्या Daily candles चा सरासरी true range
     "level_merge": False,                    # Abhi Z-1u: पट्टे फक्त बांधायचे, merge ने रुंद नाहीत (प्रत्येक timeframe वेगळा). True = जुनं
@@ -42,7 +45,9 @@ DEFAULTS = {
                                              # "touch_window" = जुनं (स्पर्शांचा शेवटचा गट, अंतर ≤ touch_window_bars) — फक्त जुने tests / what-if
     "trade_band_max_sigma": None,            # Abhi Z-1x (final): zone रुंदीला आकड्याची मर्यादा नाही — रुंद दिसणारा zone = दोन bases एकत्र ⇒ रचना
                                              # दुरुस्त (Z-1u). फक्त what-if (× σ_1H) — dashboard वर नाही
-    "accept_closes": 3,                      # पलीकडे सलग इतके closes ⇒ acceptance (flip पक्का); कमी आणि परत ⇒ sweep ★
+    "break_rule": "structure",               # Abhi's method §3: broken = close beyond AND a swing formed beyond; sweep = back before any swing
+                                             # beyond. "closes" = जुनं (accept_closes सलग closes) — फक्त जुने tests / what-if
+    "accept_closes": 3,                      # फक्त break_rule = "closes" (legacy what-if): पलीकडे सलग इतके closes ⇒ acceptance
     "level_death_side": "role",              # Q2 / TL1 (✅ Abhi मंजूर): मृत्यू-swing चालू भूमिकेच्या बाजूचा (flipped support = supply ⇒ वरचा D2 H);
                                              # "role0" = जुना Q2 default (मूळ भूमिकेची बाजू, flip नंतरही) — revert साठी
     "level_flip_rule": "far_swing",          # KB K4 (Abhi, final): flip = पट्ट्यापलीकडे + पलीकडचा swing पार (trade ने) ⇒ FLIPPED; acceptance
@@ -148,12 +153,15 @@ REGISTER = {
     "level_min_width_sigma": (0.0, "0 (Abhi) / जुना 0.15", "Abhi नियम", "Abhi Z-1x: zone = base candles चा स्वतःचा पट्टा, आकड्याने रुंद नाही"),
     "liquidity_eq_sigma": (0.15, "0.1/0.15/0.25", "अंदाज", "spec ② (d) equal highs / lows"),
     "active_levels_max": (2, "—", "Abhi नियम", "spec ② active level = जवळची 2"),
+    "prior_level_rule": ("all", "all / atr (legacy)", "Abhi नियम", "Abhi's method: every trend-degree prior swing is an area; no ATR distance"),
+    "liquidity_rule": ("equal", "equal / sigma (legacy)", "Abhi नियम", "Abhi's method §3: equal = the later extreme reaches the earlier swing's band, not beyond"),
     "prior_level_atr_mult": (8.0, "5/8/12", "अंदाज", "Q40: window आधीचे महत्त्वाचे Daily / Weekly levels — किंमतीपासूनचं अंतर (ATR-scaled)"),
     "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
     "level_merge": (False, "False / True (legacy)", "Abhi नियम", "Abhi Z-1u: bands built, never widened; True फक्त जुने tests / what-if"),
     "zone_visit_rule": ("close_away", "close_away / touch_window (legacy)", "Abhi नियम", "Abhi Z-1v: visit end = close outside the band, "
                         "away from it, without a commitment; touch_window फक्त जुने tests / what-if"),
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
+    "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
     "a2_handover_required": (True, "True / False", "Abhi नियम", "Abhi Z-1m: handover (a2) अनिवार्य, क्रम a2 → c1 → c0; False फक्त जुने tests"),

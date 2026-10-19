@@ -6,9 +6,10 @@
       `level_min_width_sigma` > 0 = जुनी किमान रुंदी, फक्त what-if).
   (b) BOS: 15M close शेवटच्या confirmed D2 H वर (↑) / L खाली (↓) ⇒ त्या impulse चा origin = BOS आधीचा उलट D2 pivot; base = origin नंतरची
       पहिली trend-दिशेची 1H candle — तिचा पट्टा ↑ [low, open] / ↓ [open, high] (base चा उगम-भाग; किमान रुंदी). Role: ↑ support, ↓ resistance.
-  (c) S/R flip (spec §5.4): पट्ट्यापलीकडे सलग `accept_closes` 15M closes (acceptance) ⇒ भूमिका उलट (support ⇄ resistance) — मृत्यू नाही.
-      त्यापेक्षा कमी closes पलीकडे आणि परत आत ⇒ sweep (§7.2). Flip नंतर closes पुन्हा जुन्या बाजूला टिकले ⇒ flip अयशस्वी ⇒ जुनी भूमिका.
-  (d) liquidity: दोन D2 pivots (त्याच प्रकारचे) σ_1H × liquidity_eq_sigma मध्ये ⇒ equal highs / lows पट्टा.
+  (c) S/R flip: K4 खाली (far-side swing पार ⇒ भूमिका उलट). Broken / sweep (method §3, `break_rule = structure`): पट्ट्यापलीकडे close
+      आणि पलीकडे swing तयार ⇒ BROKEN; swing तयार होण्याआधी परत आत ⇒ sweep. (`break_rule = closes` = जुना `accept_closes` नियम, what-if.)
+  (d) liquidity (method §3 equal, `liquidity_rule = equal`): नंतरचं टोक आधीच्या swing च्या स्वतःच्या पट्ट्यात पोहोचतं, पलीकडे जात नाही ⇒
+      equal highs / lows. (`liquidity_rule = sigma` = जुनी σ_1H × liquidity_eq_sigma tolerance, what-if.)
   लहान pivot (D0 / D1, 15M) पासून level नाही. Merge: नवा पट्टा जिवंत level ला overlap ⇒ एकच (पट्टा एकत्र, जन्म-कारणं एकत्र).
 जीवनक्रम (प्रत्येक बंद 15M bar, जन्मानंतरच्या bars): चाचणी (किंमत पट्ट्यात / पलीकडे — एका भेटीला एकदा), sweep (wick पलीकडे, close परत
 trade-बाजूला / पट्ट्यात; किंवा acceptance शिवाय 1–2 closes पलीकडे आणि परत) ⇒ ★ +1, flip (acceptance ⇒ भूमिका उलट), मृत्यू फक्त: level पलीकडचा (चालू भूमिकेच्या बाजूचा, TL1) structural swing
@@ -16,10 +17,13 @@ trade-बाजूला / पट्ट्यात; किंवा acceptance 
 गुण: Daily confluence (+1), fresh (+1), अनेक चाचण्या (−0.5 प्रत्येक दुसऱ्या पासून), sweep ★; impulse retracement / trendline (C पायरी).
 
 KB K4 flip rule (Abhi, final — `level_flip_rule` = "far_swing", default; decision3/flip.py). State per level, bar by bar (bars ≤ t only):
-  ACTIVE / TESTED (tests ≥ 1) ──acceptance (accept_closes closes beyond)──▶ BROKEN  (old role kept; NOT a trade location — `active` skips it)
+  ACTIVE / TESTED (tests ≥ 1) ──a close beyond AND a swing formed beyond (method §3)──▶ BROKEN  (old role kept; NOT a trade location —
+  `active` skips it)
   ACTIVE / TESTED / BROKEN ──far-side swing reached during the excursion (≥ 1 close beyond)──▶ FLIPPED (role reversed, "c")
-  BROKEN ──accept_closes closes back on the role's own side──▶ previous state ("reclaim" = the break failed, role kept; logged as a sweep ★)
-  fewer than accept_closes closes beyond and back, far swing not reached ⇒ sweep ★ (old role).
+  BROKEN ──a close back on the role's own side AND a swing formed there (the break's mirror)──▶ previous state ("reclaim" = the break
+  failed, role kept; logged as a sweep ★)
+  beyond and back inside before any swing forms beyond, far swing not reached ⇒ sweep ★ (old role).
+  (`break_rule = closes` = the legacy `accept_closes` count for both, what-if only.)
   FLIPPED ──broken again and ITS far-side swing reached──▶ DEAD (Abhi Z-1f: once flipped the old role is over; no second flip, logged).
   Far-side swing (`flip.far_swing`): the nearest confirmed D`level_degree` pivot beyond the band on the break side that formed before the
   excursion began — reached when price trades past it; none (new highs / lows) ⇒ the first swing formed after the break, reached when it
@@ -240,7 +244,8 @@ class Levels:
 
     def _prior_levels(self):
         """Q40 (Abhi): 15M window आधीचे महत्त्वाचे Daily levels — फक्त trend-degree swings (degree-aware Dow चे impulse origin / टोक =
-        correction टोकं) + Weekly swings, window सुरुवातीच्या किंमतीपासून `prior_level_atr_mult` × ATR_D आत. bar 0 ला जन्म; भूमिका
+        correction टोकं) + Weekly swings — method (`prior_level_rule = all`): अंतराची मर्यादा नाही; "atr" = जुनं (`prior_level_atr_mult` ×
+        ATR_D आत), what-if. bar 0 ला जन्म; भूमिका
         तेव्हाच्या किंमतीनुसार (वर ⇒ resistance, खाली ⇒ support). तारीख output मध्ये नाही (NIFTY holdout swing ⇒ फक्त किंमत, Q39)."""
         self.prior_note = None
         if not self.n:
@@ -253,7 +258,7 @@ class Levels:
             self.prior_note = "0 Daily bars before window ⇒ Q40 prior levels skipped"
             log.warning("decision3 levels: %s (15M window starts %s)", self.prior_note, day0.date())
             return []
-        nA = int(self.s["prior_level_atr_n"])
+        nA = int(self.s["prior_level_atr_n"])                              # (ATR only for the legacy "atr" rule)
         b = before.tail(nA + 1)
         pc = b["close"].shift(1)
         tr = np.maximum(b["high"] - b["low"], np.maximum((b["high"] - pc).abs(), (b["low"] - pc).abs())).iloc[1:]
@@ -290,9 +295,13 @@ class Levels:
                     if p.known_at <= t0_end:
                         cand[("W", p.kind, p.bar)] = (p, "a:W-prior", wdf)
         out = []
+        prule = self.s.get("prior_level_rule", "all")
+        if prule not in ("all", "atr"):
+            raise ValueError(f"prior_level_rule {prule!r} — all / atr पैकी")
         for (_, kind, bar), (p, birth, src) in sorted(cand.items(), key=lambda kv: kv[0]):
-            if abs(p.price - px0) > lim:
-                continue
+            if prule == "atr" and abs(p.price - px0) > lim:                # legacy what-if: within prior_level_atr_mult × ATR_D of price
+                continue                                                   # (method: every trend-degree prior swing is an area; its role
+                                                                           # at the window start = which side of price it is on)
             r = src.iloc[p.bar]
             lo, hi = _band_swing(p.kind, r["open"], r["high"], r["low"], r["close"], p.price, self._w(0))
             role = RES if lo > px0 else (SUP if hi < px0 else (RES if p.kind == "H" else SUP))
@@ -332,24 +341,37 @@ class Levels:
                     out.setdefault(t, []).append((RES if p.kind == "H" else SUP, lo, hi, "a:D", p.price))
         for item in self._prior_levels():
             out.setdefault(0, []).append(item)
-        # (d) liquidity: equal highs / lows (D2)
+        # (d) liquidity: equal highs / lows (D2) — Abhi's method §3 "equal": the later extreme reaches the earlier swing's own band
+        # (its wick-to-body) and does not go beyond it ⇒ the same area reacted twice (double top / bottom). One base ⇒ the earlier
+        # swing's band; it is born as a lineage of that level ("d"). `liquidity_rule` "sigma" = the legacy σ_1H tolerance (what-if).
+        lrule = self.s.get("liquidity_rule", "equal")
+        if lrule not in ("equal", "sigma"):
+            raise ValueError(f"liquidity_rule {lrule!r} — equal / sigma पैकी")
         eqs = float(self.s["liquidity_eq_sigma"])
         for kind in ("H", "L"):
             ps = [p for p in self.piv if p.kind == kind]
             for i in range(1, len(ps)):
                 a, b = ps[i - 1], ps[i]
                 t = max(a.confirm_bar, b.confirm_bar)
-                sg = self.sig1h[t]
-                if np.isfinite(sg) and abs(a.price - b.price) <= eqs * sg:
+                if lrule == "sigma":
+                    sg = self.sig1h[t]
+                    if not (np.isfinite(sg) and abs(a.price - b.price) <= eqs * sg):
+                        continue
                     lo, hi = min(a.price, b.price), max(a.price, b.price)
-                    if hi <= lo:                                           # exactly equal extremes ⇒ the two swing candles' wick-to-body
-                        lo, hi = min(_band_swing(kind, *(float(self.A[k][q.bar]) for k in ("open", "high", "low", "close")), q.price, 0.0)[0]
-                                     for q in (a, b)), max(_band_swing(kind, *(float(self.A[k][q.bar]) for k in ("open", "high", "low", "close")),
-                                                                       q.price, 0.0)[1] for q in (a, b))
-                    w = self._w(t)
-                    if hi - lo < w:
-                        lo, hi = (hi - w, hi) if kind == "H" else (lo, lo + w)
-                    out.setdefault(t, []).append((RES if kind == "H" else SUP, lo, hi, "d", (a.price + b.price) / 2))
+                else:
+                    o, hh, ll, cc = self._h1_upto(self.h1_of[a.bar], a.confirm_bar)
+                    alo, ahi = _band_swing(kind, o, hh, ll, cc, a.price, 0.0)
+                    if not ((alo <= b.price <= a.price) if kind == "H" else (a.price <= b.price <= ahi)):
+                        continue
+                    lo, hi = alo, ahi
+                if hi <= lo:                                           # exactly equal extremes ⇒ the two swing candles' wick-to-body
+                    lo, hi = min(_band_swing(kind, *(float(self.A[k][q.bar]) for k in ("open", "high", "low", "close")), q.price, 0.0)[0]
+                                 for q in (a, b)), max(_band_swing(kind, *(float(self.A[k][q.bar]) for k in ("open", "high", "low", "close")),
+                                                                   q.price, 0.0)[1] for q in (a, b))
+                w = self._w(t)
+                if hi - lo < w:
+                    lo, hi = (hi - w, hi) if kind == "H" else (lo, lo + w)
+                out.setdefault(t, []).append((RES if kind == "H" else SUP, lo, hi, "d", (a.price + b.price) / 2))
         return out
 
     def _bos(self, t, known):
@@ -398,12 +420,22 @@ class Levels:
         pv = self._pv_sorted
         k = 0
         known = []
+        from swings2 import settings as S2                                 # method §3: "a swing" = a swing of the STRUCTURE — the finest
+        low = min((self.res.get("settings") or S2.DEFAULTS).get("structure_degrees", S2.DEFAULTS["structure_degrees"]))   # structure
+        # degree as the swings were built (Abhi's approved D1 / D2); D0 = wiggles
+        fin = next((d for d in sorted(self.res["pivots"]) if d >= low and self.res["pivots"].get(d)), None)   # inside a leg, not swings
+        pv0 = sorted(self.res["pivots"].get(fin, []) if fin is not None else [], key=lambda p: p.confirm_bar)
+        k0 = 0
+        self._known0 = []
         prov = set()                            # σ_1H नसताना जन्मलेले levels (तात्पुरती किमान रुंदी)
         for t in range(self.n):
             # t च्या close पर्यंत माहीत pivots
             while k < len(pv) and pv[k].confirm_bar <= t:
                 known.append(pv[k])
                 k += 1
+            while k0 < len(pv0) and pv0[k0].confirm_bar <= t:
+                self._known0.append(pv0[k0])
+                k0 += 1
             if prov and np.isfinite(self.sig1h[t]):                        # σ_1H आता माहीत ⇒ त्यांना खरी किमान रुंदी (TA4; टोकापासून आत)
                 w = self._w(t)
                 for L in self.L:
@@ -439,7 +471,7 @@ class Levels:
                 touching[L.id] = inside
                 if rule == "far_swing":
                     self._step_far_swing(L, t, role, known, beyond_wick, beyond_close, excursion,
-                                         fstate.setdefault(L.id, {"brk": False, "start": None, "rc": 0}), acc)
+                                         fstate.setdefault(L.id, {"brk": False, "start": None, "rc": 0, "back": None}), acc)
                     continue
                 if dead:
                     L.events.append((t, "dead", f"पलीकडचा swing {beyond_sw:,.2f} close ने तुटला"))
@@ -523,23 +555,45 @@ class Levels:
                     L.births.append("c")
                 L.flip_facts.append((t, {"broken_at": brk_at, "break_dir": 1 if up else -1, "exc_start": st["start"],
                                          "far_swing": {**self._swing_fact(fs), "source": src}, "flipped_at": t}))
-                st.update(brk=False, start=None, rc=0)
+                st.update(brk=False, start=None, rc=0, back=None)
                 excursion[L.id] = 0
                 return
         if st["brk"]:
             back = (C[t] > L.hi) if role == SUP else (C[t] < L.lo)         # close परत भूमिकेच्या बाजूला, पट्ट्याबाहेर
             st["rc"] = st["rc"] + 1 if back else 0
-            if st["rc"] >= acc:
-                L.events.append((t, "reclaim", f"{acc} closes back on the {role} side ⇒ break failed, role kept (sweep)"))
+            if self._structural_break():                                   # method §3, the break's mirror: a close back on the role side
+                if back and st.get("back") is None:                        # (outside the band) starts the attempt; a swing formed there,
+                    st["back"] = t                                         # confirmed by bar t, completes it — even when bar t itself
+                done = st.get("back") is not None and self._swing_beyond(L, st["back"], not up, t) is not None   # closes inside (as the
+                if not done and not back:                                  # break counts it); a close inside / beyond again before the
+                    st["back"] = None                                      # swing ends the attempt (as a poke back ends an excursion)
+                why = f"closed back on the {role} side and a swing formed there ⇒ break failed, role kept (sweep)"
+            else:
+                done = st["rc"] >= acc
+                why = f"{acc} closes back on the {role} side ⇒ break failed, role kept (sweep)"
+            if done:
+                L.events.append((t, "reclaim", why))
                 L.events.append((t, "sweep", "broken then reclaimed (far-side swing not reached) ⇒ sweep ★"))   # ★ / trap_sweep पुरावा
                 last_flip = [x for b, x in L.flip_facts if b <= t and x.get("flipped_at") == b]   # the flip entry itself
                 L.flip_facts.append((t, {**(dict(last_flip[-1]) if last_flip else {}), "reclaimed_at": t}))
-                st.update(brk=False, start=None, rc=0)
+                st.update(brk=False, start=None, rc=0, back=None)
             excursion[L.id] = 0
             return
+        structural = self._structural_break()
+        if structural and exc > 0 and st["start"] is not None:            # method §3: a swing formed beyond during the excursion ⇒ BROKEN
+            sw = self._swing_beyond(L, st["start"], up, t)
+            if sw is not None:
+                fs = FL.far_swing(known, L.lo, L.hi, up, st["start"], C)
+                L.events.append((t, "broken", f"closed beyond the band and a swing formed beyond it ({sw.price:,.2f}); " +
+                                 (f"far-side swing {fs.price:,.2f} not reached" if fs is not None else "no far-side swing known")))
+                L.flip_facts.append((t, {**hist, "broken_at": t, "break_dir": 1 if up else -1, "exc_start": st["start"],
+                                         "far_swing": self._swing_fact(fs)}))
+                st.update(brk=True, rc=0, back=None)
+                excursion[L.id] = 0
+                return
         if beyond_close:
             exc += 1
-            if exc >= acc:                                                 # acceptance ⇒ BROKEN (flip फक्त far swing ने)
+            if not structural and exc >= acc:                              # legacy what-if: acceptance ⇒ BROKEN (flip फक्त far swing ने)
                 fs = FL.far_swing(known, L.lo, L.hi, up, st["start"], C)
                 L.events.append((t, "broken", f"{acc} closes beyond the band; " +
                                  (f"far-side swing {fs.price:,.2f} not reached" if fs is not None else "no far-side swing known")))
@@ -547,11 +601,30 @@ class Levels:
                                          "far_swing": self._swing_fact(fs)}))
                 st.update(brk=True, rc=0)
                 exc = 0
-        elif exc > 0 or beyond_wick:                                       # पलीकडे गेली पण acceptance / far swing शिवाय परत ⇒ sweep ★
+        elif exc > 0 or beyond_wick:                                       # पलीकडे गेली, पलीकडे swing बनण्याआधी परत ⇒ sweep ★
             L.events.append((t, "sweep", "wick पलीकडे, close परत" if exc == 0 else f"{exc} close(s) पलीकडे, परत आत"))
             exc = 0
             st["start"] = None
         excursion[L.id] = exc
+
+    def _structural_break(self):
+        """Abhi's method §3: broken = a close beyond AND a swing formed beyond (default). "closes" = the legacy `accept_closes` count."""
+        rule = self.s.get("break_rule", "structure")
+        if rule not in ("structure", "closes"):
+            raise ValueError(f"break_rule {rule!r} — structure / closes पैकी")
+        return rule == "structure"
+
+    def _swing_beyond(self, L, start, up, t):
+        """A swing (the finest structure, confirmed by bar t) formed at or after `start` whose extreme lies beyond the band on the given
+        side (up ⇒ above hi, else below lo). None if no such swing yet. Bars ≤ t only."""
+        for p in reversed(getattr(self, "_known0", [])):
+            if p.confirm_bar > t:
+                continue
+            if p.bar < start:                                              # confirm order ≠ bar order in general ⇒ check every swing
+                continue
+            if (p.price > L.hi) if up else (p.price < L.lo):
+                return p
+        return None
 
     @staticmethod
     def _last_broken(L, t):
@@ -634,25 +707,24 @@ class Levels:
         return out
 
     def active(self, t, trend, band=None):
-        """Abhi B2 watch-list: trade-बाजूचे सगळे पुढचे valid zones, जवळचे पहिले (UP / DOWN ≤ watch_levels_max; RANGE ≤ active_levels_max);
+        """Abhi B2 watch-list / method §4: trade-बाजूचे सगळे पुढचे valid zones, जवळचे पहिले (no count cap; RANGE ⇒ each side's nearest);
         BROKEN / DEAD नाहीत ⇒ zone तुटला की पुढचा आधीच यादीत (reset नाही). जुनी व्याख्या: trade-बाजूची जवळची levels. DOWN ⇒ किंमतीवरचे / किंमत ज्यात आहे ते resistance; UP ⇒ खालचे support;
         RANGE ⇒ खालचा support + वरचा resistance (प्रत्येकी जवळचा). Daily पट्टा (Q27) दिला असेल ⇒ फक्त कडांची बाजू: support पट्ट्याच्या
         खालच्या अर्ध्यात, resistance वरच्या अर्ध्यात (मध्य = पट्ट्याचा मध्य; Abhi: bull put खालच्या कडेला, bear call वरच्या)."""
         snap = [x for x in self.snapshot(t) if x.get("state") != FL.BROKEN   # K4 (Abhi): BROKEN (far swing पार नाही) ⇒ trade location नाही
                 and x.get("trade_location", True)]                          # Abhi Z-1u: per-timeframe bands; the 1H band is the location
-        m = int(self.s["active_levels_max"]) if trend == "RANGE" else int(self.s.get("watch_levels_max", self.s["active_levels_max"]))
         sup = sorted([x for x in snap if x["role"] == SUP and not x["above"]], key=lambda x: x["dist"])
         res = sorted([x for x in snap if x["role"] == RES and not x["below"]], key=lambda x: x["dist"])
-        if trend == "DOWN":
-            return res[:m]
+        if trend == "DOWN":                                                # Abhi's method §4: every valid area ahead armed, nearest first
+            return res
         if trend == "UP":
-            return sup[:m]
+            return sup
         if trend == "RANGE":
             if band:
                 mid = (float(band[0]) + float(band[1])) / 2.0
                 sup = [x for x in sup if (x["lo"] + x["hi"]) / 2.0 <= mid]
                 res = [x for x in res if (x["lo"] + x["hi"]) / 2.0 >= mid]
-            return (sup[:1] + res[:1])[:m]
+            return sup[:1] + res[:1]                                       # RANGE: the nearest edge area on each side
         return []
 
     def known_pivots(self, t):
