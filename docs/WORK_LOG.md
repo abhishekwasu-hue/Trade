@@ -2668,6 +2668,35 @@ legs owner वि. reader2 gate).
   30 + ⚠️ ओळ. (5) Dashboard: "हा switch चालू केला तरी सध्या फरक नाही (`last_sl_hit_time` कोणी लिहीत नाही) — B3". (6) 🎯 निकालात: सेव्ह ⇒
   signal symbols साठी 15M SRv2 `signal_source` = engine ('own' / 'both' बदलतं).
 
+## 2026-10-14 · Abhi ची zone study उत्तरं (branch `claude/zone-study-answers`)
+
+- **KB आधी:** K4 मध्ये [Abhi] नोंदी (Z-1s शब्दरचना, entry चे तीन भाग क्रमाशिवाय, sticky handover, counter बाजू गायब = दमली, FUT gaps);
+  Method Pack पुन्हा बनवला (`--check` ✅; golden आकडे pack मध्ये नाहीत).
+- **Code:** Z-1p `zone_study` `counter_gone`; Z-1q `method.handover_episode` (absorption / K4 BROKEN पर्यंत टिकतो); Z-1r CHoCH zone मध्ये
+  आल्यानंतरचाच (`arrival_at`); RF-2 `vol_gap_max_frac` (50%) ⇒ data problem + तीच Telegram ओळ; Z-1s `flip.reached` — पलीकडे swing नसेल ⇒
+  पहिला swing confirm होताच FLIPPED / DEAD (engine + `band_flip_facts`); Z-1t `history.level_history_daily` / `daily_warmup` (holdout Daily
+  फक्त level history, फक्त ≥ 2026-07 window, नोंदीसह), V22 holdout 15M bar ⇒ HoldoutError, `_prior_levels` "Q40 prior levels skipped" log;
+  PF-2 "provisional width" (facts, chart labels, log). Harness: `real_inputs` आणि `replay_day.py` आता Daily warm-up देतात (live सारखं).
+- **Tests:** नवीन `tests/test_decision3_zone_answers.py`; `test_decision3_flip.py` मधले जुन्या Z-1a शब्दरचनेचे synthetic tests नव्या नियमाने
+  (golden नाहीत); 29 Sep real test नवा; 12 Oct golden bear call आता मिळतो ⇒ xfail काढला.
+- **Re-run:** 12 Oct 09:30 bear call (grade B); 13 Oct bear call नाही; 29 Sep 22,725–22,810 BROKEN 09:45 → FLIPPED 11:30, 12:00 / 12:15
+  pullback पण FUT नाही ⇒ entry नाही. नवीन प्रश्न: Z-1u (Weekly prior पट्टे merge होऊन मोठा zone), Z-1v (अर्थ लावलेले भाग).
+
+## 2026-10-14 · Review #329 (FIX FIRST) नंतर — Abhi Z-1u / Z-1w / Z-1v (branch `claude/zone-study-answers`)
+
+- **का:** आधीचा 12 Oct bear call चुकीच्या कारणाने आला — Daily / Weekly prior पट्टे merge होऊन 22,476–22,809 चा मोठा पट्टा आणि 9 Oct
+  चा handover 12 Oct पर्यंत चालला. Abhi च्या 22,543.75–22,621.80 पट्ट्यावर call नव्हता.
+- **KB आधी:** Z-1u (timeframes वेगळे, पट्टे फक्त बांधायचे, confluence label, location = 1H), Z-1v (visit), Z-1w (fixture मधून 8 Oct काढलं);
+  RF-2 "register setting"; Method Pack पुन्हा.
+- **Code:** `Levels._born` merge / widen नाही (`tf`, lineage); Weekly = context; Daily = 1H zone नसेल तिथेच location; snapshot मध्ये
+  `confluence_label`, `trade_location`, `width`, `width_sigma`; नवी setting `trade_band_max_sigma` = None (फक्त report). `V22.visit`:
+  पट्ट्याबाहेर (आली त्या बाजूला) close ⇒ visit संपली; handover / absorption window = visit. Live pre-open / 15:45 / watched_levels: फक्त
+  location पट्टे + confluence label. `after_arrival` काढलं; `daily_from_1m` session व्याख्या shared; BANKNIFTY Daily (`date` column) fix.
+  जुने synthetic tests साठी legacy pins `level_merge` / `zone_visit_rule` (असर्ट बदलले नाहीत).
+- **Re-run:** 12 Oct (78-pt पट्टा) bear call नाही ⇒ strict xfail (visit 09:15, 09:30 आधी फक्त 1 bar ⇒ handover नाही; Z-1z). 13 Oct bear
+  call नाही; पट्टा 14:30 ला 22,651.10 पार ⇒ FLIPPED (Z-1y). 29 Sep Daily 22,725–22,810 FLIPPED 11:30; FUT नाही ⇒ entry नाही.
+  Width distribution + प्रस्ताव 1.5 σ_1H (Z-1x). Charts: trade-data `review/oct12_zone/`, `review/sep29_zone/…_v2.png`.
+
 ## 2026-10-14 · Approval संदेशात पट्ट्याची रुंदी + "merged band — check" (branch `claude/approval-band-width`)
 
 - **का:** live decision3 Daily / Weekly आधीचे levels 1H zones मध्ये मिसळतो ⇒ 300–650 pts चे पट्टे. मूळ fix PR #329 मध्ये; तोपर्यंत Abhi ला
@@ -2685,3 +2714,38 @@ legs owner वि. reader2 gate).
 - **Tests:** नवीन `tests/test_approval_band_width.py` (8: helpers, setting override, caption रुंदी / इशारा / इशारा नाही, missing पट्टा, pre-open,
   सारांश); `test_telegram_cleanup` ची सारांश ओळ ", 61 pts wide" ने (हेतुपूर्वक wording बदल). OPEN_QUESTIONS BW-1.
 - **Deploy:** git pull पुरे (नवीन setting default ⇒ DB migration नाही); dashboard restart केल्यावर setting बदलता येईल.
+
+## 2026-10-19 · #329 re-review fixes (branch `claude/zone-study-answers`)
+
+- **main merge:** #330 (approval band width) सोबत conflicts — दोन्ही ठेवले: pre-open `area_words` = confluence label + रुंदी; 15:45 "Nearest" ओळीत
+  आता confluence label सुद्धा (आधी zone type '' जात होता). Abhi चं "merged band — check" wording तसंच ठेवलं (Abhi चा शब्द).
+- **12 Oct xfail:** तिन्ही कारणं assert — (1) Z-1z: 09:30 आधी visit मध्ये 1 bar < study_min_bars 4; (2) 09:30 FUT volume raw 0.59× (slot
+  normalisation साठी आधीची FUT sessions पुरेशी नाहीत — VPS वरचा "45 दिवस" export सुद्धा फक्त 30 Sep पासून: 12 Oct आधी 7 sessions < 10);
+  (3) Z-1v-a: अपयशी dominant candidate चा close पट्ट्याखाली ⇒ visit संपते.
+- **Z-1y:** 22,731.8 ही Abhi ची स्वतःची अपेक्षा (जुना code नाही) — ती strict xfail म्हणून तशीच ठेवली, प्रश्न म्हणून
+  (`test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731`); 13 Oct "bear call नाही" golden वेगळ्या test मध्ये (pass).
+- **Non-blocking:** engine_signal payload `level` मध्ये `tf` + `confluence_label`; अज्ञात `zone_visit_rule` ⇒ V22 सुरू होतानाच ValueError
+  (आणि `visit()` मध्ये); KB: Daily पट्टा location कधी (1H zone BROKEN / DEAD ⇒ Daily location), PF-2 हाच एकमेव रुंदी-बदल.
+
+## 2026-10-19 · Abhi Z-1z (c), Z-1v-a (a), Z-1y (a), Z-1x (branch `claude/zone-study-answers`, #329)
+
+- **KB आधी:** K4 मध्ये चार ओळी — structural far swing (sweep wick नाही), दोन-candle sharp reversal = handover, अपयशी dominant candle ⇒ visit
+  संपली, कमाल पट्टा 1.5σ_1H ("check", कधीच गुपचूप रुंद नाही). Method Pack `--check` ✅ (pack मध्ये हे भाग नाहीत).
+- **Code:** `flip.structural` + `far_swing(closes)` (engine, `flip_view`, chart `band_flip_facts` सारखंच); `method.sharp_reversal` (प्रत्येक गहाळ भाग
+  नावाने; volume फक्त slot-normalised — NA ⇒ वाचन नाही, raw कधीच नाही) + `handover_episode(sharp=…)` (commitment bar सुद्धा candle 2 असू शकतो);
+  `trade_band_max_sigma` default 1.5 + `too_wide`; live `engine3_band_max_sigma` (dashboard, cloud_db default 1.5) ⇒ V22 overrides; pre-open /
+  15:45 मध्ये रुंद पट्टे "too wide (Nσ) — check, no trade".
+- **Re-run:** 13 Oct — पट्टा BROKEN, resistance, far swing 22,731.85 ✅ (Abhi ची अपेक्षा, test आता pass). 12 Oct — bear call नाही: 09:15 → 09:30
+  दोन-candle वाचन रचनेने अपयशी (engulf नाही; close 09:15 low च्या 0.15 pt वर; normalised volume NA — 7 sessions < 10) ⇒ xfail त्या तथ्यांवर
+  (Z-1z-a / Z-1z-c). 29 Sep — Daily पट्टा 1.65σ > 1.5 ⇒ "too wide — check" ⇒ xfail त्याच कारणावर (Z-1x-a). FUT export 30 Sep पासूनच.
+
+## 2026-10-19 · Abhi चं तत्त्व: वाचन = तर्क, गणित नाही (branch `claude/zone-study-answers`, #329)
+
+- **KB आधी:** K4 च्या या फेरीतल्या ओळी तर्काच्या भाषेत (far swing = खरं वळण, zone = एक base, visit, अपयशी dominant candle, handover,
+  volume तुलना, RSI divergence); golden किंमती / तारखा KB मधून trade-data `fixtures/golden_cases.md` मध्ये (private).
+- **Code:** `study_min_bars`, `commit_dom_mult`, `sharp_rej_wick_body`, `trade_band_max_sigma` 1.5 (+ dashboard), `level_min_width_sigma` काढले /
+  0; dominant = visit मधल्या प्रत्येक इतर candle पेक्षा मोठी; commitment volume = visit मधल्या उलट बाजूच्या candles पेक्षा मोठा; दोन-candle
+  handover मध्ये volume / ratio नाही; RSI divergence: bar window नाही, "equal high" tolerance नाही (नवं टोक), RSI = swing च्या स्वतःच्या
+  span मधलं टोक. उरलेले आकडे NUMBERS_INVENTORY (C-1 … C-19) — Abhi साठी, कारण आणि प्रस्तावासह.
+- **Re-run:** 12 Oct — bear call नाही (09:30 dominant candle 09:15 चा push गिळत नाही; volume visit मधल्या आधीच्या candle पेक्षा कमी; visit
+  संपली). 13 Oct — bear call नाही ✅, zone BROKEN resistance ✅. 29 Sep — Daily zone पुन्हा location; FUT नाही ⇒ entry नाही.

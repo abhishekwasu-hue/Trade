@@ -8,7 +8,10 @@ Data (real):
   • collector export (`--export-dir`, default <trade-data>/live_export/<DAY>): oe_index_5min_<SYM>.parquet (1m नसलेल्या दिवसांचे 15M + 5M LTF),
     oe_futures_5min_<SYM>.parquet (FUT volume);
   • FUT 5M volume: export + <trade-data>/futures*/oe_futures_5min_<SYM>*.parquet (near-month, legs2.volume — 15M = 09:15-anchored बेरीज);
-  • Daily warm-up (`--daily`, जुने आधी) + replay data चे दिवस.
+  • Daily warm-up (Abhi Z-1t, live `engine3_live` च्या Upstox Daily सारखा): `--daily` files (जुने आधी), नाहीतर repo / trade-data चे
+    default (`decision3.history.repo_level_history`: NIFTY IS / VAL 1m + sealed holdout Daily — फक्त level history, फक्त holdout
+    नंतरच्या window साठी, वापराची नोंद "holdout daily bars used as level history: n bars") + replay data चे दिवस. `--no-daily-warmup` ⇒
+    फक्त replay data चे दिवस (Levels नोंद: "0 Daily bars before window ⇒ Q40 prior levels skipped").
 `--synthetic`: tests/oct12_fixture (Abhi ने सांगितलेली रचना, खरा data नाही) — export अजून आला नसेल तेव्हा.
 
   VPS (Upstox, read-only):  python3 scripts/replay_day.py --date 2026-10-12 --symbol NIFTY --dry-run [--json out.json]
@@ -111,17 +114,24 @@ def load_real(a, day):
     if fut is not None and len(fut):
         fut["timestamp"] = _naive(fut["timestamp"])
         fut = fut.drop_duplicates(["timestamp"] + (["contract"] if "contract" in fut.columns else []), keep="first")
-    daily = None
-    if a.daily:
-        daily = HI.load_daily(a.daily)[["timestamp", "open", "high", "low", "close"]]
-    d15 = m15.assign(_d=pd.to_datetime(m15["timestamp"]).dt.normalize()).groupby("_d").agg(
-        open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last")).reset_index().rename(columns={"_d": "timestamp"})
-    if daily is not None:
-        d15 = d15[d15["timestamp"] > daily["timestamp"].max()]
-    daily = pd.concat([x for x in (daily, d15) if x is not None], ignore_index=True)
+    m15 = m15.reset_index(drop=True)
+    daily = HI.daily_warmup(sym, m15, warmup_history(a, sym, pd.to_datetime(m15["timestamp"]).min()) if len(m15) else None)
     daily = daily[daily["timestamp"] <= day].reset_index(drop=True)
-    daily["bar_end"] = daily["timestamp"] + pd.Timedelta(hours=15, minutes=30)
-    return m15.reset_index(drop=True), m1, ltf, fut, daily
+    return m15, m1, ltf, fut, daily
+
+
+def warmup_history(a, sym, window_start):
+    """Abhi Z-1t: Daily level history before the 15M window — `--daily` files (each through `history.read_level_history`: the holdout
+    guard) or the repo / trade-data default (`history.repo_level_history`); `--no-daily-warmup` ⇒ none. The holdout use is printed."""
+    from decision3 import history as HI
+    if getattr(a, "no_daily_warmup", False) or window_start is None or pd.isna(window_start):
+        return None
+    if a.daily:
+        hist, n = HI.level_history_daily(sym, [HI.read_level_history(p, sym, window_start) for p in a.daily], window_start, log_fn=print)
+    else:
+        hist, n = HI.repo_level_history(sym, window_start, root=ROOT, trade_data=TRADE_DATA, log_fn=print)
+    print(f"Daily warm-up: {len(hist)} Daily bars before {pd.Timestamp(window_start).date()} (Z-1t level history)")
+    return hist
 
 
 def load_synthetic(day):
@@ -303,6 +313,9 @@ def load_upstox(a, day):
     dd = get("day", a.daily_days)
     daily = LR.prepare_daily(dd[["timestamp", "open", "high", "low", "close"]], day + pd.Timedelta(days=1))   # Q33 warm-up फक्त
     daily = daily[["timestamp", "open", "high", "low", "close"]].reset_index(drop=True)
+    if len(m15):                                                         # Abhi Z-1t: holdout Daily = level history only — guarded + logged
+        hist, _n = HI.level_history_daily(sym, [daily], pd.to_datetime(m15["timestamp"]).min(), log_fn=print)
+        daily = pd.concat([hist, daily[daily["timestamp"] >= pd.to_datetime(m15["timestamp"]).min().normalize()]], ignore_index=True)
     daily["bar_end"] = pd.to_datetime(daily["timestamp"]).dt.normalize() + pd.Timedelta(hours=15, minutes=30)
     fpath = a.futures or os.path.join(ROOT, "data", f"oe_futures_5min_{sym}.parquet")
     fut = until_close(allowed(_read_any([fpath]), sym), day)
@@ -361,7 +374,8 @@ def _main(argv=None):
                     help="auto: local data मध्ये तो दिवस असेल तर local, नाहीतर Upstox (VPS, token .env)")
     ap.add_argument("--data", nargs="*", help="local 1m csv(.gz) files (default <trade-data>/upstox/<SYM>_1m_*.csv.gz)")
     ap.add_argument("--export-dir", help="local collector export (default <trade-data>/live_export/<DAY>)")
-    ap.add_argument("--daily", nargs="*", help="local Daily warm-up files, जुने आधी (Q33)")
+    ap.add_argument("--daily", nargs="*", help="local Daily warm-up files, जुने आधी (Q33 / Z-1t); नाही ⇒ repo / trade-data default")
+    ap.add_argument("--no-daily-warmup", action="store_true", help="Daily warm-up नाही (फक्त replay data चे दिवस; जुने reports reproduce)")
     ap.add_argument("--futures", help="Upstox source: FUT 5M parquet (default data/oe_futures_5min_<SYM>.parquet)")
     ap.add_argument("--m15-days", type=int, default=90)
     ap.add_argument("--ltf-days", type=int, default=10)
@@ -377,6 +391,8 @@ def _main(argv=None):
                     help="level flip नियम (default engine चा: far_swing = KB K4 Abhi); acceptance = जुना spec §5.4 — फक्त जुने reports reproduce")
     ap.add_argument("--legacy-zone-gates", action="store_true",
                     help="जुने zone gates (handover अनिवार्य नाही, §5.3 range gate) — Abhi Z-1m / Z-1j आधीचे reports reproduce")
+    ap.add_argument("--legacy-bands", action="store_true",
+                    help="जुने पट्टे / visit (merge ने रुंद पट्टे, स्पर्श-गट visit) — Abhi Z-1u / Z-1v आधीचे reports reproduce")
     a = ap.parse_args(argv)
     import instruments as INS
     from decision3 import engine as E3
@@ -411,13 +427,14 @@ def _main(argv=None):
         return 2
     es = {**ENGINE_S, **({"rr_step": True} if a.legacy_rr else {}), **({"entry_first_bar": False} if a.no_first_bar_entry else {}),
           **({"level_flip_rule": a.flip_rule} if a.flip_rule else {}),
-          **({"a2_handover_required": False, "range_state_gate": True} if a.legacy_zone_gates else {})}
+          **({"a2_handover_required": False, "range_state_gate": True} if a.legacy_zone_gates else {}),
+          **({"level_merge": True, "zone_visit_rule": "touch_window"} if a.legacy_bands else {})}
     V = E3.V22(m15, m1, daily, s=es, sealed=HI.sealed_fn(a.symbol) if src != "synthetic" else None, ltf=ltf, futures=fut)
     vol = V.levels.A.get("volume")
     nv = int(np.isfinite(vol[bars]).sum()) if vol is not None else 0
     print(f"{a.symbol} {day.date()} source={src}{' (SYNTHETIC FIXTURE, खरा data नाही)' if src == 'synthetic' else ''} · bars {lo}–{hi}: "
           f"{len(bars)} · FUT volume on {nv}/{len(bars)} bars · LTF 5M {'yes' if V.ltf is not None else 'MISSING'} · "
-          f"c0 dominant ×{V.s['commit_dom_mult']} · c1 LTF CHoCH {'required' if V.s.get('ltf_choch', True) else 'off'} · "
+          f"c0 dominant {'(largest candle of the visit)' if V.s.get('c0_dominance', True) else 'off'} · c1 LTF CHoCH {'required' if V.s.get('ltf_choch', True) else 'off'} · "
           f"level_death_side {V.s.get('level_death_side', '—')} · 09:15 entry {'on' if V.s.get('entry_first_bar') else 'off'}"
           f"{' · legacy ⑦ R:R' if V.rr_step else ''}")
     rows = V.run(bars)

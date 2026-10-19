@@ -83,7 +83,8 @@ def pair(D, t, d=0, side="bear"):
 def test_settings_defaults_match_the_spec():
     s = RS.load()
     assert s["period"] == 14 and s["div_rsi_window"] == 2 and s["div_hidden"] is False and s["div_show"] is True
-    assert s["div_bars"] == {"15M": (3, 50), "1H": (3, 35), "5M": (3, 60)}             # Abhi RSI-2: किमान 3 bars
+    assert s["div_bars"] == {"15M": (3, 50), "1H": (3, 35), "5M": (3, 60)}             # legacy what-if only (div_bar_window)
+    assert s["div_bar_window"] is False                                         # Abhi (final): no bar counts / minimum gaps
     for k in ("div_rsi_window", "div_bars", "div_hidden", "div_degrees", "div_show"):
         assert k in RS.REGISTER
     assert hasattr(RE.RSI, "known") and callable(RE.RSI.known)                   # facts.dossier API unchanged
@@ -112,11 +113,14 @@ def test_regular_bullish_mirror():
     assert RE.div_label(c).startswith("bull div · confirmed · 15 bars")
 
 
-def test_equal_high_double_top_within_band_tolerance_is_divergence():
-    for h2 in (110.0, 110.3, 109.7):                                            # tolerance = 0.2 MR = 0.4
-        df, ps, r = bear_case(h2=h2)
-        c = pair(build(df, ps, r), 26)
-        assert c["price_rel"] == "equal high" and c["is_div"], h2
+def test_divergence_needs_a_new_price_extreme_no_tolerance_band():
+    """Abhi (final): price makes a NEW extreme while RSI does not exceed its previous one — an equal or slightly lower high is not."""
+    df, ps, r = bear_case(h2=110.0)
+    c = pair(build(df, ps, r), 26)
+    assert c["price_rel"] == "equal high" and not c["is_div"]
+    df, ps, r = bear_case(h2=110.3)
+    c = pair(build(df, ps, r), 26)
+    assert c["price_rel"] == "higher high" and c["is_div"]
     df, ps, r = bear_case(h2=109.0)                                             # beyond the tolerance below ⇒ lower high
     c = pair(build(df, ps, r), 26)
     assert c["price_rel"] == "lower high" and not c["is_div"] and "price made a lower high" in c["reason"]
@@ -154,9 +158,10 @@ def test_bar_window_and_cap_rejected_log(b, ok, cap):
     n = 70
     df = frame(n, highs={10: 110.0, b: 112.0}, lows={11: 95.0})
     ps = [piv(df, "H", 10), piv(df, "L", 11), piv(df, "H", b)]
-    D = build(df, ps, rsi_with(n, {10: 70.0, b: 65.0}))
+    D = build(df, ps, rsi_with(n, {10: 70.0, b: 65.0}), div_bar_window=True)   # legacy what-if
     c = pair(D, b + 1)
     assert c["bars"] == b - 10 and c["is_div"] is ok and c["cap"] == cap
+    assert pair(build(df, ps, rsi_with(n, {10: 70.0, b: 65.0})), b + 1)["is_div"]   # Abhi (final): no bar window by default
     logged = [x for x in D.cap_log() if x["L2"]["bar"] == b]
     assert bool(logged) is (cap is not None) and (not logged or logged[0]["reason"].startswith("rejected only by the bar window"))
     assert all(x["L2"]["bar"] != b for x in D.history()) is (not ok)
@@ -167,7 +172,7 @@ def test_window_per_timeframe_from_settings():
     df = frame(n, highs={10: 110.0, 50: 112.0}, lows={20: 95.0})
     ps = [piv(df, "H", 10), piv(df, "L", 20), piv(df, "H", 50)]
     r = rsi_with(n, {10: 70.0, 50: 65.0})
-    one_h = RE.Divergence(df, "1H", s=S0, res=res_of(df, ps), rsi=r, areas=False)
+    one_h = RE.Divergence(df, "1H", s={**S0, "div_bar_window": True}, res=res_of(df, ps), rsi=r, areas=False)
     assert one_h.win == (3, 35) and pair(one_h, 51)["cap"] == "max"           # 40 bars > 35
     assert pair(build(df, ps, r), 51)["is_div"]                                  # 15M: 40 ≤ 50
 
@@ -221,16 +226,17 @@ def _second_rsi(peak_at, val=68.0, confirm=30, n=40):
     return pair(D, confirm)["L2"]
 
 
-@pytest.mark.parametrize("off", [1, 2, -2])
-def test_rsi_extreme_taken_within_two_bars_of_the_price_pivot(off):
-    x = _second_rsi(25 + off)
+@pytest.mark.parametrize("off", [1, 2, -2, 3, -3])
+def test_rsi_at_the_swing_is_its_extreme_inside_the_swings_own_span(off):
+    """Abhi (final): RSI AT the swing — the RSI extreme inside the swing's own span (after the opposite swing, up to the bar the swing is
+    known), no ±bar count."""
+    x = _second_rsi(25 + off, confirm=30)
     assert x["rsi"] == 68.0 and x["rsi_bar"] == 25 + off
 
 
-def test_rsi_peak_outside_the_window_is_not_used():
-    for off in (3, -3):
-        x = _second_rsi(25 + off)
-        assert x["rsi"] == 60.0 and x["rsi_bar"] == 25
+def test_rsi_before_the_opposite_swing_is_not_this_swings():
+    x = _second_rsi(14)                                                          # bar 14 is before the low at 15 ⇒ another swing's RSI
+    assert x["rsi"] == 60.0 and x["rsi_bar"] == 25
 
 
 def test_rsi_window_capped_at_the_swings2_confirm_bar():
@@ -272,7 +278,7 @@ def walk_frame():
 def test_no_lookahead_cut_at_any_bar_never_changes_earlier_outputs(walk_frame):
     m15 = walk_frame
     full = RE.Divergence(m15, "15M", areas=False)
-    assert full.events and full.rejects                                          # the walk exercises both paths
+    assert full.events                                                           # (rejects: only the legacy bar-window what-if)
     n = len(m15)
     for c in (n - 1 - 7 * k for k in range(0, 40, 4)):
         cut = RE.Divergence(m15.iloc[:c + 1], "15M", areas=False)
@@ -321,7 +327,7 @@ def test_review_chart_has_rsi_pane_70_30_labels_and_cap_lines():
     n = 40
     df = frame(n, highs={10: 110.0, 25: 112.0, 29: 113.0}, lows={15: 95.0, 27: 96.0})
     ps = [piv(df, "H", 10), piv(df, "L", 15), piv(df, "H", 25), piv(df, "L", 27), piv(df, "H", 29)]
-    D = build(df, ps, rsi_with(n, {10: 70.0, 25: 65.0, 29: 60.0}), div_bars={"15M": (5, 50)})   # a 5-bar minimum shows a cap line
+    D = build(df, ps, rsi_with(n, {10: 70.0, 25: 65.0, 29: 60.0}), div_bars={"15M": (5, 50)}, div_bar_window=True)   # legacy cap line
     divs, caps = D.history(), D.cap_log()
     assert len(divs) == 1 and len(caps) == 1
     fig = RC.div_figure(D.df, D.rsi, divs, caps, "t")

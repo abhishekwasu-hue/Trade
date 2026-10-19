@@ -305,13 +305,15 @@ def zone_study(A, a, t, d, s, mr=None):
     """Abhi a2: ARMED (a) पासून t पर्यंतच्या बंद candles — trend-बाजूच्या (d दिशेचा रंग) आणि उलट-बाजूच्या candles ची पहिल्या / दुसऱ्या अर्ध्यात
     तुलना (सगळं सापेक्ष; volume असेल तर). handover = trend-बाजू मोठी होत (body ↑ आवश्यक; range ↑, close टोकाजवळ ↑, volume ↑) आणि उलट-बाजू दमत
     (body ↓ आवश्यक; उलट wick ↑, close टोकापासून दूर ↑, volume ↓). absorption = उलट-बाजू मजबूत होत (body ↑, range ↑, volume असेल तर ↑).
+    Abhi Z-1p (a): उलट-बाजू zone मधून गायब (पहिल्या अर्ध्यात counter candle होती, दुसऱ्या अर्ध्यात एकही नाही) ⇒ दमली (दमण्याचं टोक) ⇒
+    counter_weakening = True, `counter_gone` = True; handover = फक्त trend-बाजू वाढतेय का.
     Pattern (पुरावा): area मधल्या swings वरून wedge / channel-flag / double-triple. एकाच function मध्ये दोन्ही दिशा (d = ±1)."""
     s = s or S3.DEFAULTS
     w = list(range(max(0, int(a)), int(t) + 1))
     vol = _vol(A)
-    out = {"handover": None, "absorption": None, "trend_growing": None, "counter_weakening": None, "vol_ok": vol is not None,
-           "pattern": None, "line": ""}
-    if len(w) < int(s.get("study_min_bars", 4)):
+    out = {"handover": None, "absorption": None, "trend_growing": None, "counter_weakening": None, "counter_gone": False,
+           "vol_ok": vol is not None, "pattern": None, "line": ""}
+    if len(w) < 2:                                                         # logic, not a threshold: a comparison needs an earlier and a later part
         out["pattern"] = zone_pattern(A, a, t, d, s, mr)
         return out
     m = len(w) // 2
@@ -336,6 +338,8 @@ def zone_study(A, a, t, d, s, mr=None):
     out["trend_growing"] = _majority(None if tb is None else tb > 0, [None if x is None else x > 0 for x in (tr, tl, tv)])
     out["counter_weakening"] = _majority(None if cb is None else cb < 0, [None if co is None else co > 0, None if cl is None else cl > 0,
                                                                           None if cv is None else cv < 0])
+    if C[0]["body"] and not C[1]["body"]:                                  # Abhi Z-1p (a): counter side gone from the zone ⇒ exhausted
+        out["counter_weakening"] = out["counter_gone"] = True
     out["handover"] = bool(out["trend_growing"] and out["counter_weakening"])
     out["absorption"] = bool(cb is not None and cb > 0 and cr is not None and cr > 0 and (cv is None or cv > 0))
     out["vol_trend_rising"] = None if tv is None else tv > 0
@@ -344,7 +348,9 @@ def zone_study(A, a, t, d, s, mr=None):
     parts = []
     if out["trend_growing"]:
         parts.append(f"{tw} candles growing")
-    if out["counter_weakening"]:
+    if out["counter_gone"]:
+        parts.append(f"{cw} candles gone from the zone (exhausted)")
+    elif out["counter_weakening"]:
         parts.append(f"{cw} candles weakening")
     if out["absorption"]:
         parts.append(f"{cw} candles strengthening (absorption)")
@@ -352,6 +358,108 @@ def zone_study(A, a, t, d, s, mr=None):
         parts.append(f"volume rising on {tw} candles")
     out["line"] = " · ".join(([out["pattern"]] if out["pattern"] else []) + parts)
     return out
+
+
+def sharp_reversal(A, i, d, lo, hi, s=None, a0=None):
+    """Abhi Z-1z: inside the zone, a push that is REJECTED and immediately SWALLOWED by a dominant opposite candle is a handover in
+    itself. Candle 1 = bar i − 1, candle 2 = bar i (bars ≤ i). Comparisons only — no numbers:
+      • candle 1 pushes into or through the zone (supply: its high reaches the zone; demand: its low) and is rejected — its wick on the
+        push side is longer than its body and it closes back, not beyond the zone (a wick through the zone and back = a sweep, K5);
+      • candle 2 goes the other way (the trade side), is dominant — its body larger than every other candle of the visit (a0 … i − 1) —
+        and swallows candle 1: its body covers candle 1's body and it closes beyond candle 1's trade-side extreme.
+    Volume is the commitment's own comparison (c0), not part of this read. a0 = the visit's (or post-break window's) first bar; candle 1
+    must be inside it. Returns {found, why (every missing part), parts {c1_rejected, c2_dominant, c2_engulfs_body, c2_closes_beyond_c1},
+    c1, c2}."""
+    i = int(i)
+    a0 = int(a0) if a0 is not None else i - 1
+    out = {"found": False, "why": None, "c1": i - 1, "c2": i, "parts": {}}
+    if i - 1 < max(a0, 0):
+        out["why"] = "candle 1 is not inside the visit"
+        return out
+    o1, h1, l1, c1 = _ohlc(A, i - 1)
+    o2, h2, l2, c2 = _ohlc(A, i)
+    b1, b2 = abs(c1 - o1), abs(c2 - o2)
+    push_wick = (h1 - max(o1, c1)) if d == DOWN else (min(o1, c1) - l1)
+    pushed = (h1 >= lo) if d == DOWN else (l1 <= hi)
+    back = (c1 <= hi) if d == DOWN else (c1 >= lo)
+    others = [abs(A["close"][j] - A["open"][j]) for j in range(a0, i)]
+    far1 = l1 if d == DOWN else h1                                         # candle 1's trade-side extreme
+    P = {"c1_rejected": bool(pushed and back and push_wick > b1),
+         "c2_dominant": bool((c2 - o2) * d > 0 and b2 > max(others)),
+         "c2_engulfs_body": bool(max(o2, c2) >= max(o1, c1) and min(o2, c2) <= min(o1, c1)),
+         "c2_closes_beyond_c1": bool((c2 < far1) if d == DOWN else (c2 > far1))}
+    out["parts"] = P
+    words = {"c1_rejected": "candle 1: no push into the zone rejected by a wick back",
+             "c2_dominant": "candle 2: not a dominant trade-side candle (a candle of this visit is as large or larger)",
+             "c2_engulfs_body": "candle 2's body does not cover candle 1's body",
+             "c2_closes_beyond_c1": f"candle 2 does not close beyond candle 1's {'low' if d == DOWN else 'high'}"}
+    miss = [words[k] for k, v in P.items() if v is not True]
+    if miss:
+        out["why"] = "; ".join(miss)
+        return out
+    out.update(found=True, why="a push rejected and swallowed by a dominant opposite candle (two-candle handover)")
+    return out
+
+
+def handover_episode(A, arm, t, d, s, broken=None, mr=None, sharp=None):
+    """Abhi Z-1q (a): the handover per armed zone episode (arm = arrival in the zone), as known at the decision bar t (bars ≤ t only).
+    Every in-zone window arm … e (e < t; any window with an earlier and a later part — Abhi: never a minimum count) is read with
+    `zone_study` in time order: the first window with a
+    handover ⇒ SEEN (bar e); once seen it HOLDS until the commitment candle — cancelled only by a later absorption (a later window with
+    the counter side strengthening again) or by the zone breaking (`broken(u)` True at a bar u after it was seen, u ≤ t — the caller's
+    K4 state). A cancelled handover may be seen again by a later window — after a zone break only from bars after the break (windows
+    start at the bar after it, while the zone is not broken). Never re-required on the commitment bar's own window.
+    The caller passes arm = the start of the current VISIT (Abhi Z-1v), so a handover never carries from an earlier visit.
+    sharp = callable(i, a0) ⇒ `sharp_reversal` facts for candles i − 1, i (Abhi Z-1z (c)): a found two-candle sharp reversal is a handover
+    too (form "sharp_reversal"), read on every pair inside the visit including the commitment bar t itself (candle 2 may be the
+    commitment); the slower read (form "study": one side growing while the other weakens) covers slower visits.
+    Returns {present, seen_at, form, cancelled ("absorption" / "zone broken" / None), cancelled_at, window_start (after a break: the bar
+    after it — the absorption gate uses the same window), sharp (the last pair read: facts), events [(bar, what)]}."""
+    s = s or S3.DEFAULTS
+    arm, t = int(arm), int(t)
+    st = {"present": False, "seen_at": None, "form": None, "cancelled": None, "cancelled_at": None, "sharp": None, "events": []}
+    a0 = arm                                                               # window start (moves past a zone break)
+
+    def cancel(u, why):
+        st.update(present=False, form=None, cancelled=why, cancelled_at=int(u))
+        st["events"].append((int(u), "cancelled: " + why))
+
+    def seen(e, form):
+        st.update(present=True, seen_at=int(e), form=form, cancelled=None, cancelled_at=None)
+        st["events"].append((int(e), "handover seen" + (" (two-candle sharp reversal)" if form == "sharp_reversal" else "")))
+
+    def read_sharp(e):
+        if sharp is None or st["present"] or e - 1 < a0:
+            return False
+        sr = sharp(e, a0)
+        st["sharp"] = sr
+        if sr.get("found"):
+            seen(e, "sharp_reversal")
+            return True
+        return False
+    for e in range(arm, t):
+        if broken is not None and broken(e):
+            if st["present"]:
+                cancel(e, "zone broken")
+            a0 = e + 1                                                     # a broken zone's earlier read never counts again
+            continue
+        if read_sharp(e):
+            continue
+        if e - a0 + 1 < 2:                                                 # one candle: nothing to compare yet (logic, not a count)
+            continue
+        zs = zone_study(A, a0, e, d, s, mr)
+        if st["present"] and zs.get("absorption"):
+            cancel(e, "absorption")
+        elif not st["present"] and zs.get("handover"):
+            seen(e, "study")
+    if broken is not None and broken(t):
+        if st["present"]:
+            cancel(t, "zone broken")
+        a0 = t + 1
+    else:
+        read_sharp(t)                                                      # Z-1z: candle 2 may be the commitment bar itself
+    st["window_start"] = int(a0)
+    return st
 
 
 def zone_pattern(A, a, t, d, s, mr=None):
@@ -493,22 +601,26 @@ def commitment(A, t, d, lvl, s, tss=None, win=None):
     grade = "A" if (beyond_ext or form == "engulf") else "B"
     cm = {"form": form, "merged": merged, "grade": grade, "beyond_extreme": bool(beyond_ext), "engulf": form == "engulf",
           "body_pct": round(abs(c - o) / rng, 2), "big_body": candle_read(A, t, s)["big_body"], "big_range": candle_read(A, t, s)["big_range"]}
-    if win is not None:                                                    # c0 (Abhi, level bots): study window मधली dominant candle + volume
-        ww = list(range(max(0, int(win)), t)) or [t]
-        mb = _mean([abs(A["close"][i] - A["open"][i]) for i in ww]) or 0.0
+    if win is not None:                                                    # c0 (Abhi): dominant in this visit + volume, by comparison only
+        ww = list(range(max(0, int(win)), t))                              # the visit's earlier candles (the commitment compared with them)
         body = max(abs(c - o), abs(c - po) if merged == 2 else 0.0)
-        bm = body / mb if mb > 0 else float("inf")
-        cm["body_mult"] = round(bm, 2) if np.isfinite(bm) else None
-        if bm < float(s.get("commit_dom_mult", 1.5)):
-            return False, f"commitment candle dominant नाही (body {bm:.1f}× window सरासरी)", {"wait": "not_dominant", **cm}
+        bodies = [abs(A["close"][i] - A["open"][i]) for i in ww]
+        if not bodies and bool(s.get("c0_dominance", True)):
+            return False, "commitment candle: nothing to compare it with in this visit yet", {"wait": "not_dominant", **cm}
+        cm["body_mult"] = round(body / max(bodies), 2) if bodies and max(bodies) > 0 else None   # fact only (the rule is the comparison)
+        if bool(s.get("c0_dominance", True)) and not body > max(bodies):  # Abhi: dominant = larger than every other candle in the visit
+            return False, "commitment candle not dominant (a candle in this visit is as large or larger)", {"wait": "not_dominant", **cm}
         V = _vol(A)
-        wv = [float(V[i]) for i in ww] if V is not None else []
-        mv = _mean([x for x in wv if np.isfinite(x) and x > 0]) if wv else None
-        if V is not None and np.isfinite(V[t]) and V[t] > 0 and mv:
-            vm = float(V[t]) / mv
-            cm.update(vol_mult=round(vm, 2), vol_na=False)
-            if vm <= 1.0:
-                return False, f"commitment on low volume ({vm:.1f}× window सरासरी)", {"wait": "low_volume", **cm}
+        opp = [i for i in ww if (A["close"][i] - A["open"][i]) * d < 0]     # the opposite side's candles in the same visit
+        ref = [float(V[i]) for i in opp if np.isfinite(V[i]) and V[i] > 0] if V is not None else []
+        if V is not None and np.isfinite(V[t]) and V[t] > 0 and (ref or not opp):
+            vm = float(V[t]) / max(ref) if ref else None
+            cm.update(vol_mult=None if vm is None else round(vm, 2), vol_na=False,
+                      vol_vs="opposite-side candles" if ref else "no opposite-side candle in this visit")
+            if ref and not V[t] > max(ref):                                # Abhi: clearly larger than the opposite side's candles
+                return False, "commitment on low volume (not larger than the opposite-side candles in this visit)", {"wait": "low_volume", **cm}
+            if not ref:                                                    # nothing compared (OPEN_QUESTIONS Z-1z-d) ⇒ fail-safe: grade cap B
+                grade = cm["grade"] = "B"
         else:
             cm.update(vol_mult=None, vol_na=True)                          # volume NA ⇒ चालतं, पण grade कमाल B
             grade = cm["grade"] = "B"
@@ -574,6 +686,10 @@ def ltf_choch(L, d, t_ctx, t_start, t_end, lvl=None):
     आधीच्या शेवटच्या LTF swing high (lower high) च्या वर CLOSE ⇒ CHoCH; higher low = LL नंतर CHoCH candle पर्यंतचा सर्वात खालचा low
     (समान ⇒ double bottom). V-reversal / stair-step recovery / gap-down चा पहिलाच bar low — सगळे चालतात. Wick वर गेला पण close नाही ⇒
     CHoCH नाही. शेवटचा बंद LTF bar च LL ⇒ "still trending against". Bearish = आरसा (किंमती उलट करून तेच गणित).
+    Abhi Z-1r: CHoCH price zone मध्ये आल्यानंतरचाच — lvl दिला ⇒ study = t_start नंतरची पहिली zone ला स्पर्श करणारी LTF candle (arrival)
+    पासून; arrival आधीचा CHoCH मोजत नाही (`arrival_at`;
+    LL / HH arrival नंतरच्या window मध्ये ⇒ CHoCH candle नेहमी arrival नंतर —
+    रचनेनेच, वेगळा flag नाही). स्पर्श करणारी LTF candle नाही ⇒ t_start पासून (arm bar).
     रिटर्न dict: done, code (ltf_missing / ltf_against / ltf_pending), line + किंमती."""
     lab = (L or {}).get("label", "LTF")
     miss = {"done": False, "code": C_LTF_MISSING, "line": f"{lab}: LTF data missing"}
@@ -585,6 +701,11 @@ def ltf_choch(L, d, t_ctx, t_start, t_end, lvl=None):
     w = ii[L["start"][ii] >= t_start]
     if not len(w):
         return miss
+    if lvl is not None:                                                    # Abhi Z-1r: from price's arrival in the zone (no earlier CHoCH)
+        touch = (L["high"][w] >= float(lvl["lo"])) & (L["low"][w] <= float(lvl["hi"]))
+        if touch.any():
+            w = w[int(np.argmax(touch)):]
+    arrival = pd.Timestamp(L["start"][w[0]])
     sg = 1.0 if d > 0 else -1.0
     H = (L["high"] if d > 0 else -L["low"])[ii]                            # आरसा: bearish ⇒ high ↔ −low
     Lo = (L["low"] if d > 0 else -L["high"])[ii]
@@ -612,7 +733,7 @@ def ltf_choch(L, d, t_ctx, t_start, t_end, lvl=None):
     ext_word, beyond = ("low", "above") if d > 0 else ("high", "below")
     trend_word = "lower lows" if d > 0 else "higher highs"
     out = {"done": jc is not None, "low": back(lmin), "lh": back(lh), "sweep": sweep, "hl": None if hl is None else back(hl),
-           "low_at": str(pd.Timestamp(E[jl])), "label": lab}
+           "low_at": str(pd.Timestamp(E[jl])), "label": lab, "arrival_at": str(arrival)}
     parts = [f"sweep of {ext_word} {_px(out['low'])} closed back inside"] if sweep else []
     if hl is not None:
         parts.append(f"double {'bottom' if d > 0 else 'top'} {_px(out['hl'])}" if hl <= lmin else f"{hl_word} {_px(out['hl'])}")
@@ -632,20 +753,25 @@ def ltf_choch(L, d, t_ctx, t_start, t_end, lvl=None):
     return out
 
 
-def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None):
+def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None, handover=None):
     """एकच confirmation (Abhi, LEVEL_BOTS_CONFIRMATION §2 a2 + c0 + c1) — V22 ⑥ आणि level bots (bots_common/level_reaction) दोघेही हेच
     वापरतात; d = ±1 (आरसा). Study window = arm (area मध्ये arrival) … commitment candle t. क्रम:
       a2 — window arm … t − 1 मध्ये उलट-बाजू volume वाढत मजबूत (absorption) ⇒ वाट (commitment पाहतच नाही);
-      c0 — commitment (Q16 form) + dominant body (≥ commit_dom_mult × window सरासरी) + volume > window सरासरी (volume NA ⇒ चालतं, कमाल B);
+      c0 — commitment (Q16 form), dominant = body larger than every other candle of the visit, volume larger than the opposite side's
+           candles of the visit (none in the visit ⇒ nothing to beat, noted) — comparisons only, no multiplier (volume NA ⇒ चालतं, कमाल B);
       c1 — LTF CHoCH by close (`ltf_choch`; ltf = ltf_frame किंवा तो देणारं callable (commitment असेल तरच बोलावतो); ltf_times = (संदर्भ सुरुवात, arrival सुरुवात, setup bar close)), `ltf_choch` setting (default
            True = आवश्यक). LTF नाही ⇒ "LTF data missing" ⇒ वाट (fail-closed, कधीच शांतपणे वगळत नाही).
     प्रत्येक गहाळ भाग ⇒ वाट (code), कायमचा नकार नाही (timeout / disarm caller चे नियम). रिटर्न dict: ok, wait (code | None), why, commit (cm),
-    study (zone_study), absorption, study_ran, c0, c1, choch, lines (ticket ओळी)."""
+    study (zone_study), absorption, study_ran, c0, c1, choch, lines (ticket ओळी).
+    handover (Abhi Z-1q, V22): `handover_episode` चा sticky निकाल {present, seen_at, cancelled, …} — दिला ⇒ handover = तो (commitment bar
+    च्या window मध्ये पुन्हा दिसायची गरज नाही); नाही ⇒ जुनं (zone_study(arm … t − 1)["handover"]). Abhi Z-1r: handover, c1 आणि c0
+    तिन्ही commitment bar ला हवेत; क्रम महत्त्वाचा नाही (wait code फक्त पहिला गहाळ भाग सांगतो)."""
     out = {"ok": False, "wait": None, "why": "", "commit": {}, "study": None, "absorption": False, "study_ran": False, "c0": False,
            "c1": None, "choch": None, "lines": [], "handover": None}
     zp = None
-    if t - 1 >= arm:
-        zp = zone_study(A, arm, t - 1, d, s, mr=mr)
+    a_ab = int(handover.get("window_start", arm)) if handover else int(arm)   # the episode's window (restarts after a zone break)
+    if t - 1 >= a_ab:
+        zp = zone_study(A, a_ab, t - 1, d, s, mr=mr)
         out["study_ran"] = True
         if zp.get("absorption"):
             out.update(absorption=True, wait=C_ABSORB, why=REASON[C_ABSORB], study=zp, handover=bool(zp.get("handover")))
@@ -653,12 +779,19 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None):
     # Abhi Z-1m: a2 handover is MANDATORY (setting `a2_handover_required`); order a2 handover → c1 LTF CHoCH → c0 commitment. Handover
     # present ⇔ zone_study(arm … t − 1)["handover"]: trade-side candles growing (body ↑ required + majority of range ↑ / close near the
     # trade-side end ↑ / volume ↑) AND counter-side candles weakening (body ↓ required + majority of opposite wick ↑ / close away ↑ /
-    # volume ↓), first half vs second half of the in-zone window (≥ study_min_bars bars).
+    # volume ↓), first half vs second half of the in-zone window (any visit with an earlier and a later part — no minimum count).
     hreq = bool(s.get("a2_handover_required", False))
-    handover = bool(zp.get("handover")) if zp else False
+    if handover is not None:                                               # Abhi Z-1q: sticky per zone episode (caller)
+        out["handover_state"] = handover
+        handover = bool(handover.get("present"))
+    else:
+        handover = bool(zp.get("handover")) if zp else False
     out["handover"] = handover
     no_ho = hreq and not handover
-    ho_why = REASON[C_NO_HANDOVER] + (f" · {zp.get('line')}" if zp and zp.get("line") else "")
+    hs = out.get("handover_state") or {}
+    ho_why = REASON[C_NO_HANDOVER] + (f" · {zp.get('line')}" if zp and zp.get("line") else "") + \
+        (f" · handover cancelled ({hs['cancelled']})" if hs.get("cancelled") else "") + \
+        (f" · two-candle reversal: {hs['sharp']['why']}" if (hs.get("sharp") or {}).get("why") and not hs.get("present") else "")
     ok, why, cm = commitment(A, t, d, lvl, s, tss, win=arm)
     out.update(commit=cm, c0=bool(ok), why=why, study=zp)
     if callable(ltf) and (not ok or no_ho):                                # lazy LTF (bots): commitment / handover नाही ⇒ LTF fetch नाही
@@ -683,10 +816,12 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None):
         out.update(wait=ch["code"], why=f"{REASON[ch['code']]} · {ch['line']}")
         return out
     zs = zone_study(A, arm, t, d, s, mr=mr)
-    vtxt = f"volume {cm['vol_mult']:.1f}× window avg" if cm.get("vol_mult") is not None else "volume: NA (grade cap B)"
-    btxt = f"body {cm['body_mult']:.1f}× window avg" if cm.get("body_mult") is not None else ""
+    vtxt = ("volume: NA (grade cap B)" if cm.get("vol_na") else "volume above the opposite side"
+            if cm.get("vol_mult") is not None else "no opposite-side candle (grade cap B)")   # Abhi: the reading in words, not ratios
+    btxt = "largest of the visit" if cm.get("body_mult") is not None and bool(s.get("c0_dominance", True)) else ""
     kind = "demand" if d > 0 else "supply"
-    lines = [f"inside {kind}: " + (zs.get("line") or "no clear handover read"),
+    sr = (hs.get("sharp") or {}) if hs.get("form") == "sharp_reversal" else {}
+    lines = [f"inside {kind}: " + (sr.get("why") if sr.get("found") else (zs.get("line") or "no clear handover read")),
              "commitment: " + " · ".join(x for x in (str(cm.get("form")), btxt, vtxt) if x),
              ch["line"] if ch["done"] else f"LTF CHoCH not required (what-if): {ch['line']}"]
     out.update(ok=True, study=zs, lines=lines, why=f"{why} · {ch['line']}")

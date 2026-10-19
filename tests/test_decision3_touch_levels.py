@@ -28,7 +28,7 @@ SEP29 = [  # open, high, low, close
     (22578, 22605, 22573, 22600), (22599, 22615, 22581, 22613), (22612, 22629, 22592, 22617), (22616, 22701, 22591, 22684),
     (22684, 22697, 22663, 22697), (22696, 22734, 22694, 22720), (22720, 22729, 22707, 22728), (22728, 22753, 22726, 22742),
     (22742, 22744, 22673, 22677)]
-T_1215, T_1100 = 12, 7
+T_1215, T_1100, T_1145 = 12, 7, 10                                         # T_1145 = the visit start (Abhi Z-1v)
 SUPPLY = {"id": 2, "role": LV.RES, "lo": 22725.45, "hi": 22809.9, "births": ["a:D-prior", "c"], "sweeps": 0, "fresh": False}
 FAR = {"id": 3, "role": LV.RES, "lo": 22930.35, "hi": 23002.15, "births": ["a:D-prior", "c"], "sweeps": 0, "fresh": True}
 X0 = 22700.0                                                              # mirror axis
@@ -56,8 +56,8 @@ def test_sep29_read_is_touch_buyers_exhausting_dominant_engulf(mirror):
     ok3, why3 = M.at_level_or_confirm(A, T_1215, d, lvl, s)
     assert ok3, why3
     assert not M.at_level_or_confirm(A, T_1215, d, _lvl(FAR, mirror), s)[0]  # दूरचा level: स्पर्श नाही
-    ok6, why6, cm = M.commitment(A, T_1215, d, lvl, s, None, win=T_1100)       # c0: study window 11:00 पासून
-    assert ok6 and cm["form"] == "engulf" and cm["body_mult"] >= float(s["commit_dom_mult"]), why6
+    ok6, why6, cm = M.commitment(A, T_1215, d, lvl, s, None, win=T_1145)       # c0: compared within the visit (Abhi: largest of the visit)
+    assert ok6 and cm["form"] == "engulf" and cm["body_mult"] > 1.0, why6
     assert cm["vol_na"] and cm["grade"] == "B"                                # volume नाही (NA) ⇒ कमाल B
     zs = M.zone_study(A, T_1100, T_1215, d, s)
     assert zs["counter_weakening"] is True and not zs["absorption"]           # a2: buying (mirror: selling) candles दमल्या
@@ -153,6 +153,6 @@ def test_real_sep29_1215_touch_and_dominant_engulf():
     s = S3.load()
     assert A["high"][T_1215] >= SUPPLY["lo"]                                  # 12:15 high पट्ट्यात
     assert M.at_level_or_confirm(A, T_1215, M.DOWN, SUPPLY, s)[0]
-    ok6, _, cm = M.commitment(A, T_1215, M.DOWN, SUPPLY, s, None, win=T_1100)
-    assert ok6 and cm["form"] == "engulf" and cm["body_mult"] >= float(s["commit_dom_mult"])
+    ok6, _, cm = M.commitment(A, T_1215, M.DOWN, SUPPLY, s, None, win=T_1145)   # within the visit (Abhi Z-1v)
+    assert ok6 and cm["form"] == "engulf" and cm["body_mult"] > 1.0
     assert M.zone_study(A, T_1100, T_1215, M.DOWN, s)["counter_weakening"] is True

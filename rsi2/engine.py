@@ -486,11 +486,13 @@ class Divergence:
         opp = [p.bar for p in known if p.kind != kind]
         before = [x for x in opp if x < a.bar]
         mid = [x for x in opp if a.bar < x < b_bar]
-        a_lo = before[-1] + 1 if before else a.bar - self.N
-        a_hi = mid[-1] - 1 if mid else b_bar - 1
-        b_lo = mid[-1] + 1 if mid else a.bar + 1
-        ra = self._rsi_ext(a.bar, side, max(a.bar - self.N, a_lo), min(a.bar + self.N, a.confirm_bar, a_hi))
-        rb = self._rsi_ext(b_bar, side, max(b_bar - self.N, b_lo), min(b_bar + self.N, cap_b))
+        # Abhi (final): RSI AT each swing — its extreme inside the swing's own span (between the neighbouring opposite swings; the swing
+        # candle itself when there is no opposite swing on that side), never a bar count
+        a_lo = before[-1] + 1 if before else a.bar
+        a_hi = mid[-1] - 1 if mid else a.bar
+        b_lo = mid[-1] + 1 if mid else b_bar
+        ra = self._rsi_ext(a.bar, side, a_lo, min(a.confirm_bar, a_hi))
+        rb = self._rsi_ext(b_bar, side, b_lo, cap_b)
         rec["L1"], rec["L2"] = self._pt(a.bar, a.price, ra), self._pt(b_bar, b_price, rb)
         rec.update(type=None, is_div=False, cap=None, price_rel=None, price_diff=round(float(b_price - a.price), 2), rsi_diff=None)
         if self.seg[a.bar] != self.seg[b_bar]:
@@ -499,22 +501,21 @@ class Divergence:
         if ra is None or rb is None:
             rec["reason"] = "RSI not available at a pivot (warm-up)"
             return rec
-        tol = float(self.fv["band_tol_mr"]) * self.FV.mr_at(self.B, b_bar, self.fv)
-        dp = float(b_price - a.price)
+        dp = float(b_price - a.price)                                      # Abhi: a NEW extreme — strictly beyond, no tolerance band
         if kind == "H":
-            rel = "equal high" if abs(dp) <= tol else ("higher high" if dp > 0 else "lower high")
+            rel = "equal high" if dp == 0 else ("higher high" if dp > 0 else "lower high")
             between = self.B.H[a.bar + 1:b_bar]
             clear = not len(between) or float(between.max()) <= max(a.price, b_price) + 1e-9
         else:
-            rel = "equal low" if abs(dp) <= tol else ("lower low" if dp < 0 else "higher low")
+            rel = "equal low" if dp == 0 else ("lower low" if dp < 0 else "higher low")
             between = self.B.L[a.bar + 1:b_bar]
             clear = not len(between) or float(between.min()) >= min(a.price, b_price) - 1e-9
         r1, r2 = rec["L1"]["rsi"], rec["L2"]["rsi"]
-        rec.update(price_rel=rel, tolerance=round(tol, 2), rsi_diff=round(r2 - r1, 2), consecutive=bool(clear))
+        rec.update(price_rel=rel, tolerance=0.0, rsi_diff=round(r2 - r1, 2), consecutive=bool(clear))
         if not clear:
             rec["reason"] = "not consecutive pushes (a more extreme price between the pivots)"
             return rec
-        extend = rel in ("higher high", "equal high", "lower low", "equal low")
+        extend = rel in ("higher high", "lower low")                         # Abhi: price makes a new extreme …
         if kind == "H":
             typ = "regular" if extend and r2 <= r1 else ("hidden" if not extend and r2 >= r1 else None)
         else:
@@ -529,11 +530,12 @@ class Divergence:
                 rec["reason"] = f"price made a {rel} ({b_price:,.2f} vs {a.price:,.2f}); RSI {r1:.2f} → {r2:.2f}"
             return rec
         rec["type"] = typ
-        lo, hi = self.win
-        if not lo <= rec["bars"] <= hi:
-            rec["cap"] = "max" if rec["bars"] > hi else "min"
-            rec["reason"] = f"rejected only by the bar window: {rec['bars']} bars apart (window {lo}–{hi})"
-            return rec
+        if bool(self.s.get("div_bar_window", False)):                      # legacy what-if only — Abhi: no bar counts / minimum gaps
+            lo, hi = self.win
+            if not lo <= rec["bars"] <= hi:
+                rec["cap"] = "max" if rec["bars"] > hi else "min"
+                rec["reason"] = f"rejected only by the bar window: {rec['bars']} bars apart (window {lo}–{hi})"
+                return rec
         rec["is_div"] = True
         rec["reason"] = None
         return rec

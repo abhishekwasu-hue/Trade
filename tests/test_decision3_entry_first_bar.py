@@ -17,7 +17,8 @@ from tests import oct12_fixture as F
 from tests.ltf_fixtures import split_bars
 from tests.test_decision3_method import NO_MATURE, _abc_m15
 
-S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False}   # Z-1: fixture चा supply acceptance-flip (जुना §5.4) — pin
+S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False,
+          "level_merge": True, "zone_visit_rule": "touch_window"}   # Z-1 acceptance-flip + Z-1u / Z-1v आधीचा fixture — legacy pin
 S_OLD = {**S_ROLE, "rr_step": True, "entry_first_bar": False}
 
 
@@ -116,11 +117,11 @@ def test_c1_can_complete_inside_the_0915_candle_with_5m_bars_closed_by_0930(mirr
 @pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put_mirror"])
 def test_0915_arrival_candle_reaches_c0_under_default(mirror):
     """09:15 = entry खिडकीत (default) ⇒ ⑥ commitment तपासला जातो; जुना नियम ⇒ "वेळ-खिडकी". नोंद (OPEN_QUESTIONS): 09:15 candle हीच area
-    मधली पहिली (arrival) candle असेल तर c0 चा study window = ती candle स्वतः ⇒ body 1.0× ⇒ "dominant नाही" (c0 बदललेला नाही)."""
+    मधली पहिली (arrival) candle असेल तर visit मध्ये तुलनेसाठी दुसरी candle नाही ⇒ c0 "nothing to compare" (Abhi: dominance = visit मधली तुलना)."""
     m15, fut, ltf, i0 = _variant(mirror, -40)
     r = E3.V22(m15, s=S_ROLE, ltf=ltf, futures=fut).decide(i0)
     assert r["checklist"]["③"][0] is True
-    assert "वेळ-खिडकी" not in r["checklist"]["⑥"][1] and "dominant नाही" in r["checklist"]["⑥"][1]
+    assert "वेळ-खिडकी" not in r["checklist"]["⑥"][1] and "nothing to compare it with in this visit" in r["checklist"]["⑥"][1]
     r0 = E3.V22(m15, s=S_OLD, ltf=ltf, futures=fut).decide(i0)
     assert "वेळ-खिडकी" in r0["checklist"]["⑥"][1]
 
@@ -143,7 +144,7 @@ def test_replay_day_default_output_has_no_engine_rr_sl_target(tmp_path):
     from scripts import replay_day as RD
     out = tmp_path / "new.json"
     assert RD.main(["--date", "2030-03-04", "--synthetic", "--dry-run", "--json", str(out), "--out-dir", str(tmp_path),
-                    "--flip-rule", "acceptance", "--legacy-zone-gates"]) == 0                    # Z-1: fixture चा supply acceptance-flip — pin
+                    "--flip-rule", "acceptance", "--legacy-zone-gates", "--legacy-bands"]) == 0                    # Z-1: fixture चा supply acceptance-flip — pin
     j = json.loads(out.read_text(encoding="utf-8"))
     assert j["setup"]["side"] == "bear call" and not {"rr", "sl", "target", "entry"} & set(j["setup"])
     msg = j["approval"]["message"]
@@ -152,6 +153,6 @@ def test_replay_day_default_output_has_no_engine_rr_sl_target(tmp_path):
     assert all("⑦" not in b["checklist"] for b in j["bars"])
     old = tmp_path / "old.json"
     assert RD.main(["--date", "2030-03-04", "--synthetic", "--dry-run", "--json", str(old), "--out-dir", str(tmp_path),
-                    "--legacy-rr", "--no-first-bar-entry", "--flip-rule", "acceptance", "--legacy-zone-gates"]) == 0
+                    "--legacy-rr", "--no-first-bar-entry", "--flip-rule", "acceptance", "--legacy-zone-gates", "--legacy-bands"]) == 0
     jo = json.loads(old.read_text(encoding="utf-8"))
     assert jo["setup"]["rr"] >= 3 and "R:R" in jo["approval"]["message"]

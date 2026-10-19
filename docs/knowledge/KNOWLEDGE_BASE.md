@@ -455,6 +455,22 @@ completed pattern allows, the count is wrong.
 **काय.**
 - **Demand (supply) zone** = displacement (जोरदार impulse) च्या आधीचा **base**: 1–4 लहान, overlapping candles. तिथे न भरलेल्या orders शिल्लक असतात असं मानलं जातं.
 - **Role flip (polarity) [Abhi]:** तुटलेला support resistance बनतो, आणि उलट — फक्त price zone च्या पलीकडे जाऊन **पलीकडच्या बाजूचा swing पार** केल्यावर (तो swing पार होणं हाच पुरावा; candle ची वेगळी अट नाही). तोपर्यंत zone जुनी भूमिका ठेवतो (sweep).
+- **नवे lows / highs — पलीकडे swing नाही [Abhi, Z-1s]:** zone च्या पलीकडे आधीचा swing नसेल (price नवे lows / highs करते) तर पलीकडचा swing = break नंतर **बनलेला पहिला swing**; तिथे "पोहोचणं" = तो swing **confirm** होणं (तो तोडायची गरज नाही). उदा. तुटलेल्या support खाली पहिला swing low confirm ⇒ zone **FLIPPED**; त्या swing पासून zone मध्ये परतणारी चाल = pullback, entry zone मधल्या वाचनाने. पलीकडे आधीचा swing **असेल** तर नियम तसाच: price ने तो पार केला पाहिजे. DEAD चा नियम तसाच: FLIPPED zone पुन्हा तुटला आणि पलीकडे swing नसेल ⇒ त्या break नंतरचा पहिला swing confirm झाला की zone DEAD. (आधीच्या Z-1a शब्दरचनेची दुरुस्ती — नवा नियम नाही.)
+- **पलीकडचा swing = बाजाराने बांधलेलं खरं वळण [Abhi, Z-1y]:** महत्त्वाचा swing = zone च्या पलीकडचा, त्याच structure चा शेवटचा **खरा** swing — बाजाराने बांधलेला turning point (उदा. downtrend मधला lower high). Zone च्या जरा पलीकडे जाऊन परत आलेली wick (त्या candle चा close zone मध्ये / भूमिकेच्या बाजूला) = sweep (K5), swing नाही; तिला swing मानलं तर प्रत्येक खोट्या break वर zone flip होईल. Zone flip फक्त किंमत zone च्या पलीकडे **आणि** त्या खऱ्या swing च्या पलीकडे गेल्यावर. DEAD साठीही तोच swing.
+- **Timeframes वेगळे — पट्टे फक्त बांधायचे, merge ने रुंद नाही [Abhi, Z-1u]:** वेगवेगळ्या timeframes चे levels कधीच एका पट्ट्यात merge नाहीत; प्रत्येक zone फक्त त्याच्या स्वतःच्या timeframe च्या base / reaction candles वरून (TA4). Daily / Weekly zone 1H zone वर overlap ⇒ दोन्ही पट्टे वेगळे; 1H zone वर label "confluence: Daily <low–high>" (किंवा Weekly) = पुरावा; trade location नेहमी अरुंद 1H पट्टा. नंतरचा swing जुन्या पट्ट्यावर overlap झाला तरी तो पट्टा रुंद होत नाही — swing चा स्वतःचा पट्टा बनतो, "कशातून जन्मला" (lineage) नोंद. Weekly पट्टे (पूर्ण weekly candle वरून) फक्त context.
+  - **Zone ची रुंदी [Abhi, Z-1x]:** zone एकाच base / reaction मधून — ज्या candles वर buyers / sellers ने काम केलं त्यांचाच पट्टा (swing candle चा wick-to-body; त्या बाजूला wick नसेल ⇒ त्या candle ची body, body पण नसेल ⇒ पूर्ण candle — एकच किंमत कधीच नाही). वेगळे bases किंवा timeframes कधीच एका zone मध्ये जोडायचे नाहीत. Zone खूप रुंद दिसला ⇒ दोन bases जोडले गेले ⇒ बांधणी दुरुस्त करायची; आकड्याने मर्यादा (cap) किंवा किमान रुंदी लावायची नाही. त्याच जागी मोठ्या timeframe चा zone ⇒ confluence म्हणून खूण, merge नाही.
+  - **Daily पट्टा कधी location:** त्यावर overlap होणारा 1H zone जिवंत असेल (BROKEN / DEAD नाही) तर location 1H पट्टा; असा 1H zone नसेल, किंवा तो BROKEN / DEAD असेल ⇒ Daily पट्टा स्वतः location.
+  - **PF-2 (जुनं):** "provisional width" फक्त जुन्या किमान-रुंदी what-if मध्ये; Z-1x नंतर पट्टा कधीच रुंद होत नाही.
+- **Zone मधलं वाचन — Abhi ची अंतिम उत्तरं [Abhi]:**
+  - **Counter बाजू गायब (Z-1p):** in-zone window च्या दुसऱ्या अर्ध्यात counter-side candle **एकही नाही** (पहिल्या अर्ध्यात होती) ⇒ counter बाजू दमली (दमण्याचं टोक); मग फक्त trend बाजू वाढतेय का ते पाहायचं.
+  - **Handover टिकतो (Z-1q):** handover एकदा दिसला की commitment candle पर्यंत वैध; रद्द फक्त नंतरच्या absorption ने (counter बाजू पुन्हा मजबूत) किंवा zone तुटल्याने. Commitment bar च्या window मध्ये तो पुन्हा दिसायची गरज नाही. प्रत्येक armed zone भेटीसाठी वेगळा; look-ahead नाही.
+  - **क्रम महत्त्वाचा नाही (Z-1r):** handover, LTF CHoCH आणि commitment — तिन्ही commitment bar ला हजर हवेत. अट: CHoCH price zone मध्ये **आल्यानंतरचा** हवा (त्या भेटीच्या arm bar नंतर); zone मध्ये येण्याआधीचा CHoCH मोजायचा नाही.
+  - **Visit (Z-1v):** zone मधलं वाचन फक्त त्याच **भेटीत** (visit): किंमत zone मध्ये शिरते तेव्हापासून structure ने zone सोडेपर्यंत. Visit संपते = निर्णयाच्या candle आधी किंमत zone बाहेर, ज्या बाजूने आली त्या बाजूला close करते (commitment शिवाय). पुढचा प्रवेश = नवी visit, नवं वाचन; आधीच्या visit चा handover पुढे चालत नाही.
+  - **अपयशी dominant candle (Z-1v-a):** dominant candle अपयशी ठरून zone बाहेर close झाली ⇒ visit संपली. पुढचा प्रवेश = नवी visit, नवं वाचन.
+  - **Handover — पूर्ण visit चं वाचन (Z-1z):** zone मधलं वर्तन पूर्ण visit भर वाचायचं — प्रवेशापासून structure ने बाहेर जाईपर्यंत. Zone मध्ये एखादा push नाकारला गेला (push-बाजूची wick, close परत) आणि **लगेच** उलट बाजूच्या dominant candle ने तो गिळला (तिची body push candle ची body झाकते आणि तिच्या टोकापलीकडे close) ⇒ तोच handover. हळू visit मध्ये handover = एका बाजूच्या candles मोठ्या होत आणि दुसरी बाजू दमत. Candles ची किमान संख्या कधीच नाही. Zone बाहेरच्या candles zone study मध्ये नाहीत. LTF CHoCH (close ने) तरीही हवा. वाचन तारीख / session / वेळेवर अवलंबून नाही.
+  - **Volume — trader सारखी तुलना [Abhi]:** volume bars पाहून तुलना: commitment candle चा volume त्याच visit मधल्या उलट बाजूच्या candles पेक्षा स्पष्ट मोठा आहे का? (visit मध्ये उलट बाजूची candle नसेल ⇒ मात करायला काही नाही — नोंद; OPEN_QUESTIONS Z-1z-d.) Zone मध्ये selling (किंवा buying) volume वाढतोय की ओसरतोय? आकडे / गुणोत्तरं नाहीत.
+  - **RSI divergence [Abhi]:** price चे लागोपाठचे खरे swings आणि त्या swings वरचा RSI यांची तुलना — price नवं टोक करते पण RSI आधीच्या टोकाच्या पलीकडे जात नाही ⇒ divergence. Bar counts / किमान अंतर नाही.
+  - **FUT volume gaps (RF-2):** volume असलेल्या bars ची सरासरी, आणि "gaps n/m" नोंद. Window मधल्या setting (default 50%) पेक्षा जास्त bars ला FUT volume नसेल ⇒ entry नाही + एक Telegram ओळ "data problem: FUT volume gaps" (NIFTY / BANKNIFTY, दिवसातून एकदा). Commitment candle चाच volume नसेल ⇒ entry नाही (आधीसारखं).
 
 **मानसशास्त्र.**
 - चाल सुटलेले traders परत किंमत आली की entry घेऊ इच्छितात.
@@ -467,8 +483,8 @@ completed pattern allows, the count is wrong.
   - उंची ≤ 1.5 MR.
 - **Displacement** (repo `zones.py`): ≥ 2 सलग candles, प्रत्येकाचा body ≥ 0.6 × range आणि range ≥ 1.5 MR; किंवा एकच candle ≥ 2.5 MR. सोबत **आधीचा swing तुटला पाहिजे (BOS).** BOS नाही तर तो noise.
 - **Flip level:** वरचा flip नियम [Abhi] (zone पलीकडे + पलीकडचा swing पार). Real break (खाली) फक्त BROKEN ठरवतो, flip नाही.
-- **Flip fixtures [Abhi] (pack मध्ये नाहीत):** 12 Oct NIFTY = 22,544–22,622 (spot; FUT मध्ये ≈22,667 — तोच zone) हा 8 Oct ला flip झालेला seller zone; zone मध्ये selling volume वाढला, dominant red candle, RSI divergence ⇒ bear call ✅ (golden). 13 Oct NIFTY = तोच zone; लहान red candles, कमी volume, घसरण नाही, sideways base ⇒ bear call नाही; दुपारी breakout. हा zone 8 Oct लाच flip झाला होता ⇒ spot 22,731.8 (6 Oct high) पार झाला तर तो **DEAD** (दुसरा flip नाही, Z-1k = Z-1f [Abhi]); मग वरचे armed zones पाहायचे.
-- **Trend बाजू [Abhi] (13 Oct, pack मध्ये नाही):** daily trend बदलला नाही (price 5–6 Oct च्या highs खाली) तोपर्यंत reversal low पासूनची चाल = **correction (a-b-c)**; तुटलेला / flip झालेला zone त्या correction मध्ये bull trade location नाही (S4 अपवाद नाही). पुढचा seller zone = आधीचे swing highs (5–6 Oct); तिथे correction संपताना zone मधलं वाचन ⇒ bear. 13 Oct spot: a = 8 Oct low 22,179.9 → 12 Oct 22,651.1 (471); b = 13 Oct 09:15 low 22,288.45; c = a ⇒ ≈22,760; 6 Oct high 22,776.1.
+- **Golden cases [Abhi]:** किंमती, तारखा आणि अपेक्षित निकाल फक्त private fixtures मध्ये (trade-data `fixtures/golden_cases.md` + tests) — नियमांत / pack मध्ये नाहीत.
+- **Trend बाजू [Abhi]:** daily trend बदलला नाही (price आधीच्या trend swing च्या पलीकडे गेली नाही) तोपर्यंत reversal low पासूनची चाल = **correction (a-b-c)**; तुटलेला / flip झालेला zone त्या correction मध्ये उलट दिशेचा trade location नाही (S4 अपवाद नाही). पुढचा seller zone = आधीचे swing highs; तिथे correction संपताना zone मधलं वाचन ⇒ trend दिशेचा trade.
 - **Freshness:** touches मोजा. पण नुसती संख्या नको; **प्रत्येक test वरची reaction किती जोरदार** होती ते मोजा (खाली विश्वासार्हता पाहा).
 - **Range edge:** range चा वरचा आणि खालचा कडा. Range च्या आतले minor swings नाहीत.
 - **Zone, line नाही.**
@@ -482,7 +498,7 @@ completed pattern allows, the count is wrong.
   - Area नेहमी **band** (base / reaction candles चा low–high), एकच किंमत कधीच नाही.
   - तुटलेले areas लपवायचे; फक्त सगळ्यात ताजा तुटलेला dashed, label "broken".
   - प्रत्येक TF वर price च्या वर कमाल 3 आणि खाली कमाल 3 bands.
-- **Golden fixtures (➕ जोडायचे, R1; data trade-data मध्ये, CI मध्ये skip):** `test_golden_k4_nifty_fut_2026_10_12_supply_band_22667` (Abhi चा trade, NIFTY FUT 15M: ≈22,667 चा horizontal supply band 12 Oct आधीच ओळखलेला), `test_golden_k4_k6_nifty_fut_2026_10_12_confluence` (तोच band + K6 ची रेषा ⇒ "confluence" label, 12 Oct आधी, no look-ahead).
+- **Golden fixtures:** private fixtures मध्ये (trade-data `fixtures/golden_cases.md`); नावं / किंमती इथे नाहीत.
 
 **Pullback वाचनात उपयोग.**
 - Impulse ज्या base वरून सुरू झाला तिथेच, किंवा तुटलेल्या swing च्या flip वर, pullback संपणं = textbook continuation.
@@ -513,6 +529,11 @@ completed pattern allows, the count is wrong.
 - **An area tells WHERE to look; it is not protection.** [NIFTY] none of our level engines beat random zones; the information is in the
   REACTION at the area (sections 5, 6).
 - **Always a band** (low–high of its base / reaction candles), never a single price.
+- **One timeframe per band; bands are built, never widened [Abhi]:** levels of different timeframes are never merged into one band;
+  each zone is built only from its own base / reaction candles on its own timeframe. A Daily / Weekly zone overlapping a 1H zone stays a
+  separate band; the 1H zone is labelled "confluence: Daily <low–high>" (or Weekly) as evidence, and the trade location is always the
+  narrower 1H band. A later swing overlapping an existing band builds its own band (its lineage is noted); it never widens the old one.
+  Bands from whole weekly candles are context only.
 - **Demand (supply) zone** = the base before a displacement: 1–4 small overlapping candles (each range ≤ 0.8 MR, bodies ≥ 50 %
   overlapping); demand zone = [lowest low, highest body top] (supply mirrored); height ≤ 1.5 MR. Valid only when the displacement
   (≥ 2 consecutive candles with body ≥ 0.6 × range and range ≥ 1.5 MR, or one candle ≥ 2.5 MR) also broke the previous swing (BOS).
@@ -548,9 +569,12 @@ completed pattern allows, the count is wrong.
   break makes the area BROKEN; it becomes FLIPPED only by the flip rule below.
 - **A broken zone flips [Abhi]:** a zone FLIPS role (supply ⇒ demand, demand ⇒ supply) when price goes beyond it AND past the swing
   on the far side. Reaching that swing is the proof; there is no extra candle condition. Until then the zone keeps its old role (sweep).
-  When no swing exists beyond the zone (price making new highs / lows), the far-side swing is the first CONFIRMED swing formed after
-  the break. Once a zone flips, its old role ends; if the FLIPPED zone is broken again past its own far-side swing, it is DEAD (no
-  second flip).
+  When a swing exists beyond the zone, price must pass it. When no swing exists beyond the zone (price making new highs / lows), the
+  far-side swing is the first CONFIRMED swing formed after the break, and reaching it means that swing being CONFIRMED (it does not
+  have to be broken): e.g. a support breaks, price makes new lows, and the first swing low below it is confirmed ⇒ the zone FLIPS to
+  supply; the move back from that swing into the zone is the pullback, and the in-zone study decides the entry. Once a zone flips, its
+  old role ends; if the FLIPPED zone is broken again past its own far-side swing (or, with no swing beyond it, once the first swing
+  formed after that break is confirmed), it is DEAD (no second flip).
 - **Broken, not flipped [Abhi]:** price went beyond the zone but did NOT reach the far-side swing ⇒ state BROKEN. Its retest is NOT a
   trade location; wait.
 - **Flip retest (G4 / S4) [Abhi]:** after a flip, price returning from that far-side swing into the flipped area makes the flipped area a
@@ -561,15 +585,26 @@ completed pattern allows, the count is wrong.
   the zone (channel, wedge, double / triple top or bottom, sideways base); which side's candles grow or shrink; whether selling (or
   buying) volume expands; RSI divergence. This in-zone study tells whether price will break out or the trend will continue. In-zone study
   unclear ⇒ wait.
-- **Entry order at a zone [Abhi]:** (1) a visible HANDOVER inside the zone (seller ⇒ buyer for a bull trade, buyer ⇒ seller for a bear
-  trade) is MANDATORY; (2) then an LTF CHoCH by close; (3) then the dominant commitment candle on higher FUT volume = entry. No handover
-  or no CHoCH ⇒ no entry. RSI divergence is evidence, not a trigger.
+- **What an entry at a zone needs [Abhi]:** (1) a visible HANDOVER inside the zone (seller ⇒ buyer for a bull trade, buyer ⇒ seller
+  for a bear trade) is MANDATORY; (2) an LTF CHoCH by close that happened AFTER price entered the zone (a CHoCH from before the arrival
+  does not count); (3) the dominant commitment candle on higher FUT volume = entry. The order does not matter: all three must be present
+  at the commitment candle. No handover or no CHoCH ⇒ no entry. RSI divergence is evidence, not a trigger.
+- **A handover holds — within one visit [Abhi]:** once seen inside the zone, the handover holds until the commitment candle; it is
+  cancelled only by a later absorption (the counter side strengthening again) or by the zone breaking. It counts only within the same
+  VISIT to the zone: when price leaves the zone (closes outside the band, away from it, without a commitment), the visit ends, and the
+  next visit needs a new handover. A visit starts with the first candle that trades into the band and ends with the first candle before
+  the decision candle that closes outside the band on the side price came from. Judged from bars up to the decision only.
+- **The counter side gone = exhausted [Abhi]:** if the counter side disappears from the zone (no counter-side candle in the second half
+  of the in-zone study while the first half had one), it counts as exhausted, the extreme of weakening; then only the trade side
+  growing is checked.
 - **Overlap / sideways candles inside the zone are the handover study, not a blocker [Abhi]:** a range or sideways base inside a zone is
   read, never used to skip; ranges are traded at their edges (bull put at the range low, bear call at the range high).
 - **Volume in the in-zone study [Abhi]:** compare the average per bar, never sums, and normalise each bar by its time-of-day slot (the
   median of the same slot over the last 20 sessions, at least 10), because the opening and closing bars are always heavy. With fewer than
   10 sessions say "volume normalisation: insufficient history" and compare raw per-bar averages, clearly labelled. NIFTY / BANKNIFTY with
-  FUT volume missing = a data error ⇒ no entry.
+  FUT volume missing = a data error ⇒ no entry. Gaps in FUT volume inside the zone: average over the bars that have it and report the
+  gaps (n of m bars); more than a set share of the window's bars without FUT volume (a register setting, default half) ⇒ data problem,
+  no entry; a commitment candle without its own FUT volume ⇒ no entry.
 - **Trader's patience — no wave prediction [Abhi]:** a C wave (any correction) can EXTEND; nobody knows in advance where it ends. Never
   predict the end of a correction, and never block or skip on wave count, maturity or "C is long enough": wave count, maturity and
   projections (e.g. c = a) are CONTEXT facts only.
@@ -683,12 +718,7 @@ completed pattern allows, the count is wrong.
     - Touches एकमेकांपासून दूर (setting, default 6 bars).
     - Slope मध्यम: प्रति bar > 0.5 MR इतकी तीव्र रेषा reject.
   - **Chart label:** रेषेचा touch count, आणि projected 3rd-touch zone ची खूण.
-  - **Golden fixture (➕ जोडायचा, R1; data trade-data मध्ये, CI मध्ये skip):** `test_golden_k6_nifty_fut_2026_10_12_two_touch_line_projects_third_touch`. Abhi चा trade, NIFTY FUT 15M:
-    1. touch 1 = 30 Sep चा high, touch 2 = 6 / 7 Oct चे highs;
-    2. projected रेषा 12 Oct ला ≈22,667 (FUT) च्या horizontal supply ला भेटते (K4 ⇒ "confluence");
-    3. 3रा touch = 12 Oct चा opening spike त्या confluence मध्ये, rejection, मग bear call.
-
-    Trendline module ने ही रेषा **फक्त 2 touches वरून** शोधायची, आणि 12 Oct चा 3rd-touch zone **12 Oct आधी** दाखवायचा (no look-ahead). Confluence golden: K4 मधला `test_golden_k4_k6_nifty_fut_2026_10_12_confluence`.
+  - **Golden fixture:** private fixtures मध्ये (trade-data `fixtures/golden_cases.md`).
 - **6.2 Channel:** anchors च्या मधल्या सगळ्यात टोकाच्या opposite pivot मधून समांतर रेषा. 15M वर रुंदी साधारण 2–6 MR.
 - **6.3 Correction चा स्वतःचा channel:** A ची सुरुवात आणि B चं टोक जोडा; A च्या टोकातून समांतर रेषा. C चं लक्ष्य = C जिथे ही रेषा गाठतो. C = A सोबत confluence.
 - **6.4 Horizontal की तिरका: ताज्या price action वरून निवड.** प्रत्येक candidate ला गुण:
@@ -707,12 +737,7 @@ completed pattern allows, the count is wrong.
   - **Correction च्या channel चा impulse दिशेने break**, reversal candle नंतर = pullback संपल्याची अतिरिक्त पुष्टी.
   - **Trigger form [Abhi, 2026-10-13, KP1]:** correction ची स्वतःची रेषा (flag / wedge / channel कड) **area वरच्या dominant commitment candle ने close-through** ⇒ valid trigger. Area पासून दूर breakout, चाल निघून गेल्यावर पाठलाग, किंवा commitment candle शिवाय रेषा break ⇒ entry नाही. Minor swing किंवा लहान trendline चा break **एकटा = noise** (K11.0).
 
-**Pullback वाचनात उपयोग (7 Oct 2026, NIFTY 15M, golden उदाहरण).**
-1. उतरती trendline: 28 Sep ~22,850 → 30 Sep ~22,801 → 7 Oct ~22,715 (3रा touch).
-2. सोबत 6 Oct चा horizontal top 22,700–22,730.
-3. ABC तेजीचा C-end, ending diagonal सारखा.
-4. Gap fill PDC पर्यंत.
-5. ⇒ छेदबिंदू area, 15M bearish reversal ⇒ bear call. 8 Oct ला 22,217. (Illustration only; ही तारीख contaminated.)
+**Pullback वाचनात उपयोग:** golden उदाहरण private fixtures मध्ये (trade-data `fixtures/golden_cases.md`). तर्क: उतरती trendline चा 3रा touch + त्याच जागी horizontal top ⇒ छेदबिंदू area; तिथे 15M reversal ⇒ trend दिशेचा call.
 
 **विश्वासार्हता.**
 - **[पुरावा, practitioner dataset: Bulkowski]** 3,172 uptrend lines: 3rd touch वर bounce trade ⇒ फक्त 37% win. **4+ touches, लांब कालावधी, सौम्य slope आणि दूरदूरचे touches** असलेल्या रेषा चांगल्या.

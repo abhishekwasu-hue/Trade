@@ -150,7 +150,7 @@ def test_confirm_requires_all_three_and_reports_each_missing_piece(mirror):
     ok = M.confirm(A, arm, t, d, lvl, s, ltf=L, ltf_times=times)
     assert ok["ok"] and ok["c0"] and ok["c1"] and ok["wait"] is None
     assert ok["lines"][0].startswith("inside supply:" if mirror else "inside demand:")
-    assert "body 4.2× window avg · volume 2.0× window avg" in ok["lines"][1] and ok["lines"][2].startswith("1M CHoCH:")
+    assert "largest of the visit · volume above the opposite side" in ok["lines"][1] and ok["lines"][2].startswith("1M CHoCH:")
     miss = M.confirm(A, arm, t, d, lvl, s, ltf=None, ltf_times=times)
     assert not miss["ok"] and miss["wait"] == M.C_LTF_MISSING and miss["c0"]
     assert M.confirm(A, arm, t, d, lvl, s, ltf=_ltf(C1.FALL, mirror), ltf_times=times)["wait"] == M.C_LTF_AGAINST
@@ -172,7 +172,7 @@ def _v22_setup_bar():
     from decision3 import engine as E3
     from tests.test_decision3_method import _abc_m15
     m15 = _abc_m15()
-    s = {"maturity_sigma_d": -1e6, "commit_dom_mult": 0.0}                 # fixture ला dominant candle नाही ⇒ c0 बंद; c1 default (चालू)
+    s = {"maturity_sigma_d": -1e6, "c0_dominance": False}                 # fixture ला dominant candle नाही ⇒ c0 बंद; c1 default (चालू)
     s["level_flip_rule"] = "acceptance"                                    # fixture चा setup acceptance-flip level वर (जुना §5.4) — Z-1 pin;
     s["a2_handover_required"] = False                                      # Z-1m आधीचा fixture (handover नसलेला) — pin
     s["c0_volume_required"] = False                                        # volume-नसलेला fixture ⇒ जुनी NA प्रथा pin (Z-1c नवा नियम: flip tests)
@@ -252,7 +252,7 @@ def test_no_handover_no_entry_even_with_commitment_and_choch(mirror):
     d = M.DOWN if mirror else M.UP
     s = M.S3.DEFAULTS
     assert s["a2_handover_required"] is True
-    A, arm, t, lvl, L = _A(C1.CHOCH, mirror=mirror)
+    A, arm, t, lvl, L = _A(C1.CHOCH, vol_commit=250.0, mirror=mirror)   # commitment volume above the strong counter side (Abhi: comparison)
     A, arm = _with_handover(A, arm, mirror, present=False)
     r = M.confirm(A, arm, t, d, lvl, s, ltf=L, ltf_times=(T0, T_ARR, T_END))
     assert not r["ok"] and r["wait"] == M.C_NO_HANDOVER and r["handover"] is False

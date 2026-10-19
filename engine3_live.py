@@ -494,8 +494,10 @@ TRADEABLE_STATES = ("ACTIVE", "TESTED", "FLIPPED")                         # BRO
 
 def tradeable_levels(levels):
     """फक्त trade करता येणारे पट्टे: `state` field असेल (decision3 #325 नंतर) ⇒ ACTIVE / TESTED / FLIPPED ठेवा, BROKEN / DEAD (अज्ञात) वगळा;
-    field नसेल (main: snapshot फक्त जिवंत levels देतो) ⇒ सगळे ठेवा."""
-    return [x for x in levels or [] if x.get("state") is None or str(x["state"]).upper() in TRADEABLE_STATES]
+    field नसेल (main: snapshot फक्त जिवंत levels देतो) ⇒ सगळे ठेवा. Abhi Z-1u: `trade_location` False (Weekly context; Daily पट्टा 1H zone
+    ने झाकलेला) ⇒ वगळा — प्रत्येक timeframe चा स्वतःचा पट्टा, confluence फक्त label (`confluence_label`)."""
+    return [x for x in levels or [] if (x.get("state") is None or str(x["state"]).upper() in TRADEABLE_STATES)
+            and x.get("trade_location", True)]
 
 
 def watched_levels(symbol, feed, now, s=None):
@@ -572,8 +574,8 @@ def row_from_v22(symbol, r, now_fn):
                                                             "weekly_trend", "daily_phase", "mature", "trend_notes", "trend_cap",
                                                             "mark", "conviction", "commitment_form", "missing", "checklist", "volume_note",
                                                             "m1")},
-               "level": {k: lv.get(k) for k in ("id", "role", "lo", "hi", "births", "sweeps", "dist", "state", "broken_ts", "far_swing",
-                                                "flipped_ts")} if lv else None,
+               "level": {k: lv.get(k) for k in ("id", "tf", "role", "lo", "hi", "births", "sweeps", "dist", "state", "broken_ts", "far_swing",
+                                                "flipped_ts", "confluence_label")} if lv else None,   # Abhi Z-1u: confluence = label
                "risk": rk or None, "flip_context": _flip_ctx(r.get("flip_retest")), "zone_read": _zone_sum(r.get("zone_read")),
                "data_problem": (r.get("commit") or {}).get("data_problem"), "volume_measure": r.get("volume_measure"),
                "range_state": r.get("range_state"), "watch_list": r.get("watch_list")}

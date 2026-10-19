@@ -74,8 +74,9 @@ def _areas(zones, ctx):
 def _band(lo, hi, zt):
     from bots_common import plain_text as PT
     tf = PT.tf_word(zt)
+    note = PT.zone_note(zt)                                                # Abhi Z-1u: "confluence: Daily …" label
     rng = f"{lo:,.0f}" if round(lo) == round(hi) else f"{lo:,.0f}–{hi:,.0f}"
-    return rng + (f" ({tf})" if tf else "")
+    return rng + (f" ({tf}{'; ' + note if note else ''})" if tf or note else "")
 
 
 def nearest_area(ctx, zones, rng):
@@ -147,8 +148,10 @@ def symbol_line(sym, ctx, gate, zones, rng, areas_na=None, warn_pts=None):
             else:
                 where = "below the low" if near[1] == "demand" else "above the high"
                 tf = PT.tf_word(near[4])
+                note = PT.zone_note(near[4])                                       # Abhi Z-1u: "confluence: Daily …" label
                 wide = "" if round(near[2]) == round(near[3]) else PT.band_wide_words(near[2], near[3], warn_pts)
-                s.append(f"Nearest {near[1]} {_band(near[2], near[3], '')} ({(tf + ', ') if tf else ''}{PT.pts(near[5])} {where})"
+                s.append(f"Nearest {near[1]} {_band(near[2], near[3], '')} ({(tf + ', ') if tf else ''}{PT.pts(near[5])} {where}"
+                         + (f"; {note})" if note else ")")
                          + (f", {wide}" if wide else "") + ".")
     if ctx is not None and ctx.get("mature"):
         from bots_common import level_reaction as LR

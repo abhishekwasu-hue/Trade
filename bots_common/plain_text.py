@@ -107,9 +107,15 @@ def unclear_words(ctx):
 
 
 def tf_word(zone_type):
-    """"DYNAMIC_SR_RESISTANCE_60M" ⇒ "1H"; ओळखता नाही ⇒ ""."""
-    tail = str(zone_type or "").rsplit("_", 1)[-1].upper()
+    """"DYNAMIC_SR_RESISTANCE_60M" ⇒ "1H"; ओळखता नाही ⇒ "". "|" नंतरचा भाग = label (`zone_note`)."""
+    tail = str(zone_type or "").split("|", 1)[0].rsplit("_", 1)[-1].upper()
     return TF_WORD.get(tail, "")
+
+
+def zone_note(zone_type):
+    """engine zone row चा label ("ENGINE_LEVEL_1H|confluence: Daily <low–high>" ⇒ "confluence: Daily <low–high>"); नाही ⇒ ""."""
+    parts = str(zone_type or "").split("|", 1)
+    return parts[1].strip() if len(parts) == 2 else ""
 
 
 # ------------------------------------------------------------------------------------------------ पट्ट्याची रुंदी (Abhi: merged band — check)
@@ -141,7 +147,7 @@ def band_width(lo, hi):
 
 
 def band_range(lo, hi):
-    """"22,544–22,622 (78 pts)" — पट्टा नाही ⇒ ""."""
+    """"<low>–<high> (<width> pts)" — पट्टा नाही ⇒ ""."""
     w = band_width(lo, hi)
     if w is None:
         return ""

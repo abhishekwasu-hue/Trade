@@ -144,6 +144,9 @@ def test_summary_lines_show_width_flag_override_and_missing():
     assert "Nearest supply 22,700–23,000 (1H, ≈50 pts above the high), 300 pts wide ⚠️ merged band — check (over 150 pts)." in away
     inside = S.symbol_line("NIFTY", ctx, gate, zones, {"high": 22750.0, "low": 22500.0}, warn_pts=500)
     assert "Price traded into supply 22,700–23,000 (1H) today, 300 pts wide." in inside and FLAG not in inside
+    conf = zones.assign(zone_type="ENGINE_LEVEL_1H|confluence: Daily 22,725–22,810")   # Abhi Z-1u: label "Nearest" ओळीतही
+    near = S.symbol_line("NIFTY", ctx, gate, conf, {"high": 22650.0, "low": 22500.0})
+    assert "Nearest supply 22,700–23,000 (1H, ≈50 pts above the high; confluence: Daily 22,725–22,810), 300 pts wide" in near
     na = S.symbol_line("NIFTY", ctx, gate, None, {"high": 22650.0, "low": 22500.0}, areas_na="Upstox login missing")
     assert "pts wide" not in na and FLAG not in na
     txt = S.symbols_section("2026-10-14", symbols=("NIFTY",), ctx_fn=lambda s, d: ctx, rows_fn=lambda s, d: ([], None),

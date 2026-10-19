@@ -19,8 +19,9 @@ from tests import oct12_fixture as F
 
 # Z-1 (Abhi K4 flip नियम): या synthetic fixture चा supply = acceptance ने flip झालेला support, आणि त्याखाली आधीचा swing low नाही ⇒
 # नव्या नियमाने BROKEN (trade location नाही). हे tests a2 / c0 / c1 / confluence चे ⇒ जुना flip नियम स्पष्ट pin (असर्ट तसेच);
-# default नियमावर हाच fixture: tests/test_decision3_flip.py::test_oct12_synthetic_fixture_supply_is_broken_not_flipped_under_k4.
-S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False}   # Z-1m आधीचा fixture — pin     # claude/v22-touch-levels (TL1) — merge होईपर्यंत स्पष्ट
+# default नियमावर हाच fixture: tests/test_decision3_flip.py::test_oct12_synthetic_fixture_supply_flips_when_the_first_swing_after_the_break_is_confirmed.
+S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False,   # Z-1m आधीचा fixture — pin
+          "level_merge": True, "zone_visit_rule": "touch_window"}   # Abhi Z-1u / Z-1v आधीचा fixture — legacy pin, असर्ट तसेच
 S_OLD = {**S_ROLE, "rr_step": True, "entry_first_bar": False}              # Abhi 13 Oct आधीचे नियम (⑦ R:R + 09:15 फक्त पुरावा) — जुने असर्ट pin
 
 
@@ -54,7 +55,8 @@ def test_first_hour_setup_with_a2_c0_c1_active(case_old):
     assert r["level"]["role"] == ("support" if mirror else "resistance")
     assert r["risk"]["rr"] >= 3
     cm = r["commit"]
-    assert cm.get("vol_mult") is not None and cm["vol_mult"] > 1.0                # c0 volume (futures) खरंच वापरला
+    assert cm.get("vol_na") is False and cm.get("vol_vs") == "no opposite-side candle in this visit"   # FUT volume read; the visit has no
+    assert cm["grade"] == "B" and cm.get("vol_mult") is None               # opposite-side candle ⇒ nothing compared ⇒ fail-safe grade cap B (Z-1z-d)
     assert "5M CHoCH" in r["checklist"]["⑥"][1]                                  # c1 LTF CHoCH
     assert rows[0]["decision"] != "setup" and "वेळ-खिडकी" in rows[0]["checklist"]["⑥"][1]   # 09:15 = entry नाही (फक्त पुरावा)
     k = r["bar"] + 1                                                              # setup bar वर कापलेलं data ⇒ तोच निर्णय
@@ -267,7 +269,7 @@ def test_replay_day_upstox_source_is_read_only_and_writes_json(monkeypatch, tmp_
     out = tmp_path / "out.json"
     rc = RD.main(["--date", "2030-03-04", "--symbol", "NIFTY", "--source", "upstox", "--futures", str(fpath), "--dry-run",
                   "--json", str(out), "--out-dir", str(tmp_path), "--legacy-rr", "--no-first-bar-entry",
-                  "--flip-rule", "acceptance", "--legacy-zone-gates"])                          # rr असर्ट ⇒ जुने नियम (pin); Z-1 flip pin
+                  "--flip-rule", "acceptance", "--legacy-zone-gates", "--legacy-bands"])                          # rr असर्ट ⇒ जुने नियम (pin); Z-1 flip pin
     assert rc == 0 and {c[1] for c in calls} == {"15minute", "5minute", "day"}
     j = json.loads(out.read_text(encoding="utf-8"))
     assert j["setup"]["side"] == "bear call" and j["setup"]["rr"] >= 3 and j["bars"][0]["ts"].endswith("09:15:00")
