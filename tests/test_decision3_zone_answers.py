@@ -355,9 +355,9 @@ def test_bands_are_built_never_widened_same_timeframe_lineage(monkeypatch):
 
 
 def test_trade_band_max_width_setting_none_reports_set_excludes(monkeypatch):
-    m, lv = _z1u_levels(monkeypatch, [])
+    m, lv = _z1u_levels(monkeypatch, [], s={"trade_band_max_sigma": None})   # None ⇒ report only (Abhi Z-1x set the default: 1.5)
     t = len(m) - 1
-    assert S3.DEFAULTS["trade_band_max_sigma"] is None and "trade_band_max_sigma" in S3.REGISTER
+    assert S3.DEFAULTS["trade_band_max_sigma"] == 1.5 and "trade_band_max_sigma" in S3.REGISTER
     x = [y for y in lv.snapshot(t) if y["tf"] == "1H"][0]
     assert x["width"] > 0 and x["width_sigma"] == round(x["width"] / 10.0, 2) and x["trade_location"]   # None ⇒ report only
     _, lv2 = _z1u_levels(monkeypatch, [], s={"trade_band_max_sigma": x["width_sigma"] / 2})
@@ -493,3 +493,71 @@ def test_live_row_payload_carries_the_level_timeframe_and_confluence_label():
                    "confluence_label": "confluence: Daily 22,476–22,795"}}
     lv = json.loads(L.row_from_v22("NIFTY", r, lambda: "2030-03-04 10:00:05")["payload"])["level"]
     assert lv["tf"] == "1H" and lv["confluence_label"] == "confluence: Daily 22,476–22,795" and (lv["lo"], lv["hi"]) == (22543.75, 22621.8)
+
+
+# ------------------------------------------------------------------------------------------------ Abhi Z-1z (c) / Z-1y (a) / Z-1x
+def _pair(rel=(1.0, 1.5), c2_close=97.2, o2=99.5):
+    """supply 100–102 (bear call): candle 1 pushes into the band and is rejected by a long upper wick; candle 2 = dominant red engulf."""
+    A = {"open": np.array([99.0, o2]), "high": np.array([101.5, max(o2, 99.6)]), "low": np.array([98.5, 97.0]),
+         "close": np.array([99.2, c2_close]), "volume": np.array([900.0, 100.0])}            # raw volume FALLS — must never be read
+    return A, np.array(rel, float)
+
+
+def test_two_candle_sharp_reversal_is_a_handover_on_slot_normalised_volume_only():
+    """Abhi Z-1z (c): push into the band rejected (wick back) + a dominant trade-side candle that engulfs it and closes beyond it, on
+    higher slot-normalised FUT volume ⇒ handover. Structure only; raw volume (here falling) is never used; study_min_bars not lowered."""
+    A, rel = _pair()
+    sr = M.sharp_reversal(A, 1, DOWN, 100.0, 102.0, S, a0=0, rel=rel)
+    assert sr["found"] is True and all(sr["parts"].values()) and (sr["rel1"], sr["rel2"]) == (1.0, 1.5)
+    ho = M.handover_episode(A, 0, 1, DOWN, S, sharp=lambda i, a0: M.sharp_reversal(A, i, DOWN, 100.0, 102.0, S, a0=a0, rel=rel))
+    assert ho["present"] is True and ho["form"] == "sharp_reversal" and ho["seen_at"] == 1          # candle 2 = the commitment bar
+    assert M.handover_episode(A, 0, 1, DOWN, S)["present"] is False and S["study_min_bars"] == 4    # the long study alone: too few bars
+    na = M.sharp_reversal(A, 1, DOWN, 100.0, 102.0, S, a0=0, rel=np.array([np.nan, 1.5]))
+    assert na["found"] is False and na["parts"]["volume_higher"] is None and "raw is never used" in na["why"]
+    view = {**A, "volume_rel": np.array([np.nan, np.nan])}                  # the engine's raw-fallback view keeps normalised in volume_rel
+    assert M.sharp_reversal(view, 1, DOWN, 100.0, 102.0, S, a0=0)["parts"]["volume_higher"] is None
+    low = M.sharp_reversal(A, 1, DOWN, 100.0, 102.0, S, a0=0, rel=np.array([1.5, 1.0]))
+    assert low["found"] is False and low["parts"]["volume_higher"] is False
+
+
+def test_two_candle_sharp_reversal_reports_every_missing_structural_part():
+    """No engulf (candle 2 opens below candle 1's body top) and a close short of candle 1's low ⇒ not a handover; both parts named."""
+    A, rel = _pair(c2_close=98.6, o2=99.1)
+    sr = M.sharp_reversal(A, 1, DOWN, 100.0, 102.0, S, a0=0, rel=rel)
+    assert sr["found"] is False and sr["parts"]["c2_engulfs_body"] is False and sr["parts"]["c2_closes_beyond_c1"] is False
+    assert "does not engulf" in sr["why"] and "not beyond candle 1's low" in sr["why"]
+    assert M.sharp_reversal(A, 0, DOWN, 100.0, 102.0, S, a0=0, rel=rel)["why"] == "candle 1 is not inside the visit"
+
+
+def test_far_swing_is_the_structural_swing_a_sweep_wick_beyond_the_band_is_not():
+    """Abhi Z-1y (a): band 100–102 broken upward; swing highs beyond it: 106 (its candle closed 104 — structural) and 103 (a wick whose
+    candle closed back inside at 101 — a sweep). The far swing is 106, never the sweep wick 103 (that would flip on every false break)."""
+    from types import SimpleNamespace as N
+    from decision3 import flip as FL
+    known = [N(kind="H", price=106.0, bar=2, confirm_bar=3), N(kind="H", price=103.0, bar=5, confirm_bar=6)]
+    closes = np.array([100, 101, 104, 101, 100, 101, 100, 99, 101, 103], float)
+    assert FL.far_swing(known, 100.0, 102.0, True, 8, closes).price == 106.0
+    assert FL.far_swing(known, 100.0, 102.0, True, 8).price == 103.0                     # without closes (old callers): unchanged
+    assert FL.structural(101.0, 100.0, 102.0, True) is False and FL.structural(99.0, 100.0, 102.0, False) is True
+
+
+def test_band_max_width_default_setting_and_check_label():
+    """Abhi Z-1x: max trade band = 1.5 × σ_1H (dashboard `engine3_band_max_sigma`); wider ⇒ not a location (no trade) but listed in
+    pre-open / 15:45 with "check, no trade" — the band itself is never re-cut or widened."""
+    import cloud_db
+    import engine3_live as L3
+    from scripts import level_gate_preopen as PO
+    assert S3.DEFAULTS["trade_band_max_sigma"] == 1.5 == L3.DEFAULTS["engine3_band_max_sigma"]
+    assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]["engine3_band_max_sigma"] == 1.5
+    assert L3.band_max_sigma({"engine3_band_max_sigma": "2"}) == 2.0 and L3.band_max_sigma({"engine3_band_max_sigma": "x"}) == 1.5
+    assert L3.band_max_sigma({"engine3_band_max_sigma": 0}) == 1.5 and L3.v22_settings(None) == {"trade_band_max_sigma": 1.5}
+    snap = [{"id": 1, "tf": "1H", "role": "resistance", "lo": 22543.75, "hi": 22621.8, "state": "ACTIVE", "trade_location": True},
+            {"id": 2, "tf": "1H", "role": "resistance", "lo": 22700.0, "hi": 22850.0, "state": "ACTIVE", "trade_location": False,
+             "too_wide": True, "width_sigma": 2.9},
+            {"id": 3, "tf": "1H", "role": "support", "lo": 22000.0, "hi": 22200.0, "state": "BROKEN", "trade_location": False,
+             "too_wide": True, "width_sigma": 3.9}]
+    assert [x["id"] for x in L3.tradeable_levels(snap)] == [1]
+    assert [x["id"] for x in L3.display_levels(snap)] == [1, 2]                           # BROKEN stays out even when too wide
+    rows = PO.engine_zone_rows(snap)
+    assert list(rows["zone_type"]) == ["ENGINE_LEVEL_1H", "ENGINE_LEVEL_1H|too wide (2.9σ) — check, no trade"]
+    assert (rows["zone_low"].iloc[1], rows["zone_high"].iloc[1]) == (22700.0, 22850.0)    # never re-cut

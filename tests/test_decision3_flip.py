@@ -613,28 +613,31 @@ def test_real_12_oct_seller_zone_in_zone_study_and_golden_bear_call(real):
         assert cm["handover_present"] is True and cm["choch"]["done"] and not cm.get("data_problem")
         assert pd.Timestamp(cm["choch"]["at"]) > pd.Timestamp(cm["visit_start"]) and cm["vol_mult"] > 1.0
         return
-    # the miss has THREE causes, each asserted (report, never tuned): (1) OPEN_QUESTIONS Z-1z — the visit starts 12 Oct 09:15 (the 9 Oct
-    # visit ended at the 9 Oct 15:00 close below the band, Abhi Z-1v); the 09:30 dominant red candle has fewer than study_min_bars in-zone
-    # bars before it ⇒ no handover can be read; (2) its FUT volume is BELOW the window average on the raw per-bar fallback (no slot
-    # normalisation: too few earlier FUT sessions); (3) OPEN_QUESTIONS Z-1v-a — that failed candidate's close below the band ends the
-    # visit; no later visit that day
+    # the miss — each cause asserted (report, never tuned). The visit starts 12 Oct 09:15 (the 9 Oct visit ended at the 9 Oct 15:00 close
+    # below the band, Abhi Z-1v), so the in-zone study cannot run (1 bar < study_min_bars, never lowered — Z-1z). Abhi Z-1z (c): the
+    # 09:15 → 09:30 pair is read as a two-candle sharp reversal and it is NOT one by structure:
+    #   (1) candle 2's body does not engulf candle 1's (09:30 opened below 09:15's open); (2) its close is not beyond candle 1's low;
+    #   (3) slot-normalised FUT volume is NA (too few earlier FUT sessions — raw is never used for this read);
+    # then (Z-1v-a (a), Abhi) the failed dominant candle's close below the band ends the visit; no later visit that day.
     by = {r["ts"][11:16]: r for r in rows}
     c930 = by["09:30"]["commit"] or {}
     assert str(c930.get("visit_start")).startswith("2026-10-12 09:15") and str(c930.get("visit_prev_end")).startswith("2026-10-09 15:00")
     assert c930.get("handover_present") is False and (c930.get("handover_state") or {}).get("seen_at") is None
     assert c930.get("form") and int(by["09:30"]["bar"]) - int(c930["visit_start_bar"]) < int(V.s["study_min_bars"])
-    assert c930.get("vol_mult") is not None and c930["vol_mult"] < 1.0 and not c930.get("data_problem")          # cause (2)
-    assert "insufficient history" in str(c930.get("volume_measure")) and not (c930.get("vol_gaps") or {}).get("over")
+    sr = (c930.get("handover_state") or {}).get("sharp") or {}
+    P = sr.get("parts") or {}
+    print(f"\n09:15 → 09:30 two-candle read: {P} · rel {sr.get('rel1')} → {sr.get('rel2')} · {sr.get('why')}")
+    assert P.get("c1_rejected") is True and P.get("c2_dominant") is True                       # the shape is there…
+    assert P.get("c2_engulfs_body") is False and P.get("c2_closes_beyond_c1") is False         # …but not an engulf closing beyond
+    assert P.get("volume_higher") is None and sr.get("rel1") is None and sr.get("rel2") is None  # normalised volume NA
+    assert "insufficient history" in str(c930.get("volume_measure")) and not c930.get("data_problem")
     assert str(by["09:30"]["checklist"]["⑥"][1]).startswith(M.REASON[M.C_NO_HANDOVER]) and str(c930.get("visit_end")).startswith("2026-10-12 09:30")
-    assert float(m15["close"].iloc[int(by["09:30"]["bar"])]) < ZONE[0]   # cause (3): the 09:30 close is below the band (Z-1v-a)
+    assert float(m15["close"].iloc[int(by["09:30"]["bar"])]) < ZONE[0]   # Z-1v-a (a): the failed candidate closed below the band
     later = [r for r in rows if r["ts"][11:16] > "09:30" and (r["checklist"].get("③") or [None])[0]]
     assert all(((r.get("commit") or {}).get("confirm_wait") == "no_visit") for r in later), [(r["ts"], r["checklist"]["⑥"]) for r in later]
-    pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — three causes: (1) Z-1z: the visit starts 12 Oct 09:15 (the "
-                 "9 Oct visit ended at the 9 Oct 15:00 close below the band); the 09:30 dominant red candle (body "
-                 f"{c930.get('body_mult')}×) has only {int(by['09:30']['bar']) - int(c930['visit_start_bar'])} in-zone bar(s) before it "
-                 f"< study_min_bars {V.s['study_min_bars']} ⇒ no handover; (2) its FUT volume {c930['vol_mult']}× the window average "
-                 "(raw per-bar fallback — too few earlier FUT sessions to normalise); (3) Z-1v-a: its close below the band ends the visit "
-                 "(OPEN_QUESTIONS Z-1z / Z-1v-a)")
+    pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — the visit is the 09:15 spike + the 09:30 dominant red candle "
+                 "(1 bar before it < study_min_bars, Z-1z); read as a two-candle sharp reversal (Abhi Z-1z (c)) it fails by structure: "
+                 f"{sr.get('why')}; the 09:30 close below the band ends the visit (Abhi Z-1v-a (a)) — OPEN_QUESTIONS Z-1z-a")
 
 
 def test_real_oct_1_to_12_lifecycle_of_the_22544_22622_band(real):
@@ -677,43 +680,23 @@ def test_real_13_oct_no_bear_call(real):
     assert nxt and nxt[0]["lo"] > ZONE[1]                                  # Abhi B2: the next seller zones above are already armed
 
 
-Z1Y = ("OPEN_QUESTIONS Z-1y (a question for Abhi, not a code answer): after the 6 Oct up-break, which far swing decides the flip — "
-       "Abhi's 22,731.8 (the 6 / 7 Oct high) or the nearest swing 22,651.10 (12 Oct 09:15) the engine uses? The engine flips the band to "
-       "support on 13 Oct 14:30; Abhi's expectation (still resistance on 13 Oct) is kept here unchanged until he answers.")
-
-
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=Z1Y)
 def test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731(real):
-    """Abhi's own expectation (Z-1y, kept as written): on 13 Oct price never closed past the far swing 22,731.8 ⇒ the 22,543.75–22,621.80
-    band is still resistance (not FLIPPED to support, not DEAD). Strict: if the engine ever meets it, this test fails and Z-1y is revisited.
-    Only the expectation itself may xfail — a missing band or a day past 22,731.8 is a hard failure."""
+    """Abhi Z-1y (a): the far-side swing is the prior STRUCTURAL swing of the same degree beyond the band — the lower high 22,731.8. The
+    12 Oct 09:15 wick to 22,651.10 (its candle closed back inside the band) is a sweep, not a structural swing. 13 Oct never traded past
+    22,731.8 ⇒ the 22,543.75–22,621.80 band is still resistance (BROKEN at most — not FLIPPED to support, not DEAD)."""
     m15, ltf, fut, V = real
     ix = _day_bars(V, "2026-10-13")
-    try:
-        lvl = _zone_level(V, ix[0])
-    except AssertionError as e:                                            # not the Z-1y expectation ⇒ never hidden by the xfail
-        pytest.fail(str(e))
+    lvl = _zone_level(V, ix[0])
     L = V.levels.L[lvl["id"]]
     t = ix[-1]
     hi = float(m15["high"].iloc[ix].max())
-    if hi > FAR_UP:
-        pytest.fail(f"13 Oct high {hi:,.2f} is past 22,731.8 — the Z-1y expectation is about a day that stays below it")
-    try:
-        f = V.levels.flip_view(L, t)
-        st, role = L.state_at(t), L.role_at(t)
-    except AssertionError as e:                                            # an engine error is never hidden by the xfail
-        pytest.fail(f"engine error reading the band state: {e}")
-    T = lambda b: str(V.levels.ts.iloc[int(b)])[:16]                       # noqa: E731
+    assert hi <= FAR_UP                                                    # the day this expectation is about
+    f = V.levels.flip_view(L, t)
     fs = f.get("far_swing") or {}
-    print(f"\n13 Oct: spot high {hi:,.2f} < 22,731.8 · engine: state {st}, role {role}, far swing "
-          f"{fs.get('price')} ({str(fs.get('ts'))[:16]}, {fs.get('source')}), flipped at "
-          f"{None if f.get('flipped_at') is None else T(f['flipped_at'])}")
-    known = (st == FL.FLIPPED and role == LV.SUP and fs.get("price") is not None and abs(float(fs["price"]) - 22651.10) < 0.01
-             and f.get("flipped_at") is not None and T(f["flipped_at"]).startswith("2026-10-13"))
-    if not (known or (role == LV.RES and st != FL.DEAD)):                  # only the known Z-1y difference may xfail
-        pytest.fail(f"13 Oct band state changed to something else: {st} / {role}, far swing {fs.get('price')}")
-    assert role == LV.RES and st != FL.DEAD, \
-        f"Abhi: below 22,731.8 ⇒ still resistance; engine: {st} / {role} via far swing {fs.get('price')}"
+    print(f"\n13 Oct: spot high {hi:,.2f} < 22,731.8 · state {L.state_at(t)}, role {L.role_at(t)}, far swing {fs.get('price')} "
+          f"({str(fs.get('ts'))[:16]}, {fs.get('source')})")
+    assert L.role_at(t) == LV.RES and L.state_at(t) not in (FL.FLIPPED, FL.DEAD) and L.count("flip", t) == 0
+    assert fs.get("price") == pytest.approx(FAR_UP, abs=0.1) and fs.get("source") == "before_break"
 
 
 def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmup(real):
@@ -734,6 +717,7 @@ def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmu
     f = V.levels.flip_view(L, t_flip)
     assert f["far_swing"]["price"] == pytest.approx(22569.65) and f["far_swing"]["source"] == "first_confirmed_after_break"
     assert float(m15["low"].iloc[t_flip:ix[-1] + 1].min()) >= 22569.65 - 1e-6   # reached by confirmation, never traded through
+    wide = []
     for t in ix:
         r = V.decide(t)
         if r["ts"][11:16] in ("12:00", "12:15"):
@@ -741,8 +725,17 @@ def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmu
             print(f"{r['ts'][11:16]} {r['decision']} lvl {(r.get('level') or {}).get('id')} ③ {r['checklist'].get('③')} "
                   f"⑥ {r['checklist'].get('⑥')} · visit {cm.get('visit_start')} (previous ended {cm.get('visit_prev_end')}) · handover "
                   f"{cm.get('handover_state')} · CHoCH {cm.get('choch_vs_arm') or cm.get('ltf_line')}")
-            assert (r.get("level") or {}).get("id") == L.id and r["checklist"]["③"][0] is True   # the pullback into the flipped zone
+            if (r.get("level") or {}).get("id") != L.id:                   # Abhi Z-1x: only the exact cause may hide the pullback read
+                me = [x for x in V.levels.snapshot(t) if x["id"] == L.id]
+                assert me and me[0]["too_wide"] is True and me[0]["width_sigma"] > float(V.s["trade_band_max_sigma"]), me
+                wide.append((r["ts"][11:16], me[0]["width"], me[0]["width_sigma"]))
+            else:
+                assert r["checklist"]["③"][0] is True                     # the pullback into the flipped zone
         assert r["decision"] != "setup"                                    # no FUT that day ⇒ no entry
+    if wide:
+        pytest.xfail(f"29 Sep: the Daily band 22,725.45–22,809.90 is {wide[0][1]:,.2f} pts = {wide[0][2]}σ_1H > trade_band_max_sigma "
+                     f"{V.s['trade_band_max_sigma']} (Abhi Z-1x) ⇒ no trade location, 'check' — the 12:00 / 12:15 pullback is not read on "
+                     "it (OPEN_QUESTIONS Z-1x-a: does the 1.5σ_1H cap apply to a Daily location band?)")
 
 
 # ------------------------------------------------------------------------------------------------ Abhi A / B: in-zone study, watch-list
