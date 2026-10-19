@@ -468,6 +468,8 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 Abhi (merged band — check): approval संदेश / pre-open / 15:45 सारांशात पट्ट्याची रुंदी (pts) दाखवतो; रुंदी यापेक्षा जास्त ⇒
         # "⚠️ merged band — check" ओळ. फक्त दाखवणं — निर्णय / gate / order बदलत नाही (bots_common/plain_text.band_warn_pts). Default 150.
         "approval_band_warn_pts": 150,
+        # 🎓 Abhi Z-1x: engine (decision3) चा trade पट्टा ≤ इतके × σ_1H; रुंद ⇒ trade नाही, "check" (engine3_live.band_max_sigma)
+        "engine3_band_max_sigma": 1.5,
         # 🎓 Level memory (वापरकर्त्याचा निर्णय: "levels तिथेच राहावेत, बदलू नयेत", डीफॉल्ट चालू) — Dynamic S/R refresh मध्ये जुने levels त्याच
         # किंमतीवर (बघा level_memory.py; logic तोच compute_dynamic_sr, फक्त स्मरण). बंद ⇒ जुनं वर्तन (ताजे top-5, बाकी STALE).
         "level_memory_enabled": True,

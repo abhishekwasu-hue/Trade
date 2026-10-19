@@ -22,7 +22,8 @@ KB K4 flip rule (Abhi, final — `level_flip_rule` = "far_swing", default; decis
   FLIPPED ──broken again and ITS far-side swing reached──▶ DEAD (Abhi Z-1f: once flipped the old role is over; no second flip, logged).
   Far-side swing (`flip.far_swing`): the nearest confirmed D`level_degree` pivot beyond the band on the break side that formed before the
   excursion began — reached when price trades past it; none (new highs / lows) ⇒ the first swing formed after the break, reached when it
-  is CONFIRMED (Abhi Z-1s, the corrected Z-1a wording; it need not be broken — `flip.reached`). Known = confirm_bar ≤ t.
+  is CONFIRMED (Abhi Z-1s, the corrected Z-1a wording; it need not be broken — `flip.reached`). Known = confirm_bar ≤ t. Only STRUCTURAL
+  swings count (Abhi Z-1y, `flip.structural`): a sweep wick just beyond the band (its candle closed back inside) is never the far swing.
   A new swing never merges into a DEAD level (it is born as its own level); `level_death_side` (TL1) is legacy only.
   Facts per level (snapshot): state, broken_at, break_dir, exc_start, far_swing {price, bar, ts, source}, flipped_at (DEAD: dead_at).
   "acceptance" = the old spec §5.4 (acceptance ⇒ flip at once; flip_failed back), kept only for old tests / what-if.
@@ -479,7 +480,7 @@ class Levels:
         prev = L.facts_at(t)
         hist = {"flipped_at": prev.get("flipped_at")} if prev.get("flipped_at") is not None else {}
         if st["brk"] or exc > 0 or beyond_close:                           # पलीकडे (≥ 1 close) ⇒ far swing पार? ⇒ FLIPPED
-            fs = FL.far_swing(known, L.lo, L.hi, up, st["start"])
+            fs = FL.far_swing(known, L.lo, L.hi, up, st["start"], C)
             src = FL.swing_source(fs, st["start"])
             if fs is not None and FL.reached(src, fs.price, H[t] if up else Lo[t], up):   # Z-1s: post-break swing ⇒ its confirmation
                 how = "past the far-side swing" if src == "before_break" else "the first swing after the break confirmed at"
@@ -518,7 +519,7 @@ class Levels:
         if beyond_close:
             exc += 1
             if exc >= acc:                                                 # acceptance ⇒ BROKEN (flip फक्त far swing ने)
-                fs = FL.far_swing(known, L.lo, L.hi, up, st["start"])
+                fs = FL.far_swing(known, L.lo, L.hi, up, st["start"], C)
                 L.events.append((t, "broken", f"{acc} closes beyond the band; " +
                                  (f"far-side swing {fs.price:,.2f} not reached" if fs is not None else "no far-side swing known")))
                 L.flip_facts.append((t, {**hist, "broken_at": t, "break_dir": 1 if up else -1, "exc_start": st["start"],
@@ -549,7 +550,7 @@ class Levels:
         flipped = L.count("flip", t) > 0
         if state == FL.BROKEN and f.get("exc_start") is not None:
             lo, hi = L.band_at(t)
-            fs = FL.far_swing(self.known_pivots(t), lo, hi, (f.get("break_dir") or 0) > 0, f["exc_start"])
+            fs = FL.far_swing(self.known_pivots(t), lo, hi, (f.get("break_dir") or 0) > 0, f["exc_start"], self.A["close"])
             f["far_swing"] = None if fs is None else {**self._swing_fact(fs), "source": FL.swing_source(fs, f["exc_start"])}
         ts = lambda b: None if b is None else str(self.ts.iloc[int(b)])  # noqa: E731
         brk = f.get("broken_at") if (state == FL.BROKEN or flipped) else None
@@ -574,7 +575,8 @@ class Levels:
     def snapshot(self, t):
         """t च्या close ला जिवंत levels (dict), किंमतीपासूनच्या अंतरासह. Abhi Z-1u: each with its own `tf`; a 1H level lists the
         overlapping alive Daily / Weekly bands as `confluence` (+ `confluence_label`, evidence); `trade_location` = 1H, or Daily with no
-        overlapping 1H zone (not BROKEN / DEAD), never Weekly (context only) — and, when `trade_band_max_sigma` is set, no wider than that × σ_1H.
+        overlapping 1H zone (not BROKEN / DEAD), never Weekly (context only) — and no wider than `trade_band_max_sigma` × σ_1H (Abhi Z-1x,
+        default 1.5; wider ⇒ `too_wide` True, "check", no trade).
         `width` (points) / `width_sigma` are facts for the width report (Abhi: max width — the setting stays None until he decides)."""
         c = float(self.A["close"][t])
         sg = self.sig1h[t]
@@ -592,13 +594,13 @@ class Levels:
             inside_1h = [o.id for o, _, _ in ov if L.tf != "1H" and o.tf == "1H" and st[o.id] not in (FL.BROKEN, FL.DEAD)]
             w = hi - lo
             wsg = round(w / sg, 2) if np.isfinite(sg) and sg > 0 else None
-            loc, why = True, None
+            loc, why, wide = True, None, False
             if L.tf == "W":
                 loc, why = False, "Weekly band: context only (Abhi Z-1u)"
             elif inside_1h:
                 loc, why = False, f"{TF_WORD[L.tf]} band overlapped by 1H zone(s) {inside_1h}: the 1H band is the location (Abhi Z-1u)"
-            elif mx is not None and wsg is not None and wsg > float(mx):
-                loc, why = False, f"band {w:,.2f} pts = {wsg}× σ_1H > trade_band_max_sigma {mx}"
+            elif mx is not None and wsg is not None and wsg > float(mx):   # Abhi Z-1x: no trade, flagged "check" — never re-cut / widened
+                loc, why, wide = False, f"too wide {w:,.0f} pts = {wsg}σ_1H > {float(mx):g}σ (trade_band_max_sigma) — check, no trade", True
             out.append({"id": L.id, "tf": L.tf, "role": L.role_at(t), "lo": round(lo, 2), "hi": round(hi, 2), "births": births,
                         "anchor": L.anchor, "tests": L.count("test", t), "sweeps": L.count("sweep", t), "flips": L.count("flip", t),
                         "fresh": L.count("test", t) == 0, "score": self.score(L, t, births, conf), "dist": round(dist, 2),
@@ -606,6 +608,7 @@ class Levels:
                         "above": lo > c, "below": hi < c, "born_bar": L.born_bar, "provisional_width": L.provisional(t),
                         "width_note": PROV_WIDTH if L.provisional(t) else None, "width": round(w, 2), "width_sigma": wsg,
                         "confluence": conf, "confluence_label": confluence_label(conf), "trade_location": loc, "not_location_why": why,
+                        "too_wide": wide,
                         "lineage": [dict(x) for x in L.lineage if x["bar"] <= t], **self.flip_view(L, t)})
         return out
 
@@ -660,7 +663,8 @@ def band_flip_facts(df, t, x, s=None, start=None):
       • a break AGAINST the band's current role (the first break sets it) ⇒ BROKEN; its segment runs to the next break (or t);
       • while BROKEN, the break's far-side swing reached ⇒ FLIPPED (role changes; a break the other way is now "against"); the far
         swing = the nearest confirmed swing beyond the band on the break side formed before the break (`facts.validity.pivots`, confirmed
-        by the bar it is used on) — reached when price trades past it; none (new highs / lows) ⇒ the FIRST swing formed after the break,
+        by the bar it is used on; a sweep wick — its candle closed back inside — is not structural, Abhi Z-1y) — reached when price
+        trades past it; none (new highs / lows) ⇒ the FIRST swing formed after the break,
         reached when it is CONFIRMED (Abhi Z-1s, as flip.far_swing / flip.reached — the chart label mirrors the engine);
       • while BROKEN, a break back the other way before the far swing is passed = reclaim ⇒ sweep ★, the prior state and role are kept
         (ACTIVE, or FLIPPED with its flipped_at) — never a new break / flip;
@@ -695,7 +699,8 @@ def band_flip_facts(df, t, x, s=None, start=None):
         out.update(flip_state=FL.BROKEN, broken_at=bar(b), far_swing=None)
         tol = float(s["band_tol_mr"]) * FV.mr_at(B, b, s)                  # a swing within the band's touch tolerance is its own touch
         beyond = [i for i in FV.pivots(B, end, "H" if up else "L", s, start=min(st, b))
-                  if ((B.H[i] > x["hi"] + tol) if up else (B.L[i] < x["lo"] - tol))]
+                  if ((B.H[i] > x["hi"] + tol) if up else (B.L[i] < x["lo"] - tol))
+                  and FL.structural(float(B.C[i]), x["lo"], x["hi"], up)]    # Abhi Z-1y: a sweep wick is not the far swing
         piv, post = [i for i in beyond if i < b], sorted(i for i in beyond if i >= b)
         flip_bar = (out["flipped_at"] or {}).get("bar")
         for i in range(b + (prior == FL.FLIPPED and flip_bar == b), end + 1):   # the flip bar was used for the flip (engine: no DEAD on it)

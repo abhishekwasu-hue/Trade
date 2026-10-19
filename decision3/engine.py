@@ -282,7 +282,13 @@ class V22:
         lid = lvl.get("parent_level", lvl.get("id"))
         L = self.levels.L[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(self.levels.L) else None
         broken = None if L is None else (lambda u: L.state_at(int(u)) in (FL.BROKEN, FL.DEAD))
-        return M.handover_episode(A, arm, t, d, self.s, broken=broken)
+        sharp = None
+        if bool(self.s.get("sharp_reversal_handover", True)):              # Abhi Z-1z (c): slot-normalised volume only (never raw)
+            LA = self.levels.A
+            rel = LA["volume"] if LA.get("volume_raw") is not None else np.full(len(LA["close"]), np.nan)   # no FUT ⇒ NA
+            lo, hi = float(lvl["lo"]), float(lvl["hi"])
+            sharp = lambda i, a0: M.sharp_reversal(A, i, d, lo, hi, self.s, a0=a0, rel=rel)  # noqa: E731
+        return M.handover_episode(A, arm, t, d, self.s, broken=broken, sharp=sharp)
 
     def step1(self, t):
         """① Q15: Daily impulse-degree Dow + Weekly पालक. रिटर्न (ok, why, st, ctx); ctx = {trend (वापरलेला), resolution, cap, notes,

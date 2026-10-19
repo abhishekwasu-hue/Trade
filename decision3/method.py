@@ -360,7 +360,59 @@ def zone_study(A, a, t, d, s, mr=None):
     return out
 
 
-def handover_episode(A, arm, t, d, s, broken=None, mr=None):
+def sharp_reversal(A, i, d, lo, hi, s, a0=None, rel=None):
+    """Abhi Z-1z (c): a two-candle SHARP REVERSAL inside a visit is a valid handover. Candle 1 = bar i − 1, candle 2 = bar i (bars ≤ i).
+      • candle 1 pushes into or through the band (supply: high ≥ lo; demand: low ≤ hi) and is REJECTED — its wick on the push side is at
+        least `sharp_rej_wick_body` × its body and it closes back not beyond the band (the wick back = a sweep when it went through, K5);
+      • candle 2 is the dominant candle the other way (the trade side): body ≥ `commit_dom_mult` × the average body of the visit's earlier
+        candles a0 … i − 1 (the c0 definition), it ENGULFS candle 1's body and CLOSES BEYOND candle 1's trade-side extreme;
+      • candle 2's slot-normalised FUT volume > candle 1's (rel = the slot-normalised volume; NA on either ⇒ not read — never raw).
+    Structure only — nothing is keyed on dates, sessions or clock time. a0 = the visit's (or post-break window's) first bar; candle 1 must
+    be inside it. Returns {found, why (every missing part), parts {c1_rejected, c2_dominant, c2_engulfs_body, c2_closes_beyond_c1,
+    volume_higher}, c1, c2, rel1, rel2, body_mult}."""
+    s = s or S3.DEFAULTS
+    i = int(i)
+    a0 = int(a0) if a0 is not None else i - 1
+    out = {"found": False, "why": None, "c1": i - 1, "c2": i, "rel1": None, "rel2": None, "body_mult": None, "parts": {}}
+    if i - 1 < max(a0, 0):
+        out["why"] = "candle 1 is not inside the visit"
+        return out
+    o1, h1, l1, c1 = _ohlc(A, i - 1)
+    o2, h2, l2, c2 = _ohlc(A, i)
+    b1, b2 = abs(c1 - o1), abs(c2 - o2)
+    push_wick = (h1 - max(o1, c1)) if d == DOWN else (min(o1, c1) - l1)
+    pushed = (h1 >= lo) if d == DOWN else (l1 <= hi)
+    back = (c1 <= hi) if d == DOWN else (c1 >= lo)
+    mb = _mean([abs(A["close"][j] - A["open"][j]) for j in range(a0, i)]) or 0.0
+    bm = b2 / mb if mb > 0 else float("inf")
+    out["body_mult"] = round(bm, 2) if np.isfinite(bm) else None
+    R = rel if rel is not None else A.get("volume_rel", A.get("volume"))    # slot-normalised (a raw-fallback view keeps it in volume_rel)
+    r1 = None if R is None else float(R[i - 1])
+    r2 = None if R is None else float(R[i])
+    r1, r2 = (None if x is None or not np.isfinite(x) else round(x, 2) for x in (r1, r2))
+    out.update(rel1=r1, rel2=r2)
+    far1 = l1 if d == DOWN else h1                                         # candle 1's trade-side extreme
+    P = {"c1_rejected": bool(pushed and back and push_wick > 0 and push_wick >= float(s.get("sharp_rej_wick_body", 1.0)) * b1),
+         "c2_dominant": bool((c2 - o2) * d > 0 and bm >= float(s.get("commit_dom_mult", 1.5))),
+         "c2_engulfs_body": bool(max(o2, c2) >= max(o1, c1) and min(o2, c2) <= min(o1, c1)),
+         "c2_closes_beyond_c1": bool((c2 < far1) if d == DOWN else (c2 > far1)),
+         "volume_higher": None if r1 is None or r2 is None else bool(r2 > r1)}
+    out["parts"] = P
+    words = {"c1_rejected": "candle 1: no push into the band rejected by a wick back",
+             "c2_dominant": f"candle 2: not a dominant trade-side candle (body {bm:.1f}× the visit's average)",
+             "c2_engulfs_body": f"candle 2's body {min(o2, c2):,.2f}–{max(o2, c2):,.2f} does not engulf candle 1's {min(o1, c1):,.2f}–{max(o1, c1):,.2f}",
+             "c2_closes_beyond_c1": f"candle 2 close {c2:,.2f} not beyond candle 1's {'low' if d == DOWN else 'high'} {far1:,.2f}",
+             "volume_higher": (f"candle 2 normalised volume {r2} not above candle 1's {r1}" if r1 is not None and r2 is not None else
+                               "slot-normalised FUT volume NA on candle 1 / 2 (two-candle handover needs it; raw is never used)")}
+    miss = [words[k] for k, v in P.items() if v is not True]
+    if miss:
+        out["why"] = "; ".join(miss)
+        return out
+    out.update(found=True, why=f"two-candle sharp reversal (candle 2 body {bm:.1f}×, normalised volume {r1} → {r2})")
+    return out
+
+
+def handover_episode(A, arm, t, d, s, broken=None, mr=None, sharp=None):
     """Abhi Z-1q (a): the handover per armed zone episode (arm = arrival in the zone), as known at the decision bar t (bars ≤ t only).
     Every in-zone window arm … e (e < t; ≥ `study_min_bars` bars) is read with `zone_study` in time order: the first window with a
     handover ⇒ SEEN (bar e); once seen it HOLDS until the commitment candle — cancelled only by a later absorption (a later window with
@@ -368,22 +420,41 @@ def handover_episode(A, arm, t, d, s, broken=None, mr=None):
     K4 state). A cancelled handover may be seen again by a later window — after a zone break only from bars after the break (windows
     start at the bar after it, while the zone is not broken). Never re-required on the commitment bar's own window.
     The caller passes arm = the start of the current VISIT (Abhi Z-1v), so a handover never carries from an earlier visit.
-    Returns {present, seen_at, cancelled ("absorption" / "zone broken" / None), cancelled_at, window_start (after a break: the bar after
-    it — the absorption gate uses the same window), events [(bar, what)]}."""
+    sharp = callable(i, a0) ⇒ `sharp_reversal` facts for candles i − 1, i (Abhi Z-1z (c)): a found two-candle sharp reversal is a handover
+    too (form "sharp_reversal"), read on every pair inside the visit including the commitment bar t itself (candle 2 may be the
+    commitment); the longer study (form "study") stays for slower visits. study_min_bars is never lowered.
+    Returns {present, seen_at, form, cancelled ("absorption" / "zone broken" / None), cancelled_at, window_start (after a break: the bar
+    after it — the absorption gate uses the same window), sharp (the last pair read: facts), events [(bar, what)]}."""
     s = s or S3.DEFAULTS
     arm, t = int(arm), int(t)
     nmin = int(s.get("study_min_bars", 4))
-    st = {"present": False, "seen_at": None, "cancelled": None, "cancelled_at": None, "events": []}
+    st = {"present": False, "seen_at": None, "form": None, "cancelled": None, "cancelled_at": None, "sharp": None, "events": []}
     a0 = arm                                                               # window start (moves past a zone break)
 
     def cancel(u, why):
-        st.update(present=False, cancelled=why, cancelled_at=int(u))
+        st.update(present=False, form=None, cancelled=why, cancelled_at=int(u))
         st["events"].append((int(u), "cancelled: " + why))
+
+    def seen(e, form):
+        st.update(present=True, seen_at=int(e), form=form, cancelled=None, cancelled_at=None)
+        st["events"].append((int(e), "handover seen" + (" (two-candle sharp reversal)" if form == "sharp_reversal" else "")))
+
+    def read_sharp(e):
+        if sharp is None or st["present"] or e - 1 < a0:
+            return False
+        sr = sharp(e, a0)
+        st["sharp"] = sr
+        if sr.get("found"):
+            seen(e, "sharp_reversal")
+            return True
+        return False
     for e in range(arm, t):
         if broken is not None and broken(e):
             if st["present"]:
                 cancel(e, "zone broken")
             a0 = e + 1                                                     # a broken zone's earlier read never counts again
+            continue
+        if read_sharp(e):
             continue
         if e - a0 + 1 < nmin:
             continue
@@ -391,12 +462,13 @@ def handover_episode(A, arm, t, d, s, broken=None, mr=None):
         if st["present"] and zs.get("absorption"):
             cancel(e, "absorption")
         elif not st["present"] and zs.get("handover"):
-            st.update(present=True, seen_at=int(e), cancelled=None, cancelled_at=None)
-            st["events"].append((int(e), "handover seen"))
+            seen(e, "study")
     if broken is not None and broken(t):
         if st["present"]:
             cancel(t, "zone broken")
         a0 = t + 1
+    else:
+        read_sharp(t)                                                      # Z-1z: candle 2 may be the commitment bar itself
     st["window_start"] = int(a0)
     return st
 
@@ -724,7 +796,8 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None, h
     no_ho = hreq and not handover
     hs = out.get("handover_state") or {}
     ho_why = REASON[C_NO_HANDOVER] + (f" · {zp.get('line')}" if zp and zp.get("line") else "") + \
-        (f" · handover cancelled ({hs['cancelled']})" if hs.get("cancelled") else "")
+        (f" · handover cancelled ({hs['cancelled']})" if hs.get("cancelled") else "") + \
+        (f" · two-candle reversal: {hs['sharp']['why']}" if (hs.get("sharp") or {}).get("why") and not hs.get("present") else "")
     ok, why, cm = commitment(A, t, d, lvl, s, tss, win=arm)
     out.update(commit=cm, c0=bool(ok), why=why, study=zp)
     if callable(ltf) and (not ok or no_ho):                                # lazy LTF (bots): commitment / handover नाही ⇒ LTF fetch नाही
@@ -752,7 +825,8 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None, h
     vtxt = f"volume {cm['vol_mult']:.1f}× window avg" if cm.get("vol_mult") is not None else "volume: NA (grade cap B)"
     btxt = f"body {cm['body_mult']:.1f}× window avg" if cm.get("body_mult") is not None else ""
     kind = "demand" if d > 0 else "supply"
-    lines = [f"inside {kind}: " + (zs.get("line") or "no clear handover read"),
+    sr = (hs.get("sharp") or {}) if hs.get("form") == "sharp_reversal" else {}
+    lines = [f"inside {kind}: " + (sr.get("why") if sr.get("found") else (zs.get("line") or "no clear handover read")),
              "commitment: " + " · ".join(x for x in (str(cm.get("form")), btxt, vtxt) if x),
              ch["line"] if ch["done"] else f"LTF CHoCH not required (what-if): {ch['line']}"]
     out.update(ok=True, study=zs, lines=lines, why=f"{why} · {ch['line']}")

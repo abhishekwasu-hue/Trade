@@ -39,7 +39,7 @@ DEFAULTS = {
                                              # merge + widen — फक्त जुने synthetic tests / what-if (dashboard वर नाही)
     "zone_visit_rule": "close_away",         # Abhi Z-1v: visit संपते = पट्ट्याबाहेर, आली त्या बाजूला close (commitment शिवाय).
                                              # "touch_window" = जुनं (स्पर्शांचा शेवटचा गट, अंतर ≤ touch_window_bars) — फक्त जुने tests / what-if
-    "trade_band_max_sigma": None,            # Abhi Z-1u: trade location चा पट्टा यापेक्षा रुंद (× σ_1H) ⇒ location नाही. None = फक्त report
+    "trade_band_max_sigma": 1.5,             # Abhi Z-1x: trade पट्टा यापेक्षा रुंद (× σ_1H) ⇒ trade नाही, "check" (कधीच गुपचूप रुंद / अरुंद नाही). None = फक्त report
                                              # (widths facts / log) — आकडा Abhi ठरवणार (OPEN_QUESTIONS Z-1x, width distribution)
     "accept_closes": 3,                      # पलीकडे सलग इतके closes ⇒ acceptance (flip पक्का); कमी आणि परत ⇒ sweep ★
     "level_death_side": "role",              # Q2 / TL1 (✅ Abhi मंजूर): मृत्यू-swing चालू भूमिकेच्या बाजूचा (flipped support = supply ⇒ वरचा D2 H);
@@ -74,6 +74,8 @@ DEFAULTS = {
                                              #     candles पेक्षा (relative contraction); "strict3" = जुना "शेवटचे 3 सलग लहान" (फक्त what-if)
     "commit_dom_mult": 1.5,                  # ⑥ c0 (Abhi): commitment candle "dominant" ⇔ body ≥ इतके × study window ची सरासरी body (window दिला तरच)
     "study_min_bars": 4,                     # a2 zone study: window मध्ये किमान इतक्या candles (पहिला / दुसरा अर्धा तुलना)
+    "sharp_reversal_handover": True,         # Abhi Z-1z (c): visit मधला दोन-candle तीव्र उलटफेर = handover (slot-normalised volume ने)
+    "sharp_rej_wick_body": 1.0,              # Z-1z (c): candle 1 चा नकार ⇔ push-बाजूचा wick ≥ इतके × body (आपला आकडा — OPEN_QUESTIONS Z-1z)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
     "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.
                                              # False = जुनं (a2 फक्त absorption ⇒ वाट) — जुने tests / what-if
@@ -151,8 +153,8 @@ REGISTER = {
     "level_merge": (False, "False / True (legacy)", "Abhi नियम", "Abhi Z-1u: bands built, never widened; True फक्त जुने tests / what-if"),
     "zone_visit_rule": ("close_away", "close_away / touch_window (legacy)", "Abhi नियम", "Abhi Z-1v: visit end = close outside the band, "
                         "away from it, without a commitment; touch_window फक्त जुने tests / what-if"),
-    "trade_band_max_sigma": (None, "None (report) / × σ_1H", "Abhi नियम", "Abhi Z-1u: trade पट्ट्याची कमाल रुंदी — default None (फक्त report) "
-                             "जोपर्यंत Abhi width distribution पाहून आकडा ठरवत नाही (OPEN_QUESTIONS Z-1x)"),
+    "trade_band_max_sigma": (1.5, "None (report) / × σ_1H", "Abhi नियम", "Abhi Z-1x: trade पट्ट्याची कमाल रुंदी 1.5 × σ_1H (dashboard "
+                             "`engine3_band_max_sigma`); रुंद ⇒ trade नाही, 'check'"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
     "a2_handover_required": (True, "True / False", "Abhi नियम", "Abhi Z-1m: handover (a2) अनिवार्य, क्रम a2 → c1 → c0; False फक्त जुने tests"),
@@ -178,6 +180,8 @@ REGISTER = {
     "power_a_rule": ("relative", "relative / strict3", "Abhi नियम", "level bots spec: (a) relative contraction — 'नेमके 3 सलग लहान' ही आपली यांत्रिक आवृत्ती होती"),
     "commit_dom_mult": (1.5, "1.25/1.5/2.0", "अंदाज", "level bots c0: 'clearly larger than the window average' — आकडा Abhi ने ठरवायचा (OPEN_QUESTIONS LB8)"),
     "study_min_bars": (4, "—", "व्याख्या", "a2: पहिला / दुसरा अर्धा तुलना करायला किमान candles"),
+    "sharp_reversal_handover": (True, "—", "Abhi नियम", "Abhi Z-1z (c): visit मध्ये दोन-candle sharp reversal (push + wick नकार ⇒ dominant engulf, जास्त normalised volume) = handover"),
+    "sharp_rej_wick_body": (1.0, "0.5/1.0/1.5", "अंदाज", "Z-1z (c): candle 1 'rejected' = push-बाजूचा wick ≥ इतके × body — आकडा Abhi ने ठरवायचा"),
     "pattern_eq_mr": (0.5, "0.3/0.5/0.75", "अंदाज", "a2: double / triple top-bottom टोकं median range च्या इतक्या आत"),
     "ltf_choch": (True, "True / False (what-if)", "Abhi नियम", "LEVEL_BOTS_CONFIRMATION c1: LTF CHoCH by close आवश्यक; mapping 1H/15M ⇒ 5M, 5M ⇒ 1M (method.LTF_OF); swings = साधे 1-bar pivots (zone_pattern सारखेच)"),
     "power_overlap": (0.5, "—", "Abhi नियम", "spec ④ (b) ≥ 50%"),

@@ -29,7 +29,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULTS = {"engine3_m15_days": 90, "engine3_daily_days": 3650, "engine3_ltf_days": 10,
             "engine3_fut_days": 45,                                       # Abhi Z-1: volume ÷ slot median of 20 sessions ⇒ ≥ 21 sessions FUT
             "engine3_use_1m": True,                                       # Abhi Z-1o (a): 1m spot ⇒ swings2 (1m चा window = engine3_m15_days)
-            "engine3_cache_keep_days": 3}                                 # data/engine3_cache: इतक्या दिवसांपेक्षा जुन्या files (mtime) run सुरू होताना काढतो
+            "engine3_cache_keep_days": 3,                                 # data/engine3_cache: इतक्या दिवसांपेक्षा जुन्या files (mtime) run सुरू होताना काढतो
+            "engine3_band_max_sigma": 1.5}                                # Abhi Z-1x: trade पट्टा ≤ इतके × σ_1H; रुंद ⇒ trade नाही, "check"
 FUT_REQUIRED = ("NIFTY", "BANKNIFTY")                                     # Abhi Z-1c: FUT volume नाही = data error (entry नाही + Telegram)
 DATA_PROBLEM_FUT = "data problem: FUT volume missing"
 SESSION_OPEN, SESSION_CLOSE = (9, 15), (15, 30)
@@ -492,6 +493,27 @@ def _evaluate(symbol, m15, daily, ltf, fut, s3, m1=None, m1_info=None):
 TRADEABLE_STATES = ("ACTIVE", "TESTED", "FLIPPED")                         # BROKEN / DEAD (किंवा अज्ञात) ⇒ pre-open मध्ये नाही
 
 
+def band_max_sigma(s=None):
+    """Dashboard `engine3_band_max_sigma` (Abhi Z-1x, default 1.5) ⇒ float > 0. रिकामं / चुकीचं / ≤ 0 ⇒ default. कधीच raise नाही."""
+    dflt = float(DEFAULTS["engine3_band_max_sigma"])
+    try:
+        v = float((s or {}).get("engine3_band_max_sigma"))
+    except (TypeError, ValueError):
+        return dflt
+    return v if v == v and v > 0 else dflt
+
+
+def v22_settings(s=None):
+    """Dashboard engine3_* ⇒ V22 setting overrides (live compute + pre-open levels सारखेच)."""
+    return {"trade_band_max_sigma": band_max_sigma(s)}
+
+
+def display_levels(levels):
+    """Pre-open / 15:45 साठी: tradeable पट्टे + फक्त रुंदीमुळे वगळलेले (`too_wide`, Abhi Z-1x — trade नाही, "check" म्हणून दाखवायचे)."""
+    return [x for x in levels or [] if x in tradeable_levels(levels) or
+            (x.get("too_wide") and (x.get("state") is None or str(x["state"]).upper() in TRADEABLE_STATES))]
+
+
 def tradeable_levels(levels):
     """फक्त trade करता येणारे पट्टे: `state` field असेल (decision3 #325 नंतर) ⇒ ACTIVE / TESTED / FLIPPED ठेवा, BROKEN / DEAD (अज्ञात) वगळा;
     field नसेल (main: snapshot फक्त जिवंत levels देतो) ⇒ सगळे ठेवा. Abhi Z-1u: `trade_location` False (Weekly context; Daily पट्टा 1H zone
@@ -520,7 +542,7 @@ def watched_levels(symbol, feed, now, s=None):
     def build(df1m):
         with fold_cache(symbol.upper()), warnings.catch_warnings(), contextlib.redirect_stdout(io.StringIO()):
             warnings.simplefilter("ignore")
-            return E3.V22(m15, df1m, daily, sealed=HI.sealed_fn(symbol))
+            return E3.V22(m15, df1m, daily, s=v22_settings(s), sealed=HI.sealed_fn(symbol))
     try:
         if m1 is None:
             V = build(None)
@@ -534,7 +556,7 @@ def watched_levels(symbol, feed, now, s=None):
                 m1_complete(symbol, V, info)
     finally:
         INS._current["name"] = prev
-    return tradeable_levels(V.levels.snapshot(len(V.m15) - 1))
+    return display_levels(V.levels.snapshot(len(V.m15) - 1))           # too-wide bands too, flagged "check" (never traded)
 
 
 def _first_fail(chk):
@@ -612,7 +634,7 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
 def compute(symbol, feed, now, s=None):
     m15, daily, ltf, fut, note = build_inputs(feed, symbol, now, s)
     m1, m1_info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)
-    r = evaluate(symbol, m15, daily, ltf, fut, m1=m1, m1_info=m1_info)
+    r = evaluate(symbol, m15, daily, ltf, fut, s3=v22_settings(s), m1=m1, m1_info=m1_info)
     r["volume_note"] = note
     r["m1"] = m1_info                                                    # Z-1o: 1m वापरला का / fallback कारण (row payload)
     return r

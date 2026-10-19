@@ -30,14 +30,25 @@ RULES = ("far_swing", "acceptance")
 
 
 # ------------------------------------------------------------------------------------------------ far-side swing
-def far_swing(known, lo, hi, up, start=None):
-    """The far-side swing for a break of [lo, hi]: up (a resistance broken upward) ⇒ swing HIGHs above hi; down ⇒ swing LOWs below lo.
-    `known` = pivots confirmed by the bar being judged (caller's list).
+def structural(close, lo, hi, up):
+    """Abhi Z-1y: a swing beyond the band counts as a STRUCTURAL far-side swing only if its own candle closed beyond the band too. A swing
+    whose candle closed back inside / on the role's side (up: close ≤ hi; down: close ≥ lo) is a sweep wick of this band (K5), not a
+    structural swing — using it would flip the zone on every false break. close None (not known) ⇒ kept (old callers)."""
+    if close is None or not np.isfinite(close):
+        return True
+    return bool(close > hi) if up else bool(close < lo)
+
+
+def far_swing(known, lo, hi, up, start=None, closes=None):
+    """The far-side swing for a break of [lo, hi]: up (a resistance broken upward) ⇒ swing HIGHs above hi; down ⇒ swing LOWs below lo,
+    of the level's own structural degree (`known` = the caller's pivots of that degree, confirmed by the bar being judged). closes (the
+    15M closes by bar) ⇒ sweep wicks of this band are not structural swings (Abhi Z-1y, `structural`).
       1. the nearest such swing that formed before the excursion began (pivot bar < start; start None ⇒ any bar);
       2. none (the zone is at new highs / lows) ⇒ the FIRST CONFIRMED such swing that formed after the break began (Abhi, Z-1a).
     Returns the pivot or None. Whether it is reached: `reached` (Abhi Z-1s — source 2 is reached by its confirmation)."""
     kind = "H" if up else "L"
-    beyond = [p for p in known if p.kind == kind and (p.price > hi if up else p.price < lo)]
+    beyond = [p for p in known if p.kind == kind and (p.price > hi if up else p.price < lo)
+              and (closes is None or structural(float(closes[int(p.bar)]), lo, hi, up))]
     pre = [p for p in beyond if start is None or p.bar < start]
     if pre:
         return min(pre, key=lambda p: p.price) if up else max(pre, key=lambda p: p.price)
