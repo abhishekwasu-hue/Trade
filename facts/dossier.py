@@ -494,7 +494,7 @@ def candles(c):
     t = c.t
     mr = FV.mr_at(FV.bars_of(c.m15), t)
     last = {"ts": str(c.m15["timestamp"].iloc[t]), "open": A["open"][t], "high": A["high"][t], "low": A["low"][t], "close": A["close"][t],
-            "read": M.candle_read(A, t, s3)}
+            "read": M.candle_read(A, t, s3)}                                # no visit context ⇒ "big" is None (see each study's own read)
     forms = {}
     for d, name in ((1, "up"), (-1, "down")):
         f = M.reversal_form(A, t, d, s3, tss)
@@ -505,6 +505,7 @@ def candles(c):
         lvl = {"lo": b["lo"], "hi": b["hi"]}
         zs = M.zone_study(A, a, t, d, s3, mr)
         present, why, cm = M.commitment(A, t, d, lvl, s3, tss, win=a)
+        cm["read"] = M.candle_read(A, t, s3, a)                            # "big" = vs this visit's own candles (method §3)
         studies.append({"band_tf": v["tf"], "band": [b["lo"], b["hi"]], "role": b["role"], "reaction_side": "up" if d > 0 else "down",
                         "arrival": {"bar": a, "ts": str(c.m15["timestamp"].iloc[a])}, "bars_in_study": t - a + 1,
                         "zone_study": zs, "commitment": {"present": bool(present), "reason": GRADE_TXT.sub("", why), **cm}})
@@ -628,11 +629,18 @@ def liquidity(c):
     V = SimpleNamespace(levels=LV.Levels(res, s=s3), s=s3)                 # thin adapter: the owner reads V.levels (A, ts, pivots, σ_1H) + V.s
     t = c.t
     pools = LQ.pools(V, t)
-    sw, tr = LQ.sweeps_and_traps(V, t, int(s3["liquidity_lookback"]))
     ts = c.m15["timestamp"]
+    if s3.get("liquidity_rule", "equal") == "equal":                      # method §3: the current leg — from the last confirmed swing of the
+        sw_bars = [p.bar for p in getattr(V.levels, "_known0", []) if p.confirm_bar <= t and p.bar < t]   # structure (as V22 reads the
+        start = max(sw_bars) if sw_bars else 0                             # pullback's own window), never a fixed look-back
+        sw, tr = LQ.sweeps_and_traps(V, t, start=start)
+        win = {"window_from": str(ts.iloc[max(1, start)])}
+    else:
+        sw, tr = LQ.sweeps_and_traps(V, t, int(s3["liquidity_lookback"]))
+        win = {"lookback_bars": int(s3["liquidity_lookback"])}
     for x in sw + tr:
         x["ts"] = str(ts.iloc[x["bar"]])
-    return _ok(owner, pools=pools, sweeps=sw, traps=tr, lookback_bars=int(s3["liquidity_lookback"]))
+    return _ok(owner, pools=pools, sweeps=sw, traps=tr, **win)
 
 
 # ------------------------------------------------------------------------------------------------ K13 gaps — vision.gap_context

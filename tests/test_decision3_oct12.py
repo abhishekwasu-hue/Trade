@@ -113,9 +113,11 @@ def test_opening_candle_counts_as_evidence_entry_window_unchanged(d):
                     pd.Timestamp("2030-01-08 09:15"), pd.Timestamp("2030-01-08 09:30")], dtype="datetime64[ns]")
     S = S3.load()
     assert M.reversal_form(A, 4, d, S, tss) == ("engulf", 1)
-    assert M.reversal_form(A, 4, d, {**S, "evidence_start": S["entry_start"]}, tss) != ("engulf", 1)
+    assert M.reversal_form(A, 4, d, {**S, "evidence_start": S["entry_start"]}, tss) == ("engulf", 1)   # method P2: no session window
+    L = {**S, "session_windows": True}                                     # legacy (what-if): the evidence window splits the session
+    assert M.reversal_form(A, 4, d, {**L, "evidence_start": L["entry_start"]}, tss) != ("engulf", 1)
     lvl = {"lo": 100.0, "hi": 103.0} if d == M.DOWN else {"lo": 99.0, "hi": 102.0}
-    assert M.commitment(A, 3, d, lvl, {**S, "entry_first_bar": False}, tss)[1] == "entry वेळ-खिडकीबाहेर"   # जुना नियम (pin)
+    assert M.commitment(A, 3, d, lvl, {**L, "entry_first_bar": False}, tss)[1] == "entry वेळ-खिडकीबाहेर"   # जुना नियम (pin)
     ok, why, cm = M.commitment(A, 4, d, lvl, S, tss)
     assert ok and cm["form"] == "engulf"
 

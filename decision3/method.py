@@ -133,21 +133,42 @@ def at_level_or_confirm(A, t, d, lvl, s, tss=None):
 
 
 # ------------------------------------------------------------------------------------------------ candle read (§6.6)
-def candle_read(A, t, s=None):
-    """कोण जिंकला + ताकद. रिटर्न dict. "मोठा" = मागच्या `candle_avg_n` च्या सरासरीपेक्षा (§5.2)."""
+def _ratio_rules(s):
+    """`candle_rule`: "compare" (method §3 — body and wicks compared with each other, "big" = larger than the other candles of the same
+    visit) or "ratio" (the legacy fractions of the range / average of the last `candle_avg_n`), what-if only."""
+    r = (s or S3.DEFAULTS).get("candle_rule", "compare")
+    if r not in ("compare", "ratio"):
+        raise ValueError(f"candle_rule {r!r} — compare / ratio पैकी")
+    return r == "ratio"
+
+
+def is_doji(o, h, lo, c, s=None):
+    """Doji: method — the body is smaller than each of its wicks (no ratio); legacy — body / range < `doji_body_max`."""
+    if _ratio_rules(s):
+        return abs(c - o) / max(h - lo, 1e-9) < float((s or S3.DEFAULTS)["doji_body_max"])
+    return abs(c - o) < min(h - max(o, c), min(o, c) - lo)
+
+
+def candle_read(A, t, s=None, ctx=None):
+    """कोण जिंकला + ताकद. रिटर्न dict. Method §3 "big" = larger than the other candles of the same visit or leg: body / range above the
+    average of the candles ctx … t − 1 (ctx = the visit's or leg's first bar; none ⇒ None — no context, no reading). Legacy
+    (`candle_rule = ratio`): the average of the last `candle_avg_n` (§5.2)."""
     s = s or S3.DEFAULTS
-    n_avg = int(s["candle_avg_n"])
     o, h, l, c = (float(A[k][t]) for k in ("open", "high", "low", "close"))
     rng = max(h - l, 1e-9)
     body = abs(c - o)
-    lo_i = max(0, t - n_avg)
-    bodies = np.abs(A["close"][lo_i:t] - A["open"][lo_i:t])
-    ranges = A["high"][lo_i:t] - A["low"][lo_i:t]
+    if _ratio_rules(s):
+        lo_i = max(0, t - int(s["candle_avg_n"]))
+    else:
+        lo_i = None if ctx is None else max(0, int(ctx))
+    bodies = np.abs(A["close"][lo_i:t] - A["open"][lo_i:t]) if lo_i is not None else np.array([])
+    ranges = A["high"][lo_i:t] - A["low"][lo_i:t] if lo_i is not None else np.array([])
     pos = (c - l) / rng
+    big_b = (bool(len(bodies)) and body > float(np.mean(bodies))) if lo_i is not None else None
+    big_r = (bool(len(ranges)) and rng > float(np.mean(ranges))) if lo_i is not None else None
     return {"winner": "buyers" if c > o else ("sellers" if c < o else "none"), "body_pct": body / rng, "close_pos": pos,
             "upper_wick": (h - max(o, c)) / rng, "lower_wick": (min(o, c) - l) / rng,
-            "big_body": bool(len(bodies)) and body > float(np.mean(bodies)), "big_range": bool(len(ranges)) and rng > float(np.mean(ranges)),
-            "doji": body / rng < float(s["doji_body_max"])}
+            "big_body": big_b, "big_range": big_r, "doji": is_doji(o, h, l, c, s)}
 
 
 # ------------------------------------------------------------------------------------------------ ④ power shift
@@ -515,10 +536,12 @@ def zone_pattern(A, a, t, d, s, mr=None):
     ii = list(range(max(1, int(a)), int(t) - 1))                           # pivot ला दोन्ही शेजारी हवेत (t − 1 पर्यंत, commitment वगळून)
     hs = [(i, float(H[i])) for i in ii if H[i] > H[i - 1] and H[i] >= H[i + 1]]
     ls = [(i, float(L[i])) for i in ii if L[i] < L[i - 1] and L[i] <= L[i + 1]]
-    if mr is None or not np.isfinite(mr):
-        rr = [H[i] - L[i] for i in range(max(0, int(a)), int(t) + 1)]
-        mr = float(np.median(rr)) if rr else 0.0
-    tol = float(s.get("pattern_eq_mr", 0.5)) * mr
+    tol = 0.0
+    if _ratio_rules(s):                                                    # legacy only: the MR tolerance
+        if mr is None or not np.isfinite(mr):
+            rr = [H[i] - L[i] for i in range(max(0, int(a)), int(t) + 1)]
+            mr = float(np.median(rr)) if rr else 0.0
+        tol = float(s.get("pattern_eq_mr", 0.5)) * mr
     if len(hs) >= 2 and len(ls) >= 2:
         sh = (hs[-1][1] - hs[0][1]) / max(hs[-1][0] - hs[0][0], 1)
         sl = (ls[-1][1] - ls[0][1]) / max(ls[-1][0] - ls[0][0], 1)
@@ -527,6 +550,17 @@ def zone_pattern(A, a, t, d, s, mr=None):
         if d < 0 and sh > 0 and sl > 0:
             return "rising wedge" if sl > sh else "rising channel / bear flag"
     ext = ls if d > 0 else hs
+    if len(ext) >= 2 and not _ratio_rules(s):                             # method §3 equal, in time order: each later extreme reaches the
+        (ri, rp), n = ext[0], 1                                            # reference swing candle's own wick-to-body band and does not go
+        for i, p in ext[1:]:                                               # beyond it; one that goes beyond becomes the new reference
+            edge = min(A["open"][ri], A["close"][ri]) if d > 0 else max(A["open"][ri], A["close"][ri])
+            if (p < rp) if d > 0 else (p > rp):
+                (ri, rp), n = (i, p), 1
+            elif (p <= edge) if d > 0 else (p >= edge):
+                n += 1
+        if n >= 2:
+            return f"{'triple' if n >= 3 else 'double'} {'bottom' if d > 0 else 'top'}"
+        return None
     if len(ext) >= 2 and tol > 0:
         best = min(p for _, p in ext) if d > 0 else max(p for _, p in ext)
         n = sum(1 for _, p in ext if abs(p - best) <= tol)
@@ -541,18 +575,76 @@ def _ohlc(A, i):
 
 
 def _same_window(tss, t, i, s):
-    """merged / संदर्भ candle i हा t च्या दिवसाचा आणि पुरावा-खिडकीतला (`evidence_start`, default सत्राची सुरुवात 09:15)? (tss नसेल ⇒ हो).
+    """Method P2 (default): always True — no reading step splits on a day or a session. Legacy (`session_windows = True`, what-if):
+    merged / संदर्भ candle i हा t च्या दिवसाचा आणि पुरावा-खिडकीतला (`evidence_start`, default सत्राची सुरुवात 09:15)? (tss नसेल ⇒ हो).
     Abhi (12 Oct): opening candle चा sweep / wick / volume = पुरावा (2-candle form चा पहिला भाग / "मागची" candle) — entry मात्र फक्त
     `entry_start` … `entry_end` मधल्या commitment candle वर (`commitment` ची वेळ-खिडकी तशीच)."""
-    if tss is None:
+    if tss is None or not bool(s.get("session_windows", False)):          # method P2: one continuous chart — a gap is the next candle
         return True
     ti, tt = pd.Timestamp(tss[i]), pd.Timestamp(tss[t])
     return ti.normalize() == tt.normalize() and ti.strftime("%H:%M") >= s.get("evidence_start", s["entry_start"])
 
 
+def _one_candle_form(A, t, d):
+    """The 1-candle forms by comparison: pin (rejection wick longer than the rest of the candle) or strong close (body larger than both
+    wicks together); None otherwise."""
+    o, h, lo, c = _ohlc(A, t)
+    rej = (min(o, c) - lo) if d == UP else (h - max(o, c))
+    opp = (h - max(o, c)) if d == UP else (min(o, c) - lo)
+    if rej > abs(c - o) + opp:
+        return "pin"
+    if (c - o) * d > 0 and (c - o) * d > rej + opp:
+        return "strong_close"
+    return None
+
+
+def _reversal_form_compare(A, t, d, s, tss=None):
+    """Method §3 commitment forms by comparing body and wicks — never ratios. Order as the legacy read: engulf, star, inside_break,
+    doji_confirm, tweezer, pin, strong_close (1 candle), strong_close_2 (2 merged). d = trade direction."""
+    if t < 1:
+        return None
+    o, h, lo, c = _ohlc(A, t)
+    po, ph, pl, pc = _ohlc(A, t - 1)
+    body = (c - o) * d
+    pbody = (pc - po) * d
+    two = _same_window(tss, t, t - 1, s)
+    rej = (min(o, c) - lo) if d == UP else (h - max(o, c))                 # the rejection wick (against the trade direction)
+    opp = (h - max(o, c)) if d == UP else (min(o, c) - lo)                 # the wick on the trade side
+    if two and body > 0 and pbody < 0 and max(o, c) >= max(po, pc) and min(o, c) <= min(po, pc):
+        return "engulf", 1
+    if two and t >= 2 and body > 0 and _same_window(tss, t, t - 2, s):
+        qo, qh, ql, qc = _ohlc(A, t - 2)
+        qbody = (qc - qo) * d
+        if qbody < 0 and -qbody > (qh - ql) + qbody and abs(pc - po) < -qbody and abs(pc - po) < body and (c - qc) * d > 0:
+            return "star", 2                                               # a strong first candle, a small middle one, back into the first
+        inside = ph <= qh and pl >= ql
+        harami = max(po, pc) <= max(qo, qc) and min(po, pc) >= min(qo, qc)
+        if (inside or harami) and (c - (ph if d == UP else pl)) * d > 0:
+            return "inside_break", 2
+    if two and body > 0 and is_doji(po, ph, pl, pc, s) and (c - (ph if d == UP else pl)) * d > 0:
+        return "doji_confirm", 2
+    if two and body > 0 and pbody <= 0 and \
+            ((pl <= lo <= min(po, pc)) if d == UP else (max(po, pc) <= h <= ph)):
+        return "tweezer", 2                                                # equal extreme: reaches the earlier wick, not beyond it
+    if rej > abs(c - o) + opp:
+        return "pin", 1                                                    # the rejection wick longer than the rest of the candle
+    if body > 0 and body > rej + opp:
+        return "strong_close", 1                                           # the body larger than both wicks together
+    if two:
+        mo, mh, ml = po, max(h, ph), min(lo, pl)
+        mb = (c - mo) * d
+        mrej = (min(mo, c) - ml) if d == UP else (mh - max(mo, c))
+        mopp = (mh - max(mo, c)) if d == UP else (min(mo, c) - ml)
+        if mb > 0 and mb > mrej + mopp:
+            return "strong_close_2", 2
+    return None
+
+
 def reversal_form(A, t, d, s, tss=None):
     """Q16: level वरची reversal candle ओळख (तर्काने, checklist नाही). रिटर्न (form, merged) किंवा None. क्रम: engulf, star, inside_break,
     doji_confirm, tweezer, pin, strong_close (1 candle), strong_close_2 (2 merged). d = trade दिशा (UP ⇒ खाली नकार, वर close)."""
+    if not _ratio_rules(s):                                                # method §3 (default): comparisons of body and wicks
+        return _reversal_form_compare(A, t, d, s, tss)
     if t < 1:
         return None
     o, h, lo, c = _ohlc(A, t)
@@ -617,8 +709,8 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
     data-problem rule). "opposite" = the legacy #329 read (visit's opposite side only, none ⇒ grade cap B)."""
     if s["commit_beyond"] not in ("extreme", "close"):
         raise ValueError(f"commit_beyond {s['commit_beyond']!r} — extreme / close पैकी")
-    if tss is not None:                                                    # tss = 15M bars चे timestamps (bar सुरुवात)
-        hm = pd.Timestamp(tss[t]).strftime("%H:%M")
+    if tss is not None and bool(s.get("session_windows", False)):          # legacy only — method P2: the entry schedule is operational
+        hm = pd.Timestamp(tss[t]).strftime("%H:%M")                        # (V22 applies it after the reading, `engine.entry_window`)
         if not (entry_open(s) <= hm < s["entry_end"]):                  # 15:15 चा bar बाजार बंदला close ⇒ entry नाही (v2.1 सारखं)
             return False, "entry वेळ-खिडकीबाहेर", {}
     if t < 1:
@@ -629,18 +721,23 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
     beyond_close = (c - pc) * d > 0
     beyond_ext = (c - (ph if d == UP else pl)) * d > 0
     side = (c >= lvl["lo"]) if d == UP else (c <= lvl["hi"])
-    if abs(c - o) / rng < float(s["doji_body_max"]):
+    if is_doji(o, h, lo, c, s):
         return False, "doji level वर — पुढच्या candle ची वाट", {"wait": "doji"}
     if h <= ph and lo >= pl:
         return False, "inside bar — पुढच्या candle ची वाट", {"wait": "inside"}
     if (c - o) * d < 0 and not beyond_close:
         return False, "candle अजून pullback-दिशेची — वाट", {"wait": "pullback"}
     fm = reversal_form(A, t, d, s, tss)
+    one = (beyond_close, beyond_ext)                                       # vs t − 1 (a 1-candle form)
     if fm is not None and fm[1] == 2 and t >= 2 and _same_window(tss, t, t - 2, s):
         r = t - 2                                                          # merged (≤ 2) = एक candle ⇒ "मागची" = pattern आधीची (Q30)
         qo, qh, ql, qc = _ohlc(A, r)
         beyond_close = (c - qc) * d > 0
         beyond_ext = (c - (qh if d == UP else ql)) * d > 0
+        need2 = beyond_close if s["commit_beyond"] == "close" else beyond_ext
+        f1 = _one_candle_form(A, t, d) if not _ratio_rules(s) else None
+        if not need2 and f1 is not None:                                   # the merged read fails but the candle is a pin / strong close on
+            fm, (beyond_close, beyond_ext) = (f1, 1), one                  # its own ⇒ read it as that 1-candle form (never lost to a tweezer)
     need = beyond_close if s["commit_beyond"] == "close" else beyond_ext
     if not (need and side):
         return False, "commitment candle नाही" + ("" if side else " (close level पलीकडे चुकीच्या बाजूला)"), {}
@@ -649,7 +746,7 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
     form, merged = fm
     grade = "A" if (beyond_ext or form == "engulf") else "B"
     cm = {"form": form, "merged": merged, "grade": grade, "beyond_extreme": bool(beyond_ext), "engulf": form == "engulf",
-          "body_pct": round(abs(c - o) / rng, 2), "big_body": candle_read(A, t, s)["big_body"], "big_range": candle_read(A, t, s)["big_range"]}
+          "body_pct": round(abs(c - o) / rng, 2), "big_body": candle_read(A, t, s, win)["big_body"], "big_range": candle_read(A, t, s, win)["big_range"]}
     if win is not None:                                                    # c0 (Abhi): dominant in this visit + volume, by comparison only
         ww = list(range(max(0, int(win)), t))                              # the visit's earlier candles (the commitment compared with them)
         body = max(abs(c - o), abs(c - po) if merged == 2 else 0.0)

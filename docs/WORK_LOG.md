@@ -2785,3 +2785,13 @@ legs owner वि. reader2 gate).
   (पाठलाग नाही, P4); visit / failed-commitment memo (replay वेग); approach leg area च्या जन्माआधीच्या swing पासून; compared bars ला volume
   नसेल ⇒ `vol_ref_gaps` नोंद.
 
+## 2026-10-19 · Method layer 3b: candle forms by comparison, liquidity by structure, time out of reading (branch `claude/method-layer3b`)
+
+- **KB आधी:** K5 pools / sweep (equal = आधीच्या swing च्या पट्ट्यात पोहोचतं, पलीकडे नाही; sweep = पलीकडे swing बनण्याआधी परत आत;
+  दिवस / आठवड्याचे pools नाहीत); Method Pack 5a (liquidity) + 6 (trigger: commitment forms body / wick तुलनेने, volume approach leg शी,
+  वेळ वाचनात नाही) पुन्हा लिहिले; K9 चा composite = research.
+- **Code:** `method.candle_read(ctx=)` / `is_doji` / `_reversal_form_compare` (`candle_rule = compare`); `_same_window` वेळेशिवाय
+  (`session_windows = False`); entry तास = `V22.entry_window` (operational, वाचनानंतर); `liquidity.pools` / `sweeps_and_traps(start=)`
+  रचनेने; `zone_pattern` double / triple तुलनेने; G4 (b) "lower than" तुलनेने. जुने नियम what-if switches.
+- **CI guard:** layer-3 चा एकही आकडा pending नाही (power shift / range state चे आकडे = पुरावा ⇒ layer 6).
+
