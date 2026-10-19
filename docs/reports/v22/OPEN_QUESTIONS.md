@@ -546,9 +546,9 @@ close पट्ट्याखाली ⇒ visit संपली; दिवस�
 
 | # | प्रश्न | आत्ता काय (default) | पर्याय |
 |---|---|---|---|
-| Z-1x | ✅ **ठरलं (Abhi):** कमाल trade पट्टा = 1.5 × σ_1H (dashboard `engine3_band_max_sigma`, V22 `trade_band_max_sigma`); रुंद ⇒ trade नाही, pre-open / 15:45 मध्ये "too wide — check, no trade"; पट्टा कधीच गुपचूप रुंद / अरुंद नाही | 1.5 | — |
+| Z-1x | ✅ **ठरलं (Abhi, final):** zone एकाच base / reaction मधून; रुंदीला आकड्याची मर्यादा नाही, किमान रुंदी नाही. रुंद दिसला ⇒ दोन bases जोडले ⇒ बांधणी दुरुस्त (Z-1u). `trade_band_max_sigma` None (what-if), `level_min_width_sigma` 0; dashboard setting नाही | मर्यादा नाही | — |
 | Z-1y | ✅ **ठरलं (Abhi, a):** far swing = पट्ट्यापलीकडचा, break आधीचा त्याच structural degree चा swing (इथे lower high 22,731.8). पट्ट्याच्या अगदी पलीकडची sweep wick (candle पट्ट्यात परत close — 12 Oct 22,651.10) structural swing नाही (`flip.structural`). 13 Oct: पट्टा BROKEN, resistance (flip नाही) | structural swing | — |
-| Z-1z | ✅ **ठरलं (Abhi, c):** visit मधला दोन-candle तीव्र उलटफेर = handover (`method.sharp_reversal`): candle 1 push + wick नकार; candle 2 dominant, engulf, पलीकडे close, जास्त slot-normalised FUT volume. study_min_bars कमी नाही; approach candles नाहीत; LTF CHoCH हवा | `sharp_reversal_handover` True | — |
+| Z-1z | ✅ **ठरलं (Abhi, final):** पूर्ण visit चं वाचन; push नाकारला + dominant उलट candle ने लगेच गिळला = handover; हळू visit = एक बाजू वाढते, दुसरी दमते; किमान candle संख्या नाही; volume = commitment ची तुलना (visit मधल्या उलट बाजूच्या candles पेक्षा मोठा) | तुलना | — |
 | Z-1v-a | ✅ **ठरलं (Abhi, a):** अपयशी dominant candle पट्ट्याबाहेर close ⇒ visit संपली; पुढचा प्रवेश = नवी visit, नवा handover (code आधीपासून असंच) | असंच | — |
 
 ### Abhi च्या Z-1x / Z-1y / Z-1z / Z-1v-a उत्तरांनंतर — Abhi ने ठरवायचे (नवे)
@@ -556,9 +556,9 @@ close पट्ट्याखाली ⇒ visit संपली; दिवस�
 | # | प्रश्न | आत्ता काय (default) | पर्याय |
 |---|---|---|---|
 | Z-1z-a | 12 Oct 09:15 → 09:30: 09:30 ची candle 09:15 ची body engulf करत नाही (09:30 open 22,584.25 < 09:15 open 22,593.20) आणि close 22,512.15 हा 09:15 च्या low 22,512.00 च्या 0.15 pt वर. "Engulf" = body ने body झाकणं, आणि "closes back beyond it" = candle 1 च्या low (supply) पलीकडे — असं वाचलं | body-engulf + candle 1 च्या low पलीकडे close | (a) असंच; (b) engulf = candle 1 चा close / body खालचा भाग पार; (c) "beyond" = candle 1 च्या body पलीकडे |
-| Z-1z-b | Candle 1 चा "नकार": push-बाजूचा wick ≥ `sharp_rej_wick_body` × body (default 1.0, आपला आकडा) | 1.0 | 0.5 / 1.0 / 1.5 |
-| Z-1z-c | Slot-normalised FUT volume साठी त्याच 15M slot ची किमान 10 आधीची sessions हवीत. VPS वरचा "45 दिवस" export फक्त 30 Sep पासूनचा (Oct contract) ⇒ 12 Oct ला 7, 13 Oct ला 8 ⇒ normalised NA ⇒ दोन-candle handover कधीच वाचता येत नाही (raw कधीच नाही) | NA ⇒ handover नाही | (a) Sep contract चा FUT data (expired instrument) आणायचा — Upstox API / plan तपासायचा (पैसे लागणार असतील तर Abhi ची परवानगी); (b) थांबायचं — 10 sessions नंतर आपोआप |
-| Z-1x-a | 29 Sep चा Daily location पट्टा 22,725.45–22,809.90 = 84.45 pts = 1.65σ_1H > 1.5 ⇒ आता "too wide — check, no trade". 1.5σ distribution 1H पट्ट्यांवरून होतं; Daily पट्टे Daily candles वरून स्वाभाविक रुंद | सगळ्या location पट्ट्यांना 1.5σ_1H | (a) असंच; (b) Daily location ला वेगळी मर्यादा (उदा. σ_1H ऐवजी Daily range वरून) |
+| Z-1z-b | ✅ बंद: आकडा काढला — नकार = push-बाजूची wick body पेक्षा लांब (तुलना) | — | — |
+| Z-1z-c | Volume normalisation (त्याच 15M slot च्या आधीच्या sessions चा median; 20 / किमान 10 sessions) हा आकडा उरतो — NUMBERS_INVENTORY C-3. 12–13 Oct ला normalised NA (7–8 sessions) ⇒ raw bars ची visit मधली तुलना वापरली | slot baseline (NA ⇒ raw, labelled) | (a) visit मधले raw volume bars (trader view); (b) slot baseline ठेवायचा (data plumbing) |
+| Z-1x-a | ✅ बंद (Z-1x final: मर्यादा नाही) — 29 Sep Daily पट्टा पुन्हा location | — | — |
 | Z-1v-b | "Visit … until price leaves it by structure": आत्ताचा नियम = पट्ट्याबाहेर (आली त्या बाजूला) एक close ⇒ visit संपली. 13 Oct ला पट्ट्याच्या खालच्या कडेवर लहान candles मुळे visit वारंवार संपते (10:15, 10:30, 10:45, 12:30, 12:45, 13:15…) | एक close बाहेर ⇒ संपली | (a) असंच; (b) "structure ने बाहेर" = पट्ट्याबाहेर close + पुढे swing (उदा. LTF lower high) / ठराविक अंतर |
 
 ### Approval पट्ट्याची रुंदी (branch `claude/approval-band-width`)
@@ -566,3 +566,11 @@ close पट्ट्याखाली ⇒ visit संपली; दिवस�
 | # | प्रश्न | आत्ता काय (default) | पर्याय |
 |---|---|---|---|
 | BW-1 | approval_band_warn_pts default 150 (Abhi) | 15M SRv2 (`15m_dynamic_sr`) setting `approval_band_warn_pts` = **150**: पट्टा (hi − lo) 150 pts पेक्षा रुंद ⇒ approval caption, pre-open आणि 15:45 सारांशात "⚠️ merged band — check" ओळ. फक्त दाखवणं (निर्णय / gate / order बदलत नाही). Dashboard: 15M SRv2 → 🧭 Signal source. Own-path (non-engine) signals ⇒ नेहमी default 150 (setting फक्त engine मार्ग, pre-open आणि सारांश वाचतात). PR #329 (root cause) नंतर हा इशारा ठेवायचा का? | 150 ठीक / दुसरा आकडा (उदा. 100 / 200) / #329 नंतर इशारा काढा |
+
+### Abhi चं तत्त्व (final): वाचन = तर्क, गणित नाही — उरलेले आकडे
+
+सगळी यादी: `docs/reports/v22/NUMBERS_INVENTORY.md` (A = आता बदलले, B = चालणारे operational / display / data, C = Abhi ने ठरवायचे).
+C मधले मुख्य: C-1 swings2 degree (k × σ) = "खरा swing" ची व्याख्या; C-3 volume slot baseline; C-4 `accept_closes` 3 (break वि. sweep);
+C-5 ③ `touch_window_bars` 3 (प्रस्ताव: ③ = visit चालू); C-6 commitment candle-shape आकडे; C-12 trendline / chart-band (K5 / K6) MR आकडे;
+C-17 conviction weights; C-18 approval 150-pt इशारा.
+

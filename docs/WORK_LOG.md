@@ -2738,3 +2738,14 @@ legs owner वि. reader2 gate).
 - **Re-run:** 13 Oct — पट्टा BROKEN, resistance, far swing 22,731.85 ✅ (Abhi ची अपेक्षा, test आता pass). 12 Oct — bear call नाही: 09:15 → 09:30
   दोन-candle वाचन रचनेने अपयशी (engulf नाही; close 09:15 low च्या 0.15 pt वर; normalised volume NA — 7 sessions < 10) ⇒ xfail त्या तथ्यांवर
   (Z-1z-a / Z-1z-c). 29 Sep — Daily पट्टा 1.65σ > 1.5 ⇒ "too wide — check" ⇒ xfail त्याच कारणावर (Z-1x-a). FUT export 30 Sep पासूनच.
+
+## 2026-10-19 · Abhi चं तत्त्व: वाचन = तर्क, गणित नाही (branch `claude/zone-study-answers`, #329)
+
+- **KB आधी:** K4 च्या या फेरीतल्या ओळी तर्काच्या भाषेत (far swing = खरं वळण, zone = एक base, visit, अपयशी dominant candle, handover,
+  volume तुलना, RSI divergence); golden किंमती / तारखा KB मधून trade-data `fixtures/golden_cases.md` मध्ये (private).
+- **Code:** `study_min_bars`, `commit_dom_mult`, `sharp_rej_wick_body`, `trade_band_max_sigma` 1.5 (+ dashboard), `level_min_width_sigma` काढले /
+  0; dominant = visit मधल्या प्रत्येक इतर candle पेक्षा मोठी; commitment volume = visit मधल्या उलट बाजूच्या candles पेक्षा मोठा; दोन-candle
+  handover मध्ये volume / ratio नाही; RSI divergence: bar window नाही, "equal high" tolerance नाही (नवं टोक), RSI = swing च्या स्वतःच्या
+  span मधलं टोक. उरलेले आकडे NUMBERS_INVENTORY (C-1 … C-19) — Abhi साठी, कारण आणि प्रस्तावासह.
+- **Re-run:** 12 Oct — bear call नाही (09:30 dominant candle 09:15 चा push गिळत नाही; volume visit मधल्या आधीच्या candle पेक्षा कमी; visit
+  संपली). 13 Oct — bear call नाही ✅, zone BROKEN resistance ✅. 29 Sep — Daily zone पुन्हा location; FUT नाही ⇒ entry नाही.
