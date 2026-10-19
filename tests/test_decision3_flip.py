@@ -626,6 +626,7 @@ def test_real_12_oct_seller_zone_in_zone_study_and_golden_bear_call(real):
     assert c930.get("vol_mult") is not None and c930["vol_mult"] < 1.0 and not c930.get("data_problem")          # cause (2)
     assert "insufficient history" in str(c930.get("volume_measure")) and not (c930.get("vol_gaps") or {}).get("over")
     assert str(by["09:30"]["checklist"]["⑥"][1]).startswith(M.REASON[M.C_NO_HANDOVER]) and str(c930.get("visit_end")).startswith("2026-10-12 09:30")
+    assert float(m15["close"].iloc[int(by["09:30"]["bar"])]) < ZONE[0]   # cause (3): the 09:30 close is below the band (Z-1v-a)
     later = [r for r in rows if r["ts"][11:16] > "09:30" and (r["checklist"].get("③") or [None])[0]]
     assert all(((r.get("commit") or {}).get("confirm_wait") == "no_visit") for r in later), [(r["ts"], r["checklist"]["⑥"]) for r in later]
     pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — three causes: (1) Z-1z: the visit starts 12 Oct 09:15 (the "
@@ -697,14 +698,22 @@ def test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731(real):
     hi = float(m15["high"].iloc[ix].max())
     if hi > FAR_UP:
         pytest.fail(f"13 Oct high {hi:,.2f} is past 22,731.8 — the Z-1y expectation is about a day that stays below it")
-    f = V.levels.flip_view(L, t)
+    try:
+        f = V.levels.flip_view(L, t)
+        st, role = L.state_at(t), L.role_at(t)
+    except AssertionError as e:                                            # an engine error is never hidden by the xfail
+        pytest.fail(f"engine error reading the band state: {e}")
     T = lambda b: str(V.levels.ts.iloc[int(b)])[:16]                       # noqa: E731
     fs = f.get("far_swing") or {}
-    print(f"\n13 Oct: spot high {hi:,.2f} < 22,731.8 · engine: state {L.state_at(t)}, role {L.role_at(t)}, far swing "
+    print(f"\n13 Oct: spot high {hi:,.2f} < 22,731.8 · engine: state {st}, role {role}, far swing "
           f"{fs.get('price')} ({str(fs.get('ts'))[:16]}, {fs.get('source')}), flipped at "
           f"{None if f.get('flipped_at') is None else T(f['flipped_at'])}")
-    assert L.role_at(t) == LV.RES and L.state_at(t) != FL.DEAD, \
-        f"Abhi: below 22,731.8 ⇒ still resistance; engine: {L.state_at(t)} / {L.role_at(t)} via far swing {fs.get('price')}"
+    known = (st == FL.FLIPPED and role == LV.SUP and fs.get("price") is not None and abs(float(fs["price"]) - 22651.10) < 0.01
+             and f.get("flipped_at") is not None and T(f["flipped_at"]).startswith("2026-10-13"))
+    if not (known or (role == LV.RES and st != FL.DEAD)):                  # only the known Z-1y difference may xfail
+        pytest.fail(f"13 Oct band state changed to something else: {st} / {role}, far swing {fs.get('price')}")
+    assert role == LV.RES and st != FL.DEAD, \
+        f"Abhi: below 22,731.8 ⇒ still resistance; engine: {st} / {role} via far swing {fs.get('price')}"
 
 
 def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmup(real):

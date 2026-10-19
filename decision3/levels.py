@@ -574,7 +574,7 @@ class Levels:
     def snapshot(self, t):
         """t च्या close ला जिवंत levels (dict), किंमतीपासूनच्या अंतरासह. Abhi Z-1u: each with its own `tf`; a 1H level lists the
         overlapping alive Daily / Weekly bands as `confluence` (+ `confluence_label`, evidence); `trade_location` = 1H, or Daily with no
-        overlapping 1H zone (not BROKEN), never Weekly (context only) — and, when `trade_band_max_sigma` is set, no wider than that × σ_1H.
+        overlapping 1H zone (not BROKEN / DEAD), never Weekly (context only) — and, when `trade_band_max_sigma` is set, no wider than that × σ_1H.
         `width` (points) / `width_sigma` are facts for the width report (Abhi: max width — the setting stays None until he decides)."""
         c = float(self.A["close"][t])
         sg = self.sig1h[t]
