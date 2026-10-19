@@ -278,14 +278,17 @@ def line(st):
     if not st or not st.get("ok"):
         return NA_LINE
     head = "volume" if st.get("engine") else "volume (chart est.)"
+    what = "the strongest opposite-side candle" if st.get("engine") else "avg"   # engine c0 = compared with the opposite side (Abhi)
     return (f"{head}: counter-side candles {_x(st['counter_mult'])} → trend-side {_x(st['trend_mult'])} · "
-            f"commitment {_x(st['commit_mult'])} avg")
+            f"commitment {_x(st['commit_mult'])} {what}")
 
 
 def commit_label(st, what="commitment"):
     if not st.get("ok"):
         return NA_LINE
-    return f"{what} vol {st['commit_mult']:.1f}× window avg" + ("" if st.get("engine") else " (chart est.)")
+    if st.get("engine"):
+        return f"{what} vol {st['commit_mult']:.1f}× the strongest opposite-side candle"
+    return f"{what} vol {st['commit_mult']:.1f}× window avg (chart est.)"
 
 
 def colors(st, pal):

@@ -130,15 +130,29 @@ def h1_frame(m15):
 
 
 def _band_swing(kind, o, h, l, c, price, w):
-    """wick-to-body; किमान रुंदी w (टोकापासून body कडे)."""
+    """wick-to-body of the swing candle. Abhi (TA4 / Z-1x): an area is always a band from the candle where buyers / sellers acted, never a
+    single price — no wick on that side (closed at its extreme) ⇒ the candle's body; no body either ⇒ its whole range. w > 0 = the
+    legacy minimum width (what-if only)."""
     if kind == "H":
         hi = float(price)
         lo = min(hi, float(max(o, c)))
+        if lo >= hi and float(h) > lo:                                     # the candle's own upper wick
+            hi = float(h)
+        if lo >= hi:
+            lo = min(hi, float(min(o, c)))
+        if lo >= hi:
+            lo = min(hi, float(l))
         if hi - lo < w:
             lo = hi - w
     else:
         lo = float(price)
         hi = max(lo, float(min(o, c)))
+        if hi <= lo and float(l) < hi:                                     # the candle's own lower wick
+            lo = float(l)
+        if hi <= lo:
+            hi = max(lo, float(max(o, c)))
+        if hi <= lo:
+            hi = max(lo, float(h))
         if hi - lo < w:
             hi = lo + w
     return lo, hi
@@ -328,6 +342,10 @@ class Levels:
                 sg = self.sig1h[t]
                 if np.isfinite(sg) and abs(a.price - b.price) <= eqs * sg:
                     lo, hi = min(a.price, b.price), max(a.price, b.price)
+                    if hi <= lo:                                           # exactly equal extremes ⇒ the two swing candles' wick-to-body
+                        lo, hi = min(_band_swing(kind, *(float(self.A[k][q.bar]) for k in ("open", "high", "low", "close")), q.price, 0.0)[0]
+                                     for q in (a, b)), max(_band_swing(kind, *(float(self.A[k][q.bar]) for k in ("open", "high", "low", "close")),
+                                                                       q.price, 0.0)[1] for q in (a, b))
                     w = self._w(t)
                     if hi - lo < w:
                         lo, hi = (hi - w, hi) if kind == "H" else (lo, lo + w)
@@ -451,6 +469,8 @@ class Levels:
                 if jb is not None:
                     _j, (o, hh, ll, _c) = jb
                     lo, hi = (ll, o) if d > 0 else (o, hh)
+                    if hi <= lo:                                           # opened at its extreme ⇒ the base candle's whole range (never one price)
+                        lo, hi = ll, hh
                     w = self._w(t)
                     if hi - lo < w:
                         if d > 0:

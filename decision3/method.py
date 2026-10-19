@@ -612,12 +612,13 @@ def commitment(A, t, d, lvl, s, tss=None, win=None):
             return False, "commitment candle not dominant (a candle in this visit is as large or larger)", {"wait": "not_dominant", **cm}
         V = _vol(A)
         opp = [i for i in ww if (A["close"][i] - A["open"][i]) * d < 0]     # the opposite side's candles in the same visit
-        ref = [float(V[i]) for i in (opp or ww) if np.isfinite(V[i]) and V[i] > 0] if V is not None else []
-        if V is not None and np.isfinite(V[t]) and V[t] > 0 and ref:
-            vm = float(V[t]) / max(ref)
-            cm.update(vol_mult=round(vm, 2), vol_na=False, vol_vs="opposite-side candles" if opp else "earlier candles of the visit")
-            if not V[t] > max(ref):                                        # Abhi: clearly larger than the opposite side's candles
-                return False, (f"commitment volume not larger than the {cm['vol_vs']} in this visit"), {"wait": "low_volume", **cm}
+        ref = [float(V[i]) for i in opp if np.isfinite(V[i]) and V[i] > 0] if V is not None else []
+        if V is not None and np.isfinite(V[t]) and V[t] > 0 and (ref or not opp):
+            vm = float(V[t]) / max(ref) if ref else None
+            cm.update(vol_mult=None if vm is None else round(vm, 2), vol_na=False,
+                      vol_vs="opposite-side candles" if ref else "no opposite-side candle in this visit")
+            if ref and not V[t] > max(ref):                                # Abhi: clearly larger than the opposite side's candles
+                return False, "commitment on low volume (not larger than the opposite-side candles in this visit)", {"wait": "low_volume", **cm}
         else:
             cm.update(vol_mult=None, vol_na=True)                          # volume NA ⇒ चालतं, पण grade कमाल B
             grade = cm["grade"] = "B"
@@ -755,7 +756,7 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None, h
     वापरतात; d = ±1 (आरसा). Study window = arm (area मध्ये arrival) … commitment candle t. क्रम:
       a2 — window arm … t − 1 मध्ये उलट-बाजू volume वाढत मजबूत (absorption) ⇒ वाट (commitment पाहतच नाही);
       c0 — commitment (Q16 form), dominant = body larger than every other candle of the visit, volume larger than the opposite side's
-           candles of the visit (none ⇒ than its earlier candles) — comparisons only, no multiplier (volume NA ⇒ चालतं, कमाल B);
+           candles of the visit (none in the visit ⇒ nothing to beat, noted) — comparisons only, no multiplier (volume NA ⇒ चालतं, कमाल B);
       c1 — LTF CHoCH by close (`ltf_choch`; ltf = ltf_frame किंवा तो देणारं callable (commitment असेल तरच बोलावतो); ltf_times = (संदर्भ सुरुवात, arrival सुरुवात, setup bar close)), `ltf_choch` setting (default
            True = आवश्यक). LTF नाही ⇒ "LTF data missing" ⇒ वाट (fail-closed, कधीच शांतपणे वगळत नाही).
     प्रत्येक गहाळ भाग ⇒ वाट (code), कायमचा नकार नाही (timeout / disarm caller चे नियम). रिटर्न dict: ok, wait (code | None), why, commit (cm),
@@ -813,8 +814,9 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None, h
         out.update(wait=ch["code"], why=f"{REASON[ch['code']]} · {ch['line']}")
         return out
     zs = zone_study(A, arm, t, d, s, mr=mr)
-    vtxt = f"volume {cm['vol_mult']:.1f}× window avg" if cm.get("vol_mult") is not None else "volume: NA (grade cap B)"
-    btxt = f"body {cm['body_mult']:.1f}× window avg" if cm.get("body_mult") is not None else ""
+    vtxt = ("volume: NA (grade cap B)" if cm.get("vol_na") else "volume above the opposite side"
+            if cm.get("vol_mult") is not None else "no opposite-side candle")   # Abhi: the reading in words, not ratios
+    btxt = "largest of the visit" if cm.get("body_mult") is not None else ""
     kind = "demand" if d > 0 else "supply"
     sr = (hs.get("sharp") or {}) if hs.get("form") == "sharp_reversal" else {}
     lines = [f"inside {kind}: " + (sr.get("why") if sr.get("found") else (zs.get("line") or "no clear handover read")),
