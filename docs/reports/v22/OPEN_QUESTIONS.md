@@ -604,4 +604,7 @@ Implementation per layer: `docs/reports/v22/METHOD_MAP.md`.
 | C-22 | The old rsi2 `RSI` class is not on the reading path; retired in a clean-up (§7 one owner) | 5 |
 | C-23 | Slow handover = trend-side candles grow, opposite-side shrink, volume tilts to the trend side — no "at least half" count (§3 Handover) | 3 |
 | BW-1 | Approval width alert = operational display, decided with the output (layer 6) | 6 |
+| L2-a | "A swing formed beyond" = a turning point of the finest structure degree, beyond the area, after the first close beyond (§3 Area lifecycle; simpler reading — any real swing, not only the trend degree) | 2 |
+| L2-b | Reclaim of a broken area mirrors the break: back inside **and** a swing formed back on the role side (§3 Area lifecycle, mirror) | 2 |
+| L2-c | Equal highs / lows (liquidity area) = the later extreme stays within the earlier swing's own area and does not go beyond it (§3 Equal) | 2 |
 
