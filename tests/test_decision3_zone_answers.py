@@ -41,6 +41,9 @@ HANDOVER = [(101.0, 101.8, 1.2), (101.8, 101.6, 0.8), (101.6, 102.3, 1.3), (102.
             (102.1, 101.4, 1.4), (101.4, 101.6, 0.6), (101.6, 100.8, 1.6), (100.8, 100.9, 0.5)]
 FADE = [(100.9, 100.85, 0.7), (100.85, 101.0, 0.7), (101.0, 100.95, 0.6), (100.95, 101.05, 0.6)]   # handover read gone, no absorption
 ABSORB = [(100.9, 101.9, 1.8), (101.9, 101.7, 0.7), (101.7, 102.6, 2.0), (102.6, 102.4, 0.7)]      # buying candles strengthen again
+SIDEWAYS = [(100.9, 101.1, 0.6), (101.1, 101.0, 0.5), (101.0, 101.15, 0.6), (101.15, 101.05, 0.5), (101.05, 101.2, 0.6),
+            (101.2, 101.1, 0.5)]                                     # method §3 absorption: small buying candles keep coming, price stuck
+LEGACY_ABSORB = {**S3.load(), "absorption_rule": "strengthening"}     # the #329 read (counter side strengthening), what-if only
 
 
 # ------------------------------------------------------------------------------------------------ Z-1p (a)
@@ -71,18 +74,29 @@ def test_handover_once_seen_holds_until_the_commitment(mirror):
     late = M.zone_study(A, 0, t - 1, d, S)                                 # the commitment bar's own window: no handover read now
     assert late["handover"] is False and late["absorption"] is False
     ho = M.handover_episode(A, 0, t, d, S)
-    assert ho["present"] is True and ho["seen_at"] == 4 and ho["cancelled"] is None
+    # method §3 slow form: candles AND volume — in window 0 … 4 the buying volume is still above the selling volume (no tilt), 0 … 5 tilts
+    assert ho["present"] is True and ho["seen_at"] == 5 and ho["cancelled"] is None
+    assert M.zone_study(A, 0, 4, d, S)["vol_tilt"] is False and M.zone_study(A, 0, 5, d, S)["vol_tilt"] is True
     cut = {k: v[:t] for k, v in A.items()}                                 # no look-ahead: same answer on data cut at the decision bar
     assert M.handover_episode(cut, 0, t, d, S) == M.handover_episode(A, 0, t, d, S)
-    assert M.handover_episode(A, 0, 4, d, S)["present"] is False           # not yet seen before its window closed
+    assert M.handover_episode(A, 0, 5, d, S)["present"] is False           # not yet seen before its window closed
 
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["bear", "bull"])
 def test_sticky_handover_is_cancelled_by_a_later_absorption(mirror):
+    """Method §3 absorption: after the handover, small buying candles keep coming and price does not move away (a sideways base) ⇒ the
+    handover is cancelled. Buying candles growing LARGE (ABSORB) are not absorption under the method — that side taking control is the
+    K4 break's business; the #329 "strengthening" read stays a what-if."""
     d = UP if mirror else DOWN
-    A = _A(HANDOVER + ABSORB, mirror)
-    ho = M.handover_episode(A, 0, len(HANDOVER + ABSORB), d, S)
-    assert ho["present"] is False and ho["seen_at"] == 4 and ho["cancelled"] == "absorption" and ho["cancelled_at"] == 11
+    A = _A(HANDOVER + SIDEWAYS, mirror)
+    ho = M.handover_episode(A, 0, len(HANDOVER + SIDEWAYS), d, S)
+    assert ho["present"] is False and ho["seen_at"] == 5 and ho["cancelled"] == "absorption" and ho["cancelled_at"] == 13
+    z = M.zone_study(A, 0, 13, d, S)
+    assert z["absorption"] is True and "keeps coming in small candles and price does not move away (absorption)" in z["line"]
+    A2 = _A(HANDOVER + ABSORB, mirror)
+    assert M.handover_episode(A2, 0, len(HANDOVER + ABSORB), d, S)["cancelled"] is None
+    ho2 = M.handover_episode(A2, 0, len(HANDOVER + ABSORB), d, LEGACY_ABSORB)
+    assert ho2["present"] is False and ho2["cancelled"] == "absorption" and ho2["cancelled_at"] == 11
 
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["bear", "bull"])
@@ -105,7 +119,7 @@ def test_confirm_uses_the_sticky_handover_not_the_commitment_bar_window():
     plain = M.confirm(A, 0, t, DOWN, lvl, s)
     assert plain["handover"] is False and plain["wait"] == M.C_NO_HANDOVER
     sticky = M.confirm(A, 0, t, DOWN, lvl, s, handover=M.handover_episode(A, 0, t, DOWN, s))
-    assert sticky["handover"] is True and sticky["wait"] != M.C_NO_HANDOVER and sticky["handover_state"]["seen_at"] == 4
+    assert sticky["handover"] is True and sticky["wait"] != M.C_NO_HANDOVER and sticky["handover_state"]["seen_at"] == 5
     gone = M.confirm(A, 0, t, DOWN, lvl, s, handover={"present": False, "cancelled": "zone broken"})
     assert gone["wait"] == M.C_NO_HANDOVER and "handover cancelled (zone broken)" in gone["why"]
 
@@ -374,9 +388,10 @@ def _visit_case(window):
 
 
 def test_a_close_outside_the_band_away_from_it_ends_the_visit_the_next_needs_a_new_handover():
-    """tests.test_decision3_flip._default_case supply 19,432–19,472 (bear call): with the handover window intact ⇒ setup at 741. The
-    same bars but 737 closes BELOW the band (away from it, no commitment) ⇒ that visit ends; the new visit starts at 738 and has too
-    few bars for a handover ⇒ wait — the earlier handover never carries over."""
+    """Legacy Z-1v (`zone_visit_rule = close_away`, what-if): tests.test_decision3_flip._default_case supply 19,432–19,472 (bear call):
+    with the handover window intact ⇒ setup at 741. The same bars but 737 closes BELOW the band ⇒ that visit ends; the new visit starts
+    at 738 and has too few bars for a handover ⇒ wait. Method §3 (default): that candle closed just outside without a handover, so it is
+    not a failed commitment — the SAME visit continues (it starts at 735)."""
     from tests.test_decision3_flip import _HANDOVER
     ok = _visit_case(_HANDOVER).decide(741)
     assert ok["decision"] == "setup" and ok["commit"]["visit_start"] == ok["commit"]["study_from"]
@@ -385,10 +400,60 @@ def test_a_close_outside_the_band_away_from_it_ends_the_visit_the_next_needs_a_n
     broken[2] = (19455, 19425, 6e5)                                         # bar 737 closes below the band's low (away from it)
     V = _visit_case(broken)
     r = V.decide(741)
-    cm = r["commit"]
+    assert r["commit"]["visit_start_bar"] == 735 and r["commit"]["visit_prev_end"] != str(pd.Timestamp(V._ts[737]))   # same visit
+    V.s = {**V.s, "zone_visit_rule": "close_away", "commit_volume_rule": "opposite"}
+    cm = V._confirm(741, DOWN, r["level"], V.pb.at(741, DOWN))[2]
     assert pd.Timestamp(cm["visit_prev_end"]) == pd.Timestamp(V._ts[737])
-    assert cm["visit_start_bar"] == 738 and r["decision"] == "wait" and cm["handover_present"] is False
-    assert "no handover" in r["checklist"]["⑥"][1]
+    assert cm["visit_start_bar"] == 738 and cm["handover_present"] is False
+
+
+def _visit_v(rows, swings=(), d=DOWN, lvl=(100.0, 102.0)):
+    """A bare V22 for `visit` (structure): rows = (open, high, low, close); swings = (kind, price, bar, confirm_bar) of the finest
+    structure degree; one area born at bar 0."""
+    from types import SimpleNamespace as NS
+    V = E3.V22.__new__(E3.V22)
+    V.s = S3.load()
+    A = {k: np.array([r[j] for r in rows], float) for j, k in enumerate(("open", "high", "low", "close"))}
+    A["volume"] = np.full(len(rows), 1.0)
+    V.levels = NS(A=A, _known0=[NS(kind=k, price=float(p), bar=b, confirm_bar=c) for k, p, b, c in swings],
+                  L=[NS(born_bar=0, state_at=lambda u: "ACTIVE")])
+    V._ts = pd.date_range("2030-01-07 09:15", periods=len(rows), freq="15min").to_numpy()
+    V.vol_view = lambda a, t: (A, "raw")
+    return V, {"id": 0, "lo": lvl[0], "hi": lvl[1]}
+
+
+def test_visit_ends_only_by_structure_a_swing_built_away_from_the_area():
+    """Method §3 Visit: a supply visit (100–102) — price closes just below and comes back: the same visit; time never ends it. A swing low
+    built below the area (confirmed) ends it; the next entry is a new visit whose approach leg starts after that swing."""
+    rows = [(98.0, 98.6, 97.8, 98.5), (98.5, 100.6, 98.4, 100.4), (100.4, 100.9, 99.6, 99.8), (99.8, 100.7, 99.7, 100.5),   # 1: enters
+            (100.5, 100.8, 99.0, 99.2), (99.2, 99.4, 97.9, 98.1), (98.1, 99.5, 98.0, 99.4), (99.4, 100.9, 99.3, 100.6)]       # 5: swing low
+    V, lvl = _visit_v(rows)
+    assert V.visit(3, lvl, DOWN)["start"] == 1                              # bar 2 closed just outside, bar 3 back ⇒ the same visit
+    assert V.visit(7, lvl, DOWN)["start"] == 1                              # no swing built away yet ⇒ still the same visit
+    V2, _ = _visit_v(rows, swings=[("L", 97.9, 5, 7)])
+    vi = V2.visit(7, lvl, DOWN)
+    assert (vi["start"], vi["prev_end"], vi["ended_by"], vi["approach_from"]) == (7, 5, "swing", 6)
+    assert V2.visit(6, lvl, DOWN)["start"] == 1                             # the swing is not known before its confirmation (no look-ahead)
+    V3, _ = _visit_v(rows, swings=[("L", 100.5, 3, 5)])                     # a swing low INSIDE the area is not "away from it"
+    assert V3.visit(7, lvl, DOWN)["start"] == 1
+    mirror = [(2 * 101 - o, 2 * 101 - lo, 2 * 101 - h, 2 * 101 - c) for o, h, lo, c in rows]   # demand 100–102, price from above
+    Vm, lm = _visit_v(mirror, swings=[("H", 2 * 101 - 97.9, 5, 7)], d=UP)
+    assert (Vm.visit(7, lm, UP)["start"], Vm.visit(7, lm, UP)["ended_by"]) == (7, "swing")
+
+
+def test_visit_ends_when_a_commitment_after_the_handover_closes_outside(monkeypatch):
+    """Method §3 Visit: "a commitment fails and closes outside (then the move is gone; no chasing)" — the commitment is the dominant
+    trade-side candle AFTER the handover. The same candle without a handover present is only a candle that closed outside."""
+    rows = [(98.0, 98.6, 97.8, 98.5), (98.5, 100.6, 98.4, 100.4), (100.4, 100.9, 100.1, 100.3), (100.3, 100.5, 97.6, 97.8),   # 3: dominant
+            (97.8, 100.7, 97.7, 100.5)]                                                                                         # red, closes out
+    V, lvl = _visit_v(rows)
+    monkeypatch.setattr(V, "handover_episode", lambda A, a, t, d, l: {"present": False})
+    assert V.visit(4, lvl, DOWN)["start"] == 1                              # no handover ⇒ the same visit
+    monkeypatch.setattr(V, "handover_episode", lambda A, a, t, d, l: {"present": True})
+    vi = V.visit(4, lvl, DOWN)
+    assert (vi["start"], vi["prev_end"], vi["ended_by"]) == (4, 3, "commitment") and "no chasing" not in str(vi["why"])
+    gone = V.visit(3, lvl, DOWN)                                            # at its own bar it is still the commitment being judged
+    assert gone["start"] == 1
 
 
 def test_visit_is_not_defined_by_touch_window_bars():
@@ -406,16 +471,19 @@ def test_visit_is_not_defined_by_touch_window_bars():
 
 
 # ------------------------------------------------------------------------------------------------ review notes
-def test_absorption_gate_restarts_after_a_zone_break_like_the_episode():
-    A = _A(HANDOVER + ABSORB + [(102.4, 102.5, 0.7)])
-    t = len(HANDOVER + ABSORB)
+@pytest.mark.parametrize("rule", ["method", "strengthening"])
+def test_absorption_gate_restarts_after_a_zone_break_like_the_episode(rule):
+    tail = SIDEWAYS if rule == "method" else ABSORB
+    s = {**S3.load(), "absorption_rule": rule}
+    A = _A(HANDOVER + tail + [(101.1, 101.15, 0.5)])
+    t = len(HANDOVER + tail)
     lvl = {"lo": 100.0, "hi": 103.0}
-    full = M.zone_study(A, 0, t - 1, DOWN, S)
-    late = M.zone_study(A, 8, t - 1, DOWN, S)
+    full = M.zone_study(A, 0, t - 1, DOWN, s)
+    late = M.zone_study(A, 8, t - 1, DOWN, s)
     assert full["absorption"] is True and late["absorption"] is False
-    ho = M.handover_episode(A, 0, t, DOWN, S, broken=lambda u: u == 7)
+    ho = M.handover_episode(A, 0, t, DOWN, s, broken=lambda u: u == 7)
     assert ho["window_start"] == 8
-    cf = M.confirm(A, 0, t, DOWN, lvl, {**S, "ltf_choch": False}, handover=ho)
+    cf = M.confirm(A, 0, t, DOWN, lvl, {**s, "ltf_choch": False}, handover=ho)
     assert cf["absorption"] is False                                        # the gate reads the same post-break window
 
 
@@ -526,12 +594,22 @@ def test_two_candle_push_rejected_and_swallowed_is_a_handover_by_comparison_only
 
 
 def test_two_candle_read_names_every_missing_part():
-    """Not swallowed: candle 2 opens below candle 1's body top and closes short of candle 1's low ⇒ not a handover; both parts named."""
+    """Method §3 fast form: the dominant opposite candle must close beyond the push candle's BODY (not its extreme, no body cover).
+    Candle 2 opens below candle 1's body top and closes below its body (short of its low) ⇒ a fast-form handover under the method; the
+    #329 read (body cover + close beyond the low) names both of its missing parts. A close inside the push body ⇒ not a handover."""
     A, i = _pair(c2_close=98.6, o2=99.1)
-    sr = M.sharp_reversal(A, i, DOWN, 100.0, 102.0, a0=0)
-    assert sr["found"] is False and sr["parts"]["c2_engulfs_body"] is False and sr["parts"]["c2_closes_beyond_c1"] is False
-    assert "does not cover candle 1's body" in sr["why"] and "does not close beyond candle 1's low" in sr["why"]
+    sr = M.sharp_reversal(A, i, DOWN, 100.0, 102.0, S, a0=0)
+    assert sr["found"] is True and sr["parts"] == {"c1_rejected": True, "c2_dominant": True, "c2_closes_beyond_push_body": True}
+    old = M.sharp_reversal(A, i, DOWN, 100.0, 102.0, {**S, "fast_form_rule": "engulf"}, a0=0)
+    assert old["found"] is False and old["parts"]["c2_engulfs_body"] is False and old["parts"]["c2_closes_beyond_c1"] is False
+    assert "does not cover candle 1's body" in old["why"] and "does not close beyond candle 1's low" in old["why"]
+    A3, i3 = _pair(c2_close=99.1, o2=99.15)                                # closes inside the push candle's body (99.0 – 99.2)
+    A3["high"][i3 - 1] = 101.5
+    sr3 = M.sharp_reversal(A3, i3, DOWN, 100.0, 102.0, S, a0=0)
+    assert sr3["found"] is False and "does not close beyond the push candle's body" in sr3["why"]
     assert M.sharp_reversal(A, 0, DOWN, 100.0, 102.0, a0=0)["why"] == "candle 1 is not inside the visit"
+    with pytest.raises(ValueError, match="fast_form_rule"):
+        M.sharp_reversal(A, i, DOWN, 100.0, 102.0, {**S, "fast_form_rule": "swallow"}, a0=0)
 
 
 def test_commitment_dominance_and_volume_are_comparisons_within_the_visit():
@@ -543,11 +621,34 @@ def test_commitment_dominance_and_volume_are_comparisons_within_the_visit():
     assert cm.get("body_mult") is not None and cm["body_mult"] > 1.0
     A["volume"] = np.array([900.0, 500.0])
     ok2, why2, cm2 = M.commitment(A, i, DOWN, lvl, S, win=0)
-    assert ok and cm["vol_vs"] == "opposite-side candles" and not ok2 and "not larger than the opposite-side candles" in why2 and "low volume" in why2
+    assert ok and cm["vol_vs"] == "the visit's opposite-side candles" and not ok2 and "low volume" in why2
+    assert "not larger than the visit's opposite-side candles" in why2      # no approach leg given ⇒ named as compared
     red = {k: v.copy() for k, v in A.items()}
     red["open"][0], red["close"][0] = 99.4, 99.2                             # candle 1 red too ⇒ no opposite-side candle in the visit
-    ok3, _, cm3 = M.commitment(red, i, DOWN, lvl, S, win=0)
-    assert ok3 and cm3["vol_vs"] == "no opposite-side candle in this visit" and cm3["grade"] == "B"   # nothing compared ⇒ fail-safe cap B
+    ok3, why3, cm3 = M.commitment(red, i, DOWN, lvl, S, win=0)
+    assert not ok3 and "nothing to compare" in why3                         # method: no grade-cap-B fail-safe — nothing compared ⇒ no
+    legacy = {**S, "commit_volume_rule": "opposite"}
+    ok4, _, cm4 = M.commitment(red, i, DOWN, lvl, legacy, win=0)
+    assert ok4 and cm4["vol_vs"] == "no opposite-side candle in this visit" and cm4["grade"] == "B"   # the #329 fail-safe, what-if only
+
+
+def test_commitment_volume_is_compared_with_the_approach_leg_and_the_opposite_side_without_the_push():
+    """Method §3 Commitment: volume larger than the approach leg's candles and the visit's opposite-side candles; the rejected push and
+    the commitment itself are not part of that comparison."""
+    rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 98.4, 97.4, 98.3), (98.3, 99.2, 98.2, 99.1),          # approach leg (bars 0–2)
+            (99.0, 101.5, 98.5, 99.2), (99.3, 99.6, 97.0, 97.2)]                                  # push (3) + commitment (4)
+    A = {k: np.array([r[j] for r in rows], float) for j, k in enumerate(("open", "high", "low", "close"))}
+    lvl = {"lo": 100.0, "hi": 102.0}
+    A["volume"] = np.array([300.0, 400.0, 500.0, 2000.0, 900.0])           # the push has the largest volume — excluded
+    ok, why, cm = M.commitment(A, 4, DOWN, lvl, S, win=3, approach=range(0, 3), exclude=[3])
+    assert ok and cm["vol_vs"] == "the approach leg's candles" and cm["vol_ref_bar"] == 2 and cm["vol_mult"] == 1.8
+    ok2, why2, _ = M.commitment(A, 4, DOWN, lvl, S, win=3, approach=range(0, 3))   # push not excluded ⇒ compared with it ⇒ low volume
+    assert not ok2 and "low volume" in why2
+    A["volume"][1] = 1000.0                                                 # an approach candle above the commitment ⇒ low volume
+    ok3, why3, _ = M.commitment(A, 4, DOWN, lvl, S, win=3, approach=range(0, 3), exclude=[3])
+    assert not ok3 and "approach leg" in why3
+    with pytest.raises(ValueError, match="commit_volume_rule"):
+        M.commitment(A, 4, DOWN, lvl, {**S, "commit_volume_rule": "x"}, win=3)
 
 
 def test_far_swing_is_the_structural_swing_a_sweep_wick_beyond_the_band_is_not():
@@ -672,3 +773,20 @@ def test_equal_highs_by_comparison_and_every_area_ahead_is_armed(mirror):
     side = LV.SUP if mirror else LV.RES
     assert len(act) == len([x for x in lv.snapshot(t) if x["role"] == side and x["below"] == mirror and x.get("state") != "BROKEN"
                             and x.get("trade_location", True)])
+
+
+def test_at_the_area_is_a_visit_in_progress_never_a_count_of_candles():
+    """③ (method §3 Visit / §4): at the area ⇔ a visit is in progress (structure) — not "the last touch within N candles"; bar t never
+    gaps or closes through the far side (no breakout entry); price came in from the side away from the trade."""
+    rows = [(98.0, 98.6, 97.8, 98.5), (98.5, 100.6, 98.4, 100.4), (100.4, 100.9, 99.6, 99.8), (99.8, 99.9, 98.9, 99.0),
+            (99.0, 99.5, 98.8, 99.3), (99.3, 99.6, 98.9, 99.1), (99.1, 99.4, 98.2, 98.4)]          # left the area, no swing built away yet
+    V, lvl = _visit_v(rows)
+    ok, why = V._at_area(6, DOWN, lvl)
+    assert ok and "visit in progress since" in why and "touch_window_bars" not in S3.REGISTER["zone_visit_rule"][3]
+    up = rows[:3] + [(101.0, 103.5, 100.9, 103.2)]                          # closes through the supply's far side ⇒ breakout, no
+    V2, _ = _visit_v(up)
+    assert V2._at_area(3, DOWN, lvl) == (False, "close through the far side of the area (breakout) ⇒ no")
+    V3, _ = _visit_v([(104.0, 104.2, 103.0, 103.1), (101.5, 101.8, 101.0, 101.2)])   # came down INTO a supply from above
+    assert V3._at_area(1, DOWN, lvl)[1] == "price came into the area from the trade side (not a pullback)"
+    V4, _ = _visit_v([(98.0, 98.6, 97.8, 98.5)])
+    assert V4._at_area(0, DOWN, lvl) == (False, "no visit in progress")

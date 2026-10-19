@@ -21,6 +21,9 @@ LEGACY = {                       # used only by a non-default rule / gate (what-
     "sl_buffer_sigma": ("rr_step = True", {"method.py"}),
     "min_rr": ("rr_step = True", {"method.py"}),
     "max_attempts": ("wave_gates = True", {"engine.py"}),
+    "touch_window_bars": ("zone_visit_rule = touch_window / close_away (③ last touch)", {"engine.py", "method.py"}),
+    "vol_slot_sessions": ("volume_baseline = slot", {"engine.py"}),
+    "vol_slot_min_sessions": ("volume_baseline = slot", {"engine.py"}),
     "active_levels_max": ("no longer caps the watch list (method §4); kept for old callers", set()),
     "watch_levels_max": ("no longer caps the watch list (method §4); kept for old callers", set()),
 }
@@ -35,9 +38,9 @@ PENDING = {                      # still a number in the reading path ⇒ remove
     "daily_pivot_n": 1, "range_eq_sigma_d": 1, "maturity_sigma_d": 1, "level_degree": 1, "tl_degree": 1,
     "flip_pullback_inner_degree": 1, "k_reset_sigma": 1,
     "power_shift_min": 3, "power_overlap": 3, "power_fallback_bars": 3, "pattern_eq_mr": 3, "commit_body": 3, "commit_merge_max": 3,
-    "pin_wick_min": 3, "star_body_max": 3, "tweezer_tol": 3, "commit_close_frac": 3, "touch_window_bars": 3, "candle_avg_n": 3,
+    "pin_wick_min": 3, "star_body_max": 3, "tweezer_tol": 3, "commit_close_frac": 3, "candle_avg_n": 3,
     "doji_body_max": 3, "range_overlap_min": 3, "range_state_n": 3, "liquidity_lookback": 3, "flip_pullback_vol_ratio": 3,
-    "flip_vol_min_coverage": 3, "vol_slot_sessions": 3, "vol_slot_min_sessions": 3,
+    "flip_vol_min_coverage": 3,
     "accept_closes": 3, "liquidity_eq_sigma": 3,  # legacy in levels (break_rule / liquidity_rule), still read by liquidity.sweeps_and_traps
     "tl_touch_sigma": 4, "tl_min_touches": 4,
     "evidence_weights": 6, "conv_a": 6, "conv_b": 6, "conv_weak": 6,

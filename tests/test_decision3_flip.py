@@ -421,13 +421,20 @@ def test_slot_normalised_volume_0915_bar_is_not_high_just_because_of_its_slot():
     assert not ok and cm.get("wait") == "low_volume" and cm["vol_mult"] <= 1.0
 
 
-def test_v22_uses_the_slot_normalised_volume_for_a2_and_c0():
+def test_v22_reads_raw_volume_bars_by_default_and_the_slot_baseline_only_as_a_what_if():
+    """Method §3 Volume: raw bars, no time-slot baselines (default `volume_baseline = raw`); the Z-1 slot baseline stays a what-if."""
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=False)
     V = E3.V22(m15, s={"level_death_side": "role"}, ltf=ltf, futures=fut)
     A = V.levels.A
+    assert S3.DEFAULTS["volume_baseline"] == "raw" and np.allclose(A["volume"], A["volume_raw"], equal_nan=True)
+    assert V.vol_view(len(m15) - 5, len(m15) - 1)[1].startswith("raw FUT volume per bar")
+    V = E3.V22(m15, s={"level_death_side": "role", "volume_baseline": "slot"}, ltf=ltf, futures=fut)
+    A = V.levels.A
     rel, _ = M.slot_rel_volume(m15["timestamp"], A["volume_raw"], 20, 10)
     assert np.allclose(np.nan_to_num(A["volume"], nan=-1), np.nan_to_num(rel, nan=-1)) and np.isfinite(A["volume"][-30:]).all()
+    with pytest.raises(ValueError, match="volume_baseline"):
+        E3.V22(m15, s={"volume_baseline": "slots"}, ltf=ltf, futures=fut)
 
 
 # ------------------------------------------------------------------------------------------------ no look-ahead
@@ -622,29 +629,35 @@ def test_real_12_oct_seller_zone_in_zone_study_and_golden_bear_call(real):
         assert pd.Timestamp(cm["choch"]["at"]) > pd.Timestamp(cm["visit_start"])
         assert cm.get("vol_vs") and (cm.get("vol_mult") is None or cm["vol_mult"] > 1.0)   # compared with the opposite side (or none: Z-1z-d)
         return
-    # the miss — each cause asserted (report, never tuned). The visit starts 12 Oct 09:15 (the 9 Oct visit ended at the 9 Oct 15:00 close
-    # below the band, Abhi Z-1v). Abhi Z-1z: the whole visit is read; the 09:15 push and the 09:30 dominant red candle are read as "a push
-    # rejected and swallowed by a dominant opposite candle" — by structure it is NOT swallowed: 09:30's body does not cover 09:15's body
-    # (it opened below 09:15's body top) and it closes short of 09:15's low. Volume: the visit has no opposite-side (green) candle, so the
-    # commitment has nothing to beat (OPEN_QUESTIONS: is the push candle the opposite side?). Then (Z-1v-a) the failed dominant candle's
-    # close below the zone ends the visit.
+    # the miss — each cause asserted (report, never tuned). Method layer 3: on 9 Oct a fast-form handover was seen at 15:00 and that
+    # dominant red candle (the commitment) failed — volume below the approach leg's candles, no 5M CHoCH — and closed just below the band
+    # ⇒ "a commitment fails and closes outside" ends that visit (§3 Visit). 12 Oct 09:15 re-enters ⇒ a NEW visit, read fresh. 09:15 push
+    # + 09:30 dominant red candle closing beyond the push body = the fast-form handover ✅, the 5M CHoCH ✅; but the approach into the area
+    # was the gap (no candle after the 9 Oct swing / failed commitment) and the push is excluded ⇒ the commitment's volume has nothing to
+    # be compared with ⇒ no commitment (fail-closed, OPEN_QUESTIONS L3-c / Abhi batch). 09:30 closed below the band after the handover
+    # ⇒ that visit ends too.
     by = {r["ts"][11:16]: r for r in rows}
     c930 = by["09:30"]["commit"] or {}
     assert str(c930.get("visit_start")).startswith("2026-10-12 09:15") and str(c930.get("visit_prev_end")).startswith("2026-10-09 15:00")
-    assert c930.get("handover_present") is False and (c930.get("handover_state") or {}).get("seen_at") is None
-    sr = (c930.get("handover_state") or {}).get("sharp") or {}
+    hs = c930.get("handover_state") or {}
+    sr = hs.get("sharp") or {}
     P = sr.get("parts") or {}
-    print(f"\n09:15 → 09:30 two-candle read: {P} · {sr.get('why')} · commitment volume vs {c930.get('vol_vs')}: ×{c930.get('vol_mult')}")
-    assert P.get("c1_rejected") is True and P.get("c2_dominant") is True                       # the shape is there…
-    assert P.get("c2_engulfs_body") is False and P.get("c2_closes_beyond_c1") is False         # …but it does not swallow the push
-    assert c930.get("vol_vs") == "no opposite-side candle in this visit" and c930.get("vol_na") is False   # nothing on the other side to beat
-    assert str(by["09:30"]["checklist"]["⑥"][1]).startswith(M.REASON[M.C_NO_HANDOVER]) and str(c930.get("visit_end")).startswith("2026-10-12 09:30")
-    assert float(m15["close"].iloc[int(by["09:30"]["bar"])]) < ZONE[0]   # Z-1v-a: the failed dominant candle closed below the zone
+    print(f"\n09:15 → 09:30 fast form: {P} · {sr.get('why')} · commitment volume: {by['09:30']['checklist']['⑥'][1]}")
+    assert c930.get("handover_present") is True and hs.get("form") == "sharp_reversal" and str(hs.get("seen_ts")).startswith("2026-10-12 09:30")
+    assert P == {"c1_rejected": True, "c2_dominant": True, "c2_closes_beyond_push_body": True}
+    assert (c930.get("choch") or {}).get("done") is True                                     # the 5M change of character is there
+    assert c930.get("confirm_wait") == "low_volume" and "nothing to compare" in by["09:30"]["checklist"]["⑥"][1]
+    assert str(c930.get("visit_end")).startswith("2026-10-12 09:30")
+    assert float(m15["close"].iloc[int(by["09:30"]["bar"])]) < ZONE[0]   # the failed commitment closed below the zone
+    r9 = V.decide(int(by["09:15"]["bar"]) - 1)                           # 9 Oct 15:00: the earlier visit's failed commitment
+    c9 = r9["commit"] or {}
+    assert (c9.get("handover_state") or {}).get("form") == "sharp_reversal" and r9["decision"] != "setup"
+    assert float(m15["close"].iloc[int(r9["bar"])]) < ZONE[0]
     later = [r for r in rows if r["ts"][11:16] > "09:30" and (r["checklist"].get("③") or [None])[0]]
     assert all(((r.get("commit") or {}).get("confirm_wait") == "no_visit") for r in later), [(r["ts"], r["checklist"]["⑥"]) for r in later]
-    pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — the 09:30 dominant red candle does not swallow the 09:15 "
-                 f"push by structure ({sr.get('why')}); its close below the zone "
-                 "ends the visit (Abhi Z-1v-a) — OPEN_QUESTIONS Z-1z-a")
+    pytest.xfail("golden 12 Oct bear call NOT produced on 22,543.75–22,621.80 — fast-form handover ✅ + 5M CHoCH ✅ at 09:30, but the 9 Oct "
+                 "15:00 failed commitment closed just outside and ended that visit, so the 12 Oct visit's approach is a gap and its "
+                 "commitment volume has nothing to be compared with (no commitment) — OPEN_QUESTIONS L3-b / L3-c (Abhi batch)")
 
 
 def test_real_oct_1_to_12_lifecycle_of_the_22544_22622_band(real):
@@ -770,11 +783,14 @@ def _tss(n):
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["bear", "bull"])
 def test_in_zone_absorption_is_no_trade(mirror):
+    """The #329 "strengthening" absorption read (what-if, `absorption_rule = strengthening`); the method's sideways-base absorption is
+    tested in tests/test_decision3_zone_answers.py."""
     A, lvl, d = _zone_bars("absorption", mirror)
     t = len(A["close"]) - 1
-    cf = M.confirm(A, 0, t, d, lvl, {**S, "ltf_choch": False})
+    s = {**S, "absorption_rule": "strengthening"}
+    cf = M.confirm(A, 0, t, d, lvl, {**s, "ltf_choch": False})
     assert not cf["ok"] and cf["wait"] == M.C_ABSORB                      # counter side strengthening inside the zone ⇒ no entry
-    z = FL.zone_read(A, _tss(t + 1), 0, t, d, lvl, S)
+    z = FL.zone_read(A, _tss(t + 1), 0, t, d, lvl, s)
     assert z["summary"]["absorption"] is True and z["summary"]["handover"] is False
 
 
@@ -847,7 +863,8 @@ def test_short_fut_history_falls_back_to_raw_per_bar_volume_not_a_data_error():
     last = pd.to_datetime(m15["timestamp"]).dt.normalize().iloc[-1]
     days = sorted(pd.to_datetime(fut["timestamp"]).dt.normalize().unique())
     short = fut[pd.to_datetime(fut["timestamp"]).dt.normalize() >= days[-5]]                    # 4 earlier sessions only
-    sv = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False}   # fixture's setup level (old pins)
+    sv = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False,   # fixture's setup level (old pins)
+          "volume_baseline": "slot"}                                       # the Z-1h fallback exists only with the slot baseline (what-if)
     V = E3.V22(m15, s=sv, ltf=ltf, futures=short)
     ts = V.levels.ts
     bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == last]
@@ -1013,7 +1030,8 @@ def test_end_to_end_default_path_flipped_zone_handover_choch_commitment_with_vol
     assert r["decision"] == "setup" and r["checklist"]["⑥"][0] is True and r["conviction"] in ("A", "B")
     cm = r["commit"]
     assert cm["handover_present"] is True and cm["arm_bar"] == 735 and cm["choch"]["done"] and cm["vol_mult"] > 1.0
-    assert r["volume_measure"].startswith("slot-normalised") and not cm.get("data_problem")
+    assert r["volume_measure"].startswith("raw FUT volume per bar") and not cm.get("data_problem")   # method §3: raw bars
+    assert cm["vol_vs"] == "the approach leg and the visit's opposite-side candles" and cm["approach_from"] < cm["visit_start"]
     assert r["zone_read"]["summary"]["handover"] is True and r["checklist"]["G4"][0] is None
     early = V.decide(736)                                                  # inside the visit, handover not yet ⇒ wait (a2 first). Z-1x: the BOS
     # base band is no longer widened, so it is the same zone as the 1H band (lineage) and bars 737–738 open above it (③ gap breakout)
@@ -1021,9 +1039,10 @@ def test_end_to_end_default_path_flipped_zone_handover_choch_commitment_with_vol
 
 
 def test_end_to_end_default_path_no_handover_or_no_fut_is_no_entry():
-    r = _default_case(_NO_HANDOVER).decide(741)                             # same zone, CHoCH + commitment, but no handover
-    assert r["decision"] == "wait" and (r["commit"] or {}).get("handover_present") is False
-    assert "no handover" in r["checklist"]["⑥"][1]
+    r = _default_case(_NO_HANDOVER).decide(741)                             # same zone, CHoCH + commitment, but no handover: the buyers
+    assert r["decision"] == "wait" and (r["commit"] or {}).get("handover_present") is not True   # keep coming in smaller candles and
+    assert M.REASON[M.C_ABSORB] in r["checklist"]["⑥"][1]                  # price stays in the area ⇒ method §3 absorption (no trade)
+    assert r["commit"]["confirm_wait"] == M.C_ABSORB
     nf = _default_case(_HANDOVER, with_fut=False).decide(741)               # FUT missing ⇒ data problem, never a grade-B entry
     assert nf["decision"] == "wait" and "data problem" in nf["checklist"]["⑥"][1]
     lo = _default_case(_HANDOVER, commit_vol=1e5).decide(741)              # commitment without volume ⇒ no entry

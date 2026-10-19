@@ -41,8 +41,8 @@ DEFAULTS = {
     "prior_level_atr_n": 14,                 # Q40: ATR_D = window आधीच्या इतक्या Daily candles चा सरासरी true range
     "level_merge": False,                    # Abhi Z-1u: पट्टे फक्त बांधायचे, merge ने रुंद नाहीत (प्रत्येक timeframe वेगळा). True = जुनं
                                              # merge + widen — फक्त जुने synthetic tests / what-if (dashboard वर नाही)
-    "zone_visit_rule": "close_away",         # Abhi Z-1v: visit संपते = पट्ट्याबाहेर, आली त्या बाजूला close (commitment शिवाय).
-                                             # "touch_window" = जुनं (स्पर्शांचा शेवटचा गट, अंतर ≤ touch_window_bars) — फक्त जुने tests / what-if
+    "zone_visit_rule": "structure",          # method §3 Visit: संपते फक्त रचनेने — area पासून दूर swing, किंवा अपयशी commitment बाहेर close.
+                                             # "close_away" (Z-1v: बाहेर एक close) / "touch_window" = जुनं — फक्त जुने tests / what-if
     "trade_band_max_sigma": None,            # Abhi Z-1x (final): zone रुंदीला आकड्याची मर्यादा नाही — रुंद दिसणारा zone = दोन bases एकत्र ⇒ रचना
                                              # दुरुस्त (Z-1u). फक्त what-if (× σ_1H) — dashboard वर नाही
     "break_rule": "structure",               # Abhi's method §3: broken = close beyond AND a swing formed beyond; sweep = back before any swing
@@ -80,6 +80,13 @@ DEFAULTS = {
                                              #     candles पेक्षा (relative contraction); "strict3" = जुना "शेवटचे 3 सलग लहान" (फक्त what-if)
     "c0_dominance": True,                    # ⑥ c0 (Abhi): commitment candle dominant ⇔ body visit मधल्या प्रत्येक इतर candle पेक्षा मोठी (तुलना,
                                              # आकडा नाही). False = फक्त जुने synthetic fixtures (dominant candle नसलेले) / what-if
+    "fast_form_rule": "push_body",           # method §3 Handover fast form: dominant opposite candle closes beyond the push candle's BODY;
+                                             # "engulf" = जुनं (#329: body झाकते + candle 1 च्या टोकापलीकडे close) — what-if
+    "slow_form_rule": "method",              # method §3 slow form: trend-side bodies ↑, opposite ↓, volume trend-side ला झुकतो; "majority" = जुनं
+    "absorption_rule": "method",             # method §3: opposite side लहान candles मध्ये येत राहते आणि किंमत दूर जात नाही; "strengthening" = जुनं
+    "commit_volume_rule": "approach_and_opposite",   # method §3 Commitment: approach leg + visit मधल्या opposite candles पेक्षा मोठा (push +
+                                             # commitment वगळून); "opposite" = जुनं (#329, opposite नाही ⇒ grade cap B)
+    "volume_baseline": "raw",                # method §3 Volume: raw bars; "slot" = जुनं time-of-day slot baseline (Z-1) — what-if
     "sharp_reversal_handover": True,         # Abhi Z-1z: zone मध्ये push नाकारला + dominant उलट candle ने गिळला = handover (तुलना, आकडा नाही)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
     "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.
@@ -158,8 +165,8 @@ REGISTER = {
     "prior_level_atr_mult": (8.0, "5/8/12", "अंदाज", "Q40: window आधीचे महत्त्वाचे Daily / Weekly levels — किंमतीपासूनचं अंतर (ATR-scaled)"),
     "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
     "level_merge": (False, "False / True (legacy)", "Abhi नियम", "Abhi Z-1u: bands built, never widened; True फक्त जुने tests / what-if"),
-    "zone_visit_rule": ("close_away", "close_away / touch_window (legacy)", "Abhi नियम", "Abhi Z-1v: visit end = close outside the band, "
-                        "away from it, without a commitment; touch_window फक्त जुने tests / what-if"),
+    "zone_visit_rule": ("structure", "structure / close_away / touch_window (legacy)", "Abhi नियम", "Abhi's method §3 Visit: ends only by "
+                        "structure — a swing built away from the area, or a failed commitment closing outside; time never ends it"),
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
     "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
@@ -186,6 +193,12 @@ REGISTER = {
     "power_shift_min": (2, "2/3", "Abhi नियम", "spec ④ किमान 2 (config)"),
     "power_a_rule": ("relative", "relative / strict3", "Abhi नियम", "level bots spec: (a) relative contraction — 'नेमके 3 सलग लहान' ही आपली यांत्रिक आवृत्ती होती"),
     "c0_dominance": (True, "True / False", "Abhi नियम", "Abhi (final): dominant = visit मधल्या प्रत्येक इतर candle पेक्षा मोठी body — तुलना, आकडा नाही"),
+    "fast_form_rule": ("push_body", "push_body / engulf (legacy)", "Abhi नियम", "method §3: closes beyond the push candle's body"),
+    "slow_form_rule": ("method", "method / majority (legacy)", "Abhi नियम", "method §3: trend side grows, opposite shrinks, volume tilts"),
+    "absorption_rule": ("method", "method / strengthening (legacy)", "Abhi नियम", "method §3: opposite side in small candles, price stuck"),
+    "commit_volume_rule": ("approach_and_opposite", "approach_and_opposite / opposite (legacy)", "Abhi नियम",
+                           "method §3: larger than the approach leg and the visit's opposite side; push + commitment excluded"),
+    "volume_baseline": ("raw", "raw / slot (legacy)", "Abhi नियम", "method §3 Volume: raw bars, no time-slot baselines"),
     "sharp_reversal_handover": (True, "—", "Abhi नियम", "Abhi Z-1z: zone मध्ये push नाकारला आणि dominant उलट candle ने लगेच गिळला = handover"),
     "pattern_eq_mr": (0.5, "0.3/0.5/0.75", "अंदाज", "a2: double / triple top-bottom टोकं median range च्या इतक्या आत"),
     "ltf_choch": (True, "True / False (what-if)", "Abhi नियम", "LEVEL_BOTS_CONFIRMATION c1: LTF CHoCH by close आवश्यक; mapping 1H/15M ⇒ 5M, 5M ⇒ 1M (method.LTF_OF); swings = साधे 1-bar pivots (zone_pattern सारखेच)"),

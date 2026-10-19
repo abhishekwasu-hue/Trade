@@ -607,4 +607,16 @@ Implementation per layer: `docs/reports/v22/METHOD_MAP.md`.
 | L2-a | "A swing formed beyond" = a swing of the finest STRUCTURE degree (D1 — Abhi's approved structure degrees are D1 / D2; D0 turns are the "small wiggles inside a leg" of §3, not swings), beyond the area, after the first close beyond (§3 Area lifecycle; any real swing, not only the trend degree) | 2 |
 | L2-b | Reclaim of a broken area mirrors the break: a close back on the role side (outside the band) **and** a swing formed there; a close back inside before that swing is confirmed ends the attempt, as a poke back inside ends the break (§3 Area lifecycle, mirror) | 2 |
 | L2-c | Equal highs / lows (liquidity area) = the later extreme stays within the earlier swing's own area and does not go beyond it (§3 Equal) | 2 |
+| L3-a | Slow form "volume tilts to the trend side" = in the later part of the visit the trend-side candles' volume is above the opposite side's (opposite side gone ⇒ tilted; volume NA ⇒ the candles are read alone and the commitment's volume check reports the gap) (§3 Handover) | 3 |
+| L3-b | A failed commitment that ends the visit = a dominant trade-side candle closing outside on the side price came from WITH the visit's handover present ("the commitment is the dominant candle after the handover"); without a handover it is only a candle that closed outside — the same visit. The visit-ending swing = a swing of the finest structure degree, beyond the area on that side (§3 Visit) | 3 |
+| L3-c | Commitment volume with nothing to compare (the approach was a gap and the visit holds only the push and the commitment) ⇒ no commitment (fail-closed; never an invented pass) (§3 Commitment) — part of the Abhi batch below | 3 |
+| L3-d | Absorption = opposite-side candles in the later part of the visit, each smaller than the largest trend-side candle of the visit, and no later close beyond the earlier part's closes on the trade side (wicks of the arrival candle are the approach, not "moving away") (§3 Absorption) | 3 |
+| L3-e | Approach leg = the candles after the last swing built away from the area (or after the previous visit's end) up to the visit; the swing candle itself ends the leg before (§3 Commitment) | 3 |
+
+**For Abhi — one question, asked together with the layer-1 swing question (two of his statements pull apart):** the 12 Oct golden bear
+call. On the previous session's close, a fast-form handover was seen and that dominant candle (the commitment) failed — volume below the
+approach leg's candles, no LTF CHoCH — and closed just below the area. §3 says "a commitment fails and closes outside" ends the visit, but
+also "candles that close just outside and come back are the same visit". Read the first way (code default), the 12 Oct opening is a new
+visit whose approach is a gap: fast-form handover ✅, LTF CHoCH ✅, dominant commitment ✅, but its volume has nothing to be compared with
+(L3-c) ⇒ no entry. Abhi's golden says bear call. Which reading is his? (No rule changed to fit the case; P7.)
 

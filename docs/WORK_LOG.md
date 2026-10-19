@@ -2768,3 +2768,17 @@ legs owner वि. reader2 gate).
   reading path मधला प्रत्येक आकडा वर्गीकृत (legacy what-if / operational / data-quality / pending + layer).
 - **Golden:** 12 Oct zone — 10-07 broken (close + D1 swing पलीकडे), 10-09 09:15 reclaim, 10-12 sweep; 13 Oct — broken नाही, resistance; 29 Sep — 11:00
   broken, 11:30 flip. Charts trade-data `review/method_layer2/`. Assumptions L2-a / b / c (OPEN_QUESTIONS).
+
+## 2026-10-19 · Method layer 3a: visit, handover forms, absorption, commitment volume, raw volume (branch `claude/method-layer3`)
+
+- **KB आधी:** K4 — visit रचनेने (दूर swing / break / handover नंतरची अपयशी commitment बाहेर close), "at the area" = visit चालू; fast form =
+  push candle च्या body पलीकडे close; slow form = trend बाजू वाढते, उलट लहान, volume trend बाजूला झुकतो; absorption = उलट बाजू लहान candles
+  मध्ये, किंमत दूर जात नाही; commitment volume = approach leg + visit मधली उलट बाजू (push + commitment वगळून); raw volume bars. Method Pack rebuilt.
+- **Code:** `engine._visit_structure` / `_at_area` / `_failed_commit_outside`; `method.sharp_reversal` (`fast_form_rule`), `zone_study`
+  (`slow_form_rule`, `absorption_rule`), `commitment(approach=, exclude=)` (`commit_volume_rule`), `volume_baseline = raw`. जुने नियम
+  what-if switches; legacy visit rule + method volume rule एकत्र ⇒ V22 सुरूच होत नाही (ValueError). Level bots #329 reads वर pinned
+  (METHOD_MAP "Level bots"). Approval caption: Vision status लांब reading ओळींआधी (1024 मर्यादेत गळत नाही).
+- **Golden:** 12 Oct — 09:30 fast-form handover ✅ + 5M CHoCH ✅ + dominant ✅, पण आदल्या सत्राच्या शेवटी अपयशी commitment बाहेर close ⇒ ती
+  visit संपली; 12 Oct ची visit नवी, approach = gap ⇒ volume ला तुलना नाही ⇒ entry नाही (xfail त्या कारणांवर; Abhi batch प्रश्न). 13 Oct —
+  bear call नाही, resistance. 29 Sep — FUT नाही ⇒ entry नाही.
+
