@@ -36,6 +36,17 @@ LEGACY = {                       # used only by a non-default rule / gate (what-
     "flip_pullback_vol_ratio": ("candle_rule = ratio (G4 context)", {"flip.py"}),
     "tl_touch_sigma": ("line_rule = sigma", {"trendline.py"}),
     "tl_min_touches": ("line_rule = sigma", {"trendline.py"}),
+    "evidence_weights": ("verdict_rule = score", {"method.py"}),
+    "conv_a": ("verdict_rule = score", {"method.py"}),
+    "conv_b": ("verdict_rule = score", {"method.py"}),
+    "conv_weak": ("verdict_rule = score", {"method.py"}),
+    # ④ count: decision3 reads it only under verdict_rule = score. bots_common/level_reaction (the level bots — off in one-bot mode, not
+    # rebuilt here: Abhi rebuilds them in ATP) still calls M.power_shift with these defaults; that file is outside this scan.
+    "power_shift_min": ("verdict_rule = score", {"method.py"}),
+    "power_overlap": ("verdict_rule = score", {"method.py"}),
+    "power_fallback_bars": ("verdict_rule = score", {"method.py"}),
+    "range_overlap_min": ("verdict_rule = score (§5.3 range state)", {"method.py"}),
+    "range_state_n": ("verdict_rule = score", {"method.py"}),
     "commit_merge_max": ("registered only (≤ 2 merged is the form list itself); read nowhere", set()),
     "vol_slot_sessions": ("volume_baseline = slot", {"engine.py"}),
     "vol_slot_min_sessions": ("volume_baseline = slot", {"engine.py"}),
@@ -60,11 +71,6 @@ CALIBRATION = {                  # Abhi (layer 1 ✅): a swing's significance is
     "maturity_sigma_d": "assumed on the same σ scale, evidence only — OPEN_QUESTIONS L1-b, for Abhi",
 }
 PENDING = {                      # still a number in the reading path ⇒ removed in the named layer
-    "evidence_weights": 6, "conv_a": 6, "conv_b": 6, "conv_weak": 6,
-    # ④ power shift: its count still DECIDES verdicts through the evidence score (`ev["power_shift"]` ⇒ `conviction` weights ⇒ A / B /
-    # weak / against) until layer 6 removes the score (method §4 / §5: evidence listed, never scored); §5.3 range state = context only
-    # (`range_state_gate` off). Both go with the evidence in layer 6.
-    "power_shift_min": 6, "power_overlap": 6, "power_fallback_bars": 6, "range_overlap_min": 6, "range_state_n": 6,
     # decision3 reads touch_window_bars only behind the legacy visit rules, but facts/dossier `_visits` still counts it (layer 6)
     "touch_window_bars": 6,
 }
@@ -152,6 +158,21 @@ def test_v22_hands_the_calibrated_scale_to_swings2(monkeypatch):
         assert seen[-1] == want
 
 
+def test_layer_six_verdict_is_the_method_no_scores():
+    """Layer 6 (method §4 / §5): enter on the required set; label A = + ≥ 1 confirming piece, B = the required set only; evidence listed,
+    never scored — the score, its weights and the ④ / §5.3 counts are a legacy what-if (verdict_rule = score)."""
+    import inspect
+    from decision3 import engine as E3
+    assert S3.DEFAULTS["verdict_rule"] == "method"
+    src = inspect.getsource(E3.V22._level_eval)
+    i = src.index('if vrule == "score":')
+    for call in ("M.power_shift(", "M.range_state("):
+        assert src.index(call) > i, f"{call} runs outside the legacy score rule"
+    m = src.index('if vrule == "method":')                                # the method branch ends in its own returns, before the score
+    end = src.index("return M_SETUP, chk, extra", m)
+    assert "M.conviction(" not in src[m:end] and src.index("M.conviction(") > end
+    assert src[end:src.index("M.conviction(")].strip().startswith("return M_SETUP, chk, extra")
+
 def test_layer_five_rsi_divergence_is_logic():
     """Layer 5 (method §3 RSI divergence): consecutive swings of one degree, a new price extreme vs an RSI that does not exceed its previous
     extreme (equal counts), RSI at the swing's own span — no bar window, no minimum RSI / price difference, no RSI zones, hidden off."""
@@ -165,3 +186,19 @@ def test_layer_five_rsi_divergence_is_logic():
         assert key not in src, f"{key}: an RSI number in the divergence reading path"
     ev = inspect.getsource(RE.Divergence._eval)
     assert ev.index("div_bar_window") < ev.index("lo, hi = self.win"), "the bar window is compared only behind the legacy switch"
+
+
+def test_layer_six_evidence_list_and_label_text():
+    """The evidence list says the reading (required set) apart from the operational entry hours, absent ≠ NA; the chart / caption text
+    shows the method label with its confirming pieces, never a score."""
+    from decision3 import method as M
+    from decision3 import setup_chart as SC
+    conf = {"volume_growing": None, "rsi_divergence": False, "confluence": True, "correction_line_closed_through": None}
+    el = M.evidence_list({"tl_confluence": False, "fresh": True}, conf, True, in_hours=False)
+    assert el["required"] == "present" and el["entry_hours"].startswith("outside")
+    assert el["confirming"] == {"volume_growing": "NA", "rsi_divergence": "absent", "confluence": "present",
+                                "correction_line_closed_through": "NA"} and el["context"]["tl_confluence"] == "absent"
+    assert M.method_label(conf) == "A" and M.method_label({**conf, "confluence": False}) == "B"
+    assert SC.label_text({"conviction": "A", "confirming": conf, "verdict_rule": "method"}) == "Label A (confirming: confluence)"
+    assert SC.label_text({"conviction": "B", "conv_score": 0.5, "verdict_rule": "score"}) == "Conviction B (score 0.5)"
+

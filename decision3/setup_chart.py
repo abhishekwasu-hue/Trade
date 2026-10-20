@@ -511,7 +511,15 @@ def footer_lines(r, st, status, vline):
             f"{cm.get('grade')}" + (f"   (7) R:R {rk.get('rr')} · entry {fmt(rk.get('entry'))} / SL {fmt(rk.get('sl'))} / target "
                                    f"{fmt(rk.get('target'))}" if rk else ""),       # legacy rr_step फक्त (Abhi 13 Oct)
             f"(8) {vline}",
-            f"Conviction {r['conviction']} (score {r.get('conv_score')}) · missing: {', '.join(r.get('missing') or []) or 'none'} · {status}"]
+            f"{label_text(r)} · missing: {', '.join(r.get('missing') or []) or 'none'} · {status}"]
+
+
+def label_text(r):
+    """Method §5 (default): "Label A (confirming: …)" — never a score; legacy `verdict_rule = score`: the old "Conviction X (score s)"."""
+    if r.get("verdict_rule", "method") == "score":
+        return f"Conviction {r['conviction']} (score {r.get('conv_score')})"
+    got = [k for k, v in (r.get("confirming") or {}).items() if v is True]
+    return f"Label {r['conviction'] or 'none'} (confirming: {', '.join(got) or 'none'})"
 
 
 def headline(r, st, vst):
@@ -543,8 +551,9 @@ def caption(D, r, st, short, longst, head="V22 setup", tail="Reading review only
         tail,
         "Engine detail:",
         f"Daily {st.trend} {phase_en(st)}; protected {fmt(getattr(st.protected, 'price', None))}; Weekly {r['weekly_trend']}. "
-        f"Trend notes: {'; '.join(notes) if notes else 'none'}.",
-        f"Trend cap {r['trend_cap'] or 'none'} · conviction {r['conviction']} (score {r.get('conv_score')}; missing "
+        f"Trend notes{'' if r.get('verdict_rule', 'method') == 'score' else ' (context only, never cap the label)'}: "
+        f"{'; '.join(notes) if notes else 'none'}.",
+        f"Trend cap {r['trend_cap'] or 'none'} · {label_text(r)} (missing "
         f"{', '.join(r.get('missing') or []) or 'none'}) · impulse mature: {'YES' if r['mature'] else 'no'} (Q44 target "
         f"{' / '.join(fmt(t) for t in r['maturity_targets']) or 'none'})",
         f"{LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} ({'+'.join(lv['births'])}, sweeps {lv.get('sweeps')}) · K leg {K.get('legs')} · "
