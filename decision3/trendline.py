@@ -13,7 +13,8 @@
   • दोन reactions मधे कोणताही close रेघेपलीकडे नाही; त्यानंतर रेघ तुटते फक्त close पलीकडे + पलीकडे swing ने (`broken_by`, K6.5) —
     परत आलेला close = throw-over, रेघ उभी.
   • K रेघ: trigger = bar t (commitment candle) चा close-through; आधीच गेलेली रेघ ⇒ `broken_before`, trigger नाही.
-  • Confluence = रेघ area च्या पट्ट्यातून ⇒ तोच area, "tl" label (नवा / अरुंद पट्टा नाही).
+  • Confluence = रेघ area च्या पट्ट्यातून, किंवा area मधून उठलेली reaction रेघेजवळ वळली (`reaction_touch`, Abhi 4 B) ⇒ तोच area,
+    "tl" label + "confluence: line" (नवा / अरुंद पट्टा नाही).
 """
 import numpy as np
 
@@ -167,7 +168,7 @@ def reaction_touch(V, t, d, ln):
     """Abhi (layer 4 B): a reaction that rises out of (falls out of) an area and turns at the line is a touch of that line. The turn = a
     swing of the structure (finest degree, confirmed by t ⇒ the move then went away from the line); it counts when it is the closest
     approach to the line since the previous touch (no other turn since then came closer) and no candle closes beyond the line.
-    "The previous touch" = the last time a candle reached the line (its second anchor, or a later wick touch); otherwise every lower turn
+    "The previous touch" = the last turn that reached the line (its second anchor, or a later swing whose wick reached it); otherwise every lower turn
     would count as a touch and "closest" would never exclude anything (OPEN_QUESTIONS L4-f). Only the latest turn is read (an older
     one has been left behind). Returns {bar, price, leg_from} or None; `areas_out_of` decides which areas the reaction rose out of."""
     if ln is None or d not in (UP, DOWN):
@@ -191,8 +192,8 @@ def reaction_touch(V, t, d, ln):
     prev = max((q.bar for q in turns if gap(q) <= 0), default=b2)          # the last time a candle reached the line
     if not all(gap(last) < gap(q) for q in turns if prev < q.bar < last.bar):   # not the closest approach since then
         return None
-    if any((float(A["close"][j]) - line(j)) * side > 0 for j in range(prev + 1, last.bar + 1)):   # a close beyond the line
-        return None
+    if any((float(A["close"][j]) - line(j)) * side > 0 for j in range(prev + 1, t + 1)):   # a close beyond the line (also after the
+        return None                                                        # turn: price has gone through, the meeting is over)
     start = max((q.bar for q in known if q.kind != kind and q.bar < last.bar), default=prev)
     return {"bar": int(last.bar), "price": float(last.price), "leg_from": int(start)}
 
@@ -224,8 +225,8 @@ def confluence_areas(V, t, d, cands):
     cands = ② चे active levels (`Levels.active`, तोच जवळचा-N संच — वेगळी अंतर-मर्यादा नाही); area किंमतीच्या चुकीच्या बाजूला ⇒ नाही. रेघ फक्त t ला माहीत swings वरून (lookahead नाही); स्पर्श < tl_min_touches ⇒
     काहीच नाही. रेघ एकटी area नाही (spec ②: level जन्म a–d; OPEN_QUESTIONS). रिटर्न [area dict] (births + "tl", `tl` = रेघ;
     "tl" grade वाढवत नाही — parent level चा ★ तसाच, confluence फक्त पुरावा-नोंद, OPEN_QUESTIONS D12-6).
-    (वरचं = line_rule "sigma". Logic: रेघ t ला area च्या पट्ट्यातून जाते ⇒ तोच area, births + "tl", confluence_line — overlap / नवा
-    पट्टा नाही; engine.step2 तो area जागीच बदलतो.)"""
+    (वरचं = line_rule "sigma". Logic: रेघ t ला area च्या पट्ट्यातून जाते, किंवा area मधून उठलेली reaction रेघेजवळ वळली (Abhi 4 B) ⇒
+    तोच area, births + "tl", confluence_line, "confluence: line" — overlap / नवा पट्टा नाही; engine.step2 तो area जागीच बदलतो.)"""
     ln = swing_line(V, t, d)
     if ln is not None and _logic(V.s):                                     # method §3: where a line and an area meet = the strongest
         v = ln["value_t"]                                                  # location — the area itself, labelled (never a new or
