@@ -150,7 +150,7 @@ def test_confirm_requires_all_three_and_reports_each_missing_piece(mirror):
     ok = M.confirm(A, arm, t, d, lvl, s, ltf=L, ltf_times=times)
     assert ok["ok"] and ok["c0"] and ok["c1"] and ok["wait"] is None
     assert ok["lines"][0].startswith("inside supply:" if mirror else "inside demand:")
-    assert "largest of the visit · volume above the visit's opposite-side candles" in ok["lines"][1] and ok["lines"][2].startswith("1M CHoCH:")
+    assert "largest of the visit · volume above the average of the visit's opposite-side candles" in ok["lines"][1] and ok["lines"][2].startswith("1M CHoCH:")
     miss = M.confirm(A, arm, t, d, lvl, s, ltf=None, ltf_times=times)
     assert not miss["ok"] and miss["wait"] == M.C_LTF_MISSING and miss["c0"]
     assert M.confirm(A, arm, t, d, lvl, s, ltf=_ltf(C1.FALL, mirror), ltf_times=times)["wait"] == M.C_LTF_AGAINST
