@@ -1065,7 +1065,7 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
 - **खरे swings, एकाच degree चे:** लागोपाठचे swings (swings2 D1 / D2 = Abhi चं calibration, layer 1 ✅). दोन swings लागोपाठचे pushes:
   त्यांच्या मधे त्याहून टोकाची किंमत नाही. वेगवेगळ्या degree चे swings कधीच जोडायचे नाहीत.
 - **कोणती degree (Abhi, L5-a):** zone मध्ये येणाऱ्या चालीचे लागोपाठचे pushes = zone च्या रचनेच्या **एक degree खालचे** swings (zone मधल्या
-  pullback चीच degree; 1H zone (D2) ⇒ D1; Daily zone (D3) ⇒ D2). हाच पुरावा. Zone च्या स्वतःच्या degree ची divergence असेल तर तीही नोंदवायची (माहिती).
+  pullback चीच degree; 1H zone (D2) ⇒ D1; Daily zone (D3) ⇒ D2 — Daily ची जोडणी गृहीत). हाच पुरावा. Zone च्या स्वतःच्या degree ची divergence असेल तर तीही नोंदवायची (माहिती).
 - **Bearish:** price **नवा उंच high** करते (आधीच्या high पलीकडे — बरोबर high नवा high नाही) आणि RSI आधीच्या high च्या RSI पलीकडे
   जात नाही — **बरोबर RSI सुद्धा divergence** [Abhi].
 - **Bullish (आरसा):** price नवा खालचा low आणि RSI आधीच्या low च्या RSI खाली जात नाही (बरोबर RSI सुद्धा).
