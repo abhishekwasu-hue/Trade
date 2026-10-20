@@ -2896,3 +2896,10 @@ legs owner वि. reader2 gate).
 - Guard: नवा CALIBRATION वर्ग (level / tl / pullback degree, daily N, k reset, Daily RANGE / maturity σ — L1-b); layer 1 PENDING रिकामं.
 - KB K1 + Pack 1, CHART_READER_METHOD (Calibration), METHOD_MAP (Swing / Degree 1 ✅), NUMBERS_INVENTORY C-1 / C-2 / C-21 resolved.
 
+## 2026-10-20 · Abhi on L1-b: Daily structure by C-13 logic (only the swings2 scale stays a calibration)
+
+- Equal = नंतरचा टोक आधीच्या swing candle च्या area (wick ते body) पर्यंत, पलीकडे नाही (RANGE कडा, Q27); LH / HL = आधीच्या area पर्यंत
+  पोहोचत नाही; maturity "near" = leg चा टोक target swing च्या area पर्यंत पोहोचला; origin risk = protected origin च्या area पर्यंत; sharp
+  zone = area स्वतः; K reset = जुन्या टोकापलीकडे (σ नाही). `maturity_sigma_d`, `k_reset_sigma` काढले; `range_eq_sigma_d` फक्त legacy /
+  display. `daily_pivot_n` = L1-c (Abhi ला प्रश्न; default N = 2).
+
