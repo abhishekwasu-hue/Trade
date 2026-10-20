@@ -25,10 +25,23 @@ def test_checksum_verifies_a_copy_and_changes_with_content(tmp_path):
     assert RM.measure(str(a), "missing") is None
 
 
-def test_unclassified_folder_fails_the_run(tmp_path, monkeypatch):
-    _tree(str(tmp_path), ["upstox/1.csv", "review/swings2/s.json", "review/new_run/c.png", "brand_new/z.csv"])
+def test_checksum_is_the_documented_one_and_a_rename_changes_it(tmp_path):
+    """Documented: sha256 of the sorted `path<TAB>sha256(file)\\n` lines, paths relative to the root (os.walk order would differ)."""
+    import hashlib
+    _tree(str(tmp_path), ["x/z.csv", "x/1.csv", "x/sub/2.csv"])
+    sha = lambda p: hashlib.sha256((tmp_path / p).read_bytes()).hexdigest()           # noqa: E731
+    lines = "".join(sorted(f"{p}\t{sha(p)}\n" for p in ("x/z.csv", "x/1.csv", "x/sub/2.csv")))
+    assert RM.measure(str(tmp_path), "x")[2] == hashlib.sha256(lines.encode()).hexdigest()
+    before = RM.measure(str(tmp_path), "x")[2]
+    (tmp_path / "x" / "1.csv").rename(tmp_path / "x" / "one.csv")
+    assert RM.measure(str(tmp_path), "x")[2] != before
+
+
+def test_unclassified_folder_or_loose_file_fails_the_run(tmp_path, monkeypatch):
+    _tree(str(tmp_path), ["upstox/1.csv", "review/swings2/s.json", "review/new_run/c.png", "brand_new/z.csv", "NOTES.md",
+                          "review/loose.png", "vps_export/vision/v.json"])
     monkeypatch.setattr(RM, "ITEMS", [("data", "upstox", "Candle history", True, ""), ("data", "review/swings2", "Abhi", True, "")])
-    assert RM.unclassified(str(tmp_path)) == ["brand_new", "review/new_run"]
+    assert RM.unclassified(str(tmp_path)) == ["NOTES.md", "brand_new", "review/loose.png", "review/new_run"]   # vps_export = optional
     with pytest.raises(SystemExit):
         RM.build(str(tmp_path))
 
@@ -38,6 +51,8 @@ def test_missing_moving_item_fails_and_output_has_no_data(tmp_path, monkeypatch)
     monkeypatch.setattr(RM, "ITEMS", [("data", "upstox", "Candle history", True, "spot")])
     text = RM.build(str(tmp_path))
     assert "| `upstox` | trade-data | 1 |" in text and "upstox/1.csv" not in text
+    _tree(str(tmp_path), ["vps_export/vision/v.json"])                       # an export Abhi made ⇒ summed like the rest
+    assert "| `vps_export` | trade-data | 1 |" in RM.build(str(tmp_path))
     monkeypatch.setattr(RM, "ITEMS", [("data", "upstox", "C", True, ""), ("data", "gone", "C", True, "")])
     with pytest.raises(SystemExit):
         RM.build(str(tmp_path))

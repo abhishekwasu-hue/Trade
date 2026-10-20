@@ -16,6 +16,8 @@ Owner decision (Abhi): Trade will be archived; ATP ports every **stable** reader
   - publish the matching KB + Method Pack text, so ATP copies the same version.
 - **A stable layer is frozen:** bug fixes only. Every fix gets a new tag (`…-v2`, `…-v3`) and its own row, so that ATP re-ports it.
 - **No ✅, no tag.** A report, a merge, or a green CI never makes a layer stable.
+- **Owner rule:** porting a layer to ATP never removes or weakens it here. Trade keeps running exactly as now until Abhi himself says
+  otherwise (see SUNSET.md). No automation, condition or session switches anything off.
 
 ## Register
 
