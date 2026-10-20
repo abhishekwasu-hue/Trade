@@ -475,7 +475,12 @@ class V22:
 
     def step2(self, t, trend, band=None):
         act = self.levels.active(t, trend, band)
-        act = act + self.tl_areas(t, trend, act)
+        tl = self.tl_areas(t, trend, act)
+        if self.s.get("line_rule", "logic") == "logic":                    # method §3: confluence labels the area itself (same band)
+            lab = {x["id"]: x for x in tl}
+            act = [lab.get(x["id"], x) for x in act]
+        else:
+            act = act + tl
         if not act:
             return False, "trade-बाजूचा जिवंत 1H level नाही", act
         a = act[0]
@@ -541,8 +546,11 @@ class V22:
             g4 = self.flip_context(t, lvl)                                # Abhi Z-1d: context only — never a gate
             chk["G4"] = [None, g4["why"]]
         tl = TL.k_line(self, t, d, k)
-        chk["⑤"] = [None, "K ची आतली रेघ नाही (< 2 स्पर्श)"] if tl is None else \
-            [tl["broken"], f"K रेघ ({tl['touches']} स्पर्श) {'close ने तुटली ⇒ grade +' if tl['broken'] else 'अजून अखंड'}"]
+        chk["⑤"] = [None, "K ची आतली रेघ नाही (K च्या दिशेने दोन वेगळे reactions नाहीत)" if self.s.get("line_rule", "logic") == "logic"
+                    else "K ची आतली रेघ नाही (< 2 स्पर्श)"] if tl is None else \
+            [tl["broken"], f"K रेघ ({tl['touches']} स्पर्श) " + ("close ने तुटली ⇒ grade +" if tl["broken"] else
+                           f"आधीच तुटली ({str(pd.Timestamp(self._ts[tl['broken_before']]))[:16]}) — commitment candle ने नाही ⇒ trigger नाही"
+                           if tl.get("broken_before") is not None else "अजून अखंड")]
         ok4, n4, items = M.power_shift(A, t, d, k, self.s)
         chk["④"] = [ok4, f"power shift {n4}/4 ({', '.join(x for x in ('a_shrinking', 'b_overlap', 'c_no_new_extreme_or_sweep', 'd_rejection_wick') if items[x]) or '—'})"]
         rng = M.range_state(A, t, self.s) and not M.range_broken_by(A, t, d, self.s)   # Q24: पट्ट्याबाहेर close ⇒ range संपली

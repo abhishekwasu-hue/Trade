@@ -32,7 +32,7 @@ Owner decision (Abhi): Trade will be archived only on Abhi's own word; ATP ports
 | 1 | Swings / structure | Question pack sent to Abhi (trade-data `review/method_layer1/`): 12 cases, logic-only swings vs his approved swings. His per-case pick becomes the definition. |
 | 2 | Areas + lifecycle | Merged (#332) and reported with charts. Waiting for Abhi's ✅. |
 | 3 | Visit, zone study, commitment, LTF | Merged (#331, #333, #334). Abhi's L3-c correction merged (#335): the approach leg crosses gaps; on real volume there is no 12 Oct bear call. Waiting for ✅ after that re-run report. |
-| 4 | Lines + confluence | PR #336 (logic lines, candle touch, break = close + swing beyond, confluence labels the area). |
+| 4 | Lines + confluence | Merged (#336): logic lines, candle touch, break = close + swing beyond, confluence labels the area. One question to Abhi (trade-data `review/method_layer4/`: 12 Oct line vs area). Waiting for ✅. |
 | 5 | RSI | Not started. |
 | 6 | Output (charts, dossier, display finder) | Not started. |
 
