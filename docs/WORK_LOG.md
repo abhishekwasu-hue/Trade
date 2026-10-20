@@ -2845,3 +2845,12 @@ legs owner वि. reader2 gate).
     - the GitHub Actions workflows (spot-history feed, EOD, token check, run_algo) and their secrets (names only);
     - credential stores outside `.env`;
     - entries off via the dashboard setting, with the bots' cron lines kept until flat.
+
+## 2026-10-20 · Abhi on layer 4: B — reaction-touch = confluence: line (branch `claude/method-layer4-touch`)
+
+- **Abhi (B):** area मधून उठलेली reaction रेषेजवळ वळली (आधीच्या touch नंतर सगळ्यात जवळ, मधे close पलीकडे नाही, नंतर दूर) ⇒ touch;
+  area आणि रेषा तिथे भेटतात ⇒ "confluence: line".
+- **Code:** `trendline.reaction_touch` + `areas_out_of`; `confluence_areas` (logic) = band मधून रेषा **किंवा** reaction-touch; label
+  `confluence_label` च्या शेवटी "line" (chart captions तेच दाखवतात). Assumption L4-f: "आधीचा touch" = candle ने रेषा गाठली ती वेळ.
+- **Golden (real):** 12 Oct 09:30 — 09:15 चं वळण (22,651; रेषा 22,654) ⇒ 1H supply 22,544–22,622 = "confluence: line" ✅ (test).
+

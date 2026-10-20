@@ -163,6 +163,61 @@ def swing_line(V, t, d):
     return None
 
 
+def reaction_touch(V, t, d, ln):
+    """Abhi (layer 4 B): a reaction that rises out of (falls out of) an area and turns at the line is a touch of that line. The turn = a
+    swing of the structure (finest degree, confirmed by t ⇒ the move then went away from the line); it counts when it is the closest
+    approach to the line since the previous touch (no other turn since then came closer) and no candle closes beyond the line.
+    "The previous touch" = the last time a candle reached the line (its second anchor, or a later wick touch); otherwise every lower turn
+    would count as a touch and "closest" would never exclude anything (OPEN_QUESTIONS L4-f). Only the latest turn is read (an older
+    one has been left behind). Returns {bar, price, leg_from} or None; `areas_out_of` decides which areas the reaction rose out of."""
+    if ln is None or d not in (UP, DOWN):
+        return None
+    lv = V.levels
+    A = lv.A
+    kind = "H" if d == DOWN else "L"
+    side = 1 if d == DOWN else -1                                          # beyond the line = above (DOWN, a line of highs) / below
+    (b1, y1), (b2, _), sl = ln["p1"], ln["p2"], ln["slope"]
+
+    def line(b):
+        return y1 + sl * (b - b1)
+
+    def gap(p):                                                            # ≥ 0: the turn stays on the line's side
+        return (line(p.bar) - float(p.price)) * side
+    known = [p for p in getattr(lv, "_known0", []) if p.confirm_bar <= t]
+    turns = sorted((p for p in known if p.kind == kind and b2 < p.bar <= t), key=lambda p: p.bar)
+    if not turns or gap(turns[-1]) <= 0:                                   # no turn yet, or the latest one is a candle touch itself
+        return None
+    last = turns[-1]
+    prev = max((q.bar for q in turns if gap(q) <= 0), default=b2)          # the last time a candle reached the line
+    if not all(gap(last) < gap(q) for q in turns if prev < q.bar < last.bar):   # not the closest approach since then
+        return None
+    if any((float(A["close"][j]) - line(j)) * side > 0 for j in range(prev + 1, last.bar + 1)):   # a close beyond the line
+        return None
+    start = max((q.bar for q in known if q.kind != kind and q.bar < last.bar), default=prev)
+    return {"bar": int(last.bar), "price": float(last.price), "leg_from": int(start)}
+
+
+def areas_out_of(V, rt, d, cands):
+    """The areas a reaction-touch rose out of (fell out of): some candle of the reaction leg was inside the area and the turn is beyond the
+    area's line-side edge (above it for a line of highs)."""
+    if rt is None:
+        return []
+    A = V.levels.A
+    out = []
+    for x in cands:
+        lo, hi = float(x["lo"]), float(x["hi"])
+        inside = any(A["low"][j] <= hi and A["high"][j] >= lo for j in range(rt["leg_from"], rt["bar"] + 1))
+        if inside and ((rt["price"] > hi) if d == DOWN else (rt["price"] < lo)):
+            out.append(x)
+    return out
+
+
+def _labelled(x, ln, rt=None):
+    lab = x.get("confluence_label")
+    return {**x, "births": list(x["births"]) + ["tl"], "tl": ln, "confluence_line": True, "line_touch": rt,
+            "confluence_label": (lab + "; line") if lab else "confluence: line"}
+
+
 def confluence_areas(V, t, d, cands):
     """Abhi (12 Oct): तिरकी रेघ + horizontal trade-बाजूचा level ⇒ confluence area = दोघांच्या पट्ट्यांचा overlap (रेघेचा पट्टा = t ला
     रेघेची किंमत ± max(σ_1H × tl_touch_sigma, अर्धी किमान level रुंदी); overlap किमान level रुंदीपेक्षा अरुंद ⇒ मध्याभोवती किमान रुंदी).
@@ -174,11 +229,10 @@ def confluence_areas(V, t, d, cands):
     ln = swing_line(V, t, d)
     if ln is not None and _logic(V.s):                                     # method §3: where a line and an area meet = the strongest
         v = ln["value_t"]                                                  # location — the area itself, labelled (never a new or
-        out = []                                                           # narrowed band)
-        for x in cands:
-            if float(x["lo"]) <= v <= float(x["hi"]):
-                out.append({**x, "births": list(x["births"]) + ["tl"], "tl": ln, "confluence_line": True})
-        return out
+        rt = reaction_touch(V, t, d, ln)                                   # narrowed band): the line passes through the area, or a
+        out_of = {x["id"] for x in areas_out_of(V, rt, d, cands)}           # reaction rose out of it and turned at the line (Abhi, 4 B)
+        return [_labelled(x, ln, rt if x["id"] in out_of else None) for x in cands
+                if float(x["lo"]) <= v <= float(x["hi"]) or x["id"] in out_of]
     if ln is None or ln["touches"] < int(V.s["tl_min_touches"]):
         return []
     lv = V.levels

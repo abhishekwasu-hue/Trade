@@ -106,3 +106,50 @@ def test_broken_by_names_the_close_that_began_the_excursion_the_swing_confirmed(
         piv = [NS(kind="H" if side > 0 else "L", price=f(103.0), bar=4)]
         assert TL.broken_by(A, piv, piv[0].kind, lambda b: 100.0, side, 0, 5) == 3
         assert TL.broken_by(A, [], piv[0].kind, lambda b: 100.0, side, 0, 5) is None
+
+
+def _rt_V(highs, pivots, mirror):
+    """A line of highs 120 → 110 (bars 0 → 10, −1 / bar); closes 100. Mirror: a line of lows (200 − x)."""
+    f = (lambda x: 200.0 - x) if mirror else (lambda x: float(x))
+    n = 20
+    c = np.full(n, f(100.0))
+    hi = np.array([f(h) for h in highs]) if not mirror else np.full(n, f(100.5))
+    lo = np.full(n, f(99.5)) if not mirror else np.array([f(h) for h in highs])
+    A = {"open": c.copy(), "close": c.copy(), "high": np.maximum(hi, c) if not mirror else np.full(n, f(99.5)),
+         "low": np.minimum(lo, c) if mirror else np.full(n, f(99.5))}
+    if mirror:
+        A["high"] = np.full(n, 100.5)
+    lv = NS(A=A, _known0=[NS(kind=("L" if k == "H" else "H") if mirror else k, price=f(p), bar=b, confirm_bar=cb) for k, p, b, cb in pivots])
+    ln = {"p1": [0, f(120.0)], "p2": [10, f(110.0)], "slope": -1.0 if not mirror else 1.0}
+    return NS(levels=lv), ln, f
+
+
+def test_a_reaction_rising_out_of_an_area_and_turning_at_the_line_is_a_touch():
+    """Abhi (layer 4 B): the reaction rises out of the area (98–102), turns at the line short of it — the closest approach since the
+    previous touch, no close beyond — and goes away (the swing is confirmed) ⇒ a touch; that area is labelled "confluence: line".
+    An earlier closer turn, a close beyond, a later turn, or a turn that never left the area ⇒ no reaction touch. Mirror."""
+    for mirror in (False, True):
+        d = TL.UP if mirror else TL.DOWN
+        highs = [100.5] * 20
+        highs[14] = 104.0                                                   # line at bar 14 = 106 ⇒ turns 2 short of it
+        piv = [("L", 99.0, 12, 13), ("H", 104.0, 14, 16)]
+        V, ln, f = _rt_V(highs, piv, mirror)
+        area = {"id": 7, "lo": min(f(98.0), f(102.0)), "hi": max(f(98.0), f(102.0)), "births": ["a:D2"]}
+        far = {**area, "id": 8, "lo": min(f(90.0), f(94.0)), "hi": max(f(90.0), f(94.0))}
+        rt = TL.reaction_touch(V, 17, d, ln)
+        assert rt == {"bar": 14, "price": f(104.0), "leg_from": 12}
+        assert [x["id"] for x in TL.areas_out_of(V, rt, d, [area, far])] == [7]
+        assert TL._labelled(area, ln, rt)["confluence_label"] == "confluence: line"
+        assert TL._labelled({**area, "confluence_label": "confluence: Daily 1–2"}, ln, rt)["confluence_label"] == "confluence: Daily 1–2; line"
+        assert TL.reaction_touch(V, 15, d, ln) is None                      # not yet confirmed (the move has not gone away)
+        h2 = list(highs); h2[12] = 105.0                                    # an earlier turn came closer (line 108 at bar 12 ⇒ 3 short)
+        V2, ln2, _ = _rt_V(h2, [("H", 107.5, 11, 12), ("L", 99.0, 12, 13), ("H", 104.0, 14, 16)], mirror)
+        assert TL.reaction_touch(V2, 17, d, ln2) is None                    # 107.5 at bar 11 (line 109) was 1.5 short — closer
+        V3, ln3, _ = _rt_V(highs, piv, mirror)
+        V3.levels.A["close"][13] = f(108.0)                                 # a close beyond the line (107 at bar 13)
+        assert TL.reaction_touch(V3, 17, d, ln3) is None
+        V4, ln4, _ = _rt_V(highs, piv + [("H", 101.0, 17, 18)], mirror)    # a later turn ⇒ the touch has been left behind
+        assert TL.reaction_touch(V4, 18, d, ln4) is None
+        h5 = list(highs); h5[14] = 101.5                                    # the turn stays inside the area ⇒ it never rose out of it
+        V5, ln5, _ = _rt_V(h5, [("L", 99.0, 12, 13), ("H", 101.5, 14, 16)], mirror)
+        assert TL.areas_out_of(V5, TL.reaction_touch(V5, 17, d, ln5), d, [area]) == []

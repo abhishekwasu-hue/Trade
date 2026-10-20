@@ -1195,3 +1195,22 @@ def test_band_flip_facts_flip_bar_is_never_also_the_dead_bar():
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
     f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
     assert f["flipped_at"]["bar"] == 44 and f["flip_state"] == FL.BROKEN and f["dead_at"] is None
+
+
+def test_real_12_oct_third_touch_reads_as_confluence_line(real):
+    """Abhi (layer 4 B, golden third-touch case): on 12 Oct the reaction rose out of the 1H supply and turned at the descending line
+    short of it at 09:15 — the closest approach since the line's previous touch, no close beyond, then away. That is a touch; the area
+    and the line meet there ⇒ the supply is labelled "confluence: line" (the same band, never a new one)."""
+    from decision3 import trendline as TL
+    m15, ltf, fut, V = real
+    ix = _day_bars(V, "2026-10-12")
+    lvl = _zone_level(V, ix[0])
+    t = ix[1]                                                              # 09:30 — the 09:15 turn is a confirmed swing by now
+    _, _, act = V.step2(t, "DOWN")
+    got = next(x for x in act if x["id"] == lvl["id"])
+    assert got.get("confluence_line") is True and got["confluence_label"].endswith("line") and "tl" in got["births"]
+    assert (got["lo"], got["hi"]) == (lvl["lo"], lvl["hi"])                # the area itself, never a new band
+    rt = got["line_touch"]
+    assert str(V.levels.ts.iloc[rt["bar"]])[:16] == "2026-10-12 09:15" and rt["price"] > lvl["hi"]
+    ln = TL.swing_line(V, t, M.DOWN)
+    assert rt["price"] < ln["p1"][1] + ln["slope"] * (rt["bar"] - ln["p1"][0])   # it turned short of the line: a reaction, not a wick touch
