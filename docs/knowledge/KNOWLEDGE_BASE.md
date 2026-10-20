@@ -769,11 +769,13 @@ completed pattern allows, the count is wrong.
 
 - **Trendline** = a line through the structure's own swings (lows in an uptrend, highs in a downtrend); **channel** = the parallel line
   through the most extreme opposite swing between the anchors.
-- **A line is drawn from two separate reactions [Abhi, method §3]:** two swings of the structure, and price left the line between them
-  (a swing of the opposite kind lies between them). A later swing **touches** the line when its candle's wick reaches the line while
-  its body stays on the line's side — a comparison with the candle itself, never a tolerance. The **third touch is the trade location**
-  (where the line acts as support / resistance) — entry there only with handover (section 5) + a commitment candle (section 6); the
-  third touch alone is never an entry. The line exists only once its second swing is confirmed (no look-ahead).
+- **A trendline is drawn from 2 touches [Abhi, TA3] — two separate reactions [method §3]:** two swings of the structure, and price
+  left the line between them (a swing of the opposite kind lies between them). A later swing **touches** the line when its candle's
+  wick reaches the line while its body stays on the line's side — a comparison with the candle itself, never a tolerance. The
+  **projected 3rd touch is the trade location** (where the line acts as support / resistance) — entry there only with handover
+  (section 5) + a commitment candle (section 6); the 3rd touch alone is never an entry. A line that holds its 3rd touch is
+  **"established"** (evidence +), not a different trade rule and never a minimum for drawing the line. The line exists only once its
+  second swing is confirmed (no look-ahead).
 - Validity: anchors on **wicks**, decisions on **closes**; no candle closes through the line between the two reactions (a wick that
   pokes past is a touch or a sweep). A line is valid only when it follows the structure's own swings. Never mix bodies at one anchor
   and wicks at another; never redraw the line every bar (curve-fitting).
@@ -1626,7 +1628,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 - Never call the first CHoCH a reversal (wait for the LH / HL); never treat the 09:15 candles as clean structure; never chase a gap open
   (wait for the first pullback).
 - Never use Fibonacci alone as an area; never decide from a pattern name alone; never assume an X ended the correction.
-- Never check only horizontals and forget trendlines / channels — run the full area list every time (the 7 Oct mistake).
+- Never check only horizontals and forget trendlines / channels — run the full area list every time.
 - Never treat a pullback as a pullback after acceptance beyond the impulse origin (> 100 %).
 
 </details>
