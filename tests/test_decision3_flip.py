@@ -826,7 +826,9 @@ def test_range_state_is_context_only_never_an_entry_gate(abc, monkeypatch):
     """Abhi Z-1j: overlapping / sideways candles inside the zone are the handover study, not a blocker — §5.3 range state is reported as
     a context fact and never changes the decision (the old gate only with `range_state_gate` = True, legacy)."""
     m15, s, V, _ = abc
+    s = {**s, "verdict_rule": "score"}                                     # §5.3 range state exists only in the legacy score rule (layer 6)
     bars = range(735, 746)
+    V = E3.V22(m15, s={**s, "c0_volume_required": False})
     base = {t: V.decide(t) for t in bars}
     monkeypatch.setattr(M, "range_state", lambda A, t, s=None: True)
     monkeypatch.setattr(M, "range_broken_by", lambda A, t, d, s=None: False)
@@ -1226,3 +1228,15 @@ def test_real_12_oct_rsi_read_one_degree_below_the_zone(real):
     assert any("D1" in x and "lower high" in x for x in rd["statements"])
     d0 = [x for x in V._rsi.history(ix[1]) if x["degree"] == 0 and x["side"] == "bear" and str(x["L2"]["time"])[:16] == "2026-10-12 09:15"]
     assert d0 and str(d0[0]["L1"]["time"])[:16] == "2026-10-09 14:15" and d0[0]["L2"]["rsi"] < d0[0]["L1"]["rsi"]
+
+
+def test_real_12_oct_method_verdict_and_label(real):
+    """Layer 6a (method §4 / §5) on the golden case: 12 Oct 09:30 = setup on the required set, label A because confirming evidence is
+    present (confluence: line; the RSI divergence Abhi read is D0 — not the evidence under L5-a, still A); the evidence is listed, never scored; a wait carries no label."""
+    m15, ltf, fut, V = real
+    ix = _day_bars(V, "2026-10-12")
+    r915, r930 = V.decide(ix[0]), V.decide(ix[1])
+    assert r930["decision"] == "setup" and r930["verdict_rule"] == "method" and r930["conv_score"] is None
+    assert r930["evidence_list"]["required"] == "present" and r930["conviction"] == "A"
+    assert r930["confirming"]["rsi_divergence"] is False and r930["confirming"]["confluence"] is True
+    assert r915["decision"] == "wait" and r915["conviction"] is None

@@ -92,6 +92,8 @@ DEFAULTS = {
     "candle_rule": "compare",                # method §3: candle forms / doji / "big" by comparing body and wicks (big = vs the visit); "ratio" = जुनं
     "session_windows": False,                # method P2: एकच सलग chart — 2-candle forms दिवस ओलांडतात; entry तास = operational schedule (engine);
                                              # True = जुनं (form खिडकी + entry खिडकी commitment मध्ये) — what-if
+    "verdict_rule": "method",               # method §4 / §5: required set ⇒ enter; label A = + ≥ 1 confirming piece, B = required only;
+                                             # evidence listed, never scored; "score" = जुनं (evidence_weights / conv_* / ④ / §5.3) what-if
     "line_rule": "logic",                    # method §3 Lines: touch = wick reaches the line, body on its side; two reactions = a line;
                                              # confluence = the line passes through the area, or a reaction out of it turns at the line
                                              # (Abhi 4 B) ⇒ labelled "confluence: line", never a new band; "sigma" = जुनं
@@ -212,6 +214,7 @@ REGISTER = {
     "volume_baseline": ("raw", "raw / slot (legacy)", "Abhi नियम", "method §3 Volume: raw bars, no time-slot baselines"),
     "candle_rule": ("compare", "compare / ratio (legacy)", "Abhi नियम", "method §3: body and wicks compared, never ratios; big = vs the visit"),
     "session_windows": (False, "False / True (legacy)", "Abhi नियम", "method P2: no session / day split in reading; entry hours = operational"),
+    "verdict_rule": ("method", "method / score (legacy)", "Abhi नियम", "method §4 / §5: enter on the required set; A / B by confirming evidence; no scores"),
     "line_rule": ("logic", "logic / sigma (legacy)", "Abhi नियम", "method §3 Lines: comparisons with the candle, no σ tolerance or touch count"),
     "sharp_reversal_handover": (True, "—", "Abhi नियम", "Abhi Z-1z: zone मध्ये push नाकारला आणि dominant उलट candle ने लगेच गिळला = handover"),
     "pattern_eq_mr": (0.5, "0.3/0.5/0.75", "अंदाज", "a2: double / triple top-bottom टोकं median range च्या इतक्या आत"),
