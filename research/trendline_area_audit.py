@@ -10,7 +10,8 @@ What is audited (the functions that draw, and the engine call that feeds each on
          d3_swingline  feeds the "+TL" confluence area (decision3.engine.V22.tl_areas)  ← decision3.trendline.swing_line; 15M
          dash_tl       page_dashboard "Trendline Gate" (text only, not drawn)  ← signals.detect_trendline; 15M and 1H
   areas  d3_level      decision3.charts.h1_png (≤ 6 bands; telegram_view / v22_check)  ← decision3.levels.Levels.snapshot/active; 1H
-         d3_tl_area    decision3 "+TL" confluence areas (step ②)  ← decision3.trendline.confluence_areas; 1H
+         d3_tl_area    decision3 "+TL" confluence areas (step ②)  ← decision3.trendline.confluence_areas; 1H — under the default
+                       line_rule = "logic" these are the d3_level areas themselves, labelled "tl" (same id / band: not extra areas)
          zones2        mtf.charts.draw_zones / zones2.charts.figure  ← zones2.engine.Zones.snap; 15M and 1H
          srv3          dashboard "SR Levels V3" view / page_sr_levels_v3  ← sr_levels_v3.compute_sr_v3 + select_display_levels; 15M, 1H
          vision_major  vision.chart._overlays (approval chart, single price)  ← vision.context.majors (price_action.major_levels); 15M

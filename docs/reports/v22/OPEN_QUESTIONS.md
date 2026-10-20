@@ -620,6 +620,11 @@ Implementation per layer: `docs/reports/v22/METHOD_MAP.md`.
 | L3-k | Zone patterns (double / triple top or bottom inside the visit) by the §3 "equal" in time order: each later extreme reaches the reference swing candle's own band and does not go beyond it; one that goes beyond becomes the new reference | 3 |
 | L3-l | G4 approach context (b): the approach's per-bar volume "lower than" the flip impulse's — a plain comparison, never a ratio limit (context only, never a gate) | 3 |
 | L3-m | When a 2-candle form's read fails (measured against the candle before the pair) but the last candle is itself a pin / strong close, it is read as that 1-candle form (a commitment is never lost to a looser 2-candle name) | 3 |
+| L4-a | A line touch = the swing candle's wick reaches the line while its body stays on the line's side (the §3 "equal" read for a line); the two anchors are the line — no touch count (§3 Lines) | 4 |
+| L4-b | Between the two reactions no candle closes through the line; a wick past it is a touch / sweep, not a disqualifier (§3 Lines, Sweep) | 4 |
+| L4-c | Confluence = the line passes through the area's band at the read bar ⇒ that area is labelled (same band); never a new, narrowed band (§3 Lines, §6 "bands merged or widened by numbers") | 4 |
+| L4-d | The correction's own line triggers when the commitment candle (bar t) closes through it at the area (§3 trigger form). Before t a line (K line or trade-side line) is gone only by a close beyond AND a swing formed beyond it (K6.5, "as an area"); a close that comes back first is a throw-over and the line stands | 4 |
+| L4-e | "Separate reactions" = a swing of the opposite kind lies between the two anchors (price left the line); without one the pair is one reaction, not a line (§3 Lines) | 4 |
 
 | L3-j | "At the area" also means the commitment trades in the area: its candle, or the candle just before it (a merged pair, or a commitment right next to the area), touches the band — a candle far below / above it inside a still-open visit is a chase, never an entry (§1 P4, §4 "a breakout away from an area") | 3 |
 

@@ -277,7 +277,7 @@ def m15_png(V, t, title, bars=60, r=None, debug=False, vol=None, symbol=None):
         (b1, y1), sl = tl["p1"], tl["slope"]
         xs = [max(b1, i0), t]
         ax.plot([x - i0 for x in xs], [y1 + sl * (x - b1) for x in xs], color="#7048e8", lw=1.1, ls="-.")
-        lab = f" K line ({tl['touches']} touches)" + (" broken" if tl["broken"] else "")
+        lab = f" K line ({tl['touches']} touches)" + (" broken" if tl["broken"] else " gone" if tl.get("broken_before") is not None else "")
         ax.text(len(m) - 0.5, y1 + sl * (t - b1), lab, color="#7048e8", fontsize=8, va="top")
         if tl["broken"] and tl["break_bar"] is not None and tl["break_bar"] >= i0:
             bb = tl["break_bar"]
