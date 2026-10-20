@@ -71,8 +71,8 @@ def test_select_setups_and_moment_days_no_duplicates():
 
 
 def test_engine_trendline_is_grade_only_and_chart_draws_break(monkeypatch):
-    """⑤ engine मार्ग: तुटलेली रेघ ⇒ tl_break True, conviction score वाढतो, decision कधीच setup ⇒ wait/no_trade होत नाही;
-    अखंड रेघ ⇒ NA (score तसाच). Chart रेघ + break खूण काढतो."""
+    """⑤ engine मार्ग (method §4 / §5): correction ची रेघ commitment candle ने तुटली ⇒ confirming पुरावा ⇒ label A; decision कधीच
+    setup ⇒ wait / no_trade होत नाही; अखंड रेघ ⇒ हा पुरावा absent / NA. Chart रेघ + break खूण काढतो."""
     from decision3 import trendline as TL
     V, rows = _V_rows()
     r = next(x for x in rows if x["decision"] == "setup")
@@ -84,8 +84,9 @@ def test_engine_trendline_is_grade_only_and_chart_draws_break(monkeypatch):
     br = V.decide(t)
     monkeypatch.setattr(TL, "k_line", lambda *a, **kw: {**line, "broken": False, "break_bar": None})
     intact = V.decide(t)
-    assert br["evidence"]["tl_break"] is True and br["checklist"]["⑤"][0] is True and br["conv_score"] >= base["conv_score"]
-    assert intact["evidence"]["tl_break"] is None and intact["conv_score"] == base["conv_score"]
+    assert br["evidence"]["tl_break"] is True and br["checklist"]["⑤"][0] is True
+    assert br["confirming"]["correction_line_closed_through"] is True and br["conviction"] == "A" and br["conv_score"] is None
+    assert intact["evidence"]["tl_break"] is None and intact["confirming"]["correction_line_closed_through"] is False
     assert br["decision"] == intact["decision"] == base["decision"] == "setup"
     png = CH.m15_png(V, t, "NIFTY", r=br)
     assert png[:4] == b"\x89PNG"

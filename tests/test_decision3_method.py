@@ -426,6 +426,7 @@ def test_mature_cap_in_pipeline():
     m15 = _abc_m15()
     s = {k: v for k, v in NO_MATURE.items() if k != "maturity_sigma_d"}          # c0 / c1 बंद (हा test त्यांचा नाही), maturity default
     s["wave_gates"] = True                                                       # Abhi 12 Oct नियम pin — B1 (default) test खाली
+    s["verdict_rule"] = "score"                                                  # caps / step-down = the legacy score rule (layer 6)
     V = E3.V22(m15, s=s)
     # Q44: या fixture ला trend-degree (A1) correction नाही ⇒ structural target नाही ⇒ default मध्ये mature नाही ⇒ Daily states mature केले.
     assert not any(x.mature for x in V.daily)
@@ -489,3 +490,19 @@ def test_maturity_and_leg_count_never_block_or_downgrade_by_default():
     for r in base.values():                                                       # leg count = context: never a no_trade / downgrade
         assert r["evidence"] is None or (r["evidence"]["second_attempt"] is None and r["evidence"]["fourth_attempt"] is None)
         assert "चौथा" not in str(r.get("why")) and "पहिला पाय" not in str(r.get("missing"))
+
+
+def test_method_label_is_required_set_plus_confirming_never_a_score():
+    """Method §5: A = the required set plus at least one confirming piece; B = the required set only. Present / absent / NA listed."""
+    zr = {"summary": {"vol_rising_trade_side": False}}
+    lvl = {"births": ["a:D2"], "confluence": []}
+    c = M.confirming_evidence(zr, {"found": False}, lvl, None)
+    assert c == {"volume_growing": False, "rsi_divergence": False, "confluence": False, "correction_line_closed_through": None}
+    assert M.method_label(c) == "B"
+    for one in ({**c, "volume_growing": True}, {**c, "rsi_divergence": True}, {**c, "correction_line_closed_through": True}):
+        assert M.method_label(one) == "A"
+    assert M.confirming_evidence(zr, None, {"births": ["a:D2", "tl"]}, None)["confluence"] is True
+    assert M.confirming_evidence(zr, None, {"births": [], "confluence": [{"tf": "D"}]}, None)["confluence"] is True
+    ev = M.evidence_list({"trap_sweep": True, "fresh": None}, c, True)
+    assert ev["required"] == "present" and ev["confirming"]["volume_growing"] == "absent" and ev["context"]["trap_sweep"] == "present"
+    assert ev["context"]["fresh"] == "NA"
