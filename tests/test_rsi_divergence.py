@@ -444,6 +444,9 @@ def test_golden_13_oct_skipped_unless_full_session(nifty):
                     "(RSI ≈ 80 with price, no divergence in the zone) needs the full session")
 
 
+S1 = {"level_degree": 1, "div_degree_rule": "zone"}                       # a zone of D1 structure ⇒ its pushes are the D0 swings used here
+
+
 def test_a_divergence_formed_inside_the_visit_survives_a_lower_retest():
     """Review (layer 5): a bear divergence on the first top inside the area (110 → 112, RSI 70 → 65), then a lower-high retest — the
     newest pair is no longer a divergence, but the reader still finds the one formed inside the visit (from the history, never lost)."""
@@ -453,9 +456,9 @@ def test_a_divergence_formed_inside_the_visit_survives_a_lower_retest():
     df = frame(n, highs={10: 110.0, 25: 112.0, 35: 108.0}, lows={15: 95.0, 30: 100.0})
     D = build(df, [piv(df, "H", 10), piv(df, "L", 15), piv(df, "H", 25), piv(df, "L", 30)], rsi_with(n, {10: 70.0, 25: 65.0, 35: 60.0}))
     assert not [x for x in D.read(36)["divergences"] if x["side"] == "bear"]          # the latest pair moved on (lower high)
-    got = E3.V22.rsi_divergence(NS(_rsi=D), 36, -1, 20)                             # visit armed at bar 20: the 112 top is inside it
+    got = E3.V22.rsi_divergence(NS(_rsi=D, s=S1), 36, -1, 20)                             # visit armed at bar 20: the 112 top is inside it
     assert got["found"] is True and [(x["L1"]["price"], x["L2"]["price"]) for x in got["divergences"]] == [(110.0, 112.0)]
-    assert E3.V22.rsi_divergence(NS(_rsi=D), 36, -1, 30)["found"] is False         # armed after that top ⇒ not this visit's evidence
+    assert E3.V22.rsi_divergence(NS(_rsi=D, s=S1), 36, -1, 30)["found"] is False         # armed after that top ⇒ not this visit's evidence
 
 
 def test_a_divergence_overtaken_by_a_stronger_high_no_longer_counts():
@@ -467,7 +470,32 @@ def test_a_divergence_overtaken_by_a_stronger_high_no_longer_counts():
     df = frame(n, highs={10: 110.0, 25: 112.0, 35: 115.0}, lows={15: 95.0, 30: 100.0})
     ps = [piv(df, "H", 10), piv(df, "L", 15), piv(df, "H", 25), piv(df, "L", 30)]
     strong = build(df, ps, rsi_with(n, {10: 70.0, 25: 65.0, 35: 75.0}))
-    assert E3.V22.rsi_divergence(NS(_rsi=strong), 36, -1, 20)["found"] is False
+    assert E3.V22.rsi_divergence(NS(_rsi=strong, s=S1), 36, -1, 20)["found"] is False
     weak = build(df, ps, rsi_with(n, {10: 70.0, 25: 65.0, 35: 60.0}))
-    got = E3.V22.rsi_divergence(NS(_rsi=weak), 36, -1, 20)
+    got = E3.V22.rsi_divergence(NS(_rsi=weak, s=S1), 36, -1, 20)
     assert got["found"] is True and [x["L2"]["price"] for x in got["divergences"]] == [115.0]
+
+
+def test_divergence_is_read_one_degree_below_the_zone_and_the_zone_degree_is_reported():
+    """Abhi L5-a: the divergence is read between the consecutive pushes of the move into the zone — swings one degree below the zone's
+    structure (D1 for a D2 zone); a divergence at the zone's own degree (D2) is reported as information; D0 is not read. `all` = the old
+    D0–D2 what-if."""
+    from types import SimpleNamespace as NS
+    from decision3 import engine as E3
+    n = 45
+    df = frame(n, highs={10: 110.0, 25: 112.0}, lows={15: 95.0})
+    rsi = rsi_with(n, {10: 70.0, 25: 65.0})
+    ps = [piv(df, "H", 10, degree=dg) for dg in (0, 1, 2)] + [piv(df, "L", 15, degree=dg) for dg in (0, 1, 2)] + \
+        [piv(df, "H", 25, degree=dg) for dg in (0, 1, 2)]
+    D = build(df, ps, rsi, div_degrees=(0, 1, 2))
+    got = E3.V22.rsi_divergence(NS(_rsi=D, s={"level_degree": 2}), 30, -1, 20)
+    assert got["found"] is True and got["degree"] == 1 and [x["degree"] for x in got["divergences"]] == [1]
+    assert [x["degree"] for x in got["zone_degree"]] == [2]
+    only0 = build(df, [p for p in ps if p.degree == 0], rsi, div_degrees=(0, 1, 2))
+    got0 = E3.V22.rsi_divergence(NS(_rsi=only0, s={"level_degree": 2}), 30, -1, 20)
+    assert got0["found"] is False and got0["zone_degree"] == []          # a D0 pair is not the move into a D2 zone
+    allr = E3.V22.rsi_divergence(NS(_rsi=D, s={"level_degree": 2, "div_degree_rule": "all"}), 30, -1, 20)
+    assert sorted(x["degree"] for x in allr["divergences"]) == [0, 1, 2] and allr["zone_degree"] == []
+    with pytest.raises(ValueError):
+        E3.V22.rsi_divergence(NS(_rsi=D, s={"level_degree": 2, "div_degree_rule": "x"}), 30, -1, 20)
+

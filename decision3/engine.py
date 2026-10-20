@@ -505,7 +505,11 @@ class V22:
         """Method §3 RSI divergence (rsi2.engine.Divergence, 15M) as ZONE EVIDENCE: every regular divergence on the trade side (bear for
         a bear call) whose second swing / running extreme is inside the zone visit (bar ≥ arm), known by bar t — from the divergence
         history, so one that formed on the first top inside the area is not lost when a lower retest becomes the newest pair. Never a
-        trigger or gate; its absence is stated. Returns {found, divergences, statements} or NA with the reason."""
+        trigger or gate; its absence is stated.
+        Abhi L5-a: read between the consecutive pushes of the move into the zone — swings ONE degree below the zone's structure (the
+        same degree as the pullback inside it: `level_degree` − 1); that read is the evidence (`found`). A divergence at the zone's own
+        degree is reported too (`zone_degree`, information). Other degrees are not read here (`div_degree_rule` "all" = the old D0–D2
+        what-if). Returns {found, divergences, zone_degree, degree, statements} or NA with the reason."""
         if getattr(self, "_rsi", None) is None:
             try:
                 from rsi2 import engine as RE
@@ -524,10 +528,20 @@ class V22:
         divs = [x for x in self._rsi.history(t) if x["side"] == side and x["type"] == "regular" and x["L2"]["bar"] >= int(arm)
                 and still_the_extreme(x)]
         keep = ("degree", "status", "bars", "price_rel", "count")
-        out = [{**{k: x.get(k) for k in keep}, "L1": {k: x["L1"][k] for k in ("time", "price", "rsi")},
-                "L2": {k: x["L2"][k] for k in ("time", "price", "rsi")}} for x in divs]
-        st = [y["statement"] for y in r["latest"] if y["side"] == side]
-        return {"found": bool(out), "divergences": out, "statements": st}
+
+        def brief(x):
+            return {**{k: x.get(k) for k in keep}, "L1": {k: x["L1"][k] for k in ("time", "price", "rsi")},
+                    "L2": {k: x["L2"][k] for k in ("time", "price", "rsi")}}
+        zd = int(self.s["level_degree"])
+        rule = self.s.get("div_degree_rule", "zone")
+        if rule not in ("zone", "all"):
+            raise ValueError(f"div_degree_rule {rule!r} — zone / all")
+        pushes = zd - 1                                                    # the move into the zone: one degree below its structure
+        out = [brief(x) for x in divs if rule == "all" or int(x["degree"]) == pushes]
+        own = [brief(x) for x in divs if rule == "zone" and int(x["degree"]) == zd]
+        st = [y["statement"] for y in r["latest"] if y["side"] == side and (rule == "all" or int(y.get("degree", pushes)) in (pushes, zd))]
+        return {"found": bool(out), "divergences": out, "zone_degree": own, "degree": None if rule == "all" else pushes,
+                "statements": st}
 
     def _legs_A(self):
         if getattr(self, "_legs_arr", None) is None:
