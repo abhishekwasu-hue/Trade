@@ -76,6 +76,8 @@ EXTERNAL = [
      "vps_export/futures_history"),
     ("Abhi's ✔ / ✘ verdicts (swing / leg / pattern / v22 / annotation checks)", "Supabase table `backtest_review`", "vps_export/supabase/backtest_review"),
     ("Abhi's gallery labels", "Supabase table `reader2_gallery`", "vps_export/supabase/reader2_gallery"),
+    ("Abhi's gallery verdicts", "Supabase table `golden_gallery`", "vps_export/supabase/golden_gallery"),
+    ("Abhi's dashboard settings", "Supabase tables `strategy_settings`, `vision_settings`", "vps_export/supabase/settings"),
     ("Review packs written on the VPS clone of trade-data", "VPS `/root/trade-data/backtest_review`, `golden_gallery`, `reader2_gallery/labels`",
      "backtest_review, golden_gallery, reader2_gallery/labels (push the VPS clone)"),
     ("Paper trade journal", "`PAPER_JOURNAL_DB` + the Supabase trade tables (`SUPABASE_DB_URL`)", "vps_export/paper_journal"),

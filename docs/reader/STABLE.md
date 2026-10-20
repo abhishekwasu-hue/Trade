@@ -1,6 +1,6 @@
 # Chart Reader — STABLE register
 
-Owner decision (Abhi): Trade will be archived; ATP ports every **stable** reader layer with parity tests. This file is the register.
+Owner decision (Abhi): Trade will be archived only on Abhi's own word; ATP ports every **stable** reader layer with parity tests. This file is the register.
 
 ## Rules
 

@@ -31,12 +31,12 @@ Switch-off convention: a cron line is commented out with the prefix `#sunset-off
 | What runs (script) | Purpose | ATP replacement (proposal) | Switch-off step |
 |---|---|---|---|
 | `trade_monitor.py` (every minute, market hours) | PAPER exits: SL / target / EOD for open positions | ATP paper exit monitor | **Last of the trading lines**: only after every open position is closed or handed over |
-| `scripts/engine_signal_run.py --engine decision3` (`# one-bot-engine`, 15M closes) + warm-up (`# one-bot-engine-warm`) | The chart reader's live setups (the one bot) | ATP reader + signal, in shadow first | `#sunset-off#` once ATP is live |
+| `scripts/engine_signal_run.py --engine decision3` (`# one-bot-engine`, 15M closes) + warm-up (`# one-bot-engine-warm`) | The chart reader's live setups (the one bot) | ATP reader + signal (runs beside Trade) | On Abhi's word only (precondition: ATP's reader live) — `#sunset-off#` |
 | `srv2_momentum_reversal_strategy.py` (`# one-bot-srv2`) | PAPER bot that trades the reader's setups (also manages its own positions) | ATP paper bot | New entries off by the dashboard setting (`symbol_enabled` / `signal_symbols`); the cron line stays until flat |
 | `scripts/level_gate_preopen.py` (`# one-bot-preopen`) | The one bot's daily pre-open status message (bot state, engine store freshness) | ATP health message | `#sunset-off#` with the reader |
 | `classic_sr_reversal_trader.py`, `dynamic_sr_instant_trader.py`, `mcx_futures_trader.py` (entry / exit), `oi_signal_auto_trader.py`, `credit_spread_auto_trader.py`, `oi_greeks_vix_strategy.py` | Frozen engines (PAPER; any LIVE line is Abhi's) | Retire | Exits stay until each bot is flat; LIVE lines only by Abhi |
 | `refresh_market_structure.py` (+ `--brief`, `_intraday`), `refresh_market_zones.py` (+ `_intraday`, `_mcx`), `refresh_dynamic_sr_1m.py`, `refresh_dynamic_sr_5m.py` | Feeds for the frozen engines and the dashboard | Retire | `#sunset-off#` after the engines stop |
-| `collect_index_futures_volume.py` | FUT volume (the reader's volume source) | ATP data collector | Only after ATP collects the same series |
+| `collect_index_futures_volume.py` | FUT volume (the reader's volume source) | ATP data collector | On Abhi's word only (precondition: ATP collects the same series) |
 | `iv_snapshot_collector.py`, `oi_snapshot_collector.py` | IV / OI snapshots | Retire (or ATP data, Abhi) | `#sunset-off#` |
 | `check_vix_spike_halt.py` | VIX-spike halt flag | ATP risk guard (or retire, Abhi) | With the trading lines |
 | `mcx_market_readiness_check.py` | MCX readiness | Retire | `#sunset-off#` |
@@ -44,13 +44,13 @@ Switch-off convention: a cron line is commented out with the prefix `#sunset-off
 | `-m vision.worker --loop-seconds 55`, `-m vision.outcome` | Vision on PAPER signals; outcome tracking | ATP Vision (Abhi) | With the reader |
 | `run_visual_audit.py` | Daily visual audit (Vision, paid) | Retire (or ATP, Abhi) | `#sunset-off#` |
 | `scripts/vision_archive.py` (daily) | Vision log archive — pushes to trade-data `visual_audit/YYYY-MM/` | Retire after the final export | After the final export (§6 step 5) |
-| `trigger_upstox_token_request.py` | Daily Upstox token request | ATP broker / data auth | Only after ATP has its own token flow |
+| `trigger_upstox_token_request.py` | Daily Upstox token request | ATP broker / data auth | On Abhi's word only (precondition: ATP has its own token flow) |
 
 ## 1b. GitHub Actions (this repo, `.github/workflows/`)
 
 | Workflow | Schedule | Purpose | ATP replacement (proposal) | Switch-off step |
 |---|---|---|---|---|
-| `nifty_1min_daily_update.yml` | weekdays 15:45 IST | NIFTY spot 1m → Supabase `nifty_1min_ohlc` (the live spot history) | **ATP spot-history feed — must run in ATP before this stops** | Disable the workflow (GitHub → Actions) |
+| `nifty_1min_daily_update.yml` | weekdays 15:45 IST | NIFTY spot 1m → Supabase `nifty_1min_ohlc` (the live spot history) | **ATP spot-history feed** (precondition: it runs in ATP) | Disable the workflow (GitHub → Actions) |
 | `eod_market_report.yml` | weekdays 16:00 IST | EOD report to Telegram; commits PDFs to `data/reports/` in this public repo (a scheduled export) | ATP reports | Disable |
 | `check_token_freshness.yml` | weekdays 08:45 IST | Token freshness alert to Telegram | ATP broker auth health | Disable |
 | `run_algo.yml` | weekdays 09:05 IST | Runs `app.py` (Stoxkart credentials) | Retire (Abhi) | Disable |
@@ -71,7 +71,7 @@ Repo Actions secrets (names only) to delete after the workflows are disabled:
 | `vision_telegram.service` | Telegram approve / reject buttons (long-polling) | ATP approvals | `systemctl disable --now vision_telegram.service` |
 | `streamlit_dashboard.service` | The dashboard (port 8501) | ATP UI | Last, after the final exports (read-only use until then) |
 | `position_stream_monitor.service`, `position_stream_monitor_mcx.service` | Real-time SL / target stream for positions | ATP exit monitor / retire | With `trade_monitor.py`, after flat |
-| `upstox_token_webhook.service` + `cloudflared_upstox_webhook.service` | Token webhook + its HTTPS tunnel | ATP broker auth | After ATP's token flow works |
+| `upstox_token_webhook.service` + `cloudflared_upstox_webhook.service` | Token webhook + its HTTPS tunnel | ATP broker auth | On Abhi's word only (precondition: ATP's token flow works) |
 | `engine_service.timer` / `.service` | Old exit monitor — already inactive (deploy/README) | Retire | Confirm `disabled`; remove the unit file |
 
 ## 3. Telegram
@@ -126,8 +126,8 @@ Step at the end: Abhi revokes or rotates every credential above that ATP does no
 
 1. Abhi's explicit word that today Trade switches off. A shadow result, a date or a condition is never that word.
 2. Stop new entries: in the dashboard, switch every bot's entries off (`symbol_enabled` off, `signal_symbols` empty); turn off the reader / pre-open / Vision cron lines and the Vision units. The bots' own cron lines stay, so they keep managing their positions.
-3. Wait until every PAPER position is flat (exits keep running). LIVE: Abhi only.
-4. Stop the bots' cron lines, the exits, the stream monitors and the collectors. Disable the GitHub Actions workflows (§1b) — the spot-history feed only once ATP runs its own.
+3. Wait until every PAPER position is flat (exits keep running). LIVE is a setting (`trading_mode`): Abhi closes any LIVE position and switches LIVE off first.
+4. Stop the bots' cron lines, the exits, the stream monitors and the collectors. Disable the GitHub Actions workflows (§1b) — the spot-history feed only with ATP's own feed running (precondition).
 5. Final exports to trade-data (§4, and the VPS-only items in EXPORT_MANIFEST.md: paper journal, Vision logs, engine signal store). Re-run
    `scripts/reader_export_manifest.py` and check the checksums on the ATP side.
 6. Stop the remaining units (§2), the dashboard last.
@@ -142,33 +142,63 @@ Archive README text (§8):
 
 ## 7. The one command block (prepared — never run by a session, never scheduled)
 
-For Abhi to paste on the VPS himself, only after his explicit word (§6 step 1). It asks him to type the confirmations; it never touches
-a LIVE line; every cron line it turns off is commented with `#sunset-off# ` (reversible: `crontab -l | sed 's|^#sunset-off# ||' |
-crontab -`). The dashboard entries switch, the GitHub Actions workflows and steps 5 and 7–9 (final exports, credentials, archive, VPS off) stay manual.
+For Abhi only, on the VPS, only after his explicit word (§6 step 1). **Save it as `/root/trade_sunset.sh` and run
+`bash /root/trade_sunset.sh`.** Do not paste it into the shell: each `read` would take the next pasted line as its answer.
+
+What it does and does not do:
+- It asks Abhi to type each confirmation, and stops (changing nothing further) on any other answer.
+- **LIVE is a setting in this code (`trading_mode`), not only a cron flag**, so cron flags alone cannot protect a LIVE position. The block
+  therefore stops before any exit, monitor or stream line unless Abhi confirms that no LIVE position is open and no bot is set to LIVE.
+  Closing LIVE positions and switching LIVE settings off is Abhi's, before this step.
+- Cron lines that carry `--mode LIVE` are never touched.
+- A cron line is only ever commented with `#sunset-off# `, never deleted (reversible: `crontab -l | sed 's|^#sunset-off# ||' |
+  crontab -`).
+- A crontab backup is written first. Each change goes through a temp file and is refused unless it has the same number of lines as
+  before (an empty or truncated crontab is never installed).
+- Units are disabled one by one, and each result is printed.
+
+The dashboard entries switch, the GitHub Actions workflows and steps 5 and 7–9 (final exports, credentials, archive, VPS off) stay manual.
 
 ```bash
-# Trade sunset — Abhi only, by hand, after his explicit decision. Never scheduled, never run by a session.
+#!/usr/bin/env bash
+# /root/trade_sunset.sh — Trade sunset. Abhi only, run by hand after his explicit decision. Never scheduled, never run by a session.
 set -euo pipefail
 cd /root/Trade
-read -r -p "Type exactly: ABHI SWITCHES TRADE OFF > " ok; [ "$ok" = "ABHI SWITCHES TRADE OFF" ] || { echo "stopped — nothing changed"; exit 1; }
+ask() {  # ask "<question>" "<exact answer>" — anything else stops here
+  local a; read -r -p "$1 Type $2 > " a; [ "$a" = "$2" ] || { echo "stopped here — no further change"; exit 1; }
+}
+ask "Abhi: switch Trade off now?" "ABHI SWITCHES TRADE OFF"
 crontab -l > "/root/crontab_before_sunset_$(date +%F_%H%M).txt"
 LIVE="--mode[=[:space:]]+[\"']?LIVE([^A-Za-z0-9_]|$)"
-off() {  # comment out the active, non-LIVE cron lines that match $1
-  crontab -l | awk -v pat="$1" -v live="$LIVE" '/^[[:space:]]*#/ {print; next} ($0 ~ pat && $0 !~ live) {print "#sunset-off# " $0; next} {print}' | crontab -
+off() {  # comment out the active cron lines that match $1, never a --mode LIVE line; refuses a changed line count
+  local tmp n0 n1
+  tmp=$(mktemp)
+  crontab -l | awk -v pat="$1" -v live="$LIVE" '/^[[:space:]]*#/ {print; next} ($0 ~ pat && $0 !~ live) {print "#sunset-off# " $0; next} {print}' > "$tmp"
+  n0=$(crontab -l | wc -l); n1=$(wc -l < "$tmp")
+  if [ "$n1" -ne "$n0" ] || [ "$n1" -eq 0 ]; then echo "refused: crontab would change from $n0 to $n1 lines"; rm -f "$tmp"; exit 1; fi
+  crontab "$tmp"; rm -f "$tmp"; echo "commented: $1"
 }
-# §6 step 2: new entries off (exits stay)
-read -r -p "Dashboard: every bot's entries switched off (symbol_enabled off, signal_symbols empty)? Type ENTRIES-OFF > " e; [ "$e" = "ENTRIES-OFF" ] || { echo "stopped — nothing changed"; exit 1; }
-off 'engine_signal_run\.py|level_gate_preopen\.py|vision\.worker|vision\.outcome|run_visual_audit\.py'
-systemctl disable --now vision_worker.service vision_telegram.service || true
-# §6 step 3: wait until every PAPER position is flat
-read -r -p "All PAPER positions flat? Type FLAT > " flat; [ "$flat" = "FLAT" ] || { echo "stopped after entries-off; exits still running"; exit 1; }
-# §6 step 4: exits, monitors, collectors off (LIVE lines untouched)
-off 'srv2_momentum_reversal_strategy\.py|classic_sr_reversal_trader\.py|dynamic_sr_instant_trader\.py|oi_signal_auto_trader\.py|credit_spread_auto_trader\.py|oi_greeks_vix_strategy\.py|trade_monitor\.py|mcx_futures_trader\.py|refresh_|_collector\.py|collect_index_futures_volume\.py|check_vix_spike_halt\.py|mcx_market_readiness_check\.py|eod_trade_summary\.py|paper_daily_summary\.py|vision_archive\.py|trigger_upstox_token_request\.py'
-systemctl disable --now position_stream_monitor.service position_stream_monitor_mcx.service || true
-echo "Now by hand: disable the GitHub Actions workflows (§1b); final exports (§6 step 5) incl. data/one_bot_before.json. Then press Enter."; read -r _
+stop_unit() {  # one unit at a time, result printed
+  if systemctl cat "$1" >/dev/null 2>&1; then systemctl disable --now "$1" && echo "disabled: $1" || echo "⚠️ could not disable: $1"
+  else echo "· not installed: $1"; fi
+}
+# §6 step 2: new entries off; the bots' own lines stay so they keep managing their positions
+ask "Dashboard: every bot's entries off (symbol_enabled off, signal_symbols empty)?" "ENTRIES-OFF"
+off 'scripts/engine_signal_run\.py|scripts/level_gate_preopen\.py|vision\.worker|vision\.outcome|run_visual_audit\.py'
+stop_unit vision_worker.service
+# §6 step 3: flat — PAPER and LIVE
+ask "All PAPER positions flat?" "FLAT"
+ask "No LIVE position open and no bot set to LIVE (trading_mode)? LIVE is closed by Abhi first." "NO-LIVE"
+# §6 step 4: bots, exits, monitors, collectors
+off 'srv2_momentum_reversal_strategy\.py|classic_sr_reversal_trader\.py|dynamic_sr_instant_trader\.py|oi_signal_auto_trader\.py|credit_spread_auto_trader\.py|oi_greeks_vix_strategy\.py|trade_monitor\.py|mcx_futures_trader\.py|refresh_market_structure\.py|refresh_market_structure_intraday\.py|refresh_market_zones\.py|refresh_market_zones_intraday\.py|refresh_market_zones_mcx\.py|refresh_dynamic_sr_1m\.py|refresh_dynamic_sr_5m\.py|iv_snapshot_collector\.py|oi_snapshot_collector\.py|collect_index_futures_volume\.py|check_vix_spike_halt\.py|mcx_market_readiness_check\.py|eod_trade_summary\.py|paper_daily_summary\.py|trigger_upstox_token_request\.py'
+for u in position_stream_monitor.service position_stream_monitor_mcx.service vision_telegram.service; do stop_unit "$u"; done
+# §6 step 5 (by hand): GitHub Actions workflows off (§1b); final exports, incl. the last vision archive and the VPS-only items
+echo "By hand now: disable the GitHub Actions workflows (§1b); run python3 scripts/vision_archive.py once more; export the"
+echo "EXPORT_MANIFEST external items (incl. data/one_bot_before.json)."
+ask "Final exports done?" "EXPORTED"
+off 'scripts/vision_archive\.py'
 # §6 step 6: remaining units, the dashboard last
-systemctl disable --now upstox_token_webhook.service cloudflared_upstox_webhook.service engine_service.timer || true
-systemctl disable --now streamlit_dashboard.service || true
-crontab -l | grep -v '^[[:space:]]*#' || echo "no active cron lines left (LIVE lines, if any, were never touched — Abhi decides them)"
+for u in upstox_token_webhook.service cloudflared_upstox_webhook.service engine_service.timer streamlit_dashboard.service; do stop_unit "$u"; done
+echo "active cron lines left (expected: none, or only --mode LIVE lines, which are Abhi's):"
+crontab -l | grep -v '^[[:space:]]*#' || echo "  none"
 ```
-
