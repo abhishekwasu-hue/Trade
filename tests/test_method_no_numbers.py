@@ -54,10 +54,10 @@ CALIBRATION = {                  # Abhi (layer 1 ✅): a swing's significance is
     "level_degree": "the zone's structure = the approved D2 (1H trend degree)",
     "tl_degree": "one degree below the zone's structure = the approved D1 (the pullback's legs)",
     "flip_pullback_inner_degree": "one degree below the zone's structure = the approved D1",
-    "daily_pivot_n": "Abhi's daily spec (N = 2)",
+    "daily_pivot_n": "assumed on the calibrated scale (register: अंदाज, spec ① config default) — OPEN_QUESTIONS L1-b, for Abhi",
     "k_reset_sigma": "Abhi's rule (a new extreme moved less than this × σ_1H is the same extreme)",
-    "range_eq_sigma_d": "assumed on the same σ scale, not picked by Abhi from charts (OPEN_QUESTIONS L1-b)",
-    "maturity_sigma_d": "assumed on the same σ scale, evidence only (OPEN_QUESTIONS L1-b)",
+    "range_eq_sigma_d": "assumed on the same σ scale, not picked by Abhi from charts — OPEN_QUESTIONS L1-b, for Abhi",
+    "maturity_sigma_d": "assumed on the same σ scale, evidence only — OPEN_QUESTIONS L1-b, for Abhi",
 }
 PENDING = {                      # still a number in the reading path ⇒ removed in the named layer
     "evidence_weights": 6, "conv_a": 6, "conv_b": 6, "conv_weak": 6,

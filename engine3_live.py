@@ -391,7 +391,11 @@ def swing_scale(s=None):
         if v is None or (isinstance(v, str) and not v.strip()):
             continue
         k[d] = float(v)
-    return {"swing_k": k} if k else None
+    if not k:
+        return None
+    from decision3 import engine as E3
+    E3.swing_scale({"swing_k": k})                                       # refuse a bad value here (never blamed on the 1m fallback)
+    return {"swing_k": k}
 
 
 def load_m1(feed, symbol, m15, now, s=None):
@@ -526,9 +530,9 @@ def watched_levels(symbol, feed, now, s=None):
     m15, daily, _l, _f, _n = build_inputs(feed, symbol, now, s, levels_only=True)
     m1, info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)           # live compute सारखाच 1m ⇒ pre-open = engine चे पट्टे
     m15 = m15.drop(columns=[c for c in ("volume",) if c in m15.columns])
-    prev = INS._current["name"]
+    s3 = swing_scale(s)                                                  # live compute सारखाच swing scale (Abhi calibration); bad ⇒ raise
+    prev = INS._current["name"]                                          # before the process-wide instrument changes
     INS.set_current(symbol)
-    s3 = swing_scale(s)                                                  # live compute सारखाच swing scale (Abhi calibration)
 
     def build(df1m):
         with fold_cache(symbol.upper()), warnings.catch_warnings(), contextlib.redirect_stdout(io.StringIO()):

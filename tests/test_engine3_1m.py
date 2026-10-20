@@ -387,3 +387,17 @@ def test_swing_scale_is_abhis_calibration_empty_means_the_approved_scale(fake_v2
         with pytest.raises(ValueError):
             E3.swing_scale({"swing_k": bad})
 
+
+
+def test_a_bad_swing_scale_fails_before_the_engine_and_the_instrument_switch(fake_v22_levels):
+    """A bad stored scale (text, D2 ≤ D1 — also against the approved default when only one is set) is refused at the start: never blamed on
+    the 1m fallback, never leaves the process-wide instrument switched."""
+    import instruments as INS
+    prev = INS._current["name"]
+    for bad in ({"engine3_swing_k_d1": "abc"}, {"engine3_swing_k_d1": 7}, {"engine3_swing_k_d1": 5, "engine3_swing_k_d2": 5},
+                {"engine3_swing_k_d2": "nan"}):
+        with pytest.raises(ValueError):
+            L.swing_scale(bad)
+        with pytest.raises(ValueError):
+            L.watched_levels("BANKNIFTY", Feed1m(), PRE, {"engine3_use_1m": False, **bad})
+        assert INS._current["name"] == prev and fake_v22_levels["df1m"] == []

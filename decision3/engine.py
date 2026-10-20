@@ -84,11 +84,13 @@ def swing_scale(s):
     out = {}
     for d, v in dict(k).items():
         d, v = int(d), float(v)
-        if d not in (1, 2) or not v > 0:
+        if d not in (1, 2) or not (np.isfinite(v) and v > 0):
             raise ValueError(f"decision3 V22: swing_k accepts D1 / D2 with k > 0 (got D{d} = {v})")
         out[d] = v
-    if 1 in out and 2 in out and not out[2] > out[1]:
-        raise ValueError(f"decision3 V22: swing_k D2 ({out[2]}) must be larger than D1 ({out[1]}) — a higher degree contains the lower one")
+    from swings2 import settings as SS
+    k1, k2 = out.get(1, float(SS.DEFAULTS["k"][1])), out.get(2, float(SS.DEFAULTS["k"][2]))   # an unset degree = the approved scale
+    if not (np.isfinite(k1) and np.isfinite(k2) and k2 > k1):
+        raise ValueError(f"decision3 V22: swing_k D2 ({k2}) must be larger than D1 ({k1}) — a higher degree contains the lower one")
     return {"k": out}
 
 

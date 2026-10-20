@@ -1430,7 +1430,10 @@ def render():
                     _kc = st.columns(2)
                     for _d, _col in zip((1, 2), _kc):
                         _opts = list(_SW.K_OPTIONS[_d])
-                        _cur = float(engine3_swing_k[_d]) if engine3_swing_k[_d] not in (None, "") else float(_SW.DEFAULTS["k"][_d])
+                        try:                                             # a bad stored value never breaks the page
+                            _cur = float(engine3_swing_k[_d]) if engine3_swing_k[_d] not in (None, "") else float(_SW.DEFAULTS["k"][_d])
+                        except (TypeError, ValueError):
+                            _cur = float(_SW.DEFAULTS["k"][_d])
                         engine3_swing_k[_d] = _col.selectbox(f"D{_d} k (× σ)", _opts, index=_opts.index(_cur) if _cur in _opts else
                                                              _opts.index(float(_SW.DEFAULTS["k"][_d])),
                                                              key=_widget_key(strategy_key, symbol, f"engine3_swing_k_d{_d}"))
