@@ -2898,3 +2898,10 @@ legs owner वि. reader2 gate).
   12 Oct 09:15 (22,651.10) पेक्षा उंच ⇒ lower high. Abhi ची जोडी (9 Oct 14:15 22,580.75 RSI 67.09 → 12 Oct 09:15 RSI 66.41) फक्त D0
   वर ⇒ history मध्ये आहे, पुरावा नाही. Label तरीही A (confluence). OPEN_QUESTIONS L5-a (chart: trade-data `review/method_layer5/`).
 
+## 2026-10-20 · Abhi on L5-a (final): pushes INSIDE the move into the zone
+
+- चाल = area पासून दूर बनलेल्या शेवटच्या swing पासून (approach leg चा स्वतःचा swing). त्या चालीत किमान दोन pushes दाखवणारी सर्वात मोठी
+  degree वाचायची; चालीआधीचा swing कधीच नाही; zone degree ची divergence माहिती. Code: `rsi_divergence(…, move_from)` (`degree`, `pushes`).
+- **Golden (real):** 12 Oct — D1 वर चालीत एकच push, D0 वर दोन ⇒ D0: 9 Oct 14:15 → 12 Oct 09:15 (RSI 67.09 → 66.41) = bear divergence
+  परत; 09:30 setup **A** (RSI divergence + confluence). Default म्हणून नोंद — Abhi बदलू शकतात.
+

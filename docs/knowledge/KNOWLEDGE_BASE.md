@@ -1064,8 +1064,10 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
 **व्याख्या (तर्क, आकडा नाही).**
 - **खरे swings, एकाच degree चे:** लागोपाठचे swings (swings2 D1 / D2 = Abhi चं calibration, layer 1 ✅). दोन swings लागोपाठचे pushes:
   त्यांच्या मधे त्याहून टोकाची किंमत नाही. वेगवेगळ्या degree चे swings कधीच जोडायचे नाहीत.
-- **कोणती degree (Abhi, L5-a):** zone मध्ये येणाऱ्या चालीचे लागोपाठचे pushes = zone च्या रचनेच्या **एक degree खालचे** swings (zone मधल्या
-  pullback चीच degree; 1H zone (D2) ⇒ D1; Daily zone (D3) ⇒ D2 — Daily ची जोडणी गृहीत). हाच पुरावा. Zone च्या स्वतःच्या degree ची divergence असेल तर तीही नोंदवायची (माहिती).
+- **कोणती degree (Abhi, L5-a — अंतिम; बदलता येईल):** zone मध्ये येणाऱ्या चालीच्या **आतले** लागोपाठचे pushes. चाल तिच्या स्वतःच्या
+  swing पासून सुरू होते (area पासून दूर बनलेला शेवटचा swing). ज्या सर्वात मोठ्या degree वर त्या चालीत किमान दोन pushes दिसतात तीच degree
+  वापरायची. चाल सुरू होण्याआधीचा swing (उदा. चालीच्या स्वतःच्या low आधीचा D1 high) कधीच तुलनेत नाही. Zone च्या स्वतःच्या degree ची
+  divergence असेल तर तीही नोंदवायची (माहिती).
 - **Bearish:** price **नवा उंच high** करते (आधीच्या high पलीकडे — बरोबर high नवा high नाही) आणि RSI आधीच्या high च्या RSI पलीकडे
   जात नाही — **बरोबर RSI सुद्धा divergence** [Abhi].
 - **Bullish (आरसा):** price नवा खालचा low आणि RSI आधीच्या low च्या RSI खाली जात नाही (बरोबर RSI सुद्धा).
@@ -1116,10 +1118,10 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
 
 - **RSI divergence is the only indicator, and it is evidence inside the area — never a trigger alone, never a gate.** Its absence is
   stated too ("no divergence: RSI made a new high with price").
-- Compare **consecutive real swings of the same degree** (nothing more extreme between them): the consecutive pushes of the move into
-  the zone, i.e. swings **one degree below the zone's structure** (the same degree as the pullback inside it — D1 for a 1H zone,
-  D2 for a Daily zone)
-  [Abhi]. A divergence at the zone's own degree is reported too, as information.
+- Compare **consecutive real swings of the same degree** (nothing more extreme between them): the consecutive pushes **inside the
+  move into the zone** — the move begins at its own swing (the last swing built away from the area); use the highest degree at which
+  that move shows at least two pushes; a swing from before the move began is never compared [Abhi, L5-a]. A divergence at the zone's
+  own degree is reported too, as information.
   **Bearish:** price makes a higher high while RSI does not go above its previous high — an equal RSI high counts. **Bullish (mirror):**
   price makes a lower low while RSI does not go below its previous low — an equal RSI low counts. An equal price high / low is not a
   new extreme.

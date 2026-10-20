@@ -444,7 +444,7 @@ def test_golden_13_oct_skipped_unless_full_session(nifty):
                     "(RSI ≈ 80 with price, no divergence in the zone) needs the full session")
 
 
-S1 = {"level_degree": 1, "div_degree_rule": "zone"}                       # a zone of D1 structure ⇒ its pushes are the D0 swings used here
+S1 = {"level_degree": 2, "div_degree_rule": "zone"}                       # the moves below start at bar 5 (their own swing)
 
 
 def test_a_divergence_formed_inside_the_visit_survives_a_lower_retest():
@@ -456,9 +456,9 @@ def test_a_divergence_formed_inside_the_visit_survives_a_lower_retest():
     df = frame(n, highs={10: 110.0, 25: 112.0, 35: 108.0}, lows={15: 95.0, 30: 100.0})
     D = build(df, [piv(df, "H", 10), piv(df, "L", 15), piv(df, "H", 25), piv(df, "L", 30)], rsi_with(n, {10: 70.0, 25: 65.0, 35: 60.0}))
     assert not [x for x in D.read(36)["divergences"] if x["side"] == "bear"]          # the latest pair moved on (lower high)
-    got = E3.V22.rsi_divergence(NS(_rsi=D, s=S1), 36, -1, 20)                             # visit armed at bar 20: the 112 top is inside it
+    got = E3.V22.rsi_divergence(NS(_rsi=D, s=S1), 36, -1, 20, "1H", 5)                             # visit armed at bar 20: the 112 top is inside it
     assert got["found"] is True and [(x["L1"]["price"], x["L2"]["price"]) for x in got["divergences"]] == [(110.0, 112.0)]
-    assert E3.V22.rsi_divergence(NS(_rsi=D, s=S1), 36, -1, 30)["found"] is False         # armed after that top ⇒ not this visit's evidence
+    assert E3.V22.rsi_divergence(NS(_rsi=D, s=S1), 36, -1, 30, "1H", 5)["found"] is False         # armed after that top ⇒ not this visit's evidence
 
 
 def test_a_divergence_overtaken_by_a_stronger_high_no_longer_counts():
@@ -470,40 +470,44 @@ def test_a_divergence_overtaken_by_a_stronger_high_no_longer_counts():
     df = frame(n, highs={10: 110.0, 25: 112.0, 35: 115.0}, lows={15: 95.0, 30: 100.0})
     ps = [piv(df, "H", 10), piv(df, "L", 15), piv(df, "H", 25), piv(df, "L", 30)]
     strong = build(df, ps, rsi_with(n, {10: 70.0, 25: 65.0, 35: 75.0}))
-    assert E3.V22.rsi_divergence(NS(_rsi=strong, s=S1), 36, -1, 20)["found"] is False
+    assert E3.V22.rsi_divergence(NS(_rsi=strong, s=S1), 36, -1, 20, "1H", 5)["found"] is False
     weak = build(df, ps, rsi_with(n, {10: 70.0, 25: 65.0, 35: 60.0}))
-    got = E3.V22.rsi_divergence(NS(_rsi=weak, s=S1), 36, -1, 20)
+    got = E3.V22.rsi_divergence(NS(_rsi=weak, s=S1), 36, -1, 20, "1H", 5)
     assert got["found"] is True and [x["L2"]["price"] for x in got["divergences"]] == [115.0]
 
 
-def test_divergence_is_read_one_degree_below_the_zone_and_the_zone_degree_is_reported():
-    """Abhi L5-a: the divergence is read between the consecutive pushes of the move into the zone — swings one degree below the zone's
-    structure (D1 for a D2 zone); a divergence at the zone's own degree (D2) is reported as information; D0 is not read. `all` = the old
-    D0–D2 what-if."""
+def test_divergence_is_read_between_the_pushes_inside_the_move_at_its_highest_degree_with_two():
+    """Abhi L5-a (final): the move into the zone begins at its own swing low (bar 15); the pushes inside it are the highs after it. D1
+    shows one push there (25 — its earlier high at 10 is BEFORE the move and is never compared); D0 shows two (18, 25) ⇒ D0 is read:
+    104 → 106 with RSI 68 → 65 = a divergence (the golden bear-call shape). A zone-degree (D2) divergence is reported as information.
+    Fewer than two pushes at every degree ⇒ none; no move known ⇒ NA; `all` = the old read."""
     from types import SimpleNamespace as NS
     from decision3 import engine as E3
-    n = 45
-    df = frame(n, highs={10: 110.0, 25: 112.0}, lows={15: 95.0})
-    rsi = rsi_with(n, {10: 70.0, 25: 65.0})
-    ps = [piv(df, "H", 10, degree=dg) for dg in (0, 1, 2)] + [piv(df, "L", 15, degree=dg) for dg in (0, 1, 2)] + \
-        [piv(df, "H", 25, degree=dg) for dg in (0, 1, 2)]
+    n = 40
+    df = frame(n, highs={10: 110.0, 18: 104.0, 25: 106.0}, lows={15: 95.0, 21: 100.0})
+    rsi = rsi_with(n, {10: 70.0, 18: 68.0, 25: 65.0})
+    ps = [piv(df, "H", 10, degree=1), piv(df, "L", 15, degree=1), piv(df, "H", 25, degree=1),
+          piv(df, "H", 10), piv(df, "L", 15), piv(df, "H", 18), piv(df, "L", 21), piv(df, "H", 25)]
     D = build(df, ps, rsi, div_degrees=(0, 1, 2))
-    got = E3.V22.rsi_divergence(NS(_rsi=D, s={"level_degree": 2}), 30, -1, 20)
-    assert got["found"] is True and got["degree"] == 1 and [x["degree"] for x in got["divergences"]] == [1]
-    assert [x["degree"] for x in got["zone_degree"]] == [2]
-    only0 = build(df, [p for p in ps if p.degree == 0], rsi, div_degrees=(0, 1, 2))
-    got0 = E3.V22.rsi_divergence(NS(_rsi=only0, s={"level_degree": 2}), 30, -1, 20)
-    assert got0["found"] is False and got0["zone_degree"] == []          # a D0 pair is not the move into a D2 zone
+    V = NS(_rsi=D, s={"level_degree": 2}, _ts=df["timestamp"].to_numpy())
+    got = E3.V22.rsi_divergence(V, 30, -1, 20, "1H", 15)
+    assert got["found"] is True and got["degree"] == 0 and got["pushes"] == {0: 2, 1: 1, 2: 0}
+    assert [(x["L1"]["price"], x["L2"]["price"]) for x in got["divergences"]] == [(104.0, 106.0)]
+    assert got["zone_degree"] == []                                      # no D2 pair here
+    # the D0 push at 18 removed: one push inside the move at every degree ⇒ nothing is compared with the high from before the move
+    D1 = build(df, [p for p in ps if p.bar != 18], rsi, div_degrees=(0, 1, 2))
+    one = E3.V22.rsi_divergence(NS(_rsi=D1, s={"level_degree": 2}, _ts=df["timestamp"].to_numpy()), 30, -1, 20, "1H", 15)
+    assert one["found"] is False and one["degree"] is None and "fewer than two pushes" in one["statements"][0]
+    assert E3.V22.rsi_divergence(V, 30, -1, 20, "1H", None)["found"] is None          # the move is not known ⇒ NA
+    assert E3.V22.rsi_divergence(V, 30, -1, 20, "D", 15)["zone_degree"] is None       # a Daily zone (D3): not computed by rsi2
     allr = E3.V22.rsi_divergence(NS(_rsi=D, s={"level_degree": 2, "div_degree_rule": "all"}), 30, -1, 20)
-    assert sorted(x["degree"] for x in allr["divergences"]) == [0, 1, 2] and allr["zone_degree"] == []
+    assert allr["found"] is True and allr["degree"] is None
     with pytest.raises(ValueError):
-        E3.V22.rsi_divergence(NS(_rsi=D, s={"level_degree": 2, "div_degree_rule": "x"}), 30, -1, 20)
-    daily = E3.V22.rsi_divergence(NS(_rsi=D, s={"level_degree": 2}), 30, -1, 20, "D")   # a Daily zone (D3): its pushes are D2
-    assert daily["found"] is True and daily["degree"] == 2 and [x["degree"] for x in daily["divergences"]] == [2]
-    assert daily["zone_degree"] is None                                  # D3 is not computed by rsi2 ⇒ None, never "no divergence"
-    narrow = build(df, ps, rsi, div_degrees=(0,))
-    na = E3.V22.rsi_divergence(NS(_rsi=narrow, s={"level_degree": 2}), 30, -1, 20)
-    assert na["found"] is None and "not computed" in na["na"]
+        E3.V22.rsi_divergence(NS(_rsi=D, s={"level_degree": 2, "div_degree_rule": "x"}), 30, -1, 20, "1H", 15)
+    zd = build(df, ps + [piv(df, "H", 10, degree=2), piv(df, "L", 15, degree=2), piv(df, "H", 25, degree=2)],
+               rsi_with(n, {10: 70.0, 18: 68.0, 25: 65.0}), div_degrees=(0, 1, 2))
+    z = E3.V22.rsi_divergence(NS(_rsi=zd, s={"level_degree": 2}, _ts=df["timestamp"].to_numpy()), 30, -1, 20, "1H", 15)
+    assert z["degree"] == 0 and z["zone_degree"] == []                   # 110 → 106 at D2 is a lower high: reported as none
 
 
 def test_v22_refuses_an_unknown_div_degree_rule_at_start():
