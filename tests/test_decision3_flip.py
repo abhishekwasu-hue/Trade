@@ -629,25 +629,23 @@ def test_real_12_oct_seller_zone_in_zone_study_and_golden_bear_call(real):
         assert cm.get("vol_mult") is not None and cm["vol_mult"] > 1.0     # on real volume evidence (Abhi: never an automatic pass)
         return
     # the miss — each cause asserted (Abhi, L3-c: the approach leg runs across the gap from the last structure swing; no automatic
-    # pass). 09:30: fast-form handover ✅ and 5M CHoCH ✅, but the commitment's volume is smaller than candles of the leg that brought
-    # price into the area — the leg from the swing low before the previous session's rise, across the gap, whose opening candles carry
-    # the larger raw volume ⇒ no commitment ⇒ no bear call.
+    # pass; the commitment's volume is compared with the AVERAGE of its comparison set). 09:30: fast-form handover ✅ and 5M CHoCH ✅,
+    # but the commitment's volume is not higher than that average ⇒ no commitment ⇒ no bear call.
     by = {r["ts"][11:16]: r for r in rows}
     c930 = by["09:30"]["commit"] or {}
     hs = c930.get("handover_state") or {}
     assert c930.get("handover_present") is True and hs.get("form") == "sharp_reversal"
     assert (hs.get("sharp") or {}).get("parts") == {"c1_rejected": True, "c2_dominant": True, "c2_closes_beyond_push_body": True}
     assert (c930.get("choch") or {}).get("done") is True
-    assert c930.get("confirm_wait") == "low_volume" and c930.get("vol_vs") == "the approach leg's candles"
+    assert c930.get("confirm_wait") == "low_volume" and c930.get("vol_vs") == "the average of the approach leg's candles"
     assert str(c930.get("approach_from")).startswith("2026-10-09 09:15")   # across the gap — not cut at the session change
     assert c930.get("vol_mult") is not None and c930["vol_mult"] < 1.0 and c930.get("vol_ref_gaps") == 0
     A = V.levels.A
-    rb = int(c930["vol_ref_bar"])
-    print(f"\n09:30 commitment volume {A['volume'][int(by['09:30']['bar'])]:,.0f} vs the approach leg's largest "
-          f"{A['volume'][rb]:,.0f} at {str(V._ts[rb])[:16]} (×{c930['vol_mult']})")
+    print(f"\n09:30 commitment volume {A['volume'][int(by['09:30']['bar'])]:,.0f} vs the average of the approach leg "
+          f"{c930['vol_ref_avg']:,.0f} over {c930['vol_ref_n']} candles (×{c930['vol_mult']})")
     pytest.xfail("golden 12 Oct bear call NOT produced on real volume evidence — fast-form handover ✅ + 5M CHoCH ✅ at 09:30, but the "
-                 f"commitment's volume is ×{c930['vol_mult']} of the approach leg's largest candle ({str(V._ts[rb])[:16]}); the leg "
-                 "runs across the gap (Abhi, L3-c) — reported, never tuned")
+                 f"commitment's volume is ×{c930['vol_mult']} of the approach leg's average ({c930['vol_ref_n']} candles, across the "
+                 "gap — Abhi, L3-c) — reported, never tuned")
 
 
 def test_real_oct_1_to_12_lifecycle_of_the_22544_22622_band(real):
@@ -1021,7 +1019,7 @@ def test_end_to_end_default_path_flipped_zone_handover_choch_commitment_with_vol
     cm = r["commit"]
     assert cm["handover_present"] is True and cm["arm_bar"] == 735 and cm["choch"]["done"] and cm["vol_mult"] > 1.0
     assert r["volume_measure"].startswith("raw FUT volume per bar") and not cm.get("data_problem")   # method §3: raw bars
-    assert cm["vol_vs"] == "the approach leg and the visit's opposite-side candles" and cm["approach_from"] < cm["visit_start"]
+    assert cm["vol_vs"] == "the average of the approach leg and the visit's opposite-side candles" and cm["approach_from"] < cm["visit_start"]
     assert r["zone_read"]["summary"]["handover"] is True and r["checklist"]["G4"][0] is None
     early = V.decide(736)                                                  # inside the visit, handover not yet ⇒ wait (a2 first). Z-1x: the BOS
     # base band is no longer widened, so it is the same zone as the 1H band (lineage) and bars 737–738 open above it (③ gap breakout)

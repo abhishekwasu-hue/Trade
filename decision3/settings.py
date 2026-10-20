@@ -84,8 +84,8 @@ DEFAULTS = {
                                              # "engulf" = जुनं (#329: body झाकते + candle 1 च्या टोकापलीकडे close) — what-if
     "slow_form_rule": "method",              # method §3 slow form: trend-side bodies ↑, opposite ↓, volume trend-side ला झुकतो; "majority" = जुनं
     "absorption_rule": "method",             # method §3: opposite side लहान candles मध्ये येत राहते आणि किंमत दूर जात नाही; "strengthening" = जुनं
-    "commit_volume_rule": "approach_and_opposite",   # method §3 Commitment: approach leg + visit मधल्या opposite candles पेक्षा मोठा (push +
-                                             # commitment वगळून); "opposite" = जुनं (#329, opposite नाही ⇒ grade cap B)
+    "commit_volume_rule": "approach_and_opposite",   # method §3 Commitment (Abhi L3-c): approach leg + visit मधल्या opposite candles च्या
+                                             # सरासरीपेक्षा जास्त (push + commitment वगळून); "opposite" = जुनं (#329, opposite नाही ⇒ grade cap B)
     "volume_baseline": "raw",                # method §3 Volume: raw bars; "slot" = जुनं time-of-day slot baseline (Z-1) — what-if
     "candle_rule": "compare",                # method §3: candle forms / doji / "big" by comparing body and wicks (big = vs the visit); "ratio" = जुनं
     "session_windows": False,                # method P2: एकच सलग chart — 2-candle forms दिवस ओलांडतात; entry तास = operational schedule (engine);
@@ -202,7 +202,7 @@ REGISTER = {
     "slow_form_rule": ("method", "method / majority (legacy)", "Abhi नियम", "method §3: trend side grows, opposite shrinks, volume tilts"),
     "absorption_rule": ("method", "method / strengthening (legacy)", "Abhi नियम", "method §3: opposite side in small candles, price stuck"),
     "commit_volume_rule": ("approach_and_opposite", "approach_and_opposite / opposite (legacy)", "Abhi नियम",
-                           "method §3: larger than the approach leg and the visit's opposite side; push + commitment excluded"),
+                           "method §3 (Abhi L3-c): above the AVERAGE of the approach leg + the visit's opposite side; push + commitment excluded"),
     "volume_baseline": ("raw", "raw / slot (legacy)", "Abhi नियम", "method §3 Volume: raw bars, no time-slot baselines"),
     "candle_rule": ("compare", "compare / ratio (legacy)", "Abhi नियम", "method §3: body and wicks compared, never ratios; big = vs the visit"),
     "session_windows": (False, "False / True (legacy)", "Abhi नियम", "method P2: no session / day split in reading; entry hours = operational"),

@@ -142,7 +142,7 @@ def normalize_info(info):
     return {"arm_bar": arm_bar, "arm_ts": _first(subs, "arm_ts", "study_start_ts", "window_start_ts"),
             "commit_bar": commit_bar,
             "commit_ts": _first(subs, "confirm_ts", "commit_ts", "commitment_ts"),
-            "d": d, "area": None if area is None else (float(min(area)), float(max(area))), "vol_mult": vm,
+            "d": d, "area": None if area is None else (float(min(area)), float(max(area))), "vol_mult": vm, "vol_vs": _first(subs, "vol_vs"),
             "vol_na": _first(subs, "vol_na"), "vol_trend_mult": _first(subs, "vol_trend_mult", "trend_vol_mult"),
             "vol_counter_mult": _first(subs, "vol_counter_mult", "counter_vol_mult"),
             "ltf_bar": _first(subs, "choch_bar", "ltf_bar"), "ltf_ts": _first(subs, "choch_ts", "ltf_ts")}
@@ -251,7 +251,7 @@ def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, s
             out["line"] = NO_OPP_LINE
             return out
         out.update(ok=True, commit_mult=round(float(ni["vol_mult"]), 2), trend_mult=ni["vol_trend_mult"],
-                   counter_mult=ni["vol_counter_mult"])
+                   counter_mult=ni["vol_counter_mult"], vol_vs=ni.get("vol_vs"))
         out["line"] = line(out)
         return out
     if not pre:                                                            # window = एकच bar ⇒ तुलना नाही (खोटा 1.0× नको)
@@ -277,12 +277,19 @@ def _x(v):
     return "-" if v is None else f"{v:.1f}×"
 
 
+def _engine_what(st):
+    """What the engine compared the commitment's volume with: the method path names its set ("the average of …", Abhi L3-c); the legacy
+    level-bot path (`commit_volume_rule = opposite`) compares with the strongest opposite-side candle."""
+    vs = st.get("vol_vs") or ""
+    return vs if vs.startswith("the average") else "the strongest opposite-side candle"
+
+
 def line(st):
     """Caption / ticket ची एकच volume ओळ."""
     if not st or not st.get("ok"):
         return NA_LINE
     head = "volume" if st.get("engine") else "volume (chart est.)"
-    what = "the strongest opposite-side candle" if st.get("engine") else "avg"   # engine c0 = compared with the opposite side (Abhi)
+    what = _engine_what(st) if st.get("engine") else "avg"                 # the engine's own comparison set (Abhi L3-c) / legacy
     return (f"{head}: counter-side candles {_x(st['counter_mult'])} → trend-side {_x(st['trend_mult'])} · "
             f"commitment {_x(st['commit_mult'])} {what}")
 
@@ -291,7 +298,7 @@ def commit_label(st, what="commitment"):
     if not st.get("ok"):
         return NA_LINE
     if st.get("engine"):
-        return f"{what} vol {st['commit_mult']:.1f}× the strongest opposite-side candle"
+        return f"{what} vol {st['commit_mult']:.1f}× {_engine_what(st)}"
     return f"{what} vol {st['commit_mult']:.1f}× window avg (chart est.)"
 
 

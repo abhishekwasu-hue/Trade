@@ -2845,3 +2845,15 @@ legs owner वि. reader2 gate).
     - the GitHub Actions workflows (spot-history feed, EOD, token check, run_algo) and their secrets (names only);
     - credential stores outside `.env`;
     - entries off via the dashboard setting, with the bots' cron lines kept until flat.
+
+## 2026-10-20 · Abhi on L3-c: commitment volume vs the AVERAGE (branch `claude/method-l3c-average`)
+
+- **Abhi:** commitment चा volume तुलनेच्या candles च्या **सरासरीपेक्षा** जास्त (approach leg + visit मधले उलट बाजूचे; push आणि commitment
+  वगळून) — सगळ्यांपेक्षा नाही; pullback मोठ्या volume ने सुरू होणं साधारण, म्हणून सर्वात मोठी candle निर्णय करत नाही. Dominant body
+  तसाच ("visit मधल्या इतर candles पेक्षा मोठी").
+- **Code / KB / Pack / spec:** `method.commitment` (`vol_ref_avg`, `vol_ref_n`); KB K-volume ओळी, Method Pack 5a / 6, CHART_READER_METHOD
+  §3 Commitment, METHOD_MAP, NUMBERS_INVENTORY, OPEN_QUESTIONS L3-c2. Legacy `opposite` (level bots pin) तसाच.
+- **Golden (real volume, tuning नाही):** 12 Oct 09:30 — fast-form handover ✅, 5M CHoCH ✅, commitment volume 1,77,060 vs approach leg
+  (9 Oct 09:15 पासून, gap ओलांडून, 24 candles) ची सरासरी 1,52,674 ⇒ ×1.16 ⇒ **bear call (setup, grade B)**. 13 Oct — bear call नाही
+  (handover नाही).
+

@@ -324,3 +324,15 @@ def test_fetch_volume_fn_injected_and_volume_line_in_caption(monkeypatch, tmp_pa
            "signal_ts": "2026-10-06T10:00:00", "mode": "notify", "volume_line": "volume: NA (grade cap B)"}
     cap = VW.v1_caption({**row, "mode": "auto_veto"}, res, VD.decide("auto_veto", "agree", {**VC.BOT_DEFAULTS}))
     assert cap.count("volume: NA (grade cap B)") == 1
+
+
+def test_engine_caption_names_the_average_it_was_compared_with():
+    """Review (L3-c average): the caption says what the engine compared the commitment with — the method path's average of its
+    comparison set; the legacy level-bot read keeps "the strongest opposite-side candle"."""
+    st = {"ok": True, "engine": True, "commit_mult": 1.16, "trend_mult": None, "counter_mult": None,
+          "vol_vs": "the average of the approach leg's candles"}
+    assert "commitment 1.2× the average of the approach leg's candles" in VP.line(st)
+    assert VP.commit_label(st).endswith("1.2× the average of the approach leg's candles")
+    legacy = {**st, "vol_vs": "opposite-side candles"}
+    assert "the strongest opposite-side candle" in VP.line(legacy) and "the strongest opposite-side candle" in VP.commit_label(legacy)
+
