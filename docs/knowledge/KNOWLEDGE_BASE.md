@@ -1571,7 +1571,7 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
 | ✚ LQ | Liquidity: A low / equal lows / PDL चा sweep आणि reclaim | 0…+8 | K5 |
 | RV | Reversal: 50 × (s − 0.30) | −10…+25 | K9 |
 | ✚ VL | Volume (futures, `rel_vol`): pullback dry-up < 0.8 ⇒ +3 · C-end absorption spike किंवा reversal candle ला volume ⇒ +2 · pullback मध्ये वाढता volume (> 1.0) ⇒ −5 · data नाही ⇒ 0 | −5…+5 | K10.3 |
-| ✚ DV | RSI divergence: C-end ला regular किंवा pullback मध्ये hidden ⇒ +3…+5. Impulse च्या टोकावर विरुद्ध regular divergence ⇒ −3. | −3…+5 | K10 |
+| ✚ DV | RSI divergence: area मधला पुरावा (K10.4, method §3) — regular फक्त, hidden नाही; गुण / score नाही (method §5: पुरावा यादीत, बेरीज नाही). | — | K10.4 |
 | ✚ PT | Pattern वाचन: flag / opposite wedge ⇒ +3…+5 · double top/bottom किंवा H&S neckline break, impulse वरचा wedge ⇒ −10 | −10…+5 | K11 |
 | GP | Gap: पुष्टी +10 · विरोध −10 | −10…+10 | K13 |
 | EW | Elliott: 2/4/C/E-end +10 · gray 0 · A-end किंवा B च्या आत **शक्यता** −15 (count स्पष्ट असेल तर A3 व्हेटो) | −15…+10 | K3 |

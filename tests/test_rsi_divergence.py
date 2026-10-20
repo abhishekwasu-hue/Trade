@@ -456,3 +456,18 @@ def test_a_divergence_formed_inside_the_visit_survives_a_lower_retest():
     got = E3.V22.rsi_divergence(NS(_rsi=D), 36, -1, 20)                             # visit armed at bar 20: the 112 top is inside it
     assert got["found"] is True and [(x["L1"]["price"], x["L2"]["price"]) for x in got["divergences"]] == [(110.0, 112.0)]
     assert E3.V22.rsi_divergence(NS(_rsi=D), 36, -1, 30)["found"] is False         # armed after that top ⇒ not this visit's evidence
+
+
+def test_a_divergence_overtaken_by_a_stronger_high_no_longer_counts():
+    """Review (layer 5): 110 → 112 with RSI 70 → 65 is a divergence, but a later 115 with RSI 75 takes 112's place (RSI went with price)
+    ⇒ the earlier divergence is overtaken; a weaker later high (RSI 60) is itself a new divergence."""
+    from types import SimpleNamespace as NS
+    from decision3 import engine as E3
+    n = 45
+    df = frame(n, highs={10: 110.0, 25: 112.0, 35: 115.0}, lows={15: 95.0, 30: 100.0})
+    ps = [piv(df, "H", 10), piv(df, "L", 15), piv(df, "H", 25), piv(df, "L", 30)]
+    strong = build(df, ps, rsi_with(n, {10: 70.0, 25: 65.0, 35: 75.0}))
+    assert E3.V22.rsi_divergence(NS(_rsi=strong), 36, -1, 20)["found"] is False
+    weak = build(df, ps, rsi_with(n, {10: 70.0, 25: 65.0, 35: 60.0}))
+    got = E3.V22.rsi_divergence(NS(_rsi=weak), 36, -1, 20)
+    assert got["found"] is True and [x["L2"]["price"] for x in got["divergences"]] == [115.0]

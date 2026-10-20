@@ -516,7 +516,13 @@ class V22:
             return {"found": None, "na": "rsi2 Divergence failed — " + self._rsi}
         side = "bear" if d < 0 else "bull"
         r = self._rsi.read(t)
-        divs = [x for x in self._rsi.history(t) if x["side"] == side and x["type"] == "regular" and x["L2"]["bar"] >= int(arm)]
+        B = self._rsi.B
+
+        def still_the_extreme(x):                                          # a later higher high (lower low) overtakes it: the newer
+            b, p = int(x["L2"]["bar"]), float(x["L2"]["price"])            # pair is judged on its own (method §3: consecutive swings)
+            return not (B.H[b + 1:t + 1] > p).any() if side == "bear" else not (B.L[b + 1:t + 1] < p).any()
+        divs = [x for x in self._rsi.history(t) if x["side"] == side and x["type"] == "regular" and x["L2"]["bar"] >= int(arm)
+                and still_the_extreme(x)]
         keep = ("degree", "status", "bars", "price_rel", "count")
         out = [{**{k: x.get(k) for k in keep}, "L1": {k: x["L1"][k] for k in ("time", "price", "rsi")},
                 "L2": {k: x["L2"][k] for k in ("time", "price", "rsi")}} for x in divs]
