@@ -35,6 +35,15 @@ LEGACY = {                       # used only by a non-default rule / gate (what-
     "flip_pullback_vol_ratio": ("candle_rule = ratio (G4 context)", {"flip.py"}),
     "tl_touch_sigma": ("line_rule = sigma", {"trendline.py"}),
     "tl_min_touches": ("line_rule = sigma", {"trendline.py"}),
+    "evidence_weights": ("verdict_rule = score", {"method.py"}),
+    "conv_a": ("verdict_rule = score", {"method.py"}),
+    "conv_b": ("verdict_rule = score", {"method.py"}),
+    "conv_weak": ("verdict_rule = score", {"method.py"}),
+    "power_shift_min": ("verdict_rule = score (④ count; level bots pin their own)", {"method.py"}),
+    "power_overlap": ("verdict_rule = score", {"method.py"}),
+    "power_fallback_bars": ("verdict_rule = score", {"method.py"}),
+    "range_overlap_min": ("verdict_rule = score (§5.3 range state)", {"method.py"}),
+    "range_state_n": ("verdict_rule = score", {"method.py"}),
     "commit_merge_max": ("registered only (≤ 2 merged is the form list itself); read nowhere", set()),
     "vol_slot_sessions": ("volume_baseline = slot", {"engine.py"}),
     "vol_slot_min_sessions": ("volume_baseline = slot", {"engine.py"}),
@@ -51,11 +60,6 @@ DATA_QUALITY = {                 # is there enough / complete data (method §1 P
 PENDING = {                      # still a number in the reading path ⇒ removed in the named layer
     "daily_pivot_n": 1, "range_eq_sigma_d": 1, "maturity_sigma_d": 1, "level_degree": 1, "tl_degree": 1,
     "flip_pullback_inner_degree": 1, "k_reset_sigma": 1,
-    "evidence_weights": 6, "conv_a": 6, "conv_b": 6, "conv_weak": 6,
-    # ④ power shift: its count still DECIDES verdicts through the evidence score (`ev["power_shift"]` ⇒ `conviction` weights ⇒ A / B /
-    # weak / against) until layer 6 removes the score (method §4 / §5: evidence listed, never scored); §5.3 range state = context only
-    # (`range_state_gate` off). Both go with the evidence in layer 6.
-    "power_shift_min": 6, "power_overlap": 6, "power_fallback_bars": 6, "range_overlap_min": 6, "range_state_n": 6,
     # decision3 reads touch_window_bars only behind the legacy visit rules, but facts/dossier `_visits` still counts it (layer 6)
     "touch_window_bars": 6,
 }
@@ -108,3 +112,16 @@ def test_layer_three_reading_rules_are_logic():
 def test_layer_four_lines_are_logic():
     """Layer 4 (lines + confluence): touch by the candle, two separate reactions, confluence labels the area — no σ tolerance or count."""
     assert S3.DEFAULTS["line_rule"] == "logic" and not [k for k, layer in PENDING.items() if layer == 4]
+
+
+def test_layer_six_verdict_is_the_method_no_scores():
+    """Layer 6 (method §4 / §5): enter on the required set; label A = + ≥ 1 confirming piece, B = the required set only; evidence listed,
+    never scored — the score, its weights and the ④ / §5.3 counts are a legacy what-if (verdict_rule = score)."""
+    import inspect
+    from decision3 import engine as E3
+    assert S3.DEFAULTS["verdict_rule"] == "method"
+    src = inspect.getsource(E3.V22._level_eval)
+    i = src.index('if vrule == "score":')
+    for call in ("M.power_shift(", "M.range_state(", "M.conviction("):
+        assert src.index(call) > i, f"{call} runs outside the legacy score rule"
+

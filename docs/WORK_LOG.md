@@ -2865,3 +2865,12 @@ legs owner वि. reader2 gate).
   `confluence_label` च्या शेवटी "line" (chart captions तेच दाखवतात). Assumption L4-f: "आधीचा touch" = candle ने रेषा गाठली ती वेळ.
 - **Golden (real):** 12 Oct 09:30 — 09:15 चं वळण (22,651; रेषा 22,654) ⇒ 1H supply 22,544–22,622 = "confluence: line" ✅ (test).
 
+## 2026-10-20 · Method layer 6a: the verdict (branch `claude/method-layer6-output`)
+
+- **Method §4 / §5:** required set (⑥ handover + commitment + volume तुलना + LTF CHoCH, trend बाजू) ⇒ entry. Label A = required + किमान
+  एक confirming पुरावा (area मध्ये volume वाढतोय, RSI divergence, confluence, correction ची रेषा commitment ने तोडली); B = फक्त required.
+  पुरावे present / absent / NA यादी; score / वजन नाही.
+- `verdict_rule = method` (default); जुने score, `evidence_weights`, `conv_*`, ④ power shift count, §5.3 range state = `verdict_rule = score`
+  what-if. जुने label caps (Weekly विरुद्ध / origin तुटला / counter-correction / Weekly fallback) = context notes (L6-a).
+- Guard: layer-6 decision numbers LEGACY; `test_layer_six_verdict_is_the_method_no_scores`.
+

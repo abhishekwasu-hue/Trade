@@ -551,9 +551,16 @@ class V22:
             [tl["broken"], f"K रेघ ({tl['touches']} स्पर्श) " + ("close ने तुटली ⇒ grade +" if tl["broken"] else
                            f"आधीच तुटली ({str(pd.Timestamp(self._ts[tl['broken_before']]))[:16]}) — commitment candle ने नाही ⇒ trigger नाही"
                            if tl.get("broken_before") is not None else "अजून अखंड")]
-        ok4, n4, items = M.power_shift(A, t, d, k, self.s)
-        chk["④"] = [ok4, f"power shift {n4}/4 ({', '.join(x for x in ('a_shrinking', 'b_overlap', 'c_no_new_extreme_or_sweep', 'd_rejection_wick') if items[x]) or '—'})"]
-        rng = M.range_state(A, t, self.s) and not M.range_broken_by(A, t, d, self.s)   # Q24: पट्ट्याबाहेर close ⇒ range संपली
+        vrule = self.s.get("verdict_rule", "method")
+        if vrule not in ("method", "score"):
+            raise ValueError(f"verdict_rule {vrule!r} — method / score पैकी")
+        if vrule == "score":                                               # legacy what-if: ④ count + §5.3 range state feed the score
+            ok4, n4, items = M.power_shift(A, t, d, k, self.s)
+            chk["④"] = [ok4, f"power shift {n4}/4 ({', '.join(x for x in ('a_shrinking', 'b_overlap', 'c_no_new_extreme_or_sweep', 'd_rejection_wick') if items[x]) or '—'})"]
+            rng = M.range_state(A, t, self.s) and not M.range_broken_by(A, t, d, self.s)   # Q24: पट्ट्याबाहेर close ⇒ range संपली
+        else:                                                              # method §4: the handover (⑥ a2) decides; no counts
+            ok4, items, rng = None, {}, False
+            chk["④"] = [None, "power shift count: not in the method — the handover (⑥) decides (§3 / §4)"]
         ok6, why6, cm = self._confirm(t, d, lvl, k)                         # ⑥ a2 + c0 + c1 (shared, method.confirm)
         if not self.entry_window(t):                                       # method P2: time is never in the reading — the entry hours are
             ok6, why6 = False, f"entry वेळ-खिडकीबाहेर (operational schedule) · reading: {why6}"   # an operational schedule after it
@@ -581,10 +588,28 @@ class V22:
         side = "buy" if d == M.DOWN else "sell"
         mine = [x for x in sw if x["side"] == side]
         ev["trap_sweep"] = bool(ev["trap_sweep"] or mine or [x for x in tr if x["side"] == side])
-        conv, score, missing = M.conviction(ev, self.s)
+        liq = {"sweeps": mine[:3], "trapped": [x for x in tr if x["side"] == side][:2]}
+        if vrule == "method":                                              # method §4 / §5: evidence listed, never scored
+            confirm = M.confirming_evidence(zr, rsi, lvl, tl)
+            label = M.method_label(confirm)
+            extra = {"K": k, "evidence": ev, "trendline": tl, "conviction": label, "conv_score": None, "commit": cm, "liquidity": liq,
+                     "flip_retest": g4, "zone_read": zr, "verdict_rule": "method", "confirming": confirm,
+                     "missing": [x for x, v in confirm.items() if v is not True],
+                     "evidence_list": M.evidence_list(ev, confirm, ok6), "range_state": None,
+                     "wave_context": {"legs": k["legs"], "note": "context only (method §6: no wave-count gates)"},
+                     "context_notes": list(notes or [])}             # older caps (weekly / origin / mature) = context, never the label
+            if not ok6:
+                return M_WAIT, chk, {**extra, "why": f"commitment ची वाट ({why6})"}
+            if self.rr_step:                                               # legacy only (Abhi 13 Oct)
+                ok7, rk = M.risk(self, t, d, lvl, k, self.s)
+                chk["⑦"] = [ok7, f"R:R {rk['rr']}" if rk["rr"] is not None else "target नाही"]
+                extra["risk"] = rk
+                if not ok7:
+                    return M_NO, chk, {**extra, "why": "R:R < 3 ⇒ trade नाही"}
+            return M_SETUP, chk, extra
+        conv, score, missing = M.conviction(ev, self.s)                     # legacy what-if (verdict_rule = score)
         extra = {"K": k, "evidence": ev, "trendline": tl, "conviction": conv, "conv_score": score, "missing": missing, "commit": cm,
-                 "liquidity": {"sweeps": mine[:3], "trapped": [x for x in tr if x["side"] == side][:2]}, "flip_retest": g4,
-                 "zone_read": zr}
+                 "liquidity": liq, "flip_retest": g4, "zone_read": zr, "verdict_rule": "score"}
         extra["range_state"] = bool(rng)                                  # Abhi Z-1j: context fact (sideways = the handover study)
         if rng and bool(self.s.get("range_state_gate", False)):            # legacy only
             chk["⑥"] = [False, "§5.3 range अवस्था (overlap + doji) ⇒ entry नाही"]

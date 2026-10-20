@@ -1091,7 +1091,39 @@ def plans_of(V, r):
     return b_plans(V.levels.A, int(r["bar"]), d, r.get("risk"), (r.get("commit") or {}).get("merged"), V.s)
 
 
-# ------------------------------------------------------------------------------------------------ §6 conviction
+# ------------------------------------------------------------------------------------------------ method §4 / §5 verdict label
+CONFIRMING = ("volume_growing", "rsi_divergence", "confluence", "correction_line_closed_through")
+
+
+def confirming_evidence(zr, rsi, lvl, tl):
+    """Method §4: the confirming evidence, each True (present) / False (absent) / None (not readable) — listed, never scored:
+    selling (buying) volume growing inside the area · RSI divergence · confluence (a line meets the area, or a Daily / Weekly area
+    overlaps it) · the correction's own line closed through by the commitment candle."""
+    summ = (zr or {}).get("summary") or {}
+    vg = summ.get("vol_rising_trade_side")
+    rf = (rsi or {}).get("found")
+    return {"volume_growing": None if vg is None else bool(vg),
+            "rsi_divergence": None if rf is None else bool(rf),
+            "confluence": bool("tl" in (lvl.get("births") or []) or lvl.get("confluence_line") or lvl.get("confluence")),
+            "correction_line_closed_through": None if tl is None else bool(tl.get("broken"))}
+
+
+def method_label(confirm):
+    """Method §5: A = the required set plus at least one confirming piece; B = the required set only (never a sum or a weight)."""
+    return "A" if any(v is True for v in confirm.values()) else "B"
+
+
+def evidence_list(ev, confirm, required_ok):
+    """Method §5 evidence list: present / absent / NA — the required set (⑥ handover + commitment + LTF CHoCH), the confirming pieces
+    and the context facts (sweep, freshness, star, candle strength). No scores."""
+    def w(v):
+        return "NA" if v is None else ("present" if v else "absent")
+    ctx = {k: ev.get(k) for k in ("trap_sweep", "fresh", "level_star", "commit_strong", "engulf", "against_bodies", "tl_confluence")}
+    return {"required": "present" if required_ok else "absent", "confirming": {k: w(v) for k, v in confirm.items()},
+            "context": {k: w(v) for k, v in ctx.items()}}
+
+
+# ------------------------------------------------------------------------------------------------ §6 conviction (legacy what-if)
 def conviction(ev, s):
     """ev = {पुरावा: True / False / None (NA)}; वजन register मध्ये (W). NA ⇒ बेरजेत नाही (कमाल सुद्धा नाही)."""
     W = s["evidence_weights"]

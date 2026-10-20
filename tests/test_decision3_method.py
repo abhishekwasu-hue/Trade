@@ -489,3 +489,19 @@ def test_maturity_and_leg_count_never_block_or_downgrade_by_default():
     for r in base.values():                                                       # leg count = context: never a no_trade / downgrade
         assert r["evidence"] is None or (r["evidence"]["second_attempt"] is None and r["evidence"]["fourth_attempt"] is None)
         assert "चौथा" not in str(r.get("why")) and "पहिला पाय" not in str(r.get("missing"))
+
+
+def test_method_label_is_required_set_plus_confirming_never_a_score():
+    """Method §5: A = the required set plus at least one confirming piece; B = the required set only. Present / absent / NA listed."""
+    zr = {"summary": {"vol_rising_trade_side": False}}
+    lvl = {"births": ["a:D2"], "confluence": []}
+    c = M.confirming_evidence(zr, {"found": False}, lvl, None)
+    assert c == {"volume_growing": False, "rsi_divergence": False, "confluence": False, "correction_line_closed_through": None}
+    assert M.method_label(c) == "B"
+    for one in ({**c, "volume_growing": True}, {**c, "rsi_divergence": True}, {**c, "correction_line_closed_through": True}):
+        assert M.method_label(one) == "A"
+    assert M.confirming_evidence(zr, None, {"births": ["a:D2", "tl"]}, None)["confluence"] is True
+    assert M.confirming_evidence(zr, None, {"births": [], "confluence": [{"tf": "D"}]}, None)["confluence"] is True
+    ev = M.evidence_list({"trap_sweep": True, "fresh": None}, c, True)
+    assert ev["required"] == "present" and ev["confirming"]["volume_growing"] == "absent" and ev["context"]["trap_sweep"] == "present"
+    assert ev["context"]["fresh"] == "NA"
