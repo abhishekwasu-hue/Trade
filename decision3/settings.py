@@ -167,8 +167,8 @@ REGISTER = {
     "daily_min_sessions": (10, "—", "Abhi नियम", "spec §3: Daily unknown फक्त data अपुरा (≤ 10 sessions)"),
     "range_eq_sigma_d": (0.25, "0.15/0.25/0.35", "अंदाज", "spec ① RANGE: σ_D च्या अपूर्णांकात (config)"),
     "level_degree": (2, "—", "व्याख्या", "spec ② (a) 1H trend-degree swing = थर 1 D2"),
-    "div_degree_rule": ("zone", "zone / all", "Abhi नियम (L5-a)",
-                        "RSI divergence = zone मध्ये येणाऱ्या चालीचे लागोपाठचे pushes (zone च्या रचनेच्या एक degree खाली: 1H zone ⇒ D1, Daily "
+    "div_degree_rule": ("zone", "zone / all", "Abhi नियम",
+                        "Abhi L5-a: RSI divergence = zone मध्ये येणाऱ्या चालीचे लागोपाठचे pushes (zone च्या रचनेच्या एक degree खाली: 1H zone ⇒ D1, Daily "
                         "zone ⇒ D2 — गृहीत); zone ची degree माहिती"),
     "level_min_width_sigma": (0.0, "0 (Abhi) / जुना 0.15", "Abhi नियम", "Abhi Z-1x: zone = base candles चा स्वतःचा पट्टा, आकड्याने रुंद नाही"),
     "liquidity_eq_sigma": (0.15, "0.1/0.15/0.25", "अंदाज", "spec ② (d) equal highs / lows"),
