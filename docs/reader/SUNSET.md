@@ -30,7 +30,7 @@ Switch-off convention: a cron line is commented out with the prefix `#sunset-off
 
 | What runs (script) | Purpose | ATP replacement (proposal) | Switch-off step |
 |---|---|---|---|
-| `trade_monitor.py` (every minute, market hours) | PAPER exits: SL / target / EOD for open positions | ATP paper exit monitor | **Last of the trading lines**: only after every open position is closed or handed over |
+| `trade_monitor.py` (every minute, market hours) | Exits: SL / target / EOD for open positions (PAPER and LIVE) | ATP paper exit monitor | **Last of the trading lines**: only after every open position is closed or handed over |
 | `scripts/engine_signal_run.py --engine decision3` (`# one-bot-engine`, 15M closes) + warm-up (`# one-bot-engine-warm`) | The chart reader's live setups (the one bot) | ATP reader + signal (runs beside Trade) | On Abhi's word only (precondition: ATP's reader live) — `#sunset-off#` |
 | `srv2_momentum_reversal_strategy.py` (`# one-bot-srv2`) | PAPER bot that trades the reader's setups (also manages its own positions) | ATP paper bot | New entries off by the dashboard setting (`symbol_enabled` / `signal_symbols`); the cron line stays until flat |
 | `scripts/level_gate_preopen.py` (`# one-bot-preopen`) | The one bot's daily pre-open status message (bot state, engine store freshness) | ATP health message | `#sunset-off#` with the reader |
@@ -188,7 +188,10 @@ off 'scripts/engine_signal_run\.py|scripts/level_gate_preopen\.py|vision\.worker
 stop_unit vision_worker.service
 # §6 step 3: flat — PAPER and LIVE
 ask "All PAPER positions flat?" "FLAT"
-ask "No LIVE position open and no bot set to LIVE (trading_mode)? LIVE is closed by Abhi first." "NO-LIVE"
+echo "active --mode LIVE cron lines (left running by this script; they can still open LIVE entries — Abhi decides them):"
+crontab -l | grep -v '^[[:space:]]*#' | grep -E -- "$LIVE" || echo "  none"
+ask "No LIVE position open, no bot set to LIVE (trading_mode), and the LIVE lines above handled by Abhi?" "NO-LIVE"
+ask "Preconditions: ATP collects the same FUT series and has its own Upstox token flow (both jobs stop next)?" "ATP-READY"
 # §6 step 4: bots, exits, monitors, collectors
 off 'srv2_momentum_reversal_strategy\.py|classic_sr_reversal_trader\.py|dynamic_sr_instant_trader\.py|oi_signal_auto_trader\.py|credit_spread_auto_trader\.py|oi_greeks_vix_strategy\.py|trade_monitor\.py|mcx_futures_trader\.py|refresh_market_structure\.py|refresh_market_structure_intraday\.py|refresh_market_zones\.py|refresh_market_zones_intraday\.py|refresh_market_zones_mcx\.py|refresh_dynamic_sr_1m\.py|refresh_dynamic_sr_5m\.py|iv_snapshot_collector\.py|oi_snapshot_collector\.py|collect_index_futures_volume\.py|check_vix_spike_halt\.py|mcx_market_readiness_check\.py|eod_trade_summary\.py|paper_daily_summary\.py|trigger_upstox_token_request\.py'
 for u in position_stream_monitor.service position_stream_monitor_mcx.service vision_telegram.service; do stop_unit "$u"; done
