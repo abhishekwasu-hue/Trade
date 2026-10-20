@@ -131,7 +131,7 @@ def test_layer_one_swings_are_abhis_calibration():
     from swings2 import settings as SS
     assert not [k for k, layer in PENDING.items() if layer == 1]
     assert SS.DEFAULTS["k"][1] == 4.0 and SS.DEFAULTS["k"][2] == 6.0 and "calibration" in SS.REGISTER["k"][2]
-    assert S3.DEFAULTS["swing_k"] is None and "calibration" in S3.REGISTER["swing_k"][2]
+    assert S3.DEFAULTS["swing_k"] is None and "calibration" in S3.REGISTER["swing_k"][3]
 
 
 
