@@ -1206,9 +1206,15 @@ def test_real_12_oct_third_touch_reads_as_confluence_line(real):
     t = ix[1]                                                              # 09:30 — the 09:15 turn is a confirmed swing by now
     _, _, act = V.step2(t, "DOWN")
     got = next(x for x in act if x["id"] == lvl["id"])
-    assert got.get("confluence_line") is True and got["confluence_label"].endswith("line") and "tl" in got["births"]
+    assert got.get("confluence_line") is True and "line" in got["confluence_label"] and "tl" in got["births"]
     assert (got["lo"], got["hi"]) == (lvl["lo"], lvl["hi"])                # the area itself, never a new band
     rt = got["line_touch"]
     assert str(V.levels.ts.iloc[rt["bar"]])[:16] == "2026-10-12 09:15" and rt["price"] > lvl["hi"]
+    # Abhi L4-g: touches by reactions — the 7 Oct 12:00 wick contact has no real swing low between it and the 6 Oct anchor ⇒ one touch;
+    # the 12 Oct turn is the third touch (a trade location while the line is unbroken), shown as information in the label
+    assert rt["touch_no"] == 3 and rt["trade_location"] is True and got["confluence_label"].endswith("line (touch 3)")
+    for later in ix[2:4]:                                                  # a later turn that stays away keeps the touch (L4-g 2)
+        _, _, act2 = V.step2(later, "DOWN")
+        assert next(x for x in act2 if x["id"] == lvl["id"])["line_touch"]["bar"] == rt["bar"]
     ln = TL.swing_line(V, t, M.DOWN)
     assert rt["price"] < ln["p1"][1] + ln["slope"] * (rt["bar"] - ln["p1"][0])   # it turned short of the line: a reaction, not a wick touch

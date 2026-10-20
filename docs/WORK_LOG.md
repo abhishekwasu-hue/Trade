@@ -2865,3 +2865,11 @@ legs owner वि. reader2 gate).
   `confluence_label` च्या शेवटी "line" (chart captions तेच दाखवतात). Assumption L4-f: "आधीचा touch" = candle ने रेषा गाठली ती वेळ.
 - **Golden (real):** 12 Oct 09:30 — 09:15 चं वळण (22,651; रेषा 22,654) ⇒ 1H supply 22,544–22,622 = "confluence: line" ✅ (test).
 
+## 2026-10-20 · Abhi on L4-g: touches by reactions (branch `claude/method-l4g-touch-count`)
+
+- **(1)** Touches = reactions, contacts नाही: मधे रेषेच्या रचनेचा खरा उलट swing नसेल तर contacts = एकच touch (`trendline.touch_groups`).
+  तिसऱ्या touch पासून प्रत्येक touch trade location (रेषा अखंड); क्रमांक माहिती ⇒ label "confluence: line (touch N)".
+- **(2)** Touch point = reaction चं स्वतःचं वळण (आधीच्या touch नंतर रेषेच्या सगळ्यात जवळचं); नंतरचं दूरचं वळण label काढत नाही.
+- **Golden (real):** 7 Oct 12:00 चा wick contact 6 Oct anchor सोबत एकच touch (मधे swing low नाही) ⇒ 12 Oct 09:15 चं वळण = **touch 3**;
+  09:30, 09:45, 10:00 ला 1H supply = "confluence: … line (touch 3)" (test).
+
