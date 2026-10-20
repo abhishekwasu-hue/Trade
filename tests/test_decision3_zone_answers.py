@@ -627,8 +627,8 @@ def test_commitment_dominance_and_volume_are_comparisons_within_the_visit():
     assert "not larger than the visit's opposite-side candles" in why2      # no approach leg given ⇒ named as compared
     red = {k: v.copy() for k, v in A.items()}
     red["open"][0], red["close"][0] = 99.4, 99.2                             # candle 1 red too ⇒ no opposite-side candle in the visit
-    ok3, why3, cm3 = M.commitment(red, i, DOWN, lvl, S, win=0)              # OPEN_QUESTIONS L3-c: no candle to compare ⇒ none is larger ⇒
-    assert ok3 and cm3["vol_vs"].startswith("nothing to compare") and cm3["vol_mult"] is None   # holds, and is named
+    ok3, why3, cm3 = M.commitment(red, i, DOWN, lvl, S, win=0)              # Abhi (L3-c): never an automatic pass — no approach leg known
+    assert not ok3 and "nothing to compare" in why3 and cm3.get("wait") == "no_volume_reference"   # no opposite candle ⇒ no commitment
     legacy = {**S, "commit_volume_rule": "opposite"}
     ok4, _, cm4 = M.commitment(red, i, DOWN, lvl, legacy, win=0)
     assert ok4 and cm4["vol_vs"] == "no opposite-side candle in this visit" and cm4["grade"] == "B"   # the #329 fail-safe, what-if only
@@ -893,3 +893,49 @@ def test_failed_commitment_memo_never_mixes_a_tl_area_with_its_parent():
         lv = {"parent": parent, "tl": tl}
         order = [first, "tl" if first == "parent" else "parent"]
         assert {k: V._failed_commit_outside(4, 2, lv[k], DOWN) for k in order} == fresh
+
+
+def test_the_approach_leg_runs_across_a_gap_and_an_earlier_visit():
+    """Abhi (L3-c, P2): the leg that brought price into the area starts at the last swing built away from the area — never at a gap,
+    a session change or the end of an earlier visit (a failed commitment). No such swing known ⇒ the approach is unknown (None)."""
+    rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 98.6, 97.4, 98.5), (98.5, 100.6, 98.4, 100.4), (100.4, 100.5, 98.0, 98.2),   # 2 visit; 3 red
+            (100.6, 101.5, 100.5, 101.2)]                                                                                    # 4: gap back in
+    V, lvl = _visit_v(rows, swings=[("L", 96.8, 0, 1)])
+    V.handover_episode = lambda A, a, t, d, l: {"present": True}            # bar 3 = a failed commitment after a handover ⇒ visit ends
+    vi = V.visit(4, lvl, DOWN)
+    assert (vi["start"], vi["prev_end"], vi["ended_by"]) == (4, 3, "commitment")
+    assert vi["approach_from"] == 1                                         # from the swing low (bar 0) — across the earlier visit and gap
+    V2, _ = _visit_v(rows)
+    V2.handover_episode = lambda A, a, t, d, l: {"present": True}
+    assert V2.visit(4, lvl, DOWN)["approach_from"] is None                  # no structure swing known ⇒ approach unknown, never invented
+
+
+def test_legs_arrays_have_no_session_breaks_by_default():
+    """Method P2: the G4 approach read sees one continuous chart — only the data's first bar is "first" (no gap removed)."""
+    from decision3 import flip as FL
+    ts = pd.to_datetime(["2030-01-07 15:00", "2030-01-07 15:15", "2030-01-08 09:15", "2030-01-08 09:30"]).to_numpy()
+    A = {k: np.arange(4, dtype=float) for k in ("open", "high", "low", "close")}
+    assert list(FL.legs_arrays(A, ts, S)["first"]) == [True, False, False, False]
+    assert list(FL.legs_arrays(A, ts, {**S, "session_windows": True})["first"]) == [True, False, True, False]   # legacy what-if
+
+
+
+def test_a_swing_on_the_touching_candle_does_not_empty_the_approach_leg():
+    """Review: the visit's first candle pokes into the supply and itself becomes a swing low below it — the approach leg still runs from
+    the swing BEFORE the visit (never from the touching candle itself, which would leave nothing to compare)."""
+    rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 98.6, 97.4, 98.5), (98.5, 100.4, 96.5, 96.9), (96.9, 99.0, 96.8, 98.8)]
+    V, lvl = _visit_v(rows, swings=[("L", 96.8, 0, 1), ("L", 96.5, 2, 3)])
+    vi = V.visit(3, lvl, DOWN)
+    assert vi["start"] == 2 and vi["approach_from"] == 1
+
+
+
+def test_a_swing_on_the_first_visit_candle_starts_the_next_leg_after_a_failed_commitment():
+    """Review: the visit's first candle is itself a swing built away and the visit ends with a failed commitment — the next visit's
+    approach leg starts after that swing, not after the older one."""
+    rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 98.6, 97.4, 98.5), (98.5, 100.4, 96.5, 96.9), (96.9, 99.0, 96.8, 98.8),
+            (98.8, 99.2, 97.6, 97.8), (97.8, 98.0, 97.0, 97.8), (97.8, 100.5, 97.7, 100.2)]
+    V, lvl = _visit_v(rows, swings=[("L", 96.8, 0, 1), ("L", 96.5, 2, 3)])
+    V._failed_commit_outside = lambda i, *a: i == 4                         # the visit (from bar 2) ends at bar 4
+    vi = V.visit(6, lvl, DOWN)
+    assert (vi["start"], vi["prev_end"], vi["ended_by"], vi["approach_from"]) == (6, 4, "commitment", 3)

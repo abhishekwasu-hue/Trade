@@ -73,8 +73,13 @@ def reached(src, price, extreme, up):
 
 
 # ------------------------------------------------------------------------------------------------ approach context (G4, facts only)
-def legs_arrays(A, ts):
-    """decision3 15M arrays ⇒ the legs2 candle-metrics layout (o, h, l, c, first = first bar of a session; legs2 drops the overnight gap)."""
+def legs_arrays(A, ts, s=None):
+    """decision3 15M arrays ⇒ the legs2 candle-metrics layout (o, h, l, c, first). Method P2 (default): one continuous chart — only the
+    first bar of the data is "first", so no pair is skipped and no gap removed at a session change (a gap is simply the next candle).
+    Legacy `session_windows = True`: first = the first bar of each session (legs2 drops the overnight gap)."""
+    if not bool((s or {}).get("session_windows", False)):
+        first = np.r_[True, np.zeros(max(len(ts) - 1, 0), bool)] if len(ts) else np.zeros(0, bool)
+        return {"o": A["open"], "h": A["high"], "l": A["low"], "c": A["close"], "first": first}
     day = pd.to_datetime(pd.Series(ts)).dt.normalize().to_numpy()
     first = np.r_[True, day[1:] != day[:-1]] if len(day) else np.zeros(0, bool)
     return {"o": A["open"], "h": A["high"], "l": A["low"], "c": A["close"], "first": first}
@@ -120,7 +125,7 @@ def approach_context(A, ts, t, lvl, pivots, s, legs_A=None):
     pb_px = float(L[pb_bar] if up else H[pb_bar])
     out["pullback"] = {"from_bar": ext_bar, "from_ts": _ts(ts, ext_bar), "from_price": round(ext_px, 2), "to_bar": pb_bar,
                        "to_ts": _ts(ts, pb_bar), "to_price": round(pb_px, 2)}
-    LA = legs_A if legs_A is not None else legs_arrays(A, ts)
+    LA = legs_A if legs_A is not None else legs_arrays(A, ts, s)
     c = DL.classify(LA, seq, ext_bar, ext_px, pb_bar, pb_px, t, inner_seq=inner, elliott=True)
     out["a_read"] = {k: (round(v, 3) if isinstance(v, float) else v) for k, v in c.items()}
     out["a"] = True if c["kind"] == "corrective" else (False if c["kind"] == "impulse" else None)

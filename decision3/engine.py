@@ -265,7 +265,8 @@ class V22:
         a swing built away from the area after the visit began (`_away_swings`), or a commitment that failed and closed outside
         after the handover (`_failed_commit_outside`, before t). A candle that closes just outside and comes back is the same visit; time never ends it; a
         break / flip is the K4 lifecycle's (the handover's window restarts after a break). The approach leg = from the last swing built
-        away before the visit (the candles after that swing) up to the visit (`approach_from` … start − 1). Bars ≤ t only. Returns {start, prev_end, why, approach_from,
+        away before the visit (the candles after that swing, across any gap, session change or earlier visit — P2) up to the visit
+        (`approach_from` … start − 1); no such swing known ⇒ None. Bars ≤ t only. Returns {start, prev_end, why, approach_from,
         ended_by}."""
         A = self.levels.A
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
@@ -283,14 +284,17 @@ class V22:
                     start, prev_end, ended_by, last_piv = None, i, "swing", i
                     continue
                 if i < t and self._failed_commit_outside(i, start, lvl, d):
+                    inside = [p for p in piv if start <= p <= i]           # a swing on the visit's first candle still starts the next leg
                     start, prev_end, ended_by = None, i, "commitment"
+                    last_piv = max(inside) if inside else last_piv
+                continue
+            if A["low"][i] <= hi and A["high"][i] >= lo:                   # a swing ON the touching candle is not before the visit
+                start = i
+                approach_from = (last_piv + 1) if last_piv is not None else None   # the leg into the area: the candles after its swing —
+                # Abhi (P2): it runs across any gap or session change and across the end of an earlier visit; no structure swing ⇒ unknown
                 continue
             if i in piv:
                 last_piv = i
-            if A["low"][i] <= hi and A["high"][i] >= lo:
-                start = i
-                approach_from = max((last_piv + 1) if last_piv is not None else born,   # the leg into the area: the candles after its
-                                    (prev_end + 1) if prev_end is not None else 0)       # swing (that candle ends the leg before)
         ts = lambda i: str(pd.Timestamp(self._ts[i]))[:16]                 # noqa: E731
         why = None
         if start is None:
@@ -515,7 +519,7 @@ class V22:
 
     def _legs_A(self):
         if getattr(self, "_legs_arr", None) is None:
-            self._legs_arr = FL.legs_arrays(self.levels.A, self.levels.ts.to_numpy())
+            self._legs_arr = FL.legs_arrays(self.levels.A, self.levels.ts.to_numpy(), self.s)
         return self._legs_arr
 
     def _level_eval(self, t, trend, lvl, cap=None, notes=None, *, step_down=False):
