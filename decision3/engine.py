@@ -83,6 +83,8 @@ class V22:
         if self.s.get("zone_visit_rule", "structure") != "structure" and \
                 self.s.get("commit_volume_rule", "approach_and_opposite") == "approach_and_opposite":   # never a silent half-rule
             raise ValueError("decision3 V22: a legacy zone_visit_rule knows no approach leg — pair it with commit_volume_rule = opposite")
+        if self.s.get("div_degree_rule", "zone") not in ("zone", "all"):   # fail at start, not on the first in-zone bar
+            raise ValueError(f"decision3 V22: unknown div_degree_rule {self.s['div_degree_rule']!r} (allowed: zone, all)")
         self.sealed = sealed                                              # Q33: sealed (NIFTY holdout) तारखा output मध्ये नाहीत
         guard_sealed_bars(m15 if res is None else res["m15"], sealed)       # Abhi Z-1t: no 15M bar (⇒ no decision) on a sealed date
         self.df1m = df1m                                                  # फक्त advisory (elliott count) साठी
@@ -501,15 +503,17 @@ class V22:
         (normalised per bar). CONTEXT ONLY: reported in the checklist / payload, never a no_trade or a wait."""
         return FL.approach_context(self.levels.A, self.levels.ts.to_numpy(), t, lvl, self.res["pivots"], self.s, legs_A=self._legs_A())
 
-    def rsi_divergence(self, t, d, arm):
+    def rsi_divergence(self, t, d, arm, zone_tf="1H"):
         """Method §3 RSI divergence (rsi2.engine.Divergence, 15M) as ZONE EVIDENCE: every regular divergence on the trade side (bear for
         a bear call) whose second swing / running extreme is inside the zone visit (bar ≥ arm), known by bar t — from the divergence
         history, so one that formed on the first top inside the area is not lost when a lower retest becomes the newest pair. Never a
         trigger or gate; its absence is stated.
         Abhi L5-a: read between the consecutive pushes of the move into the zone — swings ONE degree below the zone's structure (the
         same degree as the pullback inside it: `level_degree` − 1); that read is the evidence (`found`). A divergence at the zone's own
-        degree is reported too (`zone_degree`, information). Other degrees are not read here (`div_degree_rule` "all" = the old D0–D2
-        what-if). Returns {found, divergences, zone_degree, degree, statements} or NA with the reason."""
+        degree is reported too (`zone_degree`, information). The zone's structure follows its own timeframe: a 1H zone = `level_degree`
+        (D2), a Daily zone = one above (D3) ⇒ its pushes are D2. A degree rsi2 did not compute ⇒ NA with the reason (never a silent
+        "no divergence"). Other degrees are not read here (`div_degree_rule` "all" = the old D0–D2 what-if). Returns {found,
+        divergences, zone_degree, degree, statements} or NA with the reason."""
         if getattr(self, "_rsi", None) is None:
             try:
                 from rsi2 import engine as RE
@@ -532,13 +536,17 @@ class V22:
         def brief(x):
             return {**{k: x.get(k) for k in keep}, "L1": {k: x["L1"][k] for k in ("time", "price", "rsi")},
                     "L2": {k: x["L2"][k] for k in ("time", "price", "rsi")}}
-        zd = int(self.s["level_degree"])
+        zd = int(self.s["level_degree"]) + (1 if zone_tf == "D" else 0)    # the zone's own structure degree (1H = D2, Daily = D3)
         rule = self.s.get("div_degree_rule", "zone")
         if rule not in ("zone", "all"):
             raise ValueError(f"div_degree_rule {rule!r} — zone / all")
         pushes = zd - 1                                                    # the move into the zone: one degree below its structure
+        have = {int(x) for x in self._rsi.degrees}                         # the degrees rsi2 computed
+        if rule == "zone" and pushes not in have:
+            return {"found": None, "na": f"RSI divergence at D{pushes} (one below the {zone_tf} zone) not computed by rsi2 "
+                                         f"(div_degrees {sorted(have)})", "degree": pushes}
         out = [brief(x) for x in divs if rule == "all" or int(x["degree"]) == pushes]
-        own = [brief(x) for x in divs if rule == "zone" and int(x["degree"]) == zd]
+        own = ([brief(x) for x in divs if int(x["degree"]) == zd] if zd in have else None) if rule == "zone" else []   # None = not computed
         st = [y["statement"] for y in r["latest"] if y["side"] == side and (rule == "all" or int(y.get("degree", pushes)) in (pushes, zd))]
         return {"found": bool(out), "divergences": out, "zone_degree": own, "degree": None if rule == "all" else pushes,
                 "statements": st}
@@ -580,7 +588,7 @@ class V22:
             ok6, why6 = False, f"entry वेळ-खिडकीबाहेर (operational schedule) · reading: {why6}"   # an operational schedule after it
         chk["⑥"] = [ok6, why6]
         arm = int(cm.get("arm_bar", t))
-        rsi = self.rsi_divergence(t, d, arm)                               # zone evidence (Abhi): never a gate
+        rsi = self.rsi_divergence(t, d, arm, lvl.get("tf", "1H"))          # zone evidence (Abhi): never a gate
         Av, vlabel = self.vol_view(arm, t)
         zr = FL.zone_read(Av, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi,
                           handover=cm.get("handover_state"))               # in-zone study facts (bars arm … t)

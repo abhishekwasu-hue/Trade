@@ -498,4 +498,19 @@ def test_divergence_is_read_one_degree_below_the_zone_and_the_zone_degree_is_rep
     assert sorted(x["degree"] for x in allr["divergences"]) == [0, 1, 2] and allr["zone_degree"] == []
     with pytest.raises(ValueError):
         E3.V22.rsi_divergence(NS(_rsi=D, s={"level_degree": 2, "div_degree_rule": "x"}), 30, -1, 20)
+    daily = E3.V22.rsi_divergence(NS(_rsi=D, s={"level_degree": 2}), 30, -1, 20, "D")   # a Daily zone (D3): its pushes are D2
+    assert daily["found"] is True and daily["degree"] == 2 and [x["degree"] for x in daily["divergences"]] == [2]
+    assert daily["zone_degree"] is None                                  # D3 is not computed by rsi2 ⇒ None, never "no divergence"
+    narrow = build(df, ps, rsi, div_degrees=(0,))
+    na = E3.V22.rsi_divergence(NS(_rsi=narrow, s={"level_degree": 2}), 30, -1, 20)
+    assert na["found"] is None and "not computed" in na["na"]
+
+
+def test_v22_refuses_an_unknown_div_degree_rule_at_start():
+    import pandas as pd
+    from decision3 import engine as E3
+    m15 = pd.DataFrame({"timestamp": pd.to_datetime(["2030-01-01 09:15"]), "bar_end": pd.to_datetime(["2030-01-01 09:30"]),
+                        "open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0]})
+    with pytest.raises(ValueError, match="div_degree_rule"):
+        E3.V22(m15, s={"div_degree_rule": "x"})
 
