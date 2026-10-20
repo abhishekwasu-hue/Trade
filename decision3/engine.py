@@ -502,9 +502,10 @@ class V22:
         return FL.approach_context(self.levels.A, self.levels.ts.to_numpy(), t, lvl, self.res["pivots"], self.s, legs_A=self._legs_A())
 
     def rsi_divergence(self, t, d, arm):
-        """RSI divergence (rsi2.engine.Divergence, 15M, `div_bars` minimum 3 — Abhi RSI-2) as ZONE EVIDENCE: a regular divergence on the
-        trade side (bear for a bear call) whose second pivot / running extreme is inside the zone visit (bar ≥ arm), known by bar t.
-        Never a gate. Returns {found, divergences, statement} or NA with the reason."""
+        """Method §3 RSI divergence (rsi2.engine.Divergence, 15M) as ZONE EVIDENCE: every regular divergence on the trade side (bear for
+        a bear call) whose second swing / running extreme is inside the zone visit (bar ≥ arm), known by bar t — from the divergence
+        history, so one that formed on the first top inside the area is not lost when a lower retest becomes the newest pair. Never a
+        trigger or gate; its absence is stated. Returns {found, divergences, statements} or NA with the reason."""
         if getattr(self, "_rsi", None) is None:
             try:
                 from rsi2 import engine as RE
@@ -515,12 +516,12 @@ class V22:
             return {"found": None, "na": "rsi2 Divergence failed — " + self._rsi}
         side = "bear" if d < 0 else "bull"
         r = self._rsi.read(t)
-        divs = [x for x in r["divergences"] if x["side"] == side and x["type"] == "regular" and x["L2"]["bar"] >= int(arm)]
+        divs = [x for x in self._rsi.history(t) if x["side"] == side and x["type"] == "regular" and x["L2"]["bar"] >= int(arm)]
         keep = ("degree", "status", "bars", "price_rel", "count")
         out = [{**{k: x.get(k) for k in keep}, "L1": {k: x["L1"][k] for k in ("time", "price", "rsi")},
                 "L2": {k: x["L2"][k] for k in ("time", "price", "rsi")}} for x in divs]
         st = [y["statement"] for y in r["latest"] if y["side"] == side]
-        return {"found": bool(out), "divergences": out, "bar_window": r["bar_window"], "statements": st}
+        return {"found": bool(out), "divergences": out, "statements": st}
 
     def _legs_A(self):
         if getattr(self, "_legs_arr", None) is None:

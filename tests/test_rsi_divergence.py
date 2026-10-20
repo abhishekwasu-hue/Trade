@@ -1,4 +1,4 @@
-"""K-RSI (KB K10.4, pending Abhi) — rsi2.engine.Divergence: regular RSI divergence facts on swings2 pivots.
+"""K-RSI (KB K10.4, method §3 — layer 5) — rsi2.engine.Divergence: regular RSI divergence facts on swings2 pivots.
 
 Synthetic cases (always run): mirror bear / bull, equal-high double top, equal RSI counts / a new RSI extreme does not, bar window and the
 cap-rejected log, hidden OFF by default, multiple-divergence count, commitment-candle confirmation, no look-ahead (real swings2 pivots,
@@ -442,3 +442,17 @@ def test_golden_13_oct_skipped_unless_full_session(nifty):
     if day.iloc[-1].strftime("%H:%M") < "15:00":
         pytest.skip(f"13-Oct export is partial (data to {day.iloc[-1] + pd.Timedelta(minutes=15):%H:%M}); the golden 13-Oct read "
                     "(RSI ≈ 80 with price, no divergence in the zone) needs the full session")
+
+
+def test_a_divergence_formed_inside_the_visit_survives_a_lower_retest():
+    """Review (layer 5): a bear divergence on the first top inside the area (110 → 112, RSI 70 → 65), then a lower-high retest — the
+    newest pair is no longer a divergence, but the reader still finds the one formed inside the visit (from the history, never lost)."""
+    from types import SimpleNamespace as NS
+    from decision3 import engine as E3
+    n = 45
+    df = frame(n, highs={10: 110.0, 25: 112.0, 35: 108.0}, lows={15: 95.0, 30: 100.0})
+    D = build(df, [piv(df, "H", 10), piv(df, "L", 15), piv(df, "H", 25), piv(df, "L", 30)], rsi_with(n, {10: 70.0, 25: 65.0, 35: 60.0}))
+    assert not [x for x in D.read(36)["divergences"] if x["side"] == "bear"]          # the latest pair moved on (lower high)
+    got = E3.V22.rsi_divergence(NS(_rsi=D), 36, -1, 20)                             # visit armed at bar 20: the 112 top is inside it
+    assert got["found"] is True and [(x["L1"]["price"], x["L2"]["price"]) for x in got["divergences"]] == [(110.0, 112.0)]
+    assert E3.V22.rsi_divergence(NS(_rsi=D), 36, -1, 30)["found"] is False         # armed after that top ⇒ not this visit's evidence

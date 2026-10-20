@@ -2873,4 +2873,7 @@ legs owner वि. reader2 gate).
 - **Guard:** `test_layer_five_rsi_divergence_is_logic` (जुने RSI आकडे divergence path मध्ये नाहीत; bar window फक्त legacy switch मागे).
 - **Degree प्रश्न (L5-a):** structure degrees फक्त घेतल्या तर 12 Oct golden divergence (9 Oct push high, D0) हरवते ⇒ बदल केला नाही;
   layer 1 च्या निर्णयासोबत ठरेल.
+- **Review fixes (layer 5):** visit मध्ये बनलेली divergence नंतरच्या lower retest मुळे हरवत होती (`read` फक्त नवी जोडी) ⇒ engine आता
+  history मधून वाचतो (test). RSI तुलना unrounded (लपलेली tolerance नाही). Pack: 5b चं जुनं hidden-divergence वाक्य काढलं, Handover = 5d;
+  K10.2 = पार्श्वभूमी (वाचनाचा नियम K10.4). "Swing वरचा RSI" = code ची व्याख्या (C-24) — L5-a मध्ये.
 

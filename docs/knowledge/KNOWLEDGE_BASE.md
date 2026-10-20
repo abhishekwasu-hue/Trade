@@ -151,7 +151,7 @@
 - **Correction कमकुवत होतोय का:** legs लहान, overlap वाढतोय, spreads आकुंचन, closes पुन्हा वर सरकत आहेत (rising CLV) (K10, K12).
 - **Sweep / spring / upthrust:** A चा low किंवा equal lows थोडे तोडून परत आत close? (K5)
 - **Volume (NIFTY futures, raw bars — method §3):** pullback मध्ये volume सुकतोय का? C-end ला absorption spike? Reversal candle ला volume? (K10.3)
-- **RSI divergence** (फक्त पुरावा): C-end ला regular, किंवा pullback मध्ये hidden (K10).
+- **RSI divergence** (फक्त पुरावा): C-end ला regular (K10.4; hidden वापरत नाही).
 - **Chart pattern वाचन:** flag (pullback) की double top / H&S (reversal warning)? (K11)
 
 ## टप्पा 5: Context
@@ -1002,6 +1002,8 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 - ⇒ हे गुण scoring features आहेत, नियम नाहीत. NIFTY data वर तपासायचे.
 
 ### K10.2 RSI(14) divergence: मंजूर असलेलं **एकमेव indicator**, फक्त पुरावा म्हणून
+> **वाचनाचा नियम आता K10.4 (method §3).** खालचे आकडे (bars अंतर, MR / points फरक, 30 / 70 location, गुण) आणि hidden divergence चा
+> वापर वाचनात नाहीत — हा भाग फक्त पार्श्वभूमी / research म्हणून.
 **काय.**
 - **Regular bullish:** price lower low, RSI higher low ⇒ ताकद कमी होतेय (थकवा). Bearish उलट.
 - **Hidden bullish:** price **higher** low, RSI lower low ⇒ trend continuation. Pullback ने oscillator ला जास्त ढकललं, पण price structure तुटलं नाही. [अनुभव: Cardwell / Brown]
@@ -1067,6 +1069,7 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
   जात नाही — **बरोबर RSI सुद्धा divergence** [Abhi].
 - **Bullish (आरसा):** price नवा खालचा low आणि RSI आधीच्या low च्या RSI खाली जात नाही (बरोबर RSI सुद्धा).
 - **Swing वरचा RSI:** त्या swing च्या स्वतःच्या span मधला RSI चा टोक (शेजारच्या उलट swings मधला भाग) — bar count / ± window नाही.
+  *(ही code ची व्याख्या आहे, अबींचे शब्द नाहीत — NUMBERS_INVENTORY C-24 / OPEN_QUESTIONS L5-a, अबींचा होय / नाही बाकी.)*
 - Bars ची किमान / कमाल संख्या नाही; RSI फरकाला किमान मर्यादा नाही. Hidden divergence: वापरात नाही (फक्त what-if).
 - RSI = Wilder RSI spot close वर (indicator ची स्वतःची व्याख्या). Futures फक्त volume साठी.
 
@@ -1074,7 +1077,8 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
 - **Area मधला पुरावा, कधीच trigger नाही:** दुसरा swing (किंवा चालू push चं टोक) visit मध्ये असेल तरच zone study चा पुरावा; area पासून
   दूर ⇒ फक्त context. Daily trend विरुद्ध trade चं कारण नाही; hard gate नाही.
 - **Absence सुद्धा सांगायची** ("divergence नाही: RSI ने price सोबत नवा high केला").
-- Status: "forming" (चालू push चं टोक) / "confirmed" (swing confirm, किंवा त्यापासून दूर close होणारी commitment candle). No look-ahead.
+- Status: "forming" (चालू push चं टोक) / "confirmed" (swing confirm, किंवा त्या टोकापासून दूर close होणारी reversal candle). No look-ahead.
+- Visit मध्ये बनलेली divergence नंतरच्या lower retest मुळे हरवत नाही (history मधून वाचतो).
 - Count: त्याच degree, त्याच बाजूची लागोपाठची divergence ⇒ count (माहिती).
 
 **चुका.**
@@ -1100,9 +1104,8 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
 - **Correction weakening (price-only):** legs inside C getting shorter, spreads contracting, closes moving away from the extreme, a sweep
   and reclaim of A's end, the first strong candle in the opposite direction. Failed extension (< 0.5 MR beyond the previous extreme,
   back inside within 2 bars); rejection wick at the pullback extreme (≥ 0.5 of the range and ≥ 0.6 MR).
-- **RSI(14) divergence — evidence only, never a decision:** regular divergence at a C-end (C makes a new extreme, RSI does not) ⇒
-  correction tiring; hidden divergence in a pullback ⇒ continuation evidence; regular divergence at the impulse's last extreme ⇒ the next
-  pullback may be a reversal, demand more confirmation. Never trade against the trend on divergence.
+- **RSI divergence — evidence only, never a decision:** read it as in 5c (consecutive real swings, regular only). A regular divergence at a
+  C-end (C makes a new extreme, RSI does not) ⇒ the correction is tiring. Never trade against the trend on divergence.
 
 </details>
 <!-- /pack -->
@@ -1116,8 +1119,8 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
   **Bearish:** price makes a higher high while RSI does not go above its previous high — an equal RSI high counts. **Bullish (mirror):**
   price makes a lower low while RSI does not go below its previous low — an equal RSI low counts. An equal price high / low is not a
   new extreme.
-- RSI at a swing = its extreme inside that swing's own span (between the neighbouring opposite swings); no bar windows, no minimum
-  gaps, no minimum RSI difference. Hidden divergence is not used.
+- RSI at a swing = its extreme inside that swing's own span (between the neighbouring opposite swings; a coded definition awaiting
+  Abhi's yes / no); no bar windows, no minimum gaps, no minimum RSI difference. Hidden divergence is not used.
 - It counts as evidence when its second swing (or the push in progress) is inside the visit; away from an area it is context only.
 </details>
 <!-- /pack -->
@@ -1400,7 +1403,7 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
 - Hindsight labels tests मध्ये (I4.6): fixture मध्ये decision bar पर्यंतचाच data.
 
 <!-- pack:5 zone_study -->
-<details><summary>Method Pack (English) — 5c. Handover and patterns inside the area (source: K11.0, K11.1–K11.16 "use" rows, K11.17, K11.18; handover candle reading: design §12.1 item 5 / level-bots confirmation a2 [Abhi])</summary>
+<details><summary>Method Pack (English) — 5d. Handover and patterns inside the area (source: K11.0, K11.1–K11.16 "use" rows, K11.17, K11.18; handover candle reading: design §12.1 item 5 / level-bots confirmation a2 [Abhi])</summary>
 
 - **Zone study = what happens INSIDE the area, from arrival to the commitment candle.** The question is always: is the opposite side
   (sellers in a pullback down, buyers in a pullback up) losing control and the trend side taking over?
