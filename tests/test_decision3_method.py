@@ -426,6 +426,7 @@ def test_mature_cap_in_pipeline():
     m15 = _abc_m15()
     s = {k: v for k, v in NO_MATURE.items() if k != "maturity_sigma_d"}          # c0 / c1 बंद (हा test त्यांचा नाही), maturity default
     s["wave_gates"] = True                                                       # Abhi 12 Oct नियम pin — B1 (default) test खाली
+    s["verdict_rule"] = "score"                                                  # caps / step-down = the legacy score rule (layer 6)
     V = E3.V22(m15, s=s)
     # Q44: या fixture ला trend-degree (A1) correction नाही ⇒ structural target नाही ⇒ default मध्ये mature नाही ⇒ Daily states mature केले.
     assert not any(x.mature for x in V.daily)

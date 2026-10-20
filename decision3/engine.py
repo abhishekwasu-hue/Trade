@@ -598,8 +598,8 @@ class V22:
                      "evidence_list": M.evidence_list(ev, confirm, ok6), "range_state": None,
                      "wave_context": {"legs": k["legs"], "note": "context only (method §6: no wave-count gates)"},
                      "context_notes": list(notes or [])}             # older caps (weekly / origin / mature) = context, never the label
-            if not ok6:
-                return M_WAIT, chk, {**extra, "why": f"commitment ची वाट ({why6})"}
+            if not ok6:                                                    # a label belongs to an entry (method §5) — none on a wait
+                return M_WAIT, chk, {**extra, "conviction": None, "why": f"commitment ची वाट ({why6})"}
             if self.rr_step:                                               # legacy only (Abhi 13 Oct)
                 ok7, rk = M.risk(self, t, d, lvl, k, self.s)
                 chk["⑦"] = [ok7, f"R:R {rk['rr']}" if rk["rr"] is not None else "target नाही"]
@@ -692,6 +692,8 @@ class V22:
                 "range_band": st.band, "active_levels": act, "checklist": chk, "decision": dec, "mark": mark,
                 "K": best.get("K"), "risk": best.get("risk"), "conviction": best.get("conviction"), "conv_score": best.get("conv_score"),
                 "missing": best.get("missing"), "evidence": best.get("evidence"), "why": best.get("why"),
+                "verdict_rule": best.get("verdict_rule"), "confirming": best.get("confirming"),
+                "evidence_list": best.get("evidence_list"), "context_notes": best.get("context_notes"),
                 "level": best.get("level"), "liquidity": best.get("liquidity"), "trendline": best.get("trendline"),
                 "commit": best.get("commit"), "commitment_form": (best.get("commit") or {}).get("form"),
                 "flip_retest": best.get("flip_retest"), "zone_read": best.get("zone_read"), "range_state": best.get("range_state"),
