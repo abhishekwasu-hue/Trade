@@ -201,14 +201,21 @@ def test_test_card_label_on_the_vision_card():
 
 
 @pytest.mark.parametrize("stored,code,want", [("", None, "missing"), ("abc", 200, "valid"), ("abc", 401, "rejected (HTTP 401)"),
-                                              ("abc", 503, "not verified (HTTP 503)")])
+                                              ("abc", 403, "rejected (HTTP 403)"), ("abc", 503, "not verified (HTTP 503)"),
+                                              ("abc", "boom", "not verified (ConnectionError)")])
 def test_token_is_checked_with_upstox_not_just_present(stored, code, want, monkeypatch):
     import cloud_db
     import requests
     from types import SimpleNamespace as NS
     seen = []
+
+    def get(url, headers=None, timeout=None):
+        seen.append((url, headers["Authorization"]))
+        if code == "boom":
+            raise requests.ConnectionError("failed for abc")                # the message carries the token ⇒ must not leak
+        return NS(status_code=code)
     monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda acc=None: stored)
-    monkeypatch.setattr(requests, "get", lambda url, headers=None, timeout=None: seen.append(url) or NS(status_code=code))
+    monkeypatch.setattr(requests, "get", get)
     got = PS.IO().token()
     assert got == want and "abc" not in got                              # the token value is never in the output
-    assert seen == ([] if not stored else [PS.PROFILE_URL])
+    assert seen == ([] if not stored else [(PS.PROFILE_URL, "Bearer abc")])
