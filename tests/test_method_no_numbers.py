@@ -108,3 +108,18 @@ def test_layer_three_reading_rules_are_logic():
 def test_layer_four_lines_are_logic():
     """Layer 4 (lines + confluence): touch by the candle, two separate reactions, confluence labels the area — no σ tolerance or count."""
     assert S3.DEFAULTS["line_rule"] == "logic" and not [k for k, layer in PENDING.items() if layer == 4]
+
+
+def test_layer_five_rsi_divergence_is_logic():
+    """Layer 5 (method §3 RSI divergence): consecutive swings of one degree, a new price extreme vs an RSI that does not exceed its previous
+    extreme (equal counts), RSI at the swing's own span — no bar window, no minimum RSI / price difference, no RSI zones, hidden off."""
+    import inspect
+    from rsi2 import engine as RE
+    from rsi2 import settings as RS
+    assert RS.DEFAULTS["div_bar_window"] is False and RS.DEFAULTS["div_hidden"] is False
+    src = inspect.getsource(RE.Divergence)
+    for key in ("min_rsi", "min_price_sigma", '"gaps"', "bull_min", "bull_max", "bull_trough", "bear_max", "bear_min", "bear_peak",
+                "window_15m", "window_1h", "pivot_k", "grade_os", "grade_ob", "onk_trough", "shift_trough", "shift_peak", "edge_recent"):
+        assert key not in src, f"{key}: an RSI number in the divergence reading path"
+    ev = inspect.getsource(RE.Divergence._eval)
+    assert ev.index("div_bar_window") < ev.index("lo, hi = self.win"), "the bar window is compared only behind the legacy switch"

@@ -2865,3 +2865,12 @@ legs owner वि. reader2 gate).
   `confluence_label` च्या शेवटी "line" (chart captions तेच दाखवतात). Assumption L4-f: "आधीचा touch" = candle ने रेषा गाठली ती वेळ.
 - **Golden (real):** 12 Oct 09:30 — 09:15 चं वळण (22,651; रेषा 22,654) ⇒ 1H supply 22,544–22,622 = "confluence: line" ✅ (test).
 
+## 2026-10-20 · Method layer 5: RSI divergence (branch `claude/method-layer5-rsi`)
+
+- `rsi2.engine.Divergence` (from #329) आधीच method प्रमाणे: लागोपाठचे same-degree swings, नवा price टोक (बरोबर नाही), RSI ने आधीचा
+  टोक ओलांडला नाही (बरोबर चालतो), swing च्या स्वतःच्या span मधला RSI, bar window / किमान फरक नाही, hidden बंद; visit मधला पुरावा, absence सांगितली.
+- **KB K10.4** "pending" काढून method §3 प्रमाणे पुन्हा लिहिला (आकडे काढले: bar window, ±N bars, equal-high tolerance); Method Pack 5c.
+- **Guard:** `test_layer_five_rsi_divergence_is_logic` (जुने RSI आकडे divergence path मध्ये नाहीत; bar window फक्त legacy switch मागे).
+- **Degree प्रश्न (L5-a):** structure degrees फक्त घेतल्या तर 12 Oct golden divergence (9 Oct push high, D0) हरवते ⇒ बदल केला नाही;
+  layer 1 च्या निर्णयासोबत ठरेल.
+

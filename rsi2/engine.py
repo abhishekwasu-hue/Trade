@@ -653,7 +653,7 @@ class Divergence:
                     divs.append(x)
                 elif x["cap"]:
                     caps.append(x)
-        return {"owner": "rsi2.engine.Divergence", "kb": "K10.4 K-RSI (pending Abhi)", "tf": self.tf, "bar": t,
+        return {"owner": "rsi2.engine.Divergence", "kb": "method §3 RSI divergence (KB K10.4)", "tf": self.tf, "bar": t,
                 "asof": str(self.B.ts.iloc[t]), "rsi": _r2(self.rsi[t]), "rsi_warmup": bool(self.warm[t]),
                 "rsi_period": int(self.s["period"]), "rsi_window_bars": self.N, "bar_window": list(self.win),
                 "hidden_enabled": bool(self.s["div_hidden"]), "degrees": list(self.degrees), "divergences": divs, "cap_rejected": caps,
