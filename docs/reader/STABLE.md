@@ -8,7 +8,9 @@ Owner decision (Abhi): Trade will be archived only on Abhi's own word; ATP ports
   and **Abhi answers ✅**. Then:
   - tag the commit `reader-layer<N>-stable-v1`;
   - add a row below (layer, tag, date, what it covers, its tests, the KB + Method Pack version);
-  - export the parity fixtures to the private trade-data repo under `parity/layer<N>/<tag>/`, never into this public repo:
+  - export the parity fixtures to the private trade-data repo under `parity/layer<N>/<tag>/`, never into this public repo
+    (`python3 scripts/reader_parity_export.py --layer N=<tag> … --trade-data ../trade-data`, from the clean tagged commit; it refuses
+    to overwrite an existing tag's fixtures):
     - the golden set;
     - a broad sample of real NIFTY / BANKNIFTY bars (trends, ranges, corrections);
     - the mirror cases;
