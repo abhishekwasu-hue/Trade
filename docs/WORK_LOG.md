@@ -2809,3 +2809,14 @@ legs owner वि. reader2 gate).
   च्या पहिल्या candle वरचाच swing approach सुरू करत नाही; "nothing to compare" चा स्वतंत्र wait code. Dossier चा visit finder (session
   look-back + `touch_window_bars`) = layer 6 (OPEN_QUESTIONS L3-n).
 
+
+## 2026-10-20 · Trade sunset preparation (branch `claude/reader-sunset-prep`)
+
+- **Abhi:** Trade will be archived; ATP ports each STABLE reader layer with parity tests. Work here = the reader layers, the PAPER bot's
+  health, the exports. The level bots are rebuilt in ATP (not here).
+- **`docs/reader/STABLE.md`:** the register (tag `reader-layer<N>-stable-v1` only after Abhi's ✅; frozen = bug fixes with a new tag;
+  parity fixtures in trade-data `parity/<layer>/<tag>/`; the matching KB + Method Pack). No stable layer yet.
+- **`docs/reader/EXPORT_MANIFEST.md`** (`scripts/reader_export_manifest.py`): every trade-data folder classified as moving or not, with
+  size and checksum; the VPS-only items (paper journal, Vision logs, engine signal store) named.
+- **`docs/reader/SUNSET.md`:** crons, units, Telegram, exports, `.env` names, built from the repo; to be confirmed on the VPS by Abhi.
+  Each item has an ATP replacement (proposal) or "retire", and a switch-off step; the order on the day; the archive README text.
