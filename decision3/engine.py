@@ -569,6 +569,7 @@ class V22:
             ok4, items, rng = None, {}, False
             chk["④"] = [None, "power shift count: not in the method — the handover (⑥) decides (§3 / §4)"]
         ok6, why6, cm = self._confirm(t, d, lvl, k)                         # ⑥ a2 + c0 + c1 (shared, method.confirm)
+        read_ok = ok6                                                      # the reading itself (the evidence list); the hours never enter it
         if not self.entry_window(t):                                       # method P2: time is never in the reading — the entry hours are
             ok6, why6 = False, f"entry वेळ-खिडकीबाहेर (operational schedule) · reading: {why6}"   # an operational schedule after it
         chk["⑥"] = [ok6, why6]
@@ -589,7 +590,7 @@ class V22:
               "against_bodies": any((A["close"][i] - A["open"][i]) * d < 0 and M.candle_read(A, i, self.s, arm)["big_body"] for i in last3),
               "fourth_attempt": (k["legs"] > int(self.s["max_attempts"])) if self.s.get("wave_gates", False) else None,
               "tl_break": True if (tl and tl["broken"]) else None,           # ⑤ "(असल्यास) तुटली ⇒ grade +": अखंड / नाही ⇒ NA (वजा नाही)
-              "tl_confluence": True if "tl" in lvl["births"] else None}      # फक्त नोंद (वजन नाही ⇒ grade वाढत नाही; D12-6)
+              "tl_confluence": "tl" in lvl["births"]}                       # फक्त नोंद (वजन नाही ⇒ grade वाढत नाही; D12-6); absent ≠ NA
         sw, tr = (LQ.sweeps_and_traps(self, t, start=k.get("k_open_bar") if k.get("k_open_bar") is not None else arm)
                   if self.s.get("liquidity_rule", "equal") == "equal" else LQ.sweeps_and_traps(self, t, int(self.s["liquidity_lookback"])))                           # §7: pullback ने pool (bear call ⇒ buy-side वर, bull put ⇒ खाली) sweep?
         side = "buy" if d == M.DOWN else "sell"
@@ -602,7 +603,7 @@ class V22:
             extra = {"K": k, "evidence": ev, "trendline": tl, "conviction": label, "conv_score": None, "commit": cm, "liquidity": liq,
                      "flip_retest": g4, "zone_read": zr, "verdict_rule": "method", "confirming": confirm,
                      "missing": [x for x, v in confirm.items() if v is not True],
-                     "evidence_list": M.evidence_list(ev, confirm, ok6), "range_state": None,
+                     "evidence_list": M.evidence_list(ev, confirm, read_ok, in_hours=self.entry_window(t)), "range_state": None,
                      "wave_context": {"legs": k["legs"], "note": "context only (method §6: no wave-count gates)"},
                      "context_notes": list(notes or [])}             # older caps (weekly / origin / mature) = context, never the label
             if not ok6:                                                    # a label belongs to an entry (method §5) — none on a wait
@@ -612,7 +613,7 @@ class V22:
                 chk["⑦"] = [ok7, f"R:R {rk['rr']}" if rk["rr"] is not None else "target नाही"]
                 extra["risk"] = rk
                 if not ok7:
-                    return M_NO, chk, {**extra, "why": "R:R < 3 ⇒ trade नाही"}
+                    return M_NO, chk, {**extra, "conviction": None, "why": "R:R < 3 ⇒ trade नाही"}   # no entry ⇒ no label
             return M_SETUP, chk, extra
         conv, score, missing = M.conviction(ev, self.s)                     # legacy what-if (verdict_rule = score)
         extra = {"K": k, "evidence": ev, "trendline": tl, "conviction": conv, "conv_score": score, "missing": missing, "commit": cm,
@@ -687,7 +688,8 @@ class V22:
         return {"bar": int(t), "ts": str(pd.Timestamp(self.m15["timestamp"].iloc[t])), "bar_end": str(self.bar_end[t]),
                 "engine_version": "v22", "daily_trend": st.trend, "trend_used": trend, "trend_resolution": ctx["resolution"],
                 "weekly_trend": ctx["weekly"], "daily_phase": st.phase, "daily_leg": st.wave, "corr_label": st.corr_label,
-                "mature": st.mature, "maturity_targets": list(st.targets), "trend_notes": ctx["notes"], "trend_cap": ctx["cap"],
+                "mature": st.mature, "maturity_targets": list(st.targets), "trend_notes": ctx["notes"],
+                "trend_cap": ctx["cap"] if self.s.get("verdict_rule", "method") == "score" else None,   # method §5: notes = context, no cap
                 "mature_step_down": bool(ctx.get("step_down")), "wave_context": {**(ctx.get("wave_context") or {}),
                                                                                  **(best.get("wave_context") or {})},
                 "watch_list": [{k: a.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "dist", "births", "width", "width_sigma",

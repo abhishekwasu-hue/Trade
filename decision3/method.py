@@ -1113,14 +1113,15 @@ def method_label(confirm):
     return "A" if any(v is True for v in confirm.values()) else "B"
 
 
-def evidence_list(ev, confirm, required_ok):
-    """Method §5 evidence list: present / absent / NA — the required set (⑥ handover + commitment + LTF CHoCH), the confirming pieces
-    and the context facts (sweep, freshness, star, candle strength). No scores."""
+def evidence_list(ev, confirm, required_ok, in_hours=True):
+    """Method §5 evidence list: present / absent / NA — the required set (⑥ handover + commitment + volume comparison + LTF CHoCH, as
+    read: the entry hours are an operational schedule, never part of the reading — `entry_hours` says it separately), the confirming
+    pieces and the context facts (sweep, freshness, star, candle strength). No scores."""
     def w(v):
         return "NA" if v is None else ("present" if v else "absent")
     ctx = {k: ev.get(k) for k in ("trap_sweep", "fresh", "level_star", "commit_strong", "engulf", "against_bodies", "tl_confluence")}
-    return {"required": "present" if required_ok else "absent", "confirming": {k: w(v) for k, v in confirm.items()},
-            "context": {k: w(v) for k, v in ctx.items()}}
+    return {"required": "present" if required_ok else "absent", "entry_hours": "inside" if in_hours else "outside (operational)",
+            "confirming": {k: w(v) for k, v in confirm.items()}, "context": {k: w(v) for k, v in ctx.items()}}
 
 
 # ------------------------------------------------------------------------------------------------ §6 conviction (legacy what-if)

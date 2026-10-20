@@ -39,7 +39,9 @@ LEGACY = {                       # used only by a non-default rule / gate (what-
     "conv_a": ("verdict_rule = score", {"method.py"}),
     "conv_b": ("verdict_rule = score", {"method.py"}),
     "conv_weak": ("verdict_rule = score", {"method.py"}),
-    "power_shift_min": ("verdict_rule = score (④ count; level bots pin their own)", {"method.py"}),
+    # ④ count: decision3 reads it only under verdict_rule = score. bots_common/level_reaction (the level bots — off in one-bot mode, not
+    # rebuilt here: Abhi rebuilds them in ATP) still calls M.power_shift with these defaults; that file is outside this scan.
+    "power_shift_min": ("verdict_rule = score", {"method.py"}),
     "power_overlap": ("verdict_rule = score", {"method.py"}),
     "power_fallback_bars": ("verdict_rule = score", {"method.py"}),
     "range_overlap_min": ("verdict_rule = score (§5.3 range state)", {"method.py"}),
@@ -122,8 +124,12 @@ def test_layer_six_verdict_is_the_method_no_scores():
     assert S3.DEFAULTS["verdict_rule"] == "method"
     src = inspect.getsource(E3.V22._level_eval)
     i = src.index('if vrule == "score":')
-    for call in ("M.power_shift(", "M.range_state(", "M.conviction("):
+    for call in ("M.power_shift(", "M.range_state("):
         assert src.index(call) > i, f"{call} runs outside the legacy score rule"
+    m = src.index('if vrule == "method":')                                # the method branch ends in its own returns, before the score
+    end = src.index("return M_SETUP, chk, extra", m)
+    assert "M.conviction(" not in src[m:end] and src.index("M.conviction(") > end
+    assert src[end:src.index("M.conviction(")].strip().startswith("return M_SETUP, chk, extra")
 
 def test_layer_five_rsi_divergence_is_logic():
     """Layer 5 (method §3 RSI divergence): consecutive swings of one degree, a new price extreme vs an RSI that does not exceed its previous
@@ -138,3 +144,19 @@ def test_layer_five_rsi_divergence_is_logic():
         assert key not in src, f"{key}: an RSI number in the divergence reading path"
     ev = inspect.getsource(RE.Divergence._eval)
     assert ev.index("div_bar_window") < ev.index("lo, hi = self.win"), "the bar window is compared only behind the legacy switch"
+
+
+def test_layer_six_evidence_list_and_label_text():
+    """The evidence list says the reading (required set) apart from the operational entry hours, absent ≠ NA; the chart / caption text
+    shows the method label with its confirming pieces, never a score."""
+    from decision3 import method as M
+    from decision3 import setup_chart as SC
+    conf = {"volume_growing": None, "rsi_divergence": False, "confluence": True, "correction_line_closed_through": None}
+    el = M.evidence_list({"tl_confluence": False, "fresh": True}, conf, True, in_hours=False)
+    assert el["required"] == "present" and el["entry_hours"].startswith("outside")
+    assert el["confirming"] == {"volume_growing": "NA", "rsi_divergence": "absent", "confluence": "present",
+                                "correction_line_closed_through": "NA"} and el["context"]["tl_confluence"] == "absent"
+    assert M.method_label(conf) == "A" and M.method_label({**conf, "confluence": False}) == "B"
+    assert SC.label_text({"conviction": "A", "confirming": conf, "verdict_rule": "method"}) == "Label A (confirming: confluence)"
+    assert SC.label_text({"conviction": "B", "conv_score": 0.5, "verdict_rule": "score"}) == "Conviction B (score 0.5)"
+

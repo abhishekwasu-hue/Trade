@@ -2883,6 +2883,8 @@ legs owner वि. reader2 gate).
   एक confirming पुरावा (area मध्ये volume वाढतोय, RSI divergence, confluence, correction ची रेषा commitment ने तोडली); B = फक्त required.
   पुरावे present / absent / NA यादी; score / वजन नाही.
 - `verdict_rule = method` (default); जुने score, `evidence_weights`, `conv_*`, ④ power shift count, §5.3 range state = `verdict_rule = score`
-  what-if. जुने label caps (Weekly विरुद्ध / origin तुटला / counter-correction / Weekly fallback) = context notes (L6-a).
+  what-if. जुने label caps (Weekly विरुद्ध / origin तुटला / counter-correction / Weekly fallback, Q16 wick-only commitment ⇒ कमाल B,
+  पहिला पाय / commit-strength cap) = context notes (L6-a); method मध्ये `trend_cap` None. Chart / caption: "Label A (confirming: …)",
+  score नाही. Evidence list: required (वाचन) आणि entry hours (operational) वेगळे; tl_confluence absent ≠ NA.
 - Guard: layer-6 decision numbers LEGACY; `test_layer_six_verdict_is_the_method_no_scores`.
 
