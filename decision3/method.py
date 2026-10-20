@@ -705,7 +705,7 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
     पलीकडे) ⇒ B. वाट: चालू candle pullback-दिशेची / doji / inside bar ⇒ पुढच्या candle ची वाट. वेळ-खिडकी settings.
     Volume (method §3 Commitment, `commit_volume_rule = approach_and_opposite`): larger than every candle of the approach leg (`approach` =
     its bar indices, given by the caller) and every opposite-side candle of the visit (win … t − 1); the rejected push (`exclude`) and the
-    commitment itself (both candles when merged) are not compared. Nothing to compare ⇒ holds, named (L3-c). Volume NA ⇒ vol_na (the caller's
+    commitment itself (both candles when merged) are not compared. Nothing to compare ⇒ no commitment (Abhi, L3-c). Volume NA ⇒ vol_na (the caller's
     data-problem rule). "opposite" = the legacy #329 read (visit's opposite side only, none ⇒ grade cap B)."""
     if s["commit_beyond"] not in ("extreme", "close"):
         raise ValueError(f"commit_beyond {s['commit_beyond']!r} — extreme / close पैकी")
@@ -770,9 +770,9 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
             if V is None or not (np.isfinite(V[t]) and V[t] > 0) or (refs and not ref):
                 cm.update(vol_mult=None, vol_na=True)                      # volume NA ⇒ the caller's data-problem rule (V22: no entry)
                 grade = cm["grade"] = "B"
-            elif not refs:                                                 # OPEN_QUESTIONS L3-c: no candle to compare (the approach was a gap
-                cm.update(vol_mult=None, vol_na=False, vol_vs="nothing to compare (approach gap; only the push and the commitment)")   # and
-                # the visit holds only the push and the commitment) ⇒ no candle is larger ⇒ the comparison holds (named, never a silent pass)
+            elif not refs:                                                 # Abhi (L3-c): never an automatic pass — no approach leg known and no
+                return False, "commitment volume: nothing to compare it with (no approach leg known, no opposite-side candle)", \
+                    {"wait": "low_volume", **cm, "vol_na": False, "vol_mult": None}   # opposite candle ⇒ no commitment
             else:
                 top, top_i = max(ref)
                 cm.update(vol_mult=round(float(V[t]) / top, 2), vol_na=False, vol_ref_bar=int(top_i),
@@ -987,8 +987,7 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None, h
         out.update(wait=ch["code"], why=f"{REASON[ch['code']]} · {ch['line']}")
         return out
     zs = zone_study(A, arm, t, d, s, mr=mr)
-    vtxt = ("volume: NA (grade cap B)" if cm.get("vol_na") else f"volume: {cm['vol_vs']}" if str(cm.get("vol_vs", "")).startswith("nothing")
-            else f"volume above {cm['vol_vs']}"
+    vtxt = ("volume: NA (grade cap B)" if cm.get("vol_na") else f"volume above {cm['vol_vs']}"
             if cm.get("vol_mult") is not None and str(cm.get("vol_vs", "")).startswith("the ") else "volume above the opposite side"
             if cm.get("vol_mult") is not None else "no opposite-side candle (grade cap B)")   # Abhi: the reading in words, not ratios
     btxt = "largest of the visit" if cm.get("body_mult") is not None and bool(s.get("c0_dominance", True)) else ""

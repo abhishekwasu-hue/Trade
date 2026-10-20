@@ -2795,3 +2795,14 @@ legs owner वि. reader2 gate).
   रचनेने; `zone_pattern` double / triple तुलनेने; G4 (b) "lower than" तुलनेने. जुने नियम what-if switches.
 - **CI guard:** layer-3 चा एकही आकडा pending नाही (power shift / range state चे आकडे = पुरावा ⇒ layer 6).
 
+## 2026-10-20 · Abhi on layer 3: L3-c, gaps (branch `claude/method-l3c-gap`)
+
+- **Abhi:** gap = पुढची candle (P2); approach leg gap आधीच सुरू ⇒ "तुलनेला काही नाही" होत नाही; आपोआप pass आणि त्यातून आलेला grade A काढा;
+  gap / session ची प्रत्येक सीमा काढा. Level bots layer 6 नंतर पुन्हा बांधायचे (तोपर्यंत one-bot mode मध्ये बंद).
+- **Code:** approach leg = area पासून दूरच्या शेवटच्या swing नंतरच्या candles — gap, session बदल, आधीची visit ओलांडून; swing माहीत नाही ⇒
+  approach अज्ञात (तुलना फक्त visit च्या उलट बाजूशी; काहीच नाही ⇒ commitment नाही). G4 approach (`flip.legs_arrays`) session सीमा नाही.
+  Visit, liquidity, LTF CHoCH तपासले — सीमा नाही (session-windows फक्त legacy what-if मध्ये).
+- **Golden (real volume, tuning नाही):** 12 Oct 09:30 — fast-form handover ✅, 5M CHoCH ✅, पण commitment चा volume approach leg च्या सर्वात
+  मोठ्या candle च्या ×0.26 (leg gap ओलांडून आदल्या सत्राच्या rise पासून; त्याच्या opening candles चा raw volume मोठा) ⇒ commitment नाही ⇒
+  **bear call नाही** (xfail त्या कारणावर). 13 Oct — bear call नाही, resistance. 29 Sep — FUT नाही ⇒ entry नाही.
+
