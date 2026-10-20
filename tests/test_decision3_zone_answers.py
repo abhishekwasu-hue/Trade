@@ -653,6 +653,9 @@ def test_commitment_volume_is_compared_with_the_approach_leg_and_the_opposite_si
     A["volume"][:3] = 1000.0                                                # the leg as a whole heavier ⇒ low volume
     ok4, why4, _ = M.commitment(A, 4, DOWN, lvl, S, win=3, approach=range(0, 3), exclude=[3])
     assert not ok4 and "average of the approach leg" in why4
+    A["volume"][:3] = 900.0                                                 # equal to the average ⇒ not higher ⇒ low volume (strict)
+    ok5, why5, _ = M.commitment(A, 4, DOWN, lvl, S, win=3, approach=range(0, 3), exclude=[3])
+    assert not ok5 and "low volume" in why5
     with pytest.raises(ValueError, match="commit_volume_rule"):
         M.commitment(A, 4, DOWN, lvl, {**S, "commit_volume_rule": "x"}, win=3)
 
@@ -943,3 +946,14 @@ def test_a_swing_on_the_first_visit_candle_starts_the_next_leg_after_a_failed_co
     V._failed_commit_outside = lambda i, *a: i == 4                         # the visit (from bar 2) ends at bar 4
     vi = V.visit(6, lvl, DOWN)
     assert (vi["start"], vi["prev_end"], vi["ended_by"], vi["approach_from"]) == (6, 4, "commitment", 3)
+
+
+def test_a_merged_commitment_keeps_its_first_candle_out_of_the_average_even_when_it_is_opposite_coloured():
+    """Review (L3-c average): a two-candle commitment (here a star) is one commitment — its first candle (t − 1), red = the opposite
+    side for a demand area, never enters the average, however heavy; without the merge it would (it is an opposite-side candle)."""
+    rows = [(104.0, 104.2, 103.0, 103.2), (103.2, 103.4, 102.2, 102.4),                                   # approach down (0–1)
+            (102.4, 102.6, 100.2, 100.4), (101.4, 101.6, 100.4, 100.6), (100.8, 102.4, 100.7, 102.3)]   # q (2), red star (3), up (4)
+    A = {k: np.array([r[j] for r in rows], float) for j, k in enumerate(("open", "high", "low", "close"))}
+    A["volume"] = np.array([300.0, 300.0, 400.0, 5000.0, 900.0])
+    ok, why, cm = M.commitment(A, 4, UP, {"lo": 100.0, "hi": 101.0}, {**S, "c0_dominance": False}, win=2, approach=range(0, 2))
+    assert cm["merged"] == 2 and ok and cm["vol_ref_n"] == 3 and cm["vol_ref_avg"] == 333.3, (why, cm)

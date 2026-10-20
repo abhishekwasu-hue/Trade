@@ -761,7 +761,7 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
         vrule = s.get("commit_volume_rule", "approach_and_opposite")
         if vrule not in ("approach_and_opposite", "opposite"):
             raise ValueError(f"commit_volume_rule {vrule!r} — approach_and_opposite / opposite पैकी")
-        if vrule == "approach_and_opposite":                               # method §3 Commitment: larger than the approach leg's candles and
+        if vrule == "approach_and_opposite":                               # method §3 Commitment (Abhi L3-c): above the AVERAGE of the
             skip = {int(x) for x in exclude} | {t} | ({t - 1} if merged == 2 else set())   # the visit's opposite side; push + itself out
             opp = [i for i in ww if (A["close"][i] - A["open"][i]) * d < 0 and i not in skip]
             appr = {int(i) for i in (approach or ()) if int(i) < t and int(i) not in skip}
@@ -776,9 +776,11 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
                     {"wait": "no_volume_reference", **cm, "vol_na": False, "vol_mult": None}   # opposite candle ⇒ no commitment
             else:
                 avg = float(np.mean([v for v, _ in ref]))                  # Abhi (L3-c): the average of the comparison set, never its largest
+                used = {i for _, i in ref}                                 # name only what was averaged (bars without volume are not)
+                a_used, o_used = bool(used & appr), bool(used & set(opp))
                 cm.update(vol_mult=round(float(V[t]) / avg, 2), vol_na=False, vol_ref_n=len(ref), vol_ref_avg=round(avg, 1),
-                          vol_vs="the average of the approach leg and the visit's opposite-side candles" if (appr and opp) else
-                          "the average of the approach leg's candles" if appr else "the average of the visit's opposite-side candles")
+                          vol_vs="the average of the approach leg and the visit's opposite-side candles" if (a_used and o_used) else
+                          "the average of the approach leg's candles" if a_used else "the average of the visit's opposite-side candles")
                 if not V[t] > avg:
                     return False, f"commitment on low volume (not higher than {cm['vol_vs']})", {"wait": "low_volume", **cm}
             return True, f"commitment {form} ({merged} candle) · grade {grade}", cm
@@ -929,8 +931,9 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None, h
     """एकच confirmation (Abhi, LEVEL_BOTS_CONFIRMATION §2 a2 + c0 + c1) — V22 ⑥ आणि level bots (bots_common/level_reaction) दोघेही हेच
     वापरतात; d = ±1 (आरसा). Study window = arm (area मध्ये arrival) … commitment candle t. क्रम:
       a2 — window arm … t − 1 मध्ये उलट-बाजू volume वाढत मजबूत (absorption) ⇒ वाट (commitment पाहतच नाही);
-      c0 — commitment (Q16 form), dominant = body larger than every other candle of the visit, volume larger than the opposite side's
-           candles of the visit (none in the visit ⇒ nothing to beat, noted) — comparisons only, no multiplier (volume NA ⇒ चालतं, कमाल B);
+      c0 — commitment (Q16 form), dominant = body larger than every other candle of the visit, volume above the AVERAGE of the approach
+           leg + the visit's opposite-side candles (Abhi L3-c; push + commitment excluded; nothing to compare ⇒ no commitment; the legacy
+           `opposite` read = vs the opposite side's strongest candle) — comparisons only, no multiplier;
       c1 — LTF CHoCH by close (`ltf_choch`; ltf = ltf_frame किंवा तो देणारं callable (commitment असेल तरच बोलावतो); ltf_times = (संदर्भ सुरुवात, arrival सुरुवात, setup bar close)), `ltf_choch` setting (default
            True = आवश्यक). LTF नाही ⇒ "LTF data missing" ⇒ वाट (fail-closed, कधीच शांतपणे वगळत नाही).
     प्रत्येक गहाळ भाग ⇒ वाट (code), कायमचा नकार नाही (timeout / disarm caller चे नियम). रिटर्न dict: ok, wait (code | None), why, commit (cm),
