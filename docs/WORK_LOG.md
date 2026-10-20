@@ -2865,3 +2865,9 @@ legs owner वि. reader2 gate).
   `confluence_label` च्या शेवटी "line" (chart captions तेच दाखवतात). Assumption L4-f: "आधीचा touch" = candle ने रेषा गाठली ती वेळ.
 - **Golden (real):** 12 Oct 09:30 — 09:15 चं वळण (22,651; रेषा 22,654) ⇒ 1H supply 22,544–22,622 = "confluence: line" ✅ (test).
 
+## 2026-10-20 · Layer 1 rule result + layers 2–4 summary sent (trade-data)
+
+- **Layer 1 (Abhi: A in all 12 cases):** his swing rule applied exactly as stated matches A in 4 of 12; the 8 differing cases (chart
+  + one-line reason each) are in trade-data `review/method_layer1_rule/RULE_CASES.md`. Not tuned, no code change (OPEN_QUESTIONS L1-a).
+- **Layers 2–4:** summary for Abhi's ✅ in trade-data `review/layers_2_4_summary/SUMMARY.md` (with the L4-g questions). No tag until ✅.
+- `docs/reader/EXPORT_MANIFEST.md` regenerated: the two new trade-data folders added; layer 1 / layer 4 rows say Abhi has answered.
