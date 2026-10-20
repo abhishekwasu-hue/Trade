@@ -22,7 +22,7 @@ from tests import oct12_fixture as F
 # default नियमावर हाच fixture: tests/test_decision3_flip.py::test_oct12_synthetic_fixture_supply_flips_when_the_first_swing_after_the_break_is_confirmed.
 S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False,   # Z-1m आधीचा fixture — pin
           "level_merge": True, "zone_visit_rule": "touch_window",
-          "commit_volume_rule": "opposite"}   # Abhi Z-1u / Z-1v आधीचा fixture — legacy pin, असर्ट तसेच
+          "commit_volume_rule": "opposite", "line_rule": "sigma"}   # Abhi Z-1u / Z-1v आधीचा fixture — legacy pin, असर्ट तसेच
 S_OLD = {**S_ROLE, "rr_step": True, "entry_first_bar": False}              # Abhi 13 Oct आधीचे नियम (⑦ R:R + 09:15 फक्त पुरावा) — जुने असर्ट pin
 
 
@@ -143,11 +143,11 @@ def test_trendline_confluence_area_known_at_and_mirror(case):
     assert V.tl_areas(t, "RANGE") == []
 
 
-def _fake_V(closes, piv, sig=10.0):
+def _fake_V(closes, piv, sig=10.0, s=None):
     from types import SimpleNamespace as NS
     c = np.asarray(closes, float)
     lv = NS(A={"open": c, "high": c + 1, "low": c - 1, "close": c}, sig1h=np.full(len(c), sig), known_pivots=lambda t: piv)
-    return NS(levels=lv, s=S3.load())
+    return NS(levels=lv, s=S3.load({"line_rule": "sigma"} if s is None else s))   # default here: the legacy fixture rule
 
 
 @pytest.mark.parametrize("mirror", [False, True])
@@ -349,3 +349,60 @@ def test_replay_feed_fallback_warns_with_contract_and_flags_expiry_day(monkeypat
     out = capsys.readouterr().out
     assert ("contract NIFTY FUT 25 APR 30" in out and "volume from a different contract than the day's front month (NIFTY FUT 04 MAR 30)"
             in out and "c0 volume unreliable" in out)
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_method_lines_touch_by_candle_and_confluence_labels_the_area_itself(mirror):
+    """Method §3 Lines: a line from two separate reactions on the structure's swings; a later swing candle touches it when its wick
+    reaches the line with the body on its side (no σ tolerance, no touch count); a close through between the reactions kills it; where
+    the line passes through an area that area is the confluence — the same band, labelled (never a new, narrowed band). Mirror."""
+    from types import SimpleNamespace as NS
+    f = (lambda x: 200.0 - x) if mirror else (lambda x: x)                    # noqa: E731
+    d = M.UP if mirror else M.DOWN
+    kind = "L" if mirror else "H"
+    opp = "H" if mirror else "L"                                                 # price left the line between the reactions
+    piv = [NS(kind=kind, price=f(120.0), bar=0, confirm_bar=2), NS(kind=opp, price=f(98.0), bar=3, confirm_bar=5),
+           NS(kind=kind, price=f(110.0), bar=10, confirm_bar=12)]
+    V = _fake_V([f(100.0)] * 20, piv, s={})
+    assert V.s["line_rule"] == "logic"
+    ln = TL.swing_line(V, 15, d)
+    assert ln is not None and ln["touches"] == 2 and abs(ln["value_t"] - f(105.0)) < 1e-6
+    role = "support" if mirror else "resistance"
+    near = {"id": 1, "role": role, "lo": min(f(103.0), f(108.0)), "hi": max(f(103.0), f(108.0)), "births": ["a:D2"], "sweeps": 1, "fresh": True}
+    far = {**near, "id": 2, "lo": min(f(90.0), f(95.0)), "hi": max(f(90.0), f(95.0))}
+    got = TL.confluence_areas(V, 15, d, [near, far])
+    assert [a["id"] for a in got] == [1] and (got[0]["lo"], got[0]["hi"]) == (near["lo"], near["hi"]) and "tl" in got[0]["births"]
+    mid = NS(kind=kind, price=f(117.0), bar=5, confirm_bar=7)                  # a swing between the reactions whose candle closes through
+    V2 = _fake_V([f(100.0)] * 20, [piv[0], mid, piv[1], piv[2]], s={})
+    V2.levels.A["close"][5] = f(116.5)                                          # line at bar 5 = 115 ⇒ close 116.5 beyond it
+    assert TL.swing_line(V2, 15, d) is None                                     # (117 ⇒ 110 has no opposite swing between: one reaction)
+    V3 = _fake_V([f(100.0)] * 20, piv, s={})
+    V3.levels.A["close"][5] = f(116.5)                                          # NOT a swing: any candle between the reactions that
+    assert TL.swing_line(V3, 15, d) is None                                     # closes through the line kills the pair
+    V4 = _fake_V([f(100.0)] * 20, piv, s={})
+    V4.levels.A["close"][13] = f(108.0)                                         # after p2: line 107 ⇒ a close beyond, back at bar 14,
+    assert TL.swing_line(V4, 15, d) is not None                                 # no swing beyond ⇒ a throw-over, the line stands (K6.5)
+    A = {"open": np.array([f(114.0)]), "close": np.array([f(114.2)]), "high": np.array([max(f(115.5), f(113.8))]),
+         "low": np.array([min(f(115.5), f(113.8))])}
+    assert TL.touches(A, 0, f(115.0), kind) is True                       # wick reaches the line, body stays on its side ⇒ a touch
+    assert TL.touches(A, 0, f(116.0), kind) is False                      # the wick does not reach it
+    assert TL.touches(A, 0, f(114.1), kind) is False                      # the line runs through the body ⇒ not a touch
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put_mirror"])
+def test_step2_confluence_labels_the_area_in_place_no_new_band(mirror):
+    """Method §3 (line_rule = logic): where the trade-side line passes through an active area, step2 returns the SAME areas (count,
+    ids, bands) with that one labelled "tl" — the legacy rule appended a separate, narrowed "+TL" area instead. Mirror."""
+    d, trend = (M.UP, "UP") if mirror else (M.DOWN, "DOWN")
+    V, _, _, _, bars = _run(mirror, {**S_ROLE, "line_rule": "logic"})
+    Vs, _, _, _, _ = _run(mirror)
+    t = next(b for b in bars if TL.swing_line(V, b, d) is not None and TL.confluence_areas(V, b, d, V.levels.active(b, trend)))
+    plain = V.levels.active(t, trend)
+    _, _, act = V.step2(t, trend)
+    assert [(x["id"], x["lo"], x["hi"]) for x in act] == [(x["id"], x["lo"], x["hi"]) for x in plain]
+    lab = [x for x in act if "tl" in x["births"]]
+    assert len(lab) == 1 and lab[0].get("confluence_line") is True and lab[0]["tl"]["value_t"] is not None
+    assert lab[0]["lo"] <= lab[0]["tl"]["value_t"] <= lab[0]["hi"]
+    _, _, act_s = Vs.step2(t, trend)
+    assert len(act_s) == len(plain) + 1 and any(str(x["id"]).endswith("+TL") for x in act_s)   # legacy: a separate narrowed area
+

@@ -370,10 +370,12 @@ def k_line_facts(D, r, t):
     quality = [x for x in f["reasons"] if x != "broken"]
     lab = f"K line ({f['touch_count']} touches" + (", established" if f["established"] else "")
     v22_broken = bool(tl.get("broken"))
+    gone = tl.get("broken_before")                                          # method K6.5: closed beyond + a swing beyond before bar t
     bb = tl.get("break_bar")
-    if v22_broken:
+    if v22_broken or gone is not None:
         when = f" {pd.Timestamp(D.m15['timestamp'].iloc[int(bb)]):%H:%M}" if bb is not None and 0 <= int(bb) <= t else ""
-        lab += f", broken{when}"
+        lab += f", broken{when}" if v22_broken else f", gone{when} (close + swing beyond; no trigger)"
+        v22_broken = True                                                  # no projected touch zone for a line that is gone
     else:
         lab += ", intact"
     if f["broken"] != v22_broken:                                           # K5 real break (0.25 MR + acceptance) differs
@@ -505,7 +507,7 @@ def footer_lines(r, st, status, vline):
             "    trend notes: " + ("; ".join(notes) if notes else "none"),
             f"(2) {LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} (born {'+'.join(lv['births'])}, tests {lv.get('tests')}, sweeps {lv.get('sweeps')}, "
             f"{'fresh' if lv['fresh'] else 'not fresh'})   (3) K pullback open ({why_open}), leg {K.get('legs')}   (4) {ps}",
-            f"(5) K line: {'none' if not tl else ('broken (grade +)' if tl['broken'] else 'intact')}   (6) commitment {cm.get('form')} grade "
+            f"(5) K line: {'none' if not tl else ('broken (grade +)' if tl['broken'] else 'gone before (no trigger)' if tl.get('broken_before') is not None else 'intact')}   (6) commitment {cm.get('form')} grade "
             f"{cm.get('grade')}" + (f"   (7) R:R {rk.get('rr')} · entry {fmt(rk.get('entry'))} / SL {fmt(rk.get('sl'))} / target "
                                    f"{fmt(rk.get('target'))}" if rk else ""),       # legacy rr_step फक्त (Abhi 13 Oct)
             f"(8) {vline}",

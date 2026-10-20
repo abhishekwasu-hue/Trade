@@ -716,33 +716,33 @@ completed pattern allows, the count is wrong.
 
 **ओळख.**
 - **6.1 बांधणी:**
-  - Confirmed pivots (k = 2–3).
+  - Confirmed pivots — रचनेचेच swings (layer 1 ची swing व्याख्या).
   - **रेषा 2 touches वरून काढली जाते [Abhi, 2026-10-13; जुना "valid line ≥ 3 touches" नियम बदलला]:**
-    - 2 anchors (touches) ⇒ रेषा. Touch = pivot चं टोक रेषेपासून ±0.2 MR मध्ये.
+    - 2 anchors (रचनेचे दोन वेगळे reactions — मधे उलट swing) ⇒ रेषा [Abhi, method §3]. Touch = swing candle ची wick रेषेपर्यंत पोहोचते आणि body रेषेच्या बाजूला राहते (candle शी तुलना, tolerance नाही).
     - **Projected 3रा touch = trade location** (candidate area), जिथे रेषा S/R म्हणून काम करते. Entry तिथे फक्त handover (K5 / K11 [A]) + commitment candle (K9) ने. 3रा touch स्वतः entry नाही.
-    - **≥ 3 touches = "established" रेषा** ⇒ पुरावा + (AQ). हा वेगळा trade नियम नाही.
+    - **3रा touch टिकल्यावर रेषा "established"** ⇒ पुरावा + (AQ). हा वेगळा trade नियम नाही; touches मोजून gate नाही.
     - No look-ahead: projected zone दुसरा anchor confirm झाल्यावरच (त्याआधी नाही).
   - बाकी validity नियम 2-touch रेषांनाही लागू:
     - **Anchor wicks वर, break चा निर्णय closes वर.**
-    - Anchors च्या मधे कोणताही **close** रेषेपलीकडे > 0.3 MR नाही.
-    - Touches एकमेकांपासून दूर (setting, default 6 bars).
-    - Slope मध्यम: प्रति bar > 0.5 MR इतकी तीव्र रेषा reject.
+    - Anchors च्या मधे एकही candle रेषेपलीकडे **close** करत नाही (wick पलीकडे गेली तर touch / sweep).
+    - Touches = वेगळे reactions (मधे उलट swing) — bars ची संख्या नाही.
+    - रेषा रचनेच्याच swings वरून — slope ची आकडी मर्यादा नाही.
   - **Chart label:** रेषेचा touch count, आणि projected 3rd-touch zone ची खूण.
   - **Golden fixture:** private fixtures मध्ये (trade-data `fixtures/golden_cases.md`).
-- **6.2 Channel:** anchors च्या मधल्या सगळ्यात टोकाच्या opposite pivot मधून समांतर रेषा. 15M वर रुंदी साधारण 2–6 MR.
+- **6.2 Channel:** anchors च्या मधल्या सगळ्यात टोकाच्या opposite swing मधून समांतर रेषा.
 - **6.3 Correction चा स्वतःचा channel:** A ची सुरुवात आणि B चं टोक जोडा; A च्या टोकातून समांतर रेषा. C चं लक्ष्य = C जिथे ही रेषा गाठतो. C = A सोबत confluence.
 - **6.4 Horizontal की तिरका: ताज्या price action वरून निवड.** प्रत्येक candidate ला गुण:
-  - (a) शेवटच्या ~2 sessions मधले touches;
-  - (b) शेवटची reaction किती ताजी;
-  - (c) reaction ची ताकद (3 bars मध्ये किती MR दूर गेली).
+  - (a) ताज्या रचनेत (शेवटच्या swings मध्ये) कोणत्या रेषेला touches;
+  - (b) कोणत्या रेषेची शेवटची reaction जास्त ताजी;
+  - (c) reaction ची ताकद — reaction नंतरची चाल इतर reactions पेक्षा मोठी की लहान (तुलना, आकडा नाही).
 
   निर्णय:
   - ताजे pivots slope वर ओळीत येत असतील आणि horizontal levels कापले जात असतील ⇒ बाजार **slope** ला मान देतोय.
   - एकाच किमतीवर वारंवार reactions ⇒ **horizontal.**
-  - **दोन्ही ≤ 0.5 MR मध्ये भेटत असतील ⇒ तो छेदबिंदू सगळ्यात उच्च दर्जाचा area** (7 Oct, 12 Oct ची उदाहरणं), chart label **"confluence"** (K4).
+  - **रेषा area मधून जात असेल ⇒ तो area सगळ्यात उच्च दर्जाचा (confluence) — तोच area, label सह; नवा / अरुंद पट्टा नाही [Abhi, method §3]**, chart label **"confluence"** (K4).
 - **6.5 Break वि. false break:**
-  - Real = K5 ची एकच व्याख्या (`elliott/breaks.py`: 0.25 MR buffer + displacement / acceptance / failed retest), किंवा structure बदल (LH/HL).
-  - False = 1–2 bars मध्ये परत आत close (throw-over / sweep).
+  - Real (method §3, area सारखा) = रेषेपलीकडे close **आणि** पलीकडे swing बनला.
+  - False = पलीकडे swing बनण्याआधी परत रेषेच्या बाजूला (throw-over / sweep).
   - **Pullback दरम्यान minor impulse line तुटणं अपेक्षितच आहे.** त्याला reversal मानायचं नाही.
   - **Correction च्या channel चा impulse दिशेने break**, reversal candle नंतर = pullback संपल्याची अतिरिक्त पुष्टी.
   - **Trigger form [Abhi, 2026-10-13, KP1]:** correction ची स्वतःची रेषा (flag / wedge / channel कड) **area वरच्या dominant commitment candle ने close-through** ⇒ valid trigger. Area पासून दूर breakout, चाल निघून गेल्यावर पाठलाग, किंवा commitment candle शिवाय रेषा break ⇒ entry नाही. Minor swing किंवा लहान trendline चा break **एकटा = noise** (K11.0).
@@ -762,32 +762,32 @@ completed pattern allows, the count is wrong.
 - 2-touch रेषेला "established" (≥ 3) चं वजन देणं; किंवा projected 3rd touch वर handover + commitment शिवाय entry.
 - खूप तीव्र रेषा.
 - Pullback मध्ये impulse line तुटली म्हणजे reversal समजणं.
-- **फक्त horizontal पाहून trendline विसरणं (7 Oct ची चूक).**
+- **फक्त horizontal पाहून trendline विसरणं.**
 
 <!-- pack:3 trendlines -->
 <details><summary>Method Pack (English) — 3. Trendlines and channels (source: K6.1–K6.5, K11.6, Part F)</summary>
 
-- **Trendline** = a line through swing pivots (lows in an uptrend, highs in a downtrend); **channel** = the parallel line through the
-  most extreme opposite pivot between the anchors (on 15M usually 2–6 MR wide).
-- **A trendline is drawn from 2 touches [Abhi, TA3]:** two anchors (touches) make the line; a touch = the pivot extreme within ± 0.2 MR
-  of the line. The
-  **projected 3rd touch is the trade location** (a candidate area where the line acts as support / resistance) — entry there only with
-  handover (section 5) + a commitment candle (section 6); the 3rd touch alone is never an entry. **Three or more touches =
-  "established"** (evidence +), not a different trade rule and never a minimum for drawing the line. The projected zone exists only after the 2nd anchor is confirmed (no look-ahead).
-- Validity, also for 2-touch lines: anchors on **wicks**, break decisions on **closes**; no close beyond the line by > 0.3 MR between
-  the anchors; touches spaced (setting, default 6 bars); slope not extreme (steeper than 0.5 MR per bar ⇒ reject). Never mix bodies at
-  one anchor and wicks at another; never redraw the line every bar (curve-fitting).
-- **Horizontal or sloping — decide from recent price action (K6.4):** score each candidate on touches in the last ~2 sessions, how
-  recent the last reaction is, and the reaction strength (MR travelled in 3 bars). Recent pivots lining up on a slope while horizontal
-  levels get cut ⇒ the market respects the slope. Repeated reactions at one price ⇒ horizontal. **Both meeting within 0.5 MR ⇒ the
-  highest-quality area ("confluence").** Never look only at horizontals and forget the trendline (the 7 Oct mistake).
+- **Trendline** = a line through the structure's own swings (lows in an uptrend, highs in a downtrend); **channel** = the parallel line
+  through the most extreme opposite swing between the anchors.
+- **A line is drawn from two separate reactions [Abhi, method §3]:** two swings of the structure, and price left the line between them
+  (a swing of the opposite kind lies between them). A later swing **touches** the line when its candle's wick reaches the line while
+  its body stays on the line's side — a comparison with the candle itself, never a tolerance. The **third touch is the trade location**
+  (where the line acts as support / resistance) — entry there only with handover (section 5) + a commitment candle (section 6); the
+  third touch alone is never an entry. The line exists only once its second swing is confirmed (no look-ahead).
+- Validity: anchors on **wicks**, decisions on **closes**; no candle closes through the line between the two reactions (a wick that
+  pokes past is a touch or a sweep). A line is valid only when it follows the structure's own swings. Never mix bodies at one anchor
+  and wicks at another; never redraw the line every bar (curve-fitting).
+- **Horizontal or sloping — read which one price respects:** the structure's recent swings lining up on a slope while horizontal levels
+  get cut ⇒ the market respects the slope; repeated reactions at one price ⇒ horizontal. **Where a line passes through an area, that
+  area is the strongest location (confluence)** — the same area, labelled; never a new or narrowed band. Never look only at horizontals
+  and forget the trendline.
 - **Elliott channeling (measuring tool):** wave 4 often ends near the parallel through wave 2; a zigzag's C often ends near the line
   drawn through A's end parallel to the line joining A's start and B's end — the correction's own channel (C target where C reaches
   it; confluence with C = A). Throw-over in the last wave: a brief poke beyond the channel and a close back inside.
-- **Break vs false break:** real = the single K5 definition (0.25 MR buffer + displacement / acceptance / failed retest) or a structure
-  change (LH / HL). False = a close back inside within 1–2 bars (throw-over / sweep). **A minor impulse line breaking during a pullback
-  is expected — not a reversal.** A break of the correction's own channel in the impulse direction AFTER a reversal candle = extra
-  confirmation that the pullback ended.
+- **Broken vs poke (method §3, as an area):** broken = a close beyond the line AND a swing formed beyond it; back on the line's side
+  before any swing forms beyond = a throw-over / sweep. **A minor impulse line breaking during a pullback is expected — not a
+  reversal.** The correction's own line (flag, wedge or channel edge) **closed through by the commitment candle at the area** is a
+  valid trigger form; a line break away from an area, or without a commitment, is noise.
 - [evidence, practitioner dataset] a bounce trade at the 3rd touch of an uptrend line wins only ~37 %; lines with 4+ touches, long
   duration, gentle slope and widely spaced touches are better ⇒ **a trendline alone is never an entry**: it needs area confluence and a
   reversal candle.
@@ -1243,9 +1243,9 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 |---|---|
 | **व्याख्या** | दोन समांतर तिरक्या रेषांमधली चाल (K6.2). दोन प्रकार: impulse चा channel (trend दिशेने) आणि correction चा स्वतःचा channel (trend विरुद्ध; K6.3). |
 | **मानसशास्त्र** | Slope = वरचढ बाजूची घाई. Uptrend channel मध्ये dip buyers वाढत्या दराने खरेदी करतात. Slope तुटणं = घाई संपली; reversal झालंच असं नाही (K6). |
-| **ओळख** | K6.1–6.2 [Abhi, 2026-10-13]: confirmed pivots; रेषा **2 touches** (±0.2 MR) वरून; projected 3रा touch = trade location; ≥ 3 touches = "established" (पुरावा +); anchors wicks वर; anchors च्या मधे कोणताही close रेषेपलीकडे > 0.3 MR नाही; touches दूर (setting, default 6 bars); slope ≤ 0.5 MR / bar; रुंदी 15M वर साधारण 2–6 MR. Correction channel: A सुरुवात–B टोक, A टोकातून समांतर (K6.3). |
+| **ओळख** | K6.1–6.2 [Abhi, method §3]: रचनेचे swings; रेषा **दोन वेगळ्या reactions** वरून (मधे उलट swing); touch = wick रेषेपर्यंत, body बाजूला; projected 3रा touch = trade location; 3रा touch टिकल्यावर "established" (पुरावा +); anchors wicks वर; anchors च्या मधे कोणताही close रेषेपलीकडे नाही; slope / रुंदी ची आकडी मर्यादा नाही. Correction channel: A सुरुवात–B टोक, A टोकातून समांतर (K6.3). |
 | **Validity (नाव कधी)** | **नाव:** दुसरा anchor confirmed ⇒ रेषा; projected 3rd-touch zone chart वर (touch count सह). Entry तिथे handover + commitment ने. ताज्या price action ला मान (K6.4). |
-| **Invalidation** | रेषेची real break (breaks.py). 1–2 bars मध्ये परत आत = throw-over / sweep, break नाही (K6.5). |
+| **Invalidation** | रेषेची real break = close पलीकडे **आणि** पलीकडे swing (K6.5). Swing बनण्याआधी परत रेषेच्या बाजूला = throw-over / sweep, break नाही. |
 | **उपयोग** | **[P]** Correction चा counter-trend channel (uptrend मधला falling channel) = pullback; C-end लक्ष्य = C ने रेषा गाठली ती जागा (C = A सोबत confluence). Area वरच्या dominant commitment candle ने correction channel ची कड impulse दिशेने close-through ⇒ valid trigger form (K6.5, KP1); commitment शिवाय / area पासून दूर break ⇒ entry नाही. Pullback दरम्यान impulse channel ची रेषा तुटणं अपेक्षितच (E8). Impulse channel च्या पलीकडे wave 5 throw-over ⇒ थकव्याचा इशारा (K10). |
 | **विश्वासार्हता** | NM. [पुरावा, Bulkowski] uptrend line 3rd touch bounce फक्त 37% (K6). Repo SILVER audit: OOS मध्ये trendline control पेक्षा कमकुवत [SILVER, NIFTY नाही]. Elliott channel targets [अनुभव]. |
 | **चुका** | K6 ची यादी: bodies आणि wicks मिसळणं, दर bar ला रेषा पुन्हा, 2-touch रेषेला "established" चं वजन, 3rd touch वर commitment शिवाय entry, तीव्र रेषा, pullback मध्ये impulse line तुटली म्हणून reversal. |

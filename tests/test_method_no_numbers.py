@@ -33,6 +33,8 @@ LEGACY = {                       # used only by a non-default rule / gate (what-
     "doji_body_max": ("candle_rule = ratio", {"method.py"}),
     "pattern_eq_mr": ("candle_rule = ratio", {"method.py"}),
     "flip_pullback_vol_ratio": ("candle_rule = ratio (G4 context)", {"flip.py"}),
+    "tl_touch_sigma": ("line_rule = sigma", {"trendline.py"}),
+    "tl_min_touches": ("line_rule = sigma", {"trendline.py"}),
     "commit_merge_max": ("registered only (≤ 2 merged is the form list itself); read nowhere", set()),
     "vol_slot_sessions": ("volume_baseline = slot", {"engine.py"}),
     "vol_slot_min_sessions": ("volume_baseline = slot", {"engine.py"}),
@@ -49,7 +51,6 @@ DATA_QUALITY = {                 # is there enough / complete data (method §1 P
 PENDING = {                      # still a number in the reading path ⇒ removed in the named layer
     "daily_pivot_n": 1, "range_eq_sigma_d": 1, "maturity_sigma_d": 1, "level_degree": 1, "tl_degree": 1,
     "flip_pullback_inner_degree": 1, "k_reset_sigma": 1,
-    "tl_touch_sigma": 4, "tl_min_touches": 4,
     "evidence_weights": 6, "conv_a": 6, "conv_b": 6, "conv_weak": 6,
     # ④ power shift: its count still DECIDES verdicts through the evidence score (`ev["power_shift"]` ⇒ `conviction` weights ⇒ A / B /
     # weak / against) until layer 6 removes the score (method §4 / §5: evidence listed, never scored); §5.3 range state = context only
@@ -102,3 +103,8 @@ def test_layer_three_reading_rules_are_logic():
             d["volume_baseline"], d["candle_rule"], d["session_windows"]) == \
         ("structure", "push_body", "method", "method", "approach_and_opposite", "raw", "compare", False)
     assert not [k for k, layer in PENDING.items() if layer == 3]
+
+
+def test_layer_four_lines_are_logic():
+    """Layer 4 (lines + confluence): touch by the candle, two separate reactions, confluence labels the area — no σ tolerance or count."""
+    assert S3.DEFAULTS["line_rule"] == "logic" and not [k for k, layer in PENDING.items() if layer == 4]

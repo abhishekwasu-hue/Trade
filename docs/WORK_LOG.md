@@ -2809,3 +2809,14 @@ legs owner वि. reader2 gate).
   च्या पहिल्या candle वरचाच swing approach सुरू करत नाही; "nothing to compare" चा स्वतंत्र wait code. Dossier चा visit finder (session
   look-back + `touch_window_bars`) = layer 6 (OPEN_QUESTIONS L3-n).
 
+## 2026-10-20 · Method layer 4: lines + confluence (branch `claude/method-layer4`)
+
+- **KB आधी:** K6 (रेषा = रचनेचे दोन वेगळे reactions; touch = wick रेषेपर्यंत, body बाजूला; मधे close पलीकडे नाही; confluence = रेषा area
+  मधून ⇒ तोच area, label; तुटणे = close + पलीकडे swing); Method Pack 3 पुन्हा लिहिला.
+- **Code:** `decision3.trendline` (`line_rule = logic`): `touches()`, `k_line` (commitment candle ने close-through = trigger),
+  `swing_line` (मधे close-through ⇒ रेषा नाही), `confluence_areas` ⇒ area ला label (`+TL` area नाही; engine step2 मध्ये तोच area बदलतो).
+  जुने σ / touch-count नियम = what-if. Chart / vision display finder (`facts.validity`) = layer 6 (layer 1 च्या swing व्याख्येवर).
+- **Review fixes:** रेघ तुटणे = close पलीकडे + पलीकडे swing (K6.5, `broken_by`) — K रेघ आणि trade-बाजूची रेघ दोन्हींना; परत आलेला close =
+  throw-over. Anchors = दोन वेगळे reactions (मधे उलट swing, `separate`). Chart captions "gone" (आधीच गेलेली रेघ). KB K6 मधले आकडे /
+  golden तारीख काढले. step2 confluence जागीच label — test.
+
