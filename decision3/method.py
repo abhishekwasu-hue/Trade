@@ -772,7 +772,7 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
                 grade = cm["grade"] = "B"
             elif not refs:                                                 # Abhi (L3-c): never an automatic pass — no approach leg known and no
                 return False, "commitment volume: nothing to compare it with (no approach leg known, no opposite-side candle)", \
-                    {"wait": "low_volume", **cm, "vol_na": False, "vol_mult": None}   # opposite candle ⇒ no commitment
+                    {"wait": "no_volume_reference", **cm, "vol_na": False, "vol_mult": None}   # opposite candle ⇒ no commitment
             else:
                 top, top_i = max(ref)
                 cm.update(vol_mult=round(float(V[t]) / top, 2), vol_na=False, vol_ref_bar=int(top_i),
@@ -803,6 +803,7 @@ C_LTF_MISSING, C_LTF_AGAINST, C_LTF_PENDING = "ltf_missing", "ltf_against", "ltf
 REASON = {C_ABSORB: "absorption (the opposite side keeps coming in small candles and price does not move away)", C_COMMIT: "no commitment",
           C_NO_HANDOVER: "no handover yet (trade-side candles not growing while the opposite side shrinks and volume tilts to the trade side)",
           "low_volume": "commitment on low volume", "not_dominant": "commitment candle not dominant",
+          "no_volume_reference": "commitment volume: no approach leg known and no opposite-side candle to compare it with",
           C_LTF_MISSING: "LTF data missing", C_LTF_AGAINST: "LTF still trending against",
           C_LTF_PENDING: "waiting for LTF CHoCH (no close beyond the last LTF swing)"}
 LTF_OF = {60: 5, 15: 5, 5: 1}                                              # Abhi c1 mapping: 1H area / 15M setup ⇒ 5M; 5M ⇒ 1M; MCX 15M ⇒ 5M

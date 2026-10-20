@@ -2805,4 +2805,7 @@ legs owner वि. reader2 gate).
 - **Golden (real volume, tuning नाही):** 12 Oct 09:30 — fast-form handover ✅, 5M CHoCH ✅, पण commitment चा volume approach leg च्या सर्वात
   मोठ्या candle च्या ×0.26 (leg gap ओलांडून आदल्या सत्राच्या rise पासून; त्याच्या opening candles चा raw volume मोठा) ⇒ commitment नाही ⇒
   **bear call नाही** (xfail त्या कारणावर). 13 Oct — bear call नाही, resistance. 29 Sep — FUT नाही ⇒ entry नाही.
+- **Review fixes (#335):** facts dossier ची commitment तुलना आता त्याच approach leg शी (शेवटचा दूरचा structure swing, gap ओलांडून); visit
+  च्या पहिल्या candle वरचाच swing approach सुरू करत नाही; "nothing to compare" चा स्वतंत्र wait code. Dossier चा visit finder (session
+  look-back + `touch_window_bars`) = layer 6 (OPEN_QUESTIONS L3-n).
 

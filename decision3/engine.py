@@ -286,12 +286,13 @@ class V22:
                 if i < t and self._failed_commit_outside(i, start, lvl, d):
                     start, prev_end, ended_by = None, i, "commitment"
                 continue
-            if i in piv:
-                last_piv = i
-            if A["low"][i] <= hi and A["high"][i] >= lo:
+            if A["low"][i] <= hi and A["high"][i] >= lo:                   # a swing ON the touching candle is not before the visit
                 start = i
                 approach_from = (last_piv + 1) if last_piv is not None else None   # the leg into the area: the candles after its swing —
                 # Abhi (P2): it runs across any gap or session change and across the end of an earlier visit; no structure swing ⇒ unknown
+                continue
+            if i in piv:
+                last_piv = i
         ts = lambda i: str(pd.Timestamp(self._ts[i]))[:16]                 # noqa: E731
         why = None
         if start is None:

@@ -628,7 +628,7 @@ def test_commitment_dominance_and_volume_are_comparisons_within_the_visit():
     red = {k: v.copy() for k, v in A.items()}
     red["open"][0], red["close"][0] = 99.4, 99.2                             # candle 1 red too ⇒ no opposite-side candle in the visit
     ok3, why3, cm3 = M.commitment(red, i, DOWN, lvl, S, win=0)              # Abhi (L3-c): never an automatic pass — no approach leg known
-    assert not ok3 and "nothing to compare" in why3 and cm3.get("wait") == "low_volume"   # and no opposite candle ⇒ no commitment
+    assert not ok3 and "nothing to compare" in why3 and cm3.get("wait") == "no_volume_reference"   # no opposite candle ⇒ no commitment
     legacy = {**S, "commit_volume_rule": "opposite"}
     ok4, _, cm4 = M.commitment(red, i, DOWN, lvl, legacy, win=0)
     assert ok4 and cm4["vol_vs"] == "no opposite-side candle in this visit" and cm4["grade"] == "B"   # the #329 fail-safe, what-if only
@@ -918,3 +918,12 @@ def test_legs_arrays_have_no_session_breaks_by_default():
     assert list(FL.legs_arrays(A, ts, S)["first"]) == [True, False, False, False]
     assert list(FL.legs_arrays(A, ts, {**S, "session_windows": True})["first"]) == [True, False, True, False]   # legacy what-if
 
+
+
+def test_a_swing_on_the_touching_candle_does_not_empty_the_approach_leg():
+    """Review: the visit's first candle pokes into the supply and itself becomes a swing low below it — the approach leg still runs from
+    the swing BEFORE the visit (never from the touching candle itself, which would leave nothing to compare)."""
+    rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 98.6, 97.4, 98.5), (98.5, 100.4, 96.5, 96.9), (96.9, 99.0, 96.8, 98.8)]
+    V, lvl = _visit_v(rows, swings=[("L", 96.8, 0, 1), ("L", 96.5, 2, 3)])
+    vi = V.visit(3, lvl, DOWN)
+    assert vi["start"] == 2 and vi["approach_from"] == 1
