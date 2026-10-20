@@ -2865,3 +2865,23 @@ legs owner वि. reader2 gate).
   `confluence_label` च्या शेवटी "line" (chart captions तेच दाखवतात). Assumption L4-f: "आधीचा touch" = candle ने रेषा गाठली ती वेळ.
 - **Golden (real):** 12 Oct 09:30 — 09:15 चं वळण (22,651; रेषा 22,654) ⇒ 1H supply 22,544–22,622 = "confluence: line" ✅ (test).
 
+## 2026-10-20 · Method layer 5: RSI divergence (branch `claude/method-layer5-rsi`)
+
+- `rsi2.engine.Divergence` (from #329) आधीच method प्रमाणे: लागोपाठचे same-degree swings, नवा price टोक (बरोबर नाही), RSI ने आधीचा
+  टोक ओलांडला नाही (बरोबर चालतो), swing च्या स्वतःच्या span मधला RSI, bar window / किमान फरक नाही, hidden बंद; visit मधला पुरावा, absence सांगितली.
+- **KB K10.4** "pending" काढून method §3 प्रमाणे पुन्हा लिहिला (आकडे काढले: bar window, ±N bars, equal-high tolerance); Method Pack 5c.
+- **Guard:** `test_layer_five_rsi_divergence_is_logic` (जुने RSI आकडे divergence path मध्ये नाहीत; bar window फक्त legacy switch मागे).
+- **Degree प्रश्न (L5-a):** structure degrees फक्त घेतल्या तर 12 Oct golden divergence (9 Oct push high, D0) हरवते ⇒ बदल केला नाही;
+  layer 1 च्या निर्णयासोबत ठरेल.
+- **Review fixes (layer 5):** visit मध्ये बनलेली divergence नंतरच्या lower retest मुळे हरवत होती (`read` फक्त नवी जोडी) ⇒ engine आता
+  history मधून वाचतो (test). RSI तुलना unrounded (लपलेली tolerance नाही). Pack: 5b चं जुनं hidden-divergence वाक्य काढलं, Handover = 5d;
+  K10.2 = पार्श्वभूमी (वाचनाचा नियम K10.4). "Swing वरचा RSI" = code ची व्याख्या (C-24) — L5-a मध्ये.
+
+## 2026-10-20 · Layer 1 ✅: the swing scale is Abhi's calibration (branch `claude/method-layer1-calibration`)
+
+- swings2 `k` register = "Abhi calibration (visual, his own charts)"; decision3 `swing_k` (None = approved D1 = 4, D2 = 6) ⇒ `swings2.build`.
+- Advanced dashboard (15M SRv2 पान, engine section): "Advanced: swing scale (Abhi calibration)" — D1 / D2 k (swings2 K_OPTIONS),
+  रिकामं = approved scale; `engine3_swing_k_d1` / `_d2` ⇒ `engine3_live.swing_scale` ⇒ live decision आणि pre-open levels दोन्ही.
+- Guard: नवा CALIBRATION वर्ग (level / tl / pullback degree, daily N, k reset, Daily RANGE / maturity σ — L1-b); layer 1 PENDING रिकामं.
+- KB K1 + Pack 1, CHART_READER_METHOD (Calibration), METHOD_MAP (Swing / Degree 1 ✅), NUMBERS_INVENTORY C-1 / C-2 / C-21 resolved.
+

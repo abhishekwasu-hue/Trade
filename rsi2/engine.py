@@ -1,4 +1,9 @@
-"""rsi2/engine.py — थर 6: RSI divergence (pivot-based; थर 1 pivots, RSI त्याच candle च्या close ला) आणि Cardwell rsi_range.
+"""rsi2/engine.py — the reader's RSI divergence is `Divergence` (bottom of this file; method §3, layer 5: consecutive swings of one degree,
+a new price extreme vs an RSI that does not exceed its previous extreme, equal counts; no bar windows or numeric thresholds). The `RSI`
+class and helpers above are the OLD numeric detector (gaps, σ / RSI differences, Cardwell zones) — used only by the facts dossier and the
+MTF display; rebuilt with the output (layer 6). Old description:
+
+थर 6: RSI divergence (pivot-based; थर 1 pivots, RSI त्याच candle च्या close ला) आणि Cardwell rsi_range.
 
 - RSI: masked 15M closes (थर 1 series), Wilder (`chart_reader.evidence.rsi` — शुद्ध, import + equality test), segment-निहाय (holdout मधून
   warm-up नाही), पहिल्या warmup_bars ला `rsi_warmup`. 1H RSI फक्त बंद 1H candles वर (त्या candle च्या 15M शेवटच्या bar ला उपलब्ध).
@@ -510,7 +515,7 @@ class Divergence:
             rel = "equal low" if dp == 0 else ("lower low" if dp < 0 else "higher low")
             between = self.B.L[a.bar + 1:b_bar]
             clear = not len(between) or float(between.min()) >= min(a.price, b_price) - 1e-9
-        r1, r2 = rec["L1"]["rsi"], rec["L2"]["rsi"]
+        r1, r2 = float(ra[0]), float(rb[0])                                # compared unrounded (no hidden tolerance); rounded only for display
         rec.update(price_rel=rel, tolerance=0.0, rsi_diff=round(r2 - r1, 2), consecutive=bool(clear))
         if not clear:
             rec["reason"] = "not consecutive pushes (a more extreme price between the pivots)"
@@ -653,7 +658,7 @@ class Divergence:
                     divs.append(x)
                 elif x["cap"]:
                     caps.append(x)
-        return {"owner": "rsi2.engine.Divergence", "kb": "K10.4 K-RSI (pending Abhi)", "tf": self.tf, "bar": t,
+        return {"owner": "rsi2.engine.Divergence", "kb": "method §3 RSI divergence (KB K10.4)", "tf": self.tf, "bar": t,
                 "asof": str(self.B.ts.iloc[t]), "rsi": _r2(self.rsi[t]), "rsi_warmup": bool(self.warm[t]),
                 "rsi_period": int(self.s["period"]), "rsi_window_bars": self.N, "bar_window": list(self.win),
                 "hidden_enabled": bool(self.s["div_hidden"]), "degrees": list(self.degrees), "divergences": divs, "cap_rejected": caps,
