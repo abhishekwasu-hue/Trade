@@ -2913,3 +2913,17 @@ legs owner वि. reader2 gate).
 - **Golden (real):** 12 Oct — D1 वर चालीत एकच push, D0 वर दोन ⇒ D0: 9 Oct 14:15 → 12 Oct 09:15 (RSI 67.09 → 66.41) = bear divergence
   परत; 09:30 setup **A** (RSI divergence + confluence). Default म्हणून नोंद — Abhi बदलू शकतात.
 
+## 2026-10-20 · Layer 1 rule result + layers 2–4 summary sent (trade-data)
+
+- **Layer 1 (Abhi: A in all 12 cases):** his swing rule applied exactly as stated matches A in 4 of 12; the 8 differing cases (chart
+  + one-line reason each) are in trade-data `review/method_layer1_rule/RULE_CASES.md`. Not tuned, no code change (OPEN_QUESTIONS L1-a).
+- **Layers 2–4:** summary for Abhi's ✅ in trade-data `review/layers_2_4_summary/SUMMARY.md` (with the L4-g questions). No tag until ✅.
+- `docs/reader/EXPORT_MANIFEST.md` regenerated: the two new trade-data folders added; layer 1 / layer 4 rows say Abhi has answered.
+
+## 2026-10-20 · Abhi: layers 1–4 ✅; L1 / L4-g / L5-a answered
+
+- **Layer 1 ✅:** approved swings2 D1 / D2 = swing ची व्याख्या (Abhi चं calibration — market च्या सामान्य हालचालीशी तुलना, त्यांच्या charts
+  वरून निवडलेला scale); शुद्ध तुलनात्मक नियम नाही. C-1 resolved; scale = advanced dashboard calibration setting (calibration PR).
+- **Layers 2, 3, 4 ✅** ⇒ tags + parity fixtures (STABLE.md). L4-g (touches by reactions) layer 4 च्या tag आधी (#343; OPEN_QUESTIONS L4-g तिथे).
+- **L5-a:** zone च्या रचनेच्या एक degree खाली (#344, OPEN_QUESTIONS L5-a तिथे; golden वर एक वाचन-प्रश्न परत Abhi कडे).
+

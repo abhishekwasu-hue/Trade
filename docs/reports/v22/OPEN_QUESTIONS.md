@@ -634,4 +634,4 @@ Implementation per layer: `docs/reports/v22/METHOD_MAP.md`.
 | L4-e | "Separate reactions" = a swing of the opposite kind lies between the two anchors (price left the line); without one the pair is one reaction, not a line (§3 Lines) | 4 |
 
 | L3-j | "At the area" also means the commitment trades in the area: its candle, or the candle just before it (a merged pair, or a commitment right next to the area), touches the band — a candle far below / above it inside a still-open visit is a chase, never an entry (§1 P4, §4 "a breakout away from an area") | 3 |
-
+| L1-a | **Abhi (answered, layer 1 ✅):** keep A — the approved swings2 D1 / D2 ARE the swing definition. A swing's significance is always judged against the market's own normal movement; swings2 does that at the scale Abhi chose from his own charts (his visual calibration, not a fixed point value). The pure comparative rule is not used (it matched A in 4 / 12 because it counts one-candle turns as swings; trade-data `review/method_layer1_rule/RULE_CASES.md`). The scale is recorded as Abhi's calibration setting (advanced dashboard; KB K1); C-1 resolved. | 1 |
