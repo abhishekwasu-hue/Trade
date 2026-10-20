@@ -127,7 +127,9 @@ def _rt_V(highs, pivots, mirror):
 def test_a_reaction_rising_out_of_an_area_and_turning_at_the_line_is_a_touch():
     """Abhi (layer 4 B): the reaction rises out of the area (98–102), turns at the line short of it — the closest approach since the
     previous touch, no close beyond — and goes away (the swing is confirmed) ⇒ a touch; that area is labelled "confluence: line".
-    An earlier closer turn, a close beyond, a later turn, or a turn that never left the area ⇒ no reaction touch. Mirror."""
+    Abhi L4-g (2): the touch is the reaction's own turn (the closest approach since the previous touch) — an earlier closer turn is the
+    touch, and a later turn that stays away does not remove it. A close beyond, or a turn that never left the area ⇒ no confluence.
+    L4-g (1): the touch number (anchors 1, 2; this reaction 3 — an opposite swing lies between) is information. Mirror."""
     for mirror in (False, True):
         d = TL.UP if mirror else TL.DOWN
         highs = [100.5] * 20
@@ -137,23 +139,51 @@ def test_a_reaction_rising_out_of_an_area_and_turning_at_the_line_is_a_touch():
         area = {"id": 7, "lo": min(f(98.0), f(102.0)), "hi": max(f(98.0), f(102.0)), "births": ["a:D2"]}
         far = {**area, "id": 8, "lo": min(f(90.0), f(94.0)), "hi": max(f(90.0), f(94.0))}
         rt = TL.reaction_touch(V, 17, d, ln)
-        assert rt == {"bar": 14, "price": f(104.0), "leg_from": 12}
+        assert rt == {"bar": 14, "price": f(104.0), "leg_from": 12, "touch_no": 3, "trade_location": True}
         assert [x["id"] for x in TL.areas_out_of(V, rt, d, [area, far])] == [7]
-        assert TL._labelled(area, ln, rt)["confluence_label"] == "confluence: line"
-        assert TL._labelled({**area, "confluence_label": "confluence: Daily 1–2"}, ln, rt)["confluence_label"] == "confluence: Daily 1–2; line"
+        assert TL._labelled(area, ln, rt)["confluence_label"] == "confluence: line (touch 3)"
+        assert TL._labelled(area, ln, None)["confluence_label"] == "confluence: line"
+        assert TL._labelled({**area, "confluence_label": "confluence: Daily 1–2"}, ln, rt)["confluence_label"] == \
+            "confluence: Daily 1–2; line (touch 3)"
         assert TL.reaction_touch(V, 15, d, ln) is None                      # not yet confirmed (the move has not gone away)
         V2, ln2, _ = _rt_V(highs, [("H", 107.5, 11, 12), ("L", 99.0, 12, 13), ("H", 104.0, 14, 16)], mirror)   # an earlier turn came
-        assert TL.reaction_touch(V2, 17, d, ln2) is None                    # closer: 107.5 at bar 11 (line 109) was 1.5 short
+        assert TL.reaction_touch(V2, 17, d, ln2)["bar"] == 11               # closer: 107.5 at bar 11 (line 109) was 1.5 short ⇒ that is
+                                                                            # the reaction's own turn (L4-g 2), bar 14 stayed farther away
         V6, ln6, _ = _rt_V(highs, [("H", 109.5, 11, 12), ("L", 99.0, 12, 13), ("H", 104.0, 14, 16)], mirror)   # bar 11 reached the
         assert TL.reaction_touch(V6, 17, d, ln6)["bar"] == 14               # line (109.5 ≥ 109) ⇒ a new previous touch; 14 is then the closest
         V3, ln3, _ = _rt_V(highs, piv, mirror)
         V3.levels.A["close"][13] = f(108.0)                                 # a close beyond the line (107 at bar 13)
         assert TL.reaction_touch(V3, 17, d, ln3) is None
-        V4, ln4, _ = _rt_V(highs, piv + [("H", 100.0, 17, 18)], mirror)    # a later, farther turn (3 short) ⇒ the touch left behind
-        assert TL.reaction_touch(V4, 18, d, ln4) is None
+        V4, ln4, _ = _rt_V(highs, piv + [("H", 100.0, 17, 18)], mirror)    # a later turn that stays away (3 short) does not remove the
+        assert TL.reaction_touch(V4, 18, d, ln4)["bar"] == 14               # touch (Abhi L4-g 2)
         V7, ln7, _ = _rt_V(highs, piv, mirror)
         V7.levels.A["close"][16] = f(105.0)                                 # after the turn, a close beyond the line (104 at bar 16)
         assert TL.reaction_touch(V7, 17, d, ln7) is None                    # ⇒ price has gone through; the meeting is over
         h5 = list(highs); h5[14] = 101.5                                    # the turn stays inside the area ⇒ it never rose out of it
         V5, ln5, _ = _rt_V(h5, [("L", 99.0, 12, 13), ("H", 101.5, 14, 16)], mirror)
         assert TL.areas_out_of(V5, TL.reaction_touch(V5, 17, d, ln5), d, [area]) == []
+
+
+def test_touches_are_counted_by_reactions_not_contacts():
+    """Abhi L4-g (1): contacts with no real opposite swing of the line's structure between them are one touch. A line of highs 120 → 110
+    (bars 0 → 10): wick contacts at 11 and 12 with no swing low between ⇒ one touch with anchor 10; a low at 14, then a contact at 16 ⇒
+    a new touch (the third). Mirror."""
+    for mirror in (False, True):
+        f = (lambda x: 200.0 - x) if mirror else (lambda x: float(x))        # noqa: E731
+        kind, opp = ("L", "H") if mirror else ("H", "L")
+        n = 18
+        c = np.full(n, f(100.0))
+        A = {"open": c.copy(), "close": c.copy(), "high": np.full(n, f(100.5)), "low": np.full(n, f(99.5))}
+        if mirror:
+            A["high"], A["low"] = np.full(n, 100.5), np.full(n, 99.5)
+        for b in (0, 10, 11, 12, 16):
+            y = 120.0 - b
+            if mirror:
+                A["low"][b] = f(y + 0.2)
+            else:
+                A["high"][b] = y + 0.2
+        line = (lambda b: f(120.0 - b))                                     # noqa: E731
+        known = [NS(kind=opp, price=f(95.0), bar=5), NS(kind=opp, price=f(96.0), bar=14)]
+        g = TL.touch_groups(A, known, kind, line, 0, 10, 17)
+        assert g == [[0], [10, 11, 12], [16]]
+
