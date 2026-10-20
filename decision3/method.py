@@ -703,9 +703,10 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
     (merged 2-candle form ⇒ "मागची" = pattern आधीची candle t − 2, त्याच दिवसाची असेल तर; Q30)
     close level च्या trade-बाजूला / level मध्ये. Grade: मागच्या candle च्या extreme पलीकडे close किंवा engulf ⇒ A; बाकी (wick नकार + close
     पलीकडे) ⇒ B. वाट: चालू candle pullback-दिशेची / doji / inside bar ⇒ पुढच्या candle ची वाट. वेळ-खिडकी settings.
-    Volume (method §3 Commitment, `commit_volume_rule = approach_and_opposite`): larger than every candle of the approach leg (`approach` =
-    its bar indices, given by the caller) and every opposite-side candle of the visit (win … t − 1); the rejected push (`exclude`) and the
-    commitment itself (both candles when merged) are not compared. Nothing to compare ⇒ no commitment (Abhi, L3-c). Volume NA ⇒ vol_na (the caller's
+    Volume (method §3 Commitment, `commit_volume_rule = approach_and_opposite`; Abhi L3-c): higher than the AVERAGE of its comparison
+    set = the approach leg's candles (`approach` = its bar indices, given by the caller) + the visit's opposite-side candles (win … t − 1);
+    the rejected push (`exclude`) and the commitment itself (both candles when merged) are excluded. A pullback may start on heavy volume
+    (Abhi), so the largest candle never decides. Nothing to compare ⇒ no commitment (Abhi, L3-c). Volume NA ⇒ vol_na (the caller's
     data-problem rule). "opposite" = the legacy #329 read (visit's opposite side only, none ⇒ grade cap B)."""
     if s["commit_beyond"] not in ("extreme", "close"):
         raise ValueError(f"commit_beyond {s['commit_beyond']!r} — extreme / close पैकी")
@@ -774,12 +775,12 @@ def commitment(A, t, d, lvl, s, tss=None, win=None, approach=None, exclude=()):
                 return False, "commitment volume: nothing to compare it with (no approach leg known, no opposite-side candle)", \
                     {"wait": "no_volume_reference", **cm, "vol_na": False, "vol_mult": None}   # opposite candle ⇒ no commitment
             else:
-                top, top_i = max(ref)
-                cm.update(vol_mult=round(float(V[t]) / top, 2), vol_na=False, vol_ref_bar=int(top_i),
-                          vol_vs="the approach leg and the visit's opposite-side candles" if (appr and opp) else
-                          "the approach leg's candles" if appr else "the visit's opposite-side candles")
-                if not V[t] > top:
-                    return False, f"commitment on low volume (not larger than {cm['vol_vs']})", {"wait": "low_volume", **cm}
+                avg = float(np.mean([v for v, _ in ref]))                  # Abhi (L3-c): the average of the comparison set, never its largest
+                cm.update(vol_mult=round(float(V[t]) / avg, 2), vol_na=False, vol_ref_n=len(ref), vol_ref_avg=round(avg, 1),
+                          vol_vs="the average of the approach leg and the visit's opposite-side candles" if (appr and opp) else
+                          "the average of the approach leg's candles" if appr else "the average of the visit's opposite-side candles")
+                if not V[t] > avg:
+                    return False, f"commitment on low volume (not higher than {cm['vol_vs']})", {"wait": "low_volume", **cm}
             return True, f"commitment {form} ({merged} candle) · grade {grade}", cm
         opp = [i for i in ww if (A["close"][i] - A["open"][i]) * d < 0]     # legacy: the opposite side's candles in the same visit
         ref = [float(V[i]) for i in opp if np.isfinite(V[i]) and V[i] > 0] if V is not None else []

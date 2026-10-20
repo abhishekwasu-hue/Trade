@@ -615,7 +615,8 @@ def test_two_candle_read_names_every_missing_part():
 
 
 def test_commitment_dominance_and_volume_are_comparisons_within_the_visit():
-    """Abhi: dominant = larger than every other candle of the visit; volume = larger than the opposite side's candles of the visit."""
+    """Abhi: dominant = larger than every other candle of the visit; volume = higher than the average of its comparison set (here the
+    visit's opposite-side candles)."""
     A, i = _pair()
     A["volume"] = np.array([500.0, 900.0])                                  # candle 2 (commitment) volume above the opposite-side candle 1?
     lvl = {"lo": 100.0, "hi": 102.0}
@@ -623,8 +624,8 @@ def test_commitment_dominance_and_volume_are_comparisons_within_the_visit():
     assert cm.get("body_mult") is not None and cm["body_mult"] > 1.0
     A["volume"] = np.array([900.0, 500.0])
     ok2, why2, cm2 = M.commitment(A, i, DOWN, lvl, S, win=0)
-    assert ok and cm["vol_vs"] == "the visit's opposite-side candles" and not ok2 and "low volume" in why2
-    assert "not larger than the visit's opposite-side candles" in why2      # no approach leg given ⇒ named as compared
+    assert ok and cm["vol_vs"] == "the average of the visit's opposite-side candles" and not ok2 and "low volume" in why2
+    assert "not higher than the average of the visit's opposite-side candles" in why2   # no approach leg given ⇒ named as compared
     red = {k: v.copy() for k, v in A.items()}
     red["open"][0], red["close"][0] = 99.4, 99.2                             # candle 1 red too ⇒ no opposite-side candle in the visit
     ok3, why3, cm3 = M.commitment(red, i, DOWN, lvl, S, win=0)              # Abhi (L3-c): never an automatic pass — no approach leg known
@@ -635,20 +636,23 @@ def test_commitment_dominance_and_volume_are_comparisons_within_the_visit():
 
 
 def test_commitment_volume_is_compared_with_the_approach_leg_and_the_opposite_side_without_the_push():
-    """Method §3 Commitment: volume larger than the approach leg's candles and the visit's opposite-side candles; the rejected push and
-    the commitment itself are not part of that comparison."""
+    """Method §3 Commitment (Abhi, L3-c): volume higher than the AVERAGE of the approach leg's candles and the visit's opposite-side
+    candles; the rejected push and the commitment itself are not part of that comparison; one heavy candle never decides."""
     rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 98.4, 97.4, 98.3), (98.3, 99.2, 98.2, 99.1),          # approach leg (bars 0–2)
             (99.0, 101.5, 98.5, 99.2), (99.3, 99.6, 97.0, 97.2)]                                  # push (3) + commitment (4)
     A = {k: np.array([r[j] for r in rows], float) for j, k in enumerate(("open", "high", "low", "close"))}
     lvl = {"lo": 100.0, "hi": 102.0}
-    A["volume"] = np.array([300.0, 400.0, 500.0, 2000.0, 900.0])           # the push has the largest volume — excluded
+    A["volume"] = np.array([300.0, 400.0, 500.0, 3000.0, 900.0])           # the push has the largest volume — excluded
     ok, why, cm = M.commitment(A, 4, DOWN, lvl, S, win=3, approach=range(0, 3), exclude=[3])
-    assert ok and cm["vol_vs"] == "the approach leg's candles" and cm["vol_ref_bar"] == 2 and cm["vol_mult"] == 1.8
-    ok2, why2, _ = M.commitment(A, 4, DOWN, lvl, S, win=3, approach=range(0, 3))   # push not excluded ⇒ compared with it ⇒ low volume
+    assert ok and cm["vol_vs"] == "the average of the approach leg's candles" and cm["vol_ref_n"] == 3 and cm["vol_mult"] == 2.25
+    ok2, why2, _ = M.commitment(A, 4, DOWN, lvl, S, win=3, approach=range(0, 3))   # push not excluded ⇒ average 1,050 ⇒ low volume
     assert not ok2 and "low volume" in why2
-    A["volume"][1] = 1000.0                                                 # an approach candle above the commitment ⇒ low volume
-    ok3, why3, _ = M.commitment(A, 4, DOWN, lvl, S, win=3, approach=range(0, 3), exclude=[3])
-    assert not ok3 and "approach leg" in why3
+    A["volume"][0] = 1000.0                                                 # one approach candle heavier than the commitment (a pullback
+    ok3, why3, cm3 = M.commitment(A, 4, DOWN, lvl, S, win=3, approach=range(0, 3), exclude=[3])   # may start on heavy volume): the
+    assert ok3 and cm3["vol_ref_avg"] == 633.3                              # average decides, not the largest candle
+    A["volume"][:3] = 1000.0                                                # the leg as a whole heavier ⇒ low volume
+    ok4, why4, _ = M.commitment(A, 4, DOWN, lvl, S, win=3, approach=range(0, 3), exclude=[3])
+    assert not ok4 and "average of the approach leg" in why4
     with pytest.raises(ValueError, match="commit_volume_rule"):
         M.commitment(A, 4, DOWN, lvl, {**S, "commit_volume_rule": "x"}, win=3)
 
@@ -853,7 +857,7 @@ def test_commitment_volume_merged_pair_and_missing_volume(mirror):
     lvl = {"lo": min(f(100.0), f(102.0)), "hi": max(f(100.0), f(102.0))}
     A["volume"] = np.array([300.0, np.nan, 500.0, 2000.0, 900.0])
     ok, _, cm = M.commitment(A, 4, d, lvl, S, win=3, approach=range(0, 3), exclude=[3])
-    assert ok and cm["vol_ref_bar"] == 2 and cm["vol_ref_gaps"] == 1        # bar 1 has no FUT volume: counted, not compared as zero
+    assert ok and cm["vol_ref_n"] == 2 and cm["vol_ref_gaps"] == 1          # bar 1 has no FUT volume: counted, not averaged as zero
     A["volume"] = np.array([np.nan, np.nan, np.nan, 2000.0, 900.0])
     ok2, _, cm2 = M.commitment(A, 4, d, lvl, S, win=3, approach=range(0, 3), exclude=[3])
     assert cm2["vol_na"] is True and cm2["grade"] == "B"                    # nothing with volume ⇒ NA (V22: data problem, no entry)
@@ -874,7 +878,7 @@ def test_merged_commitment_leaves_both_its_candles_out_of_the_volume_comparison(
     d = DOWN if mirror else UP
     lvl = {"lo": min(f(100.0), f(101.0)), "hi": max(f(100.0), f(101.0))}
     ok, why, cm = M.commitment(A, 4, d, lvl, {**S, "c0_dominance": False}, win=2, approach=range(0, 2))
-    assert cm["merged"] == 2 and ok and cm["vol_ref_bar"] != 3, (why, cm)
+    assert cm["merged"] == 2 and ok and cm["vol_ref_n"] == 3, (why, cm)     # bars 0, 1, 2 — the inside candle 3 is not averaged in
 
 
 
