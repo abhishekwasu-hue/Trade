@@ -125,3 +125,16 @@ def test_layer_six_verdict_is_the_method_no_scores():
     for call in ("M.power_shift(", "M.range_state(", "M.conviction("):
         assert src.index(call) > i, f"{call} runs outside the legacy score rule"
 
+def test_layer_five_rsi_divergence_is_logic():
+    """Layer 5 (method §3 RSI divergence): consecutive swings of one degree, a new price extreme vs an RSI that does not exceed its previous
+    extreme (equal counts), RSI at the swing's own span — no bar window, no minimum RSI / price difference, no RSI zones, hidden off."""
+    import inspect
+    from rsi2 import engine as RE
+    from rsi2 import settings as RS
+    assert RS.DEFAULTS["div_bar_window"] is False and RS.DEFAULTS["div_hidden"] is False
+    src = inspect.getsource(RE.Divergence)
+    for key in ("min_rsi", "min_price_sigma", '"gaps"', "bull_min", "bull_max", "bull_trough", "bear_max", "bear_min", "bear_peak",
+                "window_15m", "window_1h", "pivot_k", "grade_os", "grade_ob", "onk_trough", "shift_trough", "shift_peak", "edge_recent"):
+        assert key not in src, f"{key}: an RSI number in the divergence reading path"
+    ev = inspect.getsource(RE.Divergence._eval)
+    assert ev.index("div_bar_window") < ev.index("lo, hi = self.win"), "the bar window is compared only behind the legacy switch"

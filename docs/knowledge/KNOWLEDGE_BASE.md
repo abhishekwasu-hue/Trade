@@ -60,7 +60,7 @@
 ## अनुक्रमणिका
 - **भाग A:** मूलतत्त्वं (Abhi ची शैली आणि विचारपद्धती)
 - **भाग B:** Chart Reading Protocol (8 टप्पे)
-- **भाग C:** Knowledge chapters K1–K14 (K10.3 volume सह; K10.4 K-RSI — pending Abhi)
+- **भाग C:** Knowledge chapters K1–K14 (K10.3 volume सह; K10.4 K-RSI — method §3)
   - **K11 chart patterns** (KP1–KP5 वर Abhi चे निर्णय लागू, 2026-10-13, PR #317): K11.0 सामायिक नियम · trend / correction K11.1–K11.7 (flag, pennant, rectangle, ascending / descending triangle, symmetrical triangle, channel, wedge / diagonal) · reversal K11.8–K11.14 (double, triple, H&S, rounding, V, broadening, island) · liquidity K11.15–K11.16 (sweep / spring / upthrust, failed breakout / trap) · K11.17 विश्वासार्हता · K11.18 चुका · K11.19 code शी फरक
 - **भाग D:** पुराव्याची यादी आणि grade
 - **भाग E:** नेहमीच्या चुका (checklist)
@@ -151,7 +151,7 @@
 - **Correction कमकुवत होतोय का:** legs लहान, overlap वाढतोय, spreads आकुंचन, closes पुन्हा वर सरकत आहेत (rising CLV) (K10, K12).
 - **Sweep / spring / upthrust:** A चा low किंवा equal lows थोडे तोडून परत आत close? (K5)
 - **Volume (NIFTY futures, raw bars — method §3):** pullback मध्ये volume सुकतोय का? C-end ला absorption spike? Reversal candle ला volume? (K10.3)
-- **RSI divergence** (फक्त पुरावा): C-end ला regular, किंवा pullback मध्ये hidden (K10).
+- **RSI divergence** (फक्त पुरावा): C-end ला regular (K10.4; hidden वापरत नाही).
 - **Chart pattern वाचन:** flag (pullback) की double top / H&S (reversal warning)? (K11)
 
 ## टप्पा 5: Context
@@ -1002,6 +1002,8 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 - ⇒ हे गुण scoring features आहेत, नियम नाहीत. NIFTY data वर तपासायचे.
 
 ### K10.2 RSI(14) divergence: मंजूर असलेलं **एकमेव indicator**, फक्त पुरावा म्हणून
+> **वाचनाचा नियम आता K10.4 (method §3).** खालचे आकडे (bars अंतर, MR / points फरक, 30 / 70 location, गुण) आणि hidden divergence चा
+> वापर वाचनात नाहीत — हा भाग फक्त पार्श्वभूमी / research म्हणून.
 **काय.**
 - **Regular bullish:** price lower low, RSI higher low ⇒ ताकद कमी होतेय (थकवा). Bearish उलट.
 - **Hidden bullish:** price **higher** low, RSI lower low ⇒ trend continuation. Pullback ने oscillator ला जास्त ढकललं, पण price structure तुटलं नाही. [अनुभव: Cardwell / Brown]
@@ -1056,56 +1058,35 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 - Volume U-shape (NSE): [पुरावा +]. तरीही Abhi ची method: वाचनात raw bars (method §3); slot-normalisation फक्त what-if.
 - **[NIFTY] मर्यादा:** expired futures चा जुना volume Upstox Plus शिवाय मिळत नाही (HTTP 401). Collector काही आठवड्यांपासूनच data गोळा करतोय, आणि तो सगळा holdout / contaminated काळातला आहे. **म्हणून IS/VAL backtest मध्ये volume तपासता येणार नाही.** त्याचं मूल्य फक्त live PAPER scorecard मधून कळेल. सुरुवातीला गुण लहान.
 
-<!-- pending:abhi -->
-### K10.4 K-RSI: RSI divergence — facts module ची व्याख्या [Abhi spec 2026-10-13; **pending Abhi ✅ — Method Pack मध्ये नाही**]
-> KB change control (design §2): ही नोंद Abhi ✅ करेपर्यंत `pending`; generator ती pack मधून वगळतो. Owner = `rsi2` (design §3);
-> code `rsi2.engine.Divergence` (evidence only). Abhi ✅ नंतर pack section 5 मध्ये English ओळ जोडायची आणि हे markers काढायचे.
+### K10.4 K-RSI: RSI divergence [Abhi, method §3 "RSI divergence (the only indicator)"]
+Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rsi_divergence`.
 
-**व्याख्या.**
-- **Regular bearish:** चालू push चा high आधीच्या (त्याच swing degree च्या) push high पेक्षा **वर किंवा बरोबर** (equal high = band tolerance मध्ये, double top) **आणि** नव्या high चा RSI ≤ आधीच्या high चा RSI. **बरोबर RSI सुद्धा divergence** (Abhi, 13 Oct).
-- **Regular bullish (आरसा):** price lower low (किंवा equal low) **आणि** नव्या low चा RSI ≥ आधीच्या low चा RSI. बरोबर RSI low सुद्धा divergence.
-- **Hidden divergence:** फक्त setting मागे (default OFF), फक्त fact म्हणून; verdict मध्ये कधीच नाही (Abhi ने वापर सांगितलेला नाही).
-- **Multiple divergence:** लागोपाठ ≥ 2 RSI lower highs (higher lows) price च्या नव्या टोकांविरुद्ध ⇒ count fact (जास्त पुरावा).
-- RSI = Wilder RSI(14) **SPOT close** वर (period setting). TF: 15M मुख्य, 1H context, 5M पर्यायी (area जवळ). Futures फक्त volume साठी.
+**व्याख्या (तर्क, आकडा नाही).**
+- **खरे swings, एकाच degree चे:** लागोपाठचे swings, प्रत्येक degree आपापल्यात (swings2 degrees; "खरा swing" ची व्याख्या layer 1 —
+  अबींच्या निर्णयानुसार — ठरेल). दोन swings लागोपाठचे pushes: त्यांच्या मधे त्याहून टोकाची किंमत नाही. वेगवेगळ्या degree चे swings
+  कधीच जोडायचे नाहीत.
+- **Bearish:** price **नवा उंच high** करते (आधीच्या high पलीकडे — बरोबर high नवा high नाही) आणि RSI आधीच्या high च्या RSI पलीकडे
+  जात नाही — **बरोबर RSI सुद्धा divergence** [Abhi].
+- **Bullish (आरसा):** price नवा खालचा low आणि RSI आधीच्या low च्या RSI खाली जात नाही (बरोबर RSI सुद्धा).
+- **Swing वरचा RSI:** त्या swing च्या स्वतःच्या span मधला RSI चा टोक (शेजारच्या उलट swings मधला भाग) — bar count / ± window नाही.
+  *(ही code ची व्याख्या आहे, अबींचे शब्द नाहीत — NUMBERS_INVENTORY C-24 / OPEN_QUESTIONS L5-a, अबींचा होय / नाही बाकी.)*
+- Bars ची किमान / कमाल संख्या नाही; RSI फरकाला किमान मर्यादा नाही. Hidden divergence: वापरात नाही (फक्त what-if).
+- RSI = Wilder RSI spot close वर (indicator ची स्वतःची व्याख्या). Futures फक्त volume साठी.
 
-**मानसशास्त्र.**
-- Price अजून पुढे जातेय पण momentum ओसरतोय ⇒ trend बाजूची ताकद संपत चाललीय.
-- Seller area वर: buyers पुढे ढकलतात, पण कमी ताकदीने (प्रत्येक push ला कमी जोर). Buyer area वर उलट.
-
-**ओळख (code साठी; relative units फक्त).**
-1. Pivots = facts layer चे swings2 pivots (reader वापरतो तेच), वेगळी pivot routine नाही. Price wicks वर (high / low).
-2. दोन pivots **लागोपाठचे pushes, एकाच swing degree चे:** आधीचा pivot = चालू push आधीचा शेवटचा swing high (low), आणि दोघांमध्ये त्याहून उंच high (खालचा low) नाही. **ही मुख्य मर्यादा**; bar window फक्त safety cap.
-3. RSI value = price pivot च्या ± N bars (setting, default 2) मधला RSI extreme (RSI peak price peak च्या 1 bar आधी / नंतर येऊ शकतो), त्याच swing च्या आत, आणि फक्त pivot confirm होईपर्यंत बंद झालेल्या bars मधून.
-4. Bar window (setting, dashboard): 15M 3–50 bars (≈ 2 दिवस), 1H 3–35 (≈ 5 दिवस), 5M 3–60 (≈ 1 session). **किमान अंतर 3 bars, सगळ्या timeframes [Abhi, RSI-2]**. कारण: RSI 14 ≈ शेवटच्या 14 bars चा momentum; 3–4 × period पलीकडे दोन RSI values वेगवेगळ्या market phases सांगतात. प्रत्येक divergence ला खरं bar अंतर नोंदवायचं; **फक्त cap मुळे नाकारलेल्या जोड्या log** (Abhi cap तपासेल).
-5. RSI फरकाला किमान मर्यादा नाही (≤ / ≥); खरा फरक नेहमी नोंद (0 सुद्धा).
-
-**वैधता.**
-- **Status (no look-ahead, live वापरता येईल):** "forming" = चालू push चं आत्तापर्यंतचं टोक वि. आधीचा pivot (price अजून area मध्ये); "confirmed" = टोक right-side bars नी confirm, **किंवा** त्यापासून दूर close होणारी dominant commitment candle. प्रत्येक read चा status नोंद.
-- Data कुठल्याही bar ला कापला तरी आधीचे outputs बदलत नाहीत (फक्त forming → confirmed).
-- Area: price valid area (K4 band, `facts.validity`) वर / आत आहे का ⇒ fact; area नसेल तर NA + कारण.
-
-**Invalidation.**
-- Push पुढे जाऊन नवा high (low) आणि RSI सुद्धा नवा high (low) ⇒ forming divergence संपली ("no divergence: RSI made a new high with price (a > b)").
-- आधीच्या pivot पलीकडे मधेच नवा टोक ⇒ जोडी लागोपाठची नाही ⇒ divergence नाही.
-
-**Abhi चा वापर.**
-- Abhi वापरतो ते **एकमेव indicator**. Zone मध्ये, zone च्या गोष्टीचा भाग म्हणून वाचतो (13 Oct: "काल त्या zone मध्ये RSI divergence आली; आज नाही, म्हणून bear-call ची अट नाही").
-- Zone study (Method Pack item 5) मधला पुरावा आणि reader च्या "story" section ची अनिवार्य ओळ (GOLDEN_12_13_OCT_STORY §3); handover, volume आणि commitment candle सोबत तोलायचा.
-- **कधीच एकट्याने entry trigger नाही, daily trend विरुद्ध trade चं कारण नाही, breakout entry नाही, code मध्ये hard gate नाही** (Abhi नंतर सांगेपर्यंत). Area पासून दूर ⇒ फक्त context.
-- Output = facts (TF, type, दोन pivots: वेळ / price / RSI, bars, RSI फरक, status, count, area); **absence सुद्धा स्पष्ट** (उदा. "no divergence: RSI made a new high with price (78.4 > 72.1)"). Score / grade नाही.
-
-**विश्वासार्हता.** K10.2 प्रमाणे: [पुरावा −/कमकुवत] Bulkowski; मजबूत trend मध्ये divergence 2–3 वेळा येते. म्हणून फक्त area मधला पुरावा.
+**वापर.**
+- **Area मधला पुरावा, कधीच trigger नाही:** दुसरा swing (किंवा चालू push चं टोक) visit मध्ये असेल तरच zone study चा पुरावा; area पासून
+  दूर ⇒ फक्त context. Daily trend विरुद्ध trade चं कारण नाही; hard gate नाही.
+- **Absence सुद्धा सांगायची** ("divergence नाही: RSI ने price सोबत नवा high केला").
+- Status: "forming" (चालू push चं टोक) / "confirmed" (swing confirm, किंवा त्या टोकापासून दूर close होणारी reversal candle). No look-ahead.
+- Visit मध्ये बनलेली divergence नंतरच्या lower retest मुळे हरवत नाही (history मधून वाचतो).
+- Count: त्याच degree, त्याच बाजूची लागोपाठची divergence ⇒ count (माहिती).
 
 **चुका.**
 - मजबूत trend मध्ये divergence वरून counter-trade (divergence पुन्हा पुन्हा येते आणि fail होते).
-- कुठल्याही area पासून दूरची divergence ला महत्त्व देणं.
-- वेगवेगळ्या degree चे pivots जोडणं, किंवा मधे जास्त उंच high असताना जोडी मानणं.
-- RSI pivot वेगळे शोधून price pivot शी न जुळवणं; confirm होण्याआधीच्या right-side bars वापरणं (look-ahead).
+- Area पासून दूरच्या divergence ला महत्त्व देणं; वेगवेगळ्या degree चे swings जोडणं; मधे जास्त टोकाची किंमत असताना जोडी मानणं.
 
-**Fixtures (data trade-data मध्ये, CI मध्ये skip).**
-- 12 Oct NIFTY 15M spot: 22,667 zone मध्ये regular bearish (12-Oct spike high > 9-Oct push high, RSI कमी) — Abhi चं वाचन. Module चा निकाल ✅ / ✏️ साठी review chart वर (threshold tuning नाही).
-- 13 Oct: zone मध्ये divergence नाही (RSI price सोबत ≈ 80 पर्यंत) — absence स्पष्ट.
-<!-- /pending -->
+**Golden:** private fixtures (trade-data) — 12 Oct / 13 Oct चं वाचन.
+
 
 <!-- pack:5 zone_study -->
 <details><summary>Method Pack (English) — 5b. Futures volume and momentum inside the correction (source: K10.1, K10.2, K10.3)</summary>
@@ -1123,10 +1104,24 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 - **Correction weakening (price-only):** legs inside C getting shorter, spreads contracting, closes moving away from the extreme, a sweep
   and reclaim of A's end, the first strong candle in the opposite direction. Failed extension (< 0.5 MR beyond the previous extreme,
   back inside within 2 bars); rejection wick at the pullback extreme (≥ 0.5 of the range and ≥ 0.6 MR).
-- **RSI(14) divergence — evidence only, never a decision:** regular divergence at a C-end (C makes a new extreme, RSI does not) ⇒
-  correction tiring; hidden divergence in a pullback ⇒ continuation evidence; regular divergence at the impulse's last extreme ⇒ the next
-  pullback may be a reversal, demand more confirmation. Never trade against the trend on divergence.
+- **RSI divergence — evidence only, never a decision:** read it as in 5c (consecutive real swings, regular only). A regular divergence at a
+  C-end (C makes a new extreme, RSI does not) ⇒ the correction is tiring. Never trade against the trend on divergence.
 
+</details>
+<!-- /pack -->
+
+<!-- pack:5 zone_study -->
+<details><summary>Method Pack (English) — 5c. RSI divergence (source: K10.4, method §3)</summary>
+
+- **RSI divergence is the only indicator, and it is evidence inside the area — never a trigger alone, never a gate.** Its absence is
+  stated too ("no divergence: RSI made a new high with price").
+- Compare **consecutive real swings of the same degree** (each degree on its own; nothing more extreme between them).
+  **Bearish:** price makes a higher high while RSI does not go above its previous high — an equal RSI high counts. **Bullish (mirror):**
+  price makes a lower low while RSI does not go below its previous low — an equal RSI low counts. An equal price high / low is not a
+  new extreme.
+- RSI at a swing = its extreme inside that swing's own span (between the neighbouring opposite swings; a coded definition awaiting
+  Abhi's yes / no); no bar windows, no minimum gaps, no minimum RSI difference. Hidden divergence is not used.
+- It counts as evidence when its second swing (or the push in progress) is inside the visit; away from an area it is context only.
 </details>
 <!-- /pack -->
 
@@ -1408,7 +1403,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 - Hindsight labels tests मध्ये (I4.6): fixture मध्ये decision bar पर्यंतचाच data.
 
 <!-- pack:5 zone_study -->
-<details><summary>Method Pack (English) — 5c. Handover and patterns inside the area (source: K11.0, K11.1–K11.16 "use" rows, K11.17, K11.18; handover candle reading: design §12.1 item 5 / level-bots confirmation a2 [Abhi])</summary>
+<details><summary>Method Pack (English) — 5d. Handover and patterns inside the area (source: K11.0, K11.1–K11.16 "use" rows, K11.17, K11.18; handover candle reading: design §12.1 item 5 / level-bots confirmation a2 [Abhi])</summary>
 
 - **Zone study = what happens INSIDE the area, from arrival to the commitment candle.** The question is always: is the opposite side
   (sellers in a pullback down, buyers in a pullback up) losing control and the trend side taking over?
@@ -1578,7 +1573,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 | ✚ LQ | Liquidity: A low / equal lows / PDL चा sweep आणि reclaim | 0…+8 | K5 |
 | RV | Reversal: 50 × (s − 0.30) | −10…+25 | K9 |
 | ✚ VL | Volume (futures, `rel_vol`): pullback dry-up < 0.8 ⇒ +3 · C-end absorption spike किंवा reversal candle ला volume ⇒ +2 · pullback मध्ये वाढता volume (> 1.0) ⇒ −5 · data नाही ⇒ 0 | −5…+5 | K10.3 |
-| ✚ DV | RSI divergence: C-end ला regular किंवा pullback मध्ये hidden ⇒ +3…+5. Impulse च्या टोकावर विरुद्ध regular divergence ⇒ −3. | −3…+5 | K10 |
+| ✚ DV | RSI divergence: area मधला पुरावा (K10.4, method §3) — regular फक्त, hidden नाही; गुण / score नाही (method §5: पुरावा यादीत, बेरीज नाही). | — | K10.4 |
 | ✚ PT | Pattern वाचन: flag / opposite wedge ⇒ +3…+5 · double top/bottom किंवा H&S neckline break, impulse वरचा wedge ⇒ −10 | −10…+5 | K11 |
 | GP | Gap: पुष्टी +10 · विरोध −10 | −10…+10 | K13 |
 | EW | Elliott: 2/4/C/E-end +10 · gray 0 · A-end किंवा B च्या आत **शक्यता** −15 (count स्पष्ट असेल तर A3 व्हेटो) | −15…+10 | K3 |
