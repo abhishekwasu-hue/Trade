@@ -2877,3 +2877,13 @@ legs owner वि. reader2 gate).
   history मधून वाचतो (test). RSI तुलना unrounded (लपलेली tolerance नाही). Pack: 5b चं जुनं hidden-divergence वाक्य काढलं, Handover = 5d;
   K10.2 = पार्श्वभूमी (वाचनाचा नियम K10.4). "Swing वरचा RSI" = code ची व्याख्या (C-24) — L5-a मध्ये.
 
+## 2026-10-20 · Abhi on L5-a: RSI divergence one degree below the zone (branch `claude/method-l5a-degree`)
+
+- **Abhi:** zone मध्ये येणाऱ्या चालीचे लागोपाठचे pushes = zone च्या रचनेच्या एक degree खालचे swings (zone मधल्या pullback चीच degree);
+  zone च्या स्वतःच्या degree ची divergence असल्यास तीही नोंद.
+- **Code:** `engine.rsi_divergence` — `found` = D(level_degree − 1) (1H zone ⇒ D1); `zone_degree` = D2 (माहिती, confirming नाही — गृहीत);
+  `div_degree_rule = all` = जुनं D0–D2 what-if. KB K10.4 / Pack 5c, rsi2 register, METHOD_MAP, NUMBERS_INVENTORY C-19.
+- **Golden (real, tuning नाही):** 12 Oct 09:30 ला D1 / D2 वर divergence नाही — दोन्हीवर आधीचा high (7 Oct 22,717.65 / 6 Oct 22,731.85)
+  12 Oct 09:15 (22,651.10) पेक्षा उंच ⇒ lower high. Abhi ची जोडी (9 Oct 14:15 22,580.75 RSI 67.09 → 12 Oct 09:15 RSI 66.41) फक्त D0
+  वर ⇒ history मध्ये आहे, पुरावा नाही. Label तरीही A (confluence). OPEN_QUESTIONS L5-a (chart: trade-data `review/method_layer5/`).
+
