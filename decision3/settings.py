@@ -24,6 +24,8 @@ DEFAULTS = {
     "daily_min_sessions": 10,                # यापेक्षा कमी (≤) Daily candles ⇒ trend UNKNOWN (data अपुरा)
     "range_eq_sigma_d": 0.25,                # RANGE: दोन H आणि दोन L "जवळपास समान" = σ_D च्या इतक्या अपूर्णांकात
     # ② Level (1H)
+    "swing_k": None,                         # Abhi calibration (layer 1 ✅): None = swings2 चा approved scale (D1 = 4, D2 = 6); {1: k, 2: k} = advanced
+                                             # dashboard override (engine च्या swings साठी); swing चं महत्त्व = market च्या सामान्य हालचालीशी (σ) तुलना
     "level_degree": 2,                       # swings2 degree = 1H trend-degree (D2)
     "level_min_width_sigma": 0.0,            # Abhi Z-1x: zone = त्या base / reaction candles चा स्वतःचा wick-to-body — आकड्याने रुंद नाही (0).
                                              # > 0 = जुनी किमान रुंदी (σ_1H × हे) — फक्त जुने tests / what-if
@@ -162,6 +164,8 @@ REGISTER = {
     "daily_sigma_sessions": (10, "10/15/20", "अंदाज", "spec ① warm-up फक्त σ साठी, default 10"),
     "daily_min_sessions": (10, "—", "Abhi नियम", "spec §3: Daily unknown फक्त data अपुरा (≤ 10 sessions)"),
     "range_eq_sigma_d": (0.25, "0.15/0.25/0.35", "अंदाज", "spec ① RANGE: σ_D च्या अपूर्णांकात (config)"),
+    "swing_k": ("None (swings2: D1 = 4, D2 = 6)", "swings2 K_OPTIONS", "Abhi calibration",
+                "Abhi (layer 1 ✅): approved swings2 D1 / D2 = swing ची व्याख्या; scale = त्यांचं visual calibration (advanced dashboard)"),
     "level_degree": (2, "—", "व्याख्या", "spec ② (a) 1H trend-degree swing = थर 1 D2"),
     "level_min_width_sigma": (0.0, "0 (Abhi) / जुना 0.15", "Abhi नियम", "Abhi Z-1x: zone = base candles चा स्वतःचा पट्टा, आकड्याने रुंद नाही"),
     "liquidity_eq_sigma": (0.15, "0.1/0.15/0.25", "अंदाज", "spec ② (d) equal highs / lows"),

@@ -37,6 +37,7 @@ HOW TO USE IT
  Structure
  - Swing: a turning point that the following structure respects. Price leaves it by a leg larger than the pullbacks inside that leg. Small wiggles inside a leg are not swings.
  - Degree: swings belong to a structure. A higher-degree swing contains lower-degree swings. Every comparison uses swings of the same degree.
+ - Calibration (Abhi, layer 1): a swing's significance is always judged against the market's own normal movement. The approved swing engine (swings2 D1 / D2) does exactly that, at the scale Abhi chose from his own charts. That scale is his visual calibration (a setting), not a fixed point value; his approved swing charts are its acceptance.
  - Impulse and correction: an impulse moves with larger, directional candles and little overlap. A correction moves with overlapping, smaller candles, in recognisable shapes (zigzag, flat, triangle, combinations; channels, wedges and flags are correction shapes too). The anatomy and the structure are read together.
  - Equal: a later extreme that does not go beyond the earlier one (double / triple top or bottom).
  - Big / dominant: larger than the other candles of the same visit or leg. Dominant = larger than every other candle in that context.

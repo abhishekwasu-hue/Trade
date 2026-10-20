@@ -20,8 +20,8 @@ They are listed so nothing claims to own a concept twice. Where a row below name
 | Method concept (section) | Owner module | Today | Contradicts the method | Layer |
 |---|---|---|---|---|
 | P2 one continuous chart | all owners | Several day / session resets exist: swings2 σ is session-frozen; legs2 features always drop the overnight gap; `method._same_window` keeps 2-candle forms within one session (`evidence_start`); slot-normalised volume compares time-of-day slots; the commitment checks clock entry windows. | Every day / session / clock rule inside reading. Entry hours stay only as an **operational** schedule outside reading (`engine_signal.in_window`). | 1 (swings2 σ, legs2 gap) · 3 ✅ (slot volume, session form windows and the entry window out of reading) |
-| Swing (§3 Structure) | `swings2.engine` | Directional change: θ = k × σ per degree (D1 = 4, D2 = 6). | A numeric θ. Method: a turning point the following structure respects, which price leaves by a leg larger than the pullbacks inside that leg. | **1** |
-| Degree | `swings2.engine` (nesting) | Degrees set by k. | The numbers. The nesting itself stays: a higher degree contains lower-degree swings. | 1 |
+| Swing (§3 Structure) | `swings2.engine` | Directional change: θ = k × σ per degree (D1 = 4, D2 = 6). | — **Abhi (layer 1 ✅):** the approved swings2 D1 / D2 ARE the swing definition. Significance is judged against the market's own normal movement (σ) at the scale Abhi chose from his own charts: his visual calibration (`swings2` `k`; decision3 `swing_k` advanced dashboard override), not a fixed point value. Acceptance = his approved swing charts. | **1 ✅** |
+| Degree | `swings2.engine` (nesting) | Degrees set by k. | — The calibrated D1 / D2 (Abhi). The zone's structure = D2; the pullback inside it = one degree below (D1). | **1 ✅** |
 | Impulse / correction | **`decision3.daily_legs`** (internals: `legs2` features, `patterns2` shapes) | Candle-ratio thresholds (`disp_*`, `trend_body`, `trend_clv`, …). | The ratios. Method: larger directional candles with little overlap versus overlapping smaller candles, plus shape. | 1 |
 | Equal (double / triple) | **`swings2`** (one `equal()` helper in layer 1; today's callers with their own tolerances: `levels` liquidity (d), `method.zone_pattern`, `daily` RANGE) | By comparison now in `levels` liquidity (d) (layer 2), `method.zone_pattern`, `liquidity.pools` and the tweezer form (layer 3): the later extreme reaches the earlier swing candle's band and does not go beyond it. `daily` RANGE still uses `range_eq_sigma_d`. | The `daily` tolerance; one shared helper. | 1 · 2 ✅ · 3 ✅ |
 | Big / dominant | `method` (`candle_read` `candle_avg_n`; c0 dominance) | Layer 3: `candle_read(ctx=)` — big = body / range above the average of the visit's other candles (none ⇒ no reading); dominant = larger than every other candle of the visit (c0). | — (`candle_rule = ratio`: the last `candle_avg_n` average, what-if) | **3 ✅** |
@@ -63,7 +63,7 @@ Every earlier Z- / C- question is answered by the method itself. Each is logged 
 - **Z-1v-b / Z-1v-c visit end:** by structure only (§3 Visit).
 - **C-4 break vs sweep:** broken = a close beyond **and** a swing formed beyond (§3 Area lifecycle).
 - **C-17 conviction weights:** A / B labels as in §5; no weights.
-- **C-1 / C-21 swing / degree:** §3 Structure (layer 1).
+- **C-1 / C-21 swing / degree (Abhi, layer 1 ✅):** the approved swings2 D1 / D2 are the definition — Abhi's calibration (§3 Structure).
 - **C-5 at the zone:** a visit is in progress (§3 Visit).
 - **C-6 / C-9 / C-10 / C-20 shapes / equal / range:** comparisons (§3 Structure, Commitment).
 - **C-12 lines:** §3 Lines (layer 4).
