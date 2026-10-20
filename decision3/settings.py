@@ -15,7 +15,6 @@ DEFAULTS = {
     "q49_impulse_origin": "complete_impulse",  # Q49 (a) origin: "complete_impulse" = चालू leg पूर्ण 5-wave चा wave 5 असेल तर त्या
                                              # impulse ची सुरुवात (Abhi मंजुरी बाकी); "leg" = साधं वाचन (चालू impulse leg चा origin)
     "range_after_trend": True,               # Q27 (Abhi): origin तुटला + दोन समान H आणि दोन समान L ⇒ RANGE (कडांवर trade)
-    "maturity_sigma_d": 0.5,                 # maturity: (5) target च्या इतक्या σ_D आत ⇒ "impulse mature" (पुरावा)
     "weekly_min_bars": 10,                   # weekly पालक: यापेक्षा कमी weekly candles ⇒ weekly UNKNOWN
     "daily_swing_method": "pivot",           # pivot (N bars दोन्ही बाजूला) / dc (k_D × σ_D) — Q15: pivot; dc फक्त what-if
     "daily_pivot_n": 2,
@@ -75,7 +74,6 @@ DEFAULTS = {
     "chart_atr_n": 14,                       # §5.7 (Abhi): caption मधलं अंतर ATR_D मध्ये — शेवटच्या इतक्या Daily candles चा सरासरी true range
     "liq_marks_per_side": 3,                 # chart वर प्रत्येक बाजूचे जवळचे liquidity pools (फक्त chart)
     # ③ Pullback (C पायरी)
-    "k_reset_sigma": 0.25,                   # नवं टोक < हे × σ_1H ने सरकलं ⇒ तेच टोक (reset नाही)
     # ④ Power shift (C)
     "power_shift_min": 2,                    # (a)–(d) पैकी किमान इतके
     "power_a_rule": "relative",              # (a) Abhi (level bots): area मधल्या pullback candles चा सरासरी range < pullback च्या आधीच्या आणि impulse च्या
@@ -158,7 +156,6 @@ REGISTER = {
     "q49_impulse_origin": ("complete_impulse", "complete_impulse / leg", "व्याख्या", "Q49 (a): counter-move correct करत असलेल्या impulse चा origin — विस्तार Abhi मंजूर (OPEN_QUESTIONS Q49)"),
     "daily_parent_gate": (True, "True / False", "Abhi नियम", "A1: impulse origin तुटला पण parent (trend सुरुवातीचा origin) टिकला ⇒ same-degree correction, flip नाही"),
     "range_after_trend": (True, "True / False", "Abhi नियम", "Q27: origin_broken + दोन समान H / L ⇒ RANGE; पट्टा ② / ③ ला"),
-    "maturity_sigma_d": (0.5, "0.25/0.5/1.0", "अंदाज", "Q15 (5): target 'जवळ' = σ_D चा अपूर्णांक (पुरावा, gate नाही)"),
     "weekly_min_bars": (10, "—", "Abhi नियम", "daily_min_sessions सारखाच — weekly data अपुरा ⇒ UNKNOWN"),
     "daily_swing_method": ("pivot", "pivot / dc", "setting", "spec ① — pivot default; Q15: N = 1 / DC primary नाहीत (फक्त what-if)"),
     "daily_pivot_n": (2, "1/2/3", "अंदाज", "spec ① (N config default 2)"),
@@ -201,7 +198,6 @@ REGISTER = {
     "chart_old_box_sessions": (126, "—", "अंदाज (फक्त chart)", "§5.1 (Abhi): '~6 महिन्यांपेक्षा लांब window ⇒ जुने boxes नाहीत' (≈ 126 sessions)"),
     "chart_atr_n": (14, "—", "व्याख्या", "§5.7 caption: ATR_D कालावधी (सामान्य 14)"),
     "chart_leg_path_points": (15, "≥ 6 (code मध्ये किमान 6)", "अंदाज (फक्त chart)", "Abhi review: लांब leg 207-wave tracing नको — leg चे स्वतःचे मोठे swings (≤ ~15 बिंदू)"),
-    "k_reset_sigma": (0.25, "—", "Abhi नियम", "spec ③ < 0.25 σ_1H ⇒ reset नाही"),
     "power_shift_min": (2, "2/3", "Abhi नियम", "spec ④ किमान 2 (config)"),
     "power_a_rule": ("relative", "relative / strict3", "Abhi नियम", "level bots spec: (a) relative contraction — 'नेमके 3 सलग लहान' ही आपली यांत्रिक आवृत्ती होती"),
     "c0_dominance": (True, "True / False", "Abhi नियम", "Abhi (final): dominant = visit मधल्या प्रत्येक इतर candle पेक्षा मोठी body — तुलना, आकडा नाही"),

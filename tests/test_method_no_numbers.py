@@ -14,6 +14,9 @@ from decision3 import settings as S3
 D3 = pathlib.Path(S3.__file__).parent
 
 LEGACY = {                       # used only by a non-default rule / gate (what-if): {setting: (switch, the only decision3 files that read it)}
+    # Daily RANGE "equal" σ tolerance: the reading (fold_impulse) uses C-13 logic; read only by the legacy minor fold and the Daily
+    # chart's display bands / range_check report
+    "range_eq_sigma_d": ("daily_trend_mode = minor; Daily chart display bands", {"daily.py", "daily_swings.py"}),
     "corr_degree_frac": ("corr_degree_rule = ratio", {"daily.py"}),
     "daily_dc_k": ("daily_swing_method = dc", {"daily.py"}),
     "level_min_width_sigma": ("0 by default; > 0 = the old minimum width", {"levels.py", "trendline.py"}),
@@ -65,12 +68,11 @@ CALIBRATION = {                  # Abhi (layer 1 ✅): a swing's significance is
     "level_degree": "the zone's structure = the approved D2 (1H trend degree)",
     "tl_degree": "one degree below the zone's structure = the approved D1 (the pullback's legs)",
     "flip_pullback_inner_degree": "one degree below the zone's structure = the approved D1",
-    "daily_pivot_n": "assumed on the calibrated scale (register: अंदाज, spec ① config default) — OPEN_QUESTIONS L1-b, for Abhi",
-    "k_reset_sigma": "Abhi's rule (a new extreme moved less than this × σ_1H is the same extreme)",
-    "range_eq_sigma_d": "assumed on the same σ scale, not picked by Abhi from charts — OPEN_QUESTIONS L1-b, for Abhi",
-    "maturity_sigma_d": "assumed on the same σ scale, evidence only — OPEN_QUESTIONS L1-b, for Abhi",
 }
 PENDING = {                      # still a number in the reading path ⇒ removed in the named layer
+    # Abhi (L1-b): only the swings2 scale stays a calibration. The Daily pivot size has no decided logic yet (C-13 covers "equal" and
+    # maturity) — OPEN_QUESTIONS L1-c, for Abhi
+    "daily_pivot_n": 1,
     # decision3 reads touch_window_bars only behind the legacy visit rules, but facts/dossier `_visits` still counts it (layer 6)
     "touch_window_bars": 6,
 }
@@ -129,7 +131,13 @@ def test_layer_one_swings_are_abhis_calibration():
     """Abhi (layer 1 ✅): the approved swings2 D1 / D2 ARE the swing definition — significance against the market's own normal movement
     at his calibrated scale. Nothing of layer 1 stays PENDING; the scale is a registered calibration setting (advanced dashboard)."""
     from swings2 import settings as SS
-    assert not [k for k, layer in PENDING.items() if layer == 1]
+    assert [k for k, layer in PENDING.items() if layer == 1] == ["daily_pivot_n"]       # L1-c, for Abhi
+    import inspect
+    from decision3 import daily as DD
+    from decision3 import method as M
+    src = inspect.getsource(DD.fold_impulse)                             # L1-b ⇒ C-13: no σ tolerance in the Daily reading
+    assert "range_eq_sigma_d" not in src and "maturity_sigma_d" not in src and "k_reset_sigma" not in inspect.getsource(M)
+    assert "maturity_sigma_d" not in S3.DEFAULTS and "k_reset_sigma" not in S3.DEFAULTS
     assert SS.DEFAULTS["k"][1] == 4.0 and SS.DEFAULTS["k"][2] == 6.0 and "calibration" in SS.REGISTER["k"][2]
     assert S3.DEFAULTS["swing_k"] is None and "calibration" in S3.REGISTER["swing_k"][3]
 
