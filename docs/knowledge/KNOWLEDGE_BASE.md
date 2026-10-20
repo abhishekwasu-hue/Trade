@@ -742,6 +742,8 @@ completed pattern allows, the count is wrong.
   - एकाच किमतीवर वारंवार reactions ⇒ **horizontal.**
   - **रेषा area मधून जात असेल ⇒ तो area सगळ्यात उच्च दर्जाचा (confluence) — तोच area, label सह; नवा / अरुंद पट्टा नाही [Abhi, method §3]**, chart label **"confluence"** (K4).
   - **Reaction-touch [Abhi, layer 4 B]:** area मधून वर उठलेली (खाली पडलेली) reaction रेषेजवळ वळली तर तो रेषेचा touch: वळण (रचनेचा swing) हे रेषेच्या आधीच्या touch नंतरचं रेषेला सगळ्यात जवळचं वळण, मधे कोणताही close रेषेपलीकडे नाही, आणि नंतर चाल रेषेपासून दूर जाते. तिथे area आणि रेषा भेटतात ⇒ area ला label **"confluence: line"**. Golden third-touch case असाच वाचायचा.
+  - **Touches कसे मोजायचे [Abhi, L4-g]:** contacts नाही, **reactions** मोजायच्या. दोन contacts च्या मधे रेषेच्या रचनेचा खरा उलट swing नसेल तर तो एकच touch. तिसऱ्या touch पासून पुढचा प्रत्येक touch trade location (रेषा अखंड असेपर्यंत); touch क्रमांक माहिती म्हणून दाखवायचा ("confluence: line (touch 3)").
+  - **Touch point [Abhi, L4-g]:** reaction चं स्वतःचं वळण (ती रेषेजवळ बनवते तो swing). नंतरचं वळण रेषेपासून दूर राहिलं तरी त्या visit साठी confluence label जात नाही.
 - **6.5 Break वि. false break:**
   - Real (method §3, area सारखा) = रेषेपलीकडे close **आणि** पलीकडे swing बनला.
   - False = पलीकडे swing बनण्याआधी परत रेषेच्या बाजूला (throw-over / sweep).
@@ -787,6 +789,10 @@ completed pattern allows, the count is wrong.
   reaction rises out of (falls out of) the area and turns at the line [Abhi]:** the turn (a swing of the structure) is the closest
   approach to the line since the line's previous touch, no candle closes beyond the line, and the move then goes away from it — that
   turn is a touch, and the area is labelled "confluence: line". Never look only at horizontals and forget the trendline.
+- **Counting touches [Abhi]:** count reactions, not contacts — contacts with no real opposite swing of the line's structure between
+  them are one touch. From the 3rd touch on, every touch is a trade location while the line is unbroken; the touch number is shown as
+  information ("confluence: line (touch 3)"). A reaction's touch point is its own turn (the swing it forms at the line); a later turn
+  that stays away from the line does not remove the confluence label for that visit.
 - **Elliott channeling (measuring tool):** wave 4 often ends near the parallel through wave 2; a zigzag's C often ends near the line
   drawn through A's end parallel to the line joining A's start and B's end — the correction's own channel (C target where C reaches
   it; confluence with C = A). Throw-over in the last wave: a brief poke beyond the channel and a close back inside.

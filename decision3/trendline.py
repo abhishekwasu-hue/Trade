@@ -14,7 +14,7 @@
     परत आलेला close = throw-over, रेघ उभी.
   • K रेघ: trigger = bar t (commitment candle) चा close-through; आधीच गेलेली रेघ ⇒ `broken_before`, trigger नाही.
   • Confluence = रेघ area च्या पट्ट्यातून, किंवा area मधून उठलेली reaction रेघेजवळ वळली (`reaction_touch`, Abhi 4 B) ⇒ तोच area,
-    "tl" label + "confluence: line" (नवा / अरुंद पट्टा नाही).
+    "tl" label + "confluence: line (touch N)" (Abhi L4-g: touches by reactions; नवा / अरुंद पट्टा नाही).
 """
 import numpy as np
 
@@ -54,6 +54,21 @@ def broken_by(A, pivs, kind, line, side, start, end):
 def separate(pivs, b1, b2, kind):
     """Method §3: two anchors are separate reactions when price left the line between them — a swing of the opposite kind lies between."""
     return any(p.kind != kind and b1 < p.bar < b2 for p in pivs)
+
+
+def touch_groups(A, known, kind, line, b1, b2, t):
+    """Abhi (L4-g 1): touches are counted by REACTIONS, not contacts. A contact = an anchor, or a candle whose wick reaches the line with
+    its body on its side (`touches`), b1 … t. Contacts with no real opposite swing of the line's structure between them (`known` = the
+    line's own degree) are one touch. Returns the touches in order, each the list of its contact bars."""
+    groups = []
+    for b in range(int(b1), int(t) + 1):
+        if not (b in (b1, b2) or touches(A, b, line(b), kind)):
+            continue
+        if groups and not separate(known, groups[-1][-1], b, kind):
+            groups[-1].append(b)
+        else:
+            groups.append([b])
+    return groups
 
 
 def k_line(V, t, d, k):
@@ -155,10 +170,11 @@ def swing_line(V, t, d):
             C = lv.A["close"]
             if any((C[j] - line(j)) * (-d) > 0 for j in range(b2 + 1, t)):  # p2 नंतर (t − 1 पर्यंत) close रेघेपलीकडे ⇒ रेघ तुटली
                 continue
-        if logic:
-            n_t = sum(1 for b, y in pts[i:] if b in (b1, b2) or touches(lv.A, b, line(b), kind))
-        else:
-            n_t = sum(1 for b, y in pts[i:] if abs(y - line(b)) <= tol)
+        if logic:                                                          # Abhi L4-g (1): touches by reactions (information)
+            groups = touch_groups(lv.A, known, kind, line, b1, b2, t)
+            return {"p1": [b1, round(y1, 2)], "p2": [b2, round(y2, 2)], "slope": round(slope, 4), "touches": len(groups),
+                    "touch_groups": groups, "value_t": round(line(t), 2), "tol": 0.0}
+        n_t = sum(1 for b, y in pts[i:] if abs(y - line(b)) <= tol)
         return {"p1": [b1, round(y1, 2)], "p2": [b2, round(y2, 2)], "slope": round(slope, 4), "touches": n_t,
                 "value_t": round(line(t), 2), "tol": round(tol, 2)}
     return None
@@ -166,11 +182,15 @@ def swing_line(V, t, d):
 
 def reaction_touch(V, t, d, ln):
     """Abhi (layer 4 B): a reaction that rises out of (falls out of) an area and turns at the line is a touch of that line. The turn = a
-    swing of the structure (finest degree, confirmed by t ⇒ the move then went away from the line); it counts when it is the closest
-    approach to the line since the previous touch (no other turn since then came closer) and no candle closes beyond the line.
-    "The previous touch" = the last turn that reached the line (its second anchor, or a later swing whose wick reached it); otherwise every lower turn
-    would count as a touch and "closest" would never exclude anything (OPEN_QUESTIONS L4-f). Only the latest turn is read (an older
-    one has been left behind). Returns {bar, price, leg_from} or None; `areas_out_of` decides which areas the reaction rose out of."""
+    swing of the structure (finest degree, confirmed by t ⇒ the move then went away from the line) that stays short of the line; no
+    candle closes beyond the line. "The previous touch" = the last turn that reached the line (its second anchor, or a later swing
+    whose wick reached it — OPEN_QUESTIONS L4-f).
+    Abhi (L4-g): one reaction = the move between two real opposite swings of the line's structure (its degree, `known_pivots`).
+    (2) The touch point is the reaction's own turn — its closest approach to the line; a later turn of the SAME reaction that stays away
+    does not remove it (the label holds for that visit); a new opposite structure swing starts a new reaction, and the old touch is then
+    history. (1) Touches are counted by reactions: the line's contact groups (`touch_groups`) and the earlier reactions that turned at
+    the line out of an area (that area alive then); from the third touch on it is a trade location while the line is unbroken.
+    Returns {bar, price, leg_from, touch_no, trade_location} or None; `areas_out_of` decides which areas the reaction rose out of."""
     if ln is None or d not in (UP, DOWN):
         return None
     lv = V.levels
@@ -184,18 +204,58 @@ def reaction_touch(V, t, d, ln):
 
     def gap(p):                                                            # ≥ 0: the turn stays on the line's side
         return (line(p.bar) - float(p.price)) * side
+
+    def beyond(j):
+        return (float(A["close"][j]) - line(j)) * side > 0
     known = [p for p in getattr(lv, "_known0", []) if p.confirm_bar <= t]
+    struct = list(lv.known_pivots(t)) if hasattr(lv, "known_pivots") else known   # the line's own structure (its degree)
+    cuts = sorted({int(p.bar) for p in struct if p.kind != kind and b2 < p.bar <= t})   # real opposite swings ⇒ reaction boundaries
     turns = sorted((p for p in known if p.kind == kind and b2 < p.bar <= t), key=lambda p: p.bar)
     if not turns or gap(turns[-1]) <= 0:                                   # no turn yet, or the latest one is a candle touch itself
         return None
-    last = turns[-1]
     prev = max((q.bar for q in turns if gap(q) <= 0), default=b2)          # the last time a candle reached the line
-    if not all(gap(last) < gap(q) for q in turns if prev < q.bar < last.bar):   # not the closest approach since then
+    start = max([prev] + [c for c in cuts if c < turns[-1].bar])           # this reaction began at the later of the two
+    if any(c > start for c in cuts):                                       # an opposite structure swing after the turn: the reaction is over
         return None
-    if any((float(A["close"][j]) - line(j)) * side > 0 for j in range(prev + 1, t + 1)):   # a close beyond the line (also after the
-        return None                                                        # turn: price has gone through, the meeting is over)
-    start = max((q.bar for q in known if q.kind != kind and q.bar < last.bar), default=prev)
-    return {"bar": int(last.bar), "price": float(last.price), "leg_from": int(start)}
+    since = [q for q in turns if q.bar > start]
+    if not since:
+        return None
+    last = min(since, key=lambda q: (gap(q), q.bar))                       # the reaction's own turn: its closest approach
+    if any(beyond(j) for j in range(prev + 1, t + 1)):                     # a close beyond the line (also after the turn: price has gone
+        return None                                                        # through, the meeting is over)
+    leg = max((q.bar for q in known if q.kind != kind and q.bar < last.bar), default=start)
+    no = _touch_no(V, t, d, ln, last.bar, struct, known, kind, gap, beyond)
+    return {"bar": int(last.bar), "price": float(last.price), "leg_from": int(leg), "touch_no": no, "trade_location": no >= 3}
+
+
+def _touch_no(V, t, d, ln, bar, struct, known, kind, gap, beyond):
+    """Abhi L4-g (1): the touch number of a reaction turning at `bar` — the line's touches before it, by reactions: its contact groups and
+    each earlier reaction (between two opposite structure swings, no contact, no close beyond) whose closest turn rose out of an area
+    alive at that time. Events with no opposite structure swing between them are one touch."""
+    (b1, _), (b2, _) = ln["p1"], ln["p2"]
+    lv = V.levels
+    events = [g[0] for g in (ln.get("touch_groups") or [[b1], [b2]]) if g[0] < bar]
+    contacts = sorted(b for g in (ln.get("touch_groups") or [[b1], [b2]]) for b in g if b < bar)
+    cuts = sorted({int(p.bar) for p in struct if p.kind != kind and b2 < p.bar < bar})
+    snap = getattr(lv, "snapshot", None)
+    role = "resistance" if d == DOWN else "support"
+    for lo, hi in zip([b2] + cuts, cuts):                                  # every completed reaction before this one
+        if any(lo < b < hi for b in contacts) or any(beyond(j) for j in range(lo + 1, hi + 1)):
+            continue
+        tt = [q for q in known if q.kind == kind and lo < q.bar < hi and gap(q) > 0 and q.confirm_bar <= hi]
+        if not tt or snap is None:
+            continue
+        q = min(tt, key=lambda q: (gap(q), q.bar))
+        legf = max((p.bar for p in known if p.kind != kind and p.bar < q.bar), default=lo)
+        cands = [x for x in snap(int(q.confirm_bar)) if x.get("role") == role]
+        if areas_out_of(V, {"bar": int(q.bar), "price": float(q.price), "leg_from": int(legf)}, d, cands):
+            events.append(int(q.bar))
+    events = sorted(events)
+    n = 0
+    for i, e in enumerate(events + [bar]):
+        if i == 0 or e == b2 or separate(struct, events[i - 1], e, kind):   # the two anchors are two reactions by construction
+            n += 1
+    return n
 
 
 def areas_out_of(V, rt, d, cands):
@@ -215,8 +275,10 @@ def areas_out_of(V, rt, d, cands):
 
 def _labelled(x, ln, rt=None):
     lab = x.get("confluence_label")
+    no = (rt or {}).get("touch_no")
+    tag = f"line (touch {no})" if no else "line"                           # Abhi L4-g: the touch number is information
     return {**x, "births": list(x["births"]) + ["tl"], "tl": ln, "confluence_line": True, "line_touch": rt,
-            "confluence_label": (lab + "; line") if lab else "confluence: line"}
+            "confluence_label": (lab + "; " + tag) if lab else "confluence: " + tag}
 
 
 def confluence_areas(V, t, d, cands):

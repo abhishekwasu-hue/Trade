@@ -2888,3 +2888,11 @@ legs owner वि. reader2 gate).
   score नाही. Evidence list: required (वाचन) आणि entry hours (operational) वेगळे; tl_confluence absent ≠ NA.
 - Guard: layer-6 decision numbers LEGACY; `test_layer_six_verdict_is_the_method_no_scores`.
 
+## 2026-10-20 · Abhi on L4-g: touches by reactions (branch `claude/method-l4g-touch-count`)
+
+- **(1)** Touches = reactions, contacts नाही: मधे रेषेच्या रचनेचा खरा उलट swing नसेल तर contacts = एकच touch (`trendline.touch_groups`).
+  तिसऱ्या touch पासून प्रत्येक touch trade location (रेषा अखंड); क्रमांक माहिती ⇒ label "confluence: line (touch N)".
+- **(2)** Touch point = reaction चं स्वतःचं वळण (आधीच्या touch नंतर रेषेच्या सगळ्यात जवळचं); नंतरचं दूरचं वळण label काढत नाही.
+- **Golden (real):** 7 Oct 12:00 चा wick contact 6 Oct anchor सोबत एकच touch (मधे swing low नाही) ⇒ 12 Oct 09:15 चं वळण = **touch 3**;
+  09:30, 09:45, 10:00 ला 1H supply = "confluence: … line (touch 3)" (test).
+
