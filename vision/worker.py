@@ -287,8 +287,8 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
     except (ValueError, TypeError, AttributeError):
         tags = {}
     head = html.escape(plain_head(row))                                   # Abhi (TELEGRAM_CLEANUP 3): ओळ 1 साधी, ओळ 2 निर्णय
-    if tags.get("dry_run"):                                             # Abhi (Sunday dry-run): replay signal ला स्पष्ट टॅग
-        head = "🧪 [DRY-RUN] " + head
+    if tags.get("dry_run"):                                             # Abhi (Sunday dry-run / tonight's TEST): replay signal ला स्पष्ट टॅग
+        head = "🧪 [TEST · DRY-RUN] " + head
     if d.status == "PENDING_HUMAN":
         dline = f"<b>{PT.DECISION_APPROVE}</b> by {pd.Timestamp(deadline).strftime('%H:%M') if deadline else '?'}"
     else:
