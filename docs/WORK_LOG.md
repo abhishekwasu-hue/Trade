@@ -2927,3 +2927,18 @@ legs owner वि. reader2 gate).
 - **Layers 2, 3, 4 ✅** ⇒ tags + parity fixtures (STABLE.md). L4-g (touches by reactions) layer 4 च्या tag आधी (#343; OPEN_QUESTIONS L4-g तिथे).
 - **L5-a:** zone च्या रचनेच्या एक degree खाली (#344, OPEN_QUESTIONS L5-a तिथे; golden वर एक वाचन-प्रश्न परत Abhi कडे).
 
+## 2026-10-20 · Layer 1 ✅: the swing scale is Abhi's calibration (branch `claude/method-layer1-calibration`)
+
+- swings2 `k` register = "Abhi calibration (visual, his own charts)"; decision3 `swing_k` (None = approved D1 = 4, D2 = 6) ⇒ `swings2.build`.
+- Advanced dashboard (15M SRv2 पान, engine section): "Advanced: swing scale (Abhi calibration)" — D1 / D2 k (swings2 K_OPTIONS),
+  रिकामं = approved scale; `engine3_swing_k_d1` / `_d2` ⇒ `engine3_live.swing_scale` ⇒ live decision आणि pre-open levels दोन्ही.
+- Guard: नवा CALIBRATION वर्ग (level / tl / pullback degree, daily N, k reset, Daily RANGE / maturity σ — L1-b); layer 1 PENDING रिकामं.
+- KB K1 + Pack 1, CHART_READER_METHOD (Calibration), METHOD_MAP (Swing / Degree 1 ✅), NUMBERS_INVENTORY C-1 / C-2 / C-21 resolved.
+
+## 2026-10-20 · Abhi on L1-b: Daily structure by C-13 logic (only the swings2 scale stays a calibration)
+
+- Equal = नंतरचा टोक आधीच्या swing candle च्या area (wick ते body) पर्यंत, पलीकडे नाही (RANGE कडा, Q27); LH / HL = आधीच्या area पर्यंत
+  पोहोचत नाही; maturity "near" = leg चा टोक target swing च्या area पर्यंत पोहोचला; origin risk = protected origin च्या area पर्यंत; sharp
+  zone = area स्वतः; K reset = जुन्या टोकापलीकडे (σ नाही). `maturity_sigma_d`, `k_reset_sigma` काढले; `range_eq_sigma_d` फक्त legacy /
+  display. `daily_pivot_n` = L1-c (Abhi ला प्रश्न; default N = 2).
+

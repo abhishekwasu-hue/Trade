@@ -30,7 +30,7 @@ def _dir(trend, level_role=None):
 class Pullbacks:
     """प्रत्येक 15M bar ला दोन्ही दिशांसाठी K state (sequential ⇒ truncation-safe).
     Impulse = trend-दिशेचा BOS (D2); origin = BOS आधीचा उलट D2 pivot; I_end = BOS नंतरचं टोक. K उघडते: I_end नंतर पहिला उलट D1 pivot
-    confirm किंवा किंमत trade-बाजूच्या level मध्ये — जे आधी. नवं टोक ≥ k_reset_sigma × σ_1H ने पुढे ⇒ नवा I_end (K बंद, पुन्हा उघडेल);
+    confirm किंवा किंमत trade-बाजूच्या level मध्ये — जे आधी. नवं टोक जुन्या टोकापलीकडे (C-13: बरोबर = पलीकडे नाही; σ नाही) ⇒ नवा I_end (K बंद, पुन्हा उघडेल);
     कमी ⇒ तेच टोक. Origin close ने तुटला ⇒ K रद्द (नव्या BOS पर्यंत)."""
 
     def __init__(self, V):
@@ -50,7 +50,6 @@ class Pullbacks:
         bos = {t: (dd, o) for t, dd, o in self.lv.bos if dd == d}
         imp = None
         out = self.state[d]
-        kr = float(self.V.s["k_reset_sigma"])
         for t in range(self.n):
             if t in bos:
                 o = bos[t][1]
@@ -63,8 +62,7 @@ class Pullbacks:
                 else:
                     ext = H[t] if d == UP else L[t]
                     beyond = (ext - imp["i_end"]) * d
-                    sg = self.sig1h[t] if np.isfinite(self.sig1h[t]) else 0.0
-                    if beyond >= kr * sg and beyond > 0:
+                    if beyond > 0:                                       # Abhi (C-13): a new extreme = price goes beyond the old one
                         imp.update(i_end=float(ext), i_end_bar=t, open=False, k_open_bar=None, k_ext=None, k_ext_bar=None,
                                    why_open=None, legs=0)
                     elif not imp["open"]:

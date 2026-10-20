@@ -75,6 +75,25 @@ def guard_sealed_bars(m15, sealed):
         raise DP.HoldoutError(f"sealed holdout dates in the 15M input ({len(bad)} days) — decisions on holdout dates are never produced")
 
 
+def swing_scale(s):
+    """Abhi calibration (layer 1 ✅): the approved swings2 D1 / D2 are the swing definition. `swing_k` None ⇒ swings2's own approved
+    scale (None ⇒ swings2 defaults); {degree: k} ⇒ that degree's k (advanced dashboard override). Bad values ⇒ ValueError at start."""
+    k = (s or {}).get("swing_k")
+    if not k:
+        return None
+    out = {}
+    for d, v in dict(k).items():
+        d, v = int(d), float(v)
+        if d not in (1, 2) or not (np.isfinite(v) and v > 0):
+            raise ValueError(f"decision3 V22: swing_k accepts D1 / D2 with k > 0 (got D{d} = {v})")
+        out[d] = v
+    from swings2 import settings as SS
+    k1, k2 = out.get(1, float(SS.DEFAULTS["k"][1])), out.get(2, float(SS.DEFAULTS["k"][2]))   # an unset degree = the approved scale
+    if not (np.isfinite(k1) and np.isfinite(k2) and k2 > k1):
+        raise ValueError(f"decision3 V22: swing_k D2 ({k2}) must be larger than D1 ({k1}) — a higher degree contains the lower one")
+    return {"k": out}
+
+
 class V22:
     def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
         self.s = S3.load(s)
@@ -90,7 +109,7 @@ class V22:
         self.df1m = df1m                                                  # फक्त advisory (elliott count) साठी
         if res is None:
             from swings2 import engine as SE
-            res = SE.build(m15, df1m)
+            res = SE.build(m15, df1m, s=swing_scale(self.s))
         self.res = res
         self.m15 = res["m15"]
         if daily_df is None:

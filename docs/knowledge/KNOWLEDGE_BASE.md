@@ -204,7 +204,14 @@
 - **CHoCH** = protected HL च्या खाली close ⇒ UPTREND_WEAK. हा **इशारा** आहे, reversal नाही.
 - **Reversal confirmed:** CHoCH नंतर LH तयार होतो, आणि मग CHoCH नंतरच्या low च्या खाली close. (Dow: पहिला break = इशारा; failed rally (LH) नंतरच reversal.)
 - Range: 4 नवे swings आणि कोणताही निर्णय नाही ⇒ RANGE.
-- Swing ग्राह्य धरण्यासाठी किमान आकार ≥ 1.5–2 MR, म्हणजे noise swings मोजले जात नाहीत.
+- Swing ग्राह्य धरण्यासाठी किमान आकार ≥ 1.5–2 MR, म्हणजे noise swings मोजले जात नाहीत. (जुनी नोंद; खालचा Abhi calibration नियम वरचढ.)
+
+**खरा swing — Abhi calibration (layer 1 ✅).**
+- Abhi ने मंजूर केलेले swings2 D1 / D2 swings **हीच** swing ची व्याख्या.
+- Swing चं महत्त्व नेहमी market च्या स्वतःच्या सामान्य हालचालीशी (σ) तुलना करून ठरतं. swings2 नेमकं तेच करतो, Abhi ने स्वतःच्या charts वरून निवडलेल्या scale वर (D1 = 4 σ, D2 = 6 σ).
+- हा scale म्हणजे Abhi चं visual calibration: एक setting (advanced dashboard), ठरलेला point आकडा नाही. त्याची स्वीकृती = Abhi चे मंजूर swing charts.
+- शुद्ध तुलनात्मक नियम ("leg त्याच्या आतल्या pullbacks पेक्षा मोठा") वापरायचा नाही: तो एका candle च्या वळणांनाही swing मानतो (12 पैकी 4 जुळले).
+- Zone ची रचना = D2; zone मधला pullback = एक degree खाली (D1).
 
 **Pullback वाचनात उपयोग.**
 - Pullback चा low आधीच्या HL च्या वर टिकला ⇒ trend जिवंत.
@@ -229,7 +236,9 @@ Read top-down, in this order, every time:
 1. **Weekly** — the overall market state (P9 [Abhi]). Macro / sentiment (FII / DII flows, global cues, VIX) is context and evidence,
    never a trigger.
 2. **Daily** — the trend is decided here at least. Dow structure: higher highs + higher lows = UP; lower highs + lower lows = DOWN;
-   four new swings without a decision = RANGE. Count only real swings (≥ 1.5–2 MR); minor wiggles are noise.
+   four new swings without a decision = RANGE. Count only real swings: the approved swings2 D1 / D2 swings (Abhi's calibration — a
+   swing's significance is judged against the market's own normal movement at the scale he chose from his own charts; a setting, not a
+   fixed point value); minor wiggles are noise.
    - **Degree-aware:** degree is the place in the count, not the timeframe (P1). The trade follows the **parent** direction — the
      motive sequence that the correction we trade belongs to. A higher (grandparent) degree pointing the other way is negative evidence
      only, not a ban [Abhi].
