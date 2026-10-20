@@ -29,10 +29,10 @@ Owner decision (Abhi): Trade will be archived only on Abhi's own word; ATP ports
 
 | Layer | Spec (CHART_READER_METHOD.md) | State |
 |---|---|---|
-| 1 | Swings / structure | Question pack sent to Abhi (trade-data `review/method_layer1/`): 12 cases, logic-only swings vs his approved swings. His per-case pick becomes the definition. |
-| 2 | Areas + lifecycle | Merged (#332) and reported with charts. Waiting for Abhi's ✅. |
-| 3 | Visit, zone study, commitment, LTF | Merged (#331, #333, #334). Abhi's L3-c correction merged (#335): the approach leg crosses gaps; on real volume there is no 12 Oct bear call. Waiting for ✅ after that re-run report. |
-| 4 | Lines + confluence | Merged (#336): logic lines, candle touch, break = close + swing beyond, confluence labels the area. One question to Abhi (trade-data `review/method_layer4/`: 12 Oct line vs area). Waiting for ✅. |
+| 1 | Swings / structure | Abhi picked A in all 12 cases. His rule, implemented exactly as stated, matches A in 4 of 12; the 8 differing cases (charts + reasons) are with him (trade-data `review/method_layer1_rule/`). Not stable; no code change until he decides. |
+| 2 | Areas + lifecycle | Merged (#332) and reported with charts. Summary for ✅ sent (trade-data `review/layers_2_4_summary/`). Waiting for Abhi's ✅. |
+| 3 | Visit, zone study, commitment, LTF | Merged (#331, #333, #334, #335, #338). Commitment volume = above the AVERAGE of the approach leg + the visit's opposite side (Abhi L3-c); real 12 Oct 09:30 = bear call (grade B), 13 Oct no call. Summary for ✅ sent. Waiting for Abhi's ✅. |
+| 4 | Lines + confluence | Merged (#336, #339): logic lines, candle touch, break = close + swing beyond, confluence = the line through the area or a reaction out of it turning at the line ("confluence: line"; golden 12 Oct reads so). Two counting questions to Abhi (OPEN_QUESTIONS L4-g). Summary for ✅ sent. Waiting for Abhi's ✅. |
 | 5 | RSI | Not started. |
 | 6 | Output (charts, dossier, display finder) | Not started. |
 
