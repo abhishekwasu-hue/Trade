@@ -32,8 +32,8 @@ Owner decision (Abhi): Trade will be archived only on Abhi's own word; ATP ports
 | 1 | Swings / structure | **Abhi ✅** (his approved swing charts are the acceptance): the approved swings2 D1 / D2 are the definition — his calibration setting (OPEN_QUESTIONS L1-a). Tag after the calibration PR merges. |
 | 2 | Areas + lifecycle | **Abhi ✅** (#332). Tag + parity fixtures next. |
 | 3 | Visit, zone study, commitment, LTF | **Abhi ✅** (#331, #333, #334, #335, #338). Tag + parity fixtures next. |
-| 4 | Lines + confluence | **Abhi ✅** (#336, #339; his L4-g answers — touches by reactions — land before the tag). |
-| 5 | RSI | Merged (#341). Abhi L5-a (degree) implemented with one reading question back to him. Not stable. |
+| 4 | Lines + confluence | **Abhi ✅** (#336, #339). His L4-g answers (touches by reactions; the touch is the reaction's own turn) are implemented in #343 and recorded in OPEN_QUESTIONS L4-g there; they land before the tag. |
+| 5 | RSI | Merged (#341). Abhi's L5-a answer (the degree one below the zone's structure) is implemented in #344 (OPEN_QUESTIONS L5-a updated there), with one reading question back to him. Not stable. |
 | 6 | Output (charts, dossier, display finder) | 6a (the verdict: required set ⇒ enter; A / B by confirming evidence; no scores) in review. Not stable. |
 
 The level bots are **not** rebuilt here (Abhi): they are rebuilt in ATP on the ported reader, and stay off in one-bot mode meanwhile.

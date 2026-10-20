@@ -2889,6 +2889,6 @@ legs owner वि. reader2 gate).
 
 - **Layer 1 ✅:** approved swings2 D1 / D2 = swing ची व्याख्या (Abhi चं calibration — market च्या सामान्य हालचालीशी तुलना, त्यांच्या charts
   वरून निवडलेला scale); शुद्ध तुलनात्मक नियम नाही. C-1 resolved; scale = advanced dashboard calibration setting (calibration PR).
-- **Layers 2, 3, 4 ✅** ⇒ tags + parity fixtures (STABLE.md). L4-g (touches by reactions) layer 4 च्या tag आधी.
-- **L5-a:** zone च्या रचनेच्या एक degree खाली (code केलं; golden वर एक वाचन-प्रश्न परत Abhi कडे).
+- **Layers 2, 3, 4 ✅** ⇒ tags + parity fixtures (STABLE.md). L4-g (touches by reactions) layer 4 च्या tag आधी (#343; OPEN_QUESTIONS L4-g तिथे).
+- **L5-a:** zone च्या रचनेच्या एक degree खाली (#344, OPEN_QUESTIONS L5-a तिथे; golden वर एक वाचन-प्रश्न परत Abhi कडे).
 
