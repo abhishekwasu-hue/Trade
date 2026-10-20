@@ -25,6 +25,8 @@ DEFAULTS = {
     "range_eq_sigma_d": 0.25,                # RANGE: दोन H आणि दोन L "जवळपास समान" = σ_D च्या इतक्या अपूर्णांकात
     # ② Level (1H)
     "level_degree": 2,                       # swings2 degree = 1H trend-degree (D2)
+    "div_degree_rule": "zone",               # Abhi L5-a: RSI divergence between the pushes INSIDE the move into the zone (the highest degree
+                                             # with two pushes there); the zone's own degree reported too. "all" = the old D0–D2 read (what-if)
     "level_min_width_sigma": 0.0,            # Abhi Z-1x: zone = त्या base / reaction candles चा स्वतःचा wick-to-body — आकड्याने रुंद नाही (0).
                                              # > 0 = जुनी किमान रुंदी (σ_1H × हे) — फक्त जुने tests / what-if
     "liquidity_eq_sigma": 0.15,              # equal highs / lows = σ_1H च्या इतक्या अपूर्णांकात
@@ -165,6 +167,8 @@ REGISTER = {
     "daily_min_sessions": (10, "—", "Abhi नियम", "spec §3: Daily unknown फक्त data अपुरा (≤ 10 sessions)"),
     "range_eq_sigma_d": (0.25, "0.15/0.25/0.35", "अंदाज", "spec ① RANGE: σ_D च्या अपूर्णांकात (config)"),
     "level_degree": (2, "—", "व्याख्या", "spec ② (a) 1H trend-degree swing = थर 1 D2"),
+    "div_degree_rule": ("zone", "zone / all", "Abhi नियम",
+                        "Abhi L5-a: zone मध्ये येणाऱ्या चालीच्या आतले लागोपाठचे pushes, किमान दोन pushes दाखवणारी सर्वात मोठी degree; चालीआधीचा swing कधीच नाही; zone degree माहिती"),
     "level_min_width_sigma": (0.0, "0 (Abhi) / जुना 0.15", "Abhi नियम", "Abhi Z-1x: zone = base candles चा स्वतःचा पट्टा, आकड्याने रुंद नाही"),
     "liquidity_eq_sigma": (0.15, "0.1/0.15/0.25", "अंदाज", "spec ② (d) equal highs / lows"),
     "active_levels_max": (2, "—", "Abhi नियम", "spec ② active level = जवळची 2"),

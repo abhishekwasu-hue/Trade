@@ -1222,9 +1222,23 @@ def test_real_12_oct_third_touch_reads_as_confluence_line(real):
     assert rt["price"] < ln["p1"][1] + ln["slope"] * (rt["bar"] - ln["p1"][0])   # it turned short of the line: a reaction, not a wick touch
 
 
+def test_real_12_oct_rsi_read_inside_the_move_into_the_zone(real):
+    """Abhi L5-a (final) on the golden case: the move into the 1H supply begins at its own swing low; inside it D1 shows fewer than two
+    pushes (the D1 high before the move is never compared), D0 shows two ⇒ D0 is read: 9 Oct 14:15 push high → 12 Oct 09:15, higher
+    high with RSI lower = the bear divergence Abhi read."""
+    m15, ltf, fut, V = real
+    ix = _day_bars(V, "2026-10-12")
+    r = V.decide(ix[1])
+    rd = r["zone_read"]["summary"]["rsi_divergence"]
+    assert rd["degree"] == 0 and rd["found"] is True and rd["pushes"][1] < 2 <= rd["pushes"][0]
+    pair = [(x["L1"]["time"][:16], x["L2"]["time"][:16]) for x in rd["divergences"]]
+    assert ("2026-10-09 14:15", "2026-10-12 09:15") in pair
+    x = next(x for x in rd["divergences"] if x["L2"]["time"][:16] == "2026-10-12 09:15")
+    assert x["L2"]["price"] > x["L1"]["price"] and x["L2"]["rsi"] < x["L1"]["rsi"]
+
 def test_real_12_oct_method_verdict_and_label(real):
     """Layer 6a (method §4 / §5) on the golden case: 12 Oct 09:30 = setup on the required set, label A because confirming evidence is
-    present (RSI divergence, confluence: line); the evidence is listed, never scored; a wait carries no label."""
+    present (RSI divergence inside the move into the zone — Abhi L5-a — and confluence: line); the evidence is listed, never scored; a wait carries no label."""
     m15, ltf, fut, V = real
     ix = _day_bars(V, "2026-10-12")
     r915, r930 = V.decide(ix[0]), V.decide(ix[1])

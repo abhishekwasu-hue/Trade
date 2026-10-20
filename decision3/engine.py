@@ -83,6 +83,8 @@ class V22:
         if self.s.get("zone_visit_rule", "structure") != "structure" and \
                 self.s.get("commit_volume_rule", "approach_and_opposite") == "approach_and_opposite":   # never a silent half-rule
             raise ValueError("decision3 V22: a legacy zone_visit_rule knows no approach leg — pair it with commit_volume_rule = opposite")
+        if self.s.get("div_degree_rule", "zone") not in ("zone", "all"):   # fail at start, not on the first in-zone bar
+            raise ValueError(f"decision3 V22: unknown div_degree_rule {self.s['div_degree_rule']!r} (allowed: zone, all)")
         self.sealed = sealed                                              # Q33: sealed (NIFTY holdout) तारखा output मध्ये नाहीत
         guard_sealed_bars(m15 if res is None else res["m15"], sealed)       # Abhi Z-1t: no 15M bar (⇒ no decision) on a sealed date
         self.df1m = df1m                                                  # फक्त advisory (elliott count) साठी
@@ -385,6 +387,7 @@ class V22:
             away_t = not ok and self._failed_commit_outside(t, arm, lvl, d)
         cm["visit_end"] = ts_(t) if (away_t and not ok) else None         # Z-1v: closed outside, away, without a commitment ⇒ visit over
         cm["approach_from"] = ts_(vi.get("approach_from"))
+        cm["move_from_bar"] = (int(vi["approach_from"]) - 1) if vi.get("approach_from") is not None else None   # the move's own swing
         return ok, why, cm
 
     def vol_gaps(self, arm, t):
@@ -501,11 +504,17 @@ class V22:
         (normalised per bar). CONTEXT ONLY: reported in the checklist / payload, never a no_trade or a wait."""
         return FL.approach_context(self.levels.A, self.levels.ts.to_numpy(), t, lvl, self.res["pivots"], self.s, legs_A=self._legs_A())
 
-    def rsi_divergence(self, t, d, arm):
-        """Method §3 RSI divergence (rsi2.engine.Divergence, 15M) as ZONE EVIDENCE: every regular divergence on the trade side (bear for
-        a bear call) whose second swing / running extreme is inside the zone visit (bar ≥ arm), known by bar t — from the divergence
-        history, so one that formed on the first top inside the area is not lost when a lower retest becomes the newest pair. Never a
-        trigger or gate; its absence is stated. Returns {found, divergences, statements} or NA with the reason."""
+    def rsi_divergence(self, t, d, arm, zone_tf="1H", move_from=None):
+        """Method §3 RSI divergence (rsi2.engine.Divergence, 15M) as ZONE EVIDENCE: a regular divergence on the trade side (bear for a
+        bear call) whose second swing / running extreme is inside the zone visit (bar ≥ arm), known by bar t — from the divergence
+        history (one formed on the first top inside the area is not lost when a lower retest becomes the newest pair; one overtaken by a
+        later higher high / lower low no longer counts). Never a trigger or gate; its absence is stated.
+        Abhi L5-a (final): read between the consecutive pushes INSIDE the move into the zone — the move begins at the last swing built
+        away from the area (`move_from`, the approach leg's own swing). Use the highest degree at which that move shows at least two
+        pushes (confirmed swings of the trade side, after `move_from`, known by t); a swing from before the move began is never compared.
+        A divergence at the zone's own degree (1H zone = `level_degree`; Daily = one above — assumed) is reported too (`zone_degree`;
+        None = not computed by rsi2). No move known ⇒ NA with the reason. `div_degree_rule` "all" = the old D0–D2 read (what-if).
+        Returns {found, divergences, zone_degree, degree, pushes, statements} or NA with the reason."""
         if getattr(self, "_rsi", None) is None:
             try:
                 from rsi2 import engine as RE
@@ -515,6 +524,7 @@ class V22:
         if isinstance(self._rsi, str):
             return {"found": None, "na": "rsi2 Divergence failed — " + self._rsi}
         side = "bear" if d < 0 else "bull"
+        kind = "H" if d < 0 else "L"                                       # the pushes of a bear call's move up are its highs
         r = self._rsi.read(t)
         B = self._rsi.B
 
@@ -524,10 +534,33 @@ class V22:
         divs = [x for x in self._rsi.history(t) if x["side"] == side and x["type"] == "regular" and x["L2"]["bar"] >= int(arm)
                 and still_the_extreme(x)]
         keep = ("degree", "status", "bars", "price_rel", "count")
-        out = [{**{k: x.get(k) for k in keep}, "L1": {k: x["L1"][k] for k in ("time", "price", "rsi")},
-                "L2": {k: x["L2"][k] for k in ("time", "price", "rsi")}} for x in divs]
-        st = [y["statement"] for y in r["latest"] if y["side"] == side]
-        return {"found": bool(out), "divergences": out, "statements": st}
+
+        def brief(x):
+            return {**{k: x.get(k) for k in keep}, "L1": {k: x["L1"][k] for k in ("time", "price", "rsi")},
+                    "L2": {k: x["L2"][k] for k in ("time", "price", "rsi")}}
+        zd = int(self.s["level_degree"]) + (1 if zone_tf == "D" else 0)    # the zone's own structure degree (1H = D2, Daily = D3)
+        rule = self.s.get("div_degree_rule", "zone")
+        if rule not in ("zone", "all"):
+            raise ValueError(f"div_degree_rule {rule!r} — zone / all")
+        have = sorted(int(x) for x in self._rsi.degrees)                   # the degrees rsi2 computed
+        own = ([brief(x) for x in divs if int(x["degree"]) == zd] if zd in have else None) if rule == "zone" else []
+        if rule == "all":
+            st = [y["statement"] for y in r["latest"] if y["side"] == side]
+            return {"found": bool(divs), "divergences": [brief(x) for x in divs], "zone_degree": own, "degree": None, "pushes": None,
+                    "statements": st}
+        if move_from is None:
+            return {"found": None, "na": "the move into the zone is not known (no swing built away from the area yet)", "zone_degree": own}
+        mf = int(move_from)
+        count = {g: sum(1 for p in self._rsi.piv[g] if p.kind == kind and mf < p.bar <= t and p.confirm_bar <= t) for g in have}
+        two = [g for g in have if count[g] >= 2]
+        if not two:
+            return {"found": False, "divergences": [], "zone_degree": own, "degree": None, "pushes": count,
+                    "statements": [f"no {side} divergence: the move into the zone shows fewer than two pushes at any degree "
+                                   f"(from {str(pd.Timestamp(self._ts[mf]))[:16]})"]}
+        g = max(two)                                                       # the highest degree with at least two pushes inside the move
+        out = [brief(x) for x in divs if int(x["degree"]) == g and int(x["L1"]["bar"]) > mf]   # never a swing from before the move
+        st = [y["statement"] for y in r["latest"] if y["side"] == side and int(y.get("degree", g)) in (g, zd)]
+        return {"found": bool(out), "divergences": out, "zone_degree": own, "degree": g, "pushes": count, "statements": st}
 
     def _legs_A(self):
         if getattr(self, "_legs_arr", None) is None:
@@ -574,7 +607,7 @@ class V22:
             ok6, why6 = False, f"entry वेळ-खिडकीबाहेर (operational schedule) · reading: {why6}"   # an operational schedule after it
         chk["⑥"] = [ok6, why6]
         arm = int(cm.get("arm_bar", t))
-        rsi = self.rsi_divergence(t, d, arm)                               # zone evidence (Abhi): never a gate
+        rsi = self.rsi_divergence(t, d, arm, lvl.get("tf", "1H"), cm.get("move_from_bar"))   # zone evidence (Abhi): never a gate
         Av, vlabel = self.vol_view(arm, t)
         zr = FL.zone_read(Av, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi,
                           handover=cm.get("handover_state"))               # in-zone study facts (bars arm … t)

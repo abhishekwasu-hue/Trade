@@ -2896,3 +2896,20 @@ legs owner वि. reader2 gate).
 - **Golden (real):** 7 Oct 12:00 चा wick contact 6 Oct anchor सोबत एकच touch (मधे swing low नाही) ⇒ 12 Oct 09:15 चं वळण = **touch 3**;
   09:30, 09:45, 10:00 ला 1H supply = "confluence: … line (touch 3)" (test).
 
+## 2026-10-20 · Abhi on L5-a: RSI divergence one degree below the zone (branch `claude/method-l5a-degree`)
+
+- **Abhi:** zone मध्ये येणाऱ्या चालीचे लागोपाठचे pushes = zone च्या रचनेच्या एक degree खालचे swings (zone मधल्या pullback चीच degree);
+  zone च्या स्वतःच्या degree ची divergence असल्यास तीही नोंद.
+- **Code:** `engine.rsi_divergence` — `found` = D(level_degree − 1) (1H zone ⇒ D1); `zone_degree` = D2 (माहिती, confirming नाही — गृहीत);
+  `div_degree_rule = all` = जुनं D0–D2 what-if. KB K10.4 / Pack 5c, rsi2 register, METHOD_MAP, NUMBERS_INVENTORY C-19.
+- **Golden (real, tuning नाही):** 12 Oct 09:30 ला D1 / D2 वर divergence नाही — दोन्हीवर आधीचा high (7 Oct 22,717.65 / 6 Oct 22,731.85)
+  12 Oct 09:15 (22,651.10) पेक्षा उंच ⇒ lower high. Abhi ची जोडी (9 Oct 14:15 22,580.75 RSI 67.09 → 12 Oct 09:15 RSI 66.41) फक्त D0
+  वर ⇒ history मध्ये आहे, पुरावा नाही. Label तरीही A (confluence). OPEN_QUESTIONS L5-a (chart: trade-data `review/method_layer5/`).
+
+## 2026-10-20 · Abhi on L5-a (final): pushes INSIDE the move into the zone
+
+- चाल = area पासून दूर बनलेल्या शेवटच्या swing पासून (approach leg चा स्वतःचा swing). त्या चालीत किमान दोन pushes दाखवणारी सर्वात मोठी
+  degree वाचायची; चालीआधीचा swing कधीच नाही; zone degree ची divergence माहिती. Code: `rsi_divergence(…, move_from)` (`degree`, `pushes`).
+- **Golden (real):** 12 Oct — D1 वर चालीत एकच push, D0 वर दोन ⇒ D0: 9 Oct 14:15 → 12 Oct 09:15 (RSI 67.09 → 66.41) = bear divergence
+  परत; 09:30 setup **A** (RSI divergence + confluence). Default म्हणून नोंद — Abhi बदलू शकतात.
+

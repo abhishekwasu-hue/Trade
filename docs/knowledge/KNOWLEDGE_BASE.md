@@ -1068,14 +1068,17 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rsi_divergence`.
 
 **व्याख्या (तर्क, आकडा नाही).**
-- **खरे swings, एकाच degree चे:** लागोपाठचे swings, प्रत्येक degree आपापल्यात (swings2 degrees; "खरा swing" ची व्याख्या layer 1 —
-  अबींच्या निर्णयानुसार — ठरेल). दोन swings लागोपाठचे pushes: त्यांच्या मधे त्याहून टोकाची किंमत नाही. वेगवेगळ्या degree चे swings
-  कधीच जोडायचे नाहीत.
+- **खरे swings, एकाच degree चे:** लागोपाठचे swings (swings2 D1 / D2 = Abhi चं calibration, layer 1 ✅). दोन swings लागोपाठचे pushes:
+  त्यांच्या मधे त्याहून टोकाची किंमत नाही. वेगवेगळ्या degree चे swings कधीच जोडायचे नाहीत.
+- **कोणती degree (Abhi, L5-a — अंतिम; बदलता येईल):** zone मध्ये येणाऱ्या चालीच्या **आतले** लागोपाठचे pushes. चाल तिच्या स्वतःच्या
+  swing पासून सुरू होते (area पासून दूर बनलेला शेवटचा swing). ज्या सर्वात मोठ्या degree वर त्या चालीत किमान दोन pushes दिसतात तीच degree
+  वापरायची. चाल सुरू होण्याआधीचा swing (उदा. चालीच्या स्वतःच्या low आधीचा D1 high) कधीच तुलनेत नाही. Zone च्या स्वतःच्या degree ची
+  divergence असेल तर तीही नोंदवायची (माहिती).
 - **Bearish:** price **नवा उंच high** करते (आधीच्या high पलीकडे — बरोबर high नवा high नाही) आणि RSI आधीच्या high च्या RSI पलीकडे
   जात नाही — **बरोबर RSI सुद्धा divergence** [Abhi].
 - **Bullish (आरसा):** price नवा खालचा low आणि RSI आधीच्या low च्या RSI खाली जात नाही (बरोबर RSI सुद्धा).
 - **Swing वरचा RSI:** त्या swing च्या स्वतःच्या span मधला RSI चा टोक (शेजारच्या उलट swings मधला भाग) — bar count / ± window नाही.
-  *(ही code ची व्याख्या आहे, अबींचे शब्द नाहीत — NUMBERS_INVENTORY C-24 / OPEN_QUESTIONS L5-a, अबींचा होय / नाही बाकी.)*
+  *(ही code ची व्याख्या आहे, अबींचे शब्द नाहीत — NUMBERS_INVENTORY C-24, अबींचा होय / नाही बाकी.)*
 - Bars ची किमान / कमाल संख्या नाही; RSI फरकाला किमान मर्यादा नाही. Hidden divergence: वापरात नाही (फक्त what-if).
 - RSI = Wilder RSI spot close वर (indicator ची स्वतःची व्याख्या). Futures फक्त volume साठी.
 
@@ -1121,7 +1124,10 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
 
 - **RSI divergence is the only indicator, and it is evidence inside the area — never a trigger alone, never a gate.** Its absence is
   stated too ("no divergence: RSI made a new high with price").
-- Compare **consecutive real swings of the same degree** (each degree on its own; nothing more extreme between them).
+- Compare **consecutive real swings of the same degree** (nothing more extreme between them): the consecutive pushes **inside the
+  move into the zone** — the move begins at its own swing (the last swing built away from the area); use the highest degree at which
+  that move shows at least two pushes; a swing from before the move began is never compared [Abhi, L5-a]. A divergence at the zone's
+  own degree is reported too, as information.
   **Bearish:** price makes a higher high while RSI does not go above its previous high — an equal RSI high counts. **Bullish (mirror):**
   price makes a lower low while RSI does not go below its previous low — an equal RSI low counts. An equal price high / low is not a
   new extreme.
