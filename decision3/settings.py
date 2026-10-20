@@ -91,7 +91,8 @@ DEFAULTS = {
     "session_windows": False,                # method P2: एकच सलग chart — 2-candle forms दिवस ओलांडतात; entry तास = operational schedule (engine);
                                              # True = जुनं (form खिडकी + entry खिडकी commitment मध्ये) — what-if
     "line_rule": "logic",                    # method §3 Lines: touch = wick reaches the line, body on its side; two reactions = a line;
-                                             # confluence = the line passes through the area (labelled, never a new band); "sigma" = जुनं
+                                             # confluence = the line passes through the area, or a reaction out of it turns at the line
+                                             # (Abhi 4 B) ⇒ labelled "confluence: line", never a new band; "sigma" = जुनं
     "sharp_reversal_handover": True,         # Abhi Z-1z: zone मध्ये push नाकारला + dominant उलट candle ने गिळला = handover (तुलना, आकडा नाही)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
     "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.

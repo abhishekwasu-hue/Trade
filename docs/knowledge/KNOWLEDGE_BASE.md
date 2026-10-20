@@ -741,6 +741,7 @@ completed pattern allows, the count is wrong.
   - ताजे pivots slope वर ओळीत येत असतील आणि horizontal levels कापले जात असतील ⇒ बाजार **slope** ला मान देतोय.
   - एकाच किमतीवर वारंवार reactions ⇒ **horizontal.**
   - **रेषा area मधून जात असेल ⇒ तो area सगळ्यात उच्च दर्जाचा (confluence) — तोच area, label सह; नवा / अरुंद पट्टा नाही [Abhi, method §3]**, chart label **"confluence"** (K4).
+  - **Reaction-touch [Abhi, layer 4 B]:** area मधून वर उठलेली (खाली पडलेली) reaction रेषेजवळ वळली तर तो रेषेचा touch: वळण (रचनेचा swing) हे रेषेच्या आधीच्या touch नंतरचं रेषेला सगळ्यात जवळचं वळण, मधे कोणताही close रेषेपलीकडे नाही, आणि नंतर चाल रेषेपासून दूर जाते. तिथे area आणि रेषा भेटतात ⇒ area ला label **"confluence: line"**. Golden third-touch case असाच वाचायचा.
 - **6.5 Break वि. false break:**
   - Real (method §3, area सारखा) = रेषेपलीकडे close **आणि** पलीकडे swing बनला.
   - False = पलीकडे swing बनण्याआधी परत रेषेच्या बाजूला (throw-over / sweep).
@@ -782,8 +783,10 @@ completed pattern allows, the count is wrong.
   and wicks at another; never redraw the line every bar (curve-fitting).
 - **Horizontal or sloping — read which one price respects:** the structure's recent swings lining up on a slope while horizontal levels
   get cut ⇒ the market respects the slope; repeated reactions at one price ⇒ horizontal. **Where a line passes through an area, that
-  area is the strongest location (confluence)** — the same area, labelled; never a new or narrowed band. Never look only at horizontals
-  and forget the trendline.
+  area is the strongest location (confluence)** — the same area, labelled; never a new or narrowed band. **They also meet when a
+  reaction rises out of (falls out of) the area and turns at the line [Abhi]:** the turn (a swing of the structure) is the closest
+  approach to the line since the line's previous touch, no candle closes beyond the line, and the move then goes away from it — that
+  turn is a touch, and the area is labelled "confluence: line". Never look only at horizontals and forget the trendline.
 - **Elliott channeling (measuring tool):** wave 4 often ends near the parallel through wave 2; a zigzag's C often ends near the line
   drawn through A's end parallel to the line joining A's start and B's end — the correction's own channel (C target where C reaches
   it; confluence with C = A). Throw-over in the last wave: a brief poke beyond the channel and a close back inside.
