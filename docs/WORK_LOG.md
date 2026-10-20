@@ -2820,3 +2820,28 @@ legs owner वि. reader2 gate).
   throw-over. Anchors = दोन वेगळे reactions (मधे उलट swing, `separate`). Chart captions "gone" (आधीच गेलेली रेघ). KB K6 मधले आकडे /
   golden तारीख काढले. step2 confluence जागीच label — test.
 
+
+## 2026-10-20 · Trade sunset preparation (branch `claude/reader-sunset-prep`)
+
+- **Abhi:** Trade will be archived; ATP ports each STABLE reader layer with parity tests. Work here = the reader layers, the PAPER bot's
+  health, the exports. The level bots are rebuilt in ATP (not here).
+- **`docs/reader/STABLE.md`:** the register (tag `reader-layer<N>-stable-v1` only after Abhi's ✅; frozen = bug fixes with a new tag;
+  parity fixtures in trade-data `parity/<layer>/<tag>/`; the matching KB + Method Pack). No stable layer yet.
+- **`docs/reader/EXPORT_MANIFEST.md`** (`scripts/reader_export_manifest.py`): every trade-data folder classified as moving or not, with
+  size and checksum; the VPS-only items (paper journal, Vision logs, engine signal store) named.
+- **`docs/reader/SUNSET.md`:** crons, units, Telegram, exports, `.env` names, built from the repo; to be confirmed on the VPS by Abhi.
+  Each item has an ATP replacement (proposal) or "retire", and a switch-off step; the order on the day; the archive README text.
+- **Owner rule (Abhi):** Trade (session, repo, VPS) is never shut down, archived or disabled automatically — no condition, shadow
+  result, schedule or session; only Abhi's explicit word, at his time. Until then everything runs as now; nothing is removed or weakened
+  because ATP has it. SUNSET.md = documents + one command block (§7), never run or scheduled by a session.
+
+- **Review fixes (sunset prep):**
+  - Checksum = sha256 of the sorted lines, as documented (full 64 hex); loose files are classified.
+  - EXPORT_MANIFEST adds:
+    - the stores outside any repo, each with a destination folder (`vps_export/…`): Supabase `nifty_1min_ohlc` / `historical_candles` / `backtest_review` / `reader2_gallery`, VPS FUT history, Vision, journal, engine store, state files;
+    - in-repo golden / Abhi files;
+    - the review runs Abhi judged, which now move.
+  - SUNSET adds:
+    - the GitHub Actions workflows (spot-history feed, EOD, token check, run_algo) and their secrets (names only);
+    - credential stores outside `.env`;
+    - entries off via the dashboard setting, with the bots' cron lines kept until flat.
