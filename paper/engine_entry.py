@@ -3,9 +3,39 @@ PAPER spread (Abhi P0 #1). Spread selection / strikes / execution: bots ची�
 `select_naked_option_itm`, `trading_engine.open_multi_leg_trade`) — नवीन execution नाही. **फक्त PAPER**; LIVE ⇒ काहीच नाही.
 Engine signal एकदाच वापरला जातो (`engine_signal.mark_consumed`); HOLD ⇒ पुढच्या cycle ला पुन्हा (gate चा approval मार्ग).
 """
+import contextlib
+import os
+
 import pandas as pd
 
 import engine_signal as ES
+
+# Abhi (PAPER at the open): the bot whose ✅ opens its PAPER entry at once (Telegram service) ⇒ its dashboard settings key
+BOT_SETTINGS_KEY = {"srv2_momentum_reversal": "15m_dynamic_sr"}
+
+
+@contextlib.contextmanager
+def entry_lock(bot, symbol, data_dir=None):
+    """One engine-entry cycle per (bot, symbol) at a time — the bot's cron cycle and the Telegram ✅ path never enter twice. Yields True
+    when held, False when another cycle holds it (never blocks)."""
+    import fcntl
+    if data_dir is None:
+        from . import config as PC
+        data_dir = PC.data_dir()
+    os.makedirs(data_dir, exist_ok=True)
+    f = open(os.path.join(data_dir, f"engine_entry_{bot}_{str(symbol).upper()}.lock"), "w")
+    try:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+    finally:
+        f.close()
 
 
 def fetch_chain(access_token, symbol):
@@ -34,12 +64,15 @@ def open_paper(access_token, symbol, settings, direction, level, lot_size, sourc
     common = dict(sl_pct_of_max_loss=None, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
                   sl_pct_of_credit=100, source=source, entry_level_price=level, entry_timeframe=entry_tf, entry_spot_price=spot,
                   direction=direction, entry_reason_tag="ENGINE_SIGNAL")
+    # Abhi: the spread's target is the dashboard's "Target — % of net premium" (the bot's own path reads the same key); SL / TSL and the
+    # naked exits come from the dashboard at exit time (trading_engine.manage_open_trades). No such key ⇒ the old 100 % (other bots).
+    spread_target = float(settings.get("spread_target_pct_of_premium", 100))
     out = []
     if settings.get("credit_spread_enabled", True) and lots > 0:
         sp = select_credit_spread_itm(raw_chain, direction, atm, step=step, itm_depth_points=settings["itm_depth_points"],
                                       hedge_width_points=settings["hedge_width_points"])
         if sp is not None:
-            ok, resp = open_fn(access_token, symbol, sp, lots=lots, lot_size=lot_size, **common)
+            ok, resp = open_fn(access_token, symbol, sp, lots=lots, lot_size=lot_size, **{**common, "target_pct_of_max_profit": spread_target})
             out.append(f"Credit Spread {sp.get('strategy', direction)}: {'✅' if ok else '❌'} {resp}")
     if settings.get("naked_enabled", True) and naked_lots > 0:
         nk = select_naked_option_itm(raw_chain, direction, atm, itm_depth_points=settings.get("naked_itm_depth_points", settings["itm_depth_points"]),
@@ -71,9 +104,19 @@ def engine_gate_tags(r, direction, settings=None):
 
 def process(bot, access_token, symbol, settings, lot_size, source, now=None, has_open=None, gate_fn=None, open_fn=None, chain=None,
             path=None, cutoff=None, vpath=None, symbols_fn=None):
-    """engine mode चा एक cycle. रिटर्न संदेश (None = engine mode नाही / नवा setup नाही)."""
+    """engine mode चा एक cycle. रिटर्न संदेश (None = engine mode नाही / नवा setup नाही). One cycle per (bot, symbol) at a time
+    (`entry_lock`: the cron cycle and the Telegram ✅ path)."""
     if ES.source_of(settings) != "engine":
         return None
+    with entry_lock(bot, symbol, os.path.dirname(path) if path else None) as held:
+        if not held:
+            return f"{symbol}: engine — another entry cycle is running (cron / ✅) ⇒ this one skips"
+        return _process(bot, access_token, symbol, settings, lot_size, source, now, has_open, gate_fn, open_fn, chain, path, cutoff,
+                        vpath, symbols_fn)
+
+
+def _process(bot, access_token, symbol, settings, lot_size, source, now, has_open, gate_fn, open_fn, chain, path, cutoff, vpath,
+             symbols_fn):
     now = ES._naive(now or ES.now_ist())
     if str(settings.get("trading_mode", "PAPER")).upper() != "PAPER":
         return f"{symbol}: signal_source = engine फक्त PAPER साठी — {settings.get('trading_mode')} ⇒ entry नाही"
@@ -132,3 +175,39 @@ def process(bot, access_token, symbol, settings, lot_size, source, now=None, has
     except Exception:
         pass
     return f"{symbol}: engine setup {direction} ⇒ " + "; ".join(msgs)
+
+
+def enter_now(bot, symbol, send=None, settings_fn=None, token_fn=None, cycle_fn=None):
+    """Abhi (PAPER at the open): on ✅ the PAPER entry is placed at once — the Telegram service runs the bot's own engine cycle for that
+    symbol (`bot_hooks.pre_cycle`: instrument / token / lot size / pause ⇒ `process` ⇒ gate ENTER ⇒ `open_paper` with the dashboard's
+    lots / strikes / target). The same lock as the cron cycle ⇒ never two entries. PAPER only (pre_cycle / process refuse LIVE). Never
+    raises; returns the cycle's message (None = not an engine bot)."""
+    key = BOT_SETTINGS_KEY.get(bot)
+    if key is None:
+        return None
+    try:
+        if settings_fn is None:
+            import cloud_db
+            settings_fn = cloud_db.get_strategy_settings
+        settings = settings_fn(key, symbol)
+        if str(settings.get("trading_mode", "PAPER")).upper() != "PAPER":
+            msg = f"{symbol}: {settings.get('trading_mode')} ⇒ no PAPER entry on ✅ (LIVE never from here)"
+        elif not settings.get("symbol_enabled", str(symbol).upper() == "NIFTY"):
+            msg = f"{symbol}: 15M SRv2 switched off (symbol_enabled) ⇒ no entry on ✅"
+        else:
+            if token_fn is None:
+                import cloud_db
+                token_fn = lambda: cloud_db.get_effective_upstox_token(None)   # noqa: E731
+            if cycle_fn is None:
+                from . import bot_hooks as BH
+                cycle_fn = lambda tok: BH.pre_cycle(bot, tok, symbol, settings, None, source=bot, send=send).msg   # noqa: E731
+            msg = cycle_fn(token_fn())
+    except Exception as exc:                                             # noqa: BLE001 — the cron cycle still enters on its next minute
+        msg = f"{symbol}: PAPER entry on ✅ failed ({type(exc).__name__}: {exc}) ⇒ the bot's next cycle enters"
+    if send is not None and msg:
+        try:
+            send(f"⚡ PAPER on ✅ · {msg}")
+        except Exception:                                                # noqa: BLE001
+            pass
+    return msg
+

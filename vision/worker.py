@@ -287,7 +287,9 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
     except (ValueError, TypeError, AttributeError):
         tags = {}
     head = html.escape(plain_head(row))                                   # Abhi (TELEGRAM_CLEANUP 3): ओळ 1 साधी, ओळ 2 निर्णय
-    if tags.get("dry_run"):                                             # Abhi (Sunday dry-run): replay signal ला स्पष्ट टॅग
+    if tags.get("test_only"):                                           # Abhi: the TEST card — the real path, never a position
+        head = "🧪 TEST — not a trade · " + head
+    elif tags.get("dry_run"):                                           # Abhi (Sunday dry-run): replay signal ला स्पष्ट टॅग
         head = "🧪 [DRY-RUN] " + head
     if d.status == "PENDING_HUMAN":
         dline = f"<b>{PT.DECISION_APPROVE}</b> by {pd.Timestamp(deadline).strftime('%H:%M') if deadline else '?'}"
