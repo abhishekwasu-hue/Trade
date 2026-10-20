@@ -2877,6 +2877,17 @@ legs owner वि. reader2 gate).
   history मधून वाचतो (test). RSI तुलना unrounded (लपलेली tolerance नाही). Pack: 5b चं जुनं hidden-divergence वाक्य काढलं, Handover = 5d;
   K10.2 = पार्श्वभूमी (वाचनाचा नियम K10.4). "Swing वरचा RSI" = code ची व्याख्या (C-24) — L5-a मध्ये.
 
+## 2026-10-20 · Method layer 6a: the verdict (branch `claude/method-layer6-output`)
+
+- **Method §4 / §5:** required set (⑥ handover + commitment + volume तुलना + LTF CHoCH, trend बाजू) ⇒ entry. Label A = required + किमान
+  एक confirming पुरावा (area मध्ये volume वाढतोय, RSI divergence, confluence, correction ची रेषा commitment ने तोडली); B = फक्त required.
+  पुरावे present / absent / NA यादी; score / वजन नाही.
+- `verdict_rule = method` (default); जुने score, `evidence_weights`, `conv_*`, ④ power shift count, §5.3 range state = `verdict_rule = score`
+  what-if. जुने label caps (Weekly विरुद्ध / origin तुटला / counter-correction / Weekly fallback, Q16 wick-only commitment ⇒ कमाल B,
+  पहिला पाय / commit-strength cap) = context notes (L6-a); method मध्ये `trend_cap` None. Chart / caption: "Label A (confirming: …)",
+  score नाही. Evidence list: required (वाचन) आणि entry hours (operational) वेगळे; tl_confluence absent ≠ NA.
+- Guard: layer-6 decision numbers LEGACY; `test_layer_six_verdict_is_the_method_no_scores`.
+
 ## 2026-10-20 · Abhi on L4-g: touches by reactions (branch `claude/method-l4g-touch-count`)
 
 - **(1)** Touches = reactions, contacts नाही: मधे रेषेच्या रचनेचा खरा उलट swing नसेल तर contacts = एकच touch (`trendline.touch_groups`).

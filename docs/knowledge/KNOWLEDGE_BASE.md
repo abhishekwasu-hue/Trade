@@ -172,7 +172,7 @@
 
 ## टप्पा 8: गोष्ट आणि grade
 - 8–12 ओळींची गोष्ट: trend → impulse → correction प्रकार → area (confluence) → area वरचं वर्तन → context → पुष्टी → risk.
-- **Evidence for / against** यादी, आणि grade (भाग D).
+- **Evidence for / against** यादी: प्रत्येक पुरावा present / absent. गुण नाहीत (method §5). Label: A = required set + किमान एक confirming पुरावा; B = फक्त required set. भाग D चे गुण फक्त जुना what-if.
 - **"मी कुठे चुकीचा ठरेन"** हे एका ओळीत.
 
 ---
@@ -1562,6 +1562,8 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
 ---
 
 # भाग D: पुराव्याची यादी आणि grade
+
+> **स्थिती (layer 6a):** decision3 चा निर्णय आता method §4 / §5 प्रमाणे (`verdict_rule = "method"`): required set पूर्ण ⇒ setup; label A = किमान एक confirming पुरावा (volume trade बाजूला वाढतो, RSI divergence, confluence, correction ची रेषा close ने तुटली), नाहीतर B. पुरावा present / absent म्हणून नोंदवला जातो; बेरीज, weights, thresholds नाहीत. खालचा गुण-तक्ता फक्त जुना what-if (`verdict_rule = "score"`) आणि इतिहासासाठी.
 
 > **आधार:** G-E0 (Abhi ने मंजूर केलेला, 2026-10-08) तक्ता. या knowledge base मुळे काही नवीन पुरावे जोडले आहेत (✚).
 > - सगळे weights आधी ठरवलेले आहेत; grid मध्ये tune करायचे नाहीत.

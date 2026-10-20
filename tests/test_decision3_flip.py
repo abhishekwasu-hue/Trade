@@ -826,7 +826,9 @@ def test_range_state_is_context_only_never_an_entry_gate(abc, monkeypatch):
     """Abhi Z-1j: overlapping / sideways candles inside the zone are the handover study, not a blocker — §5.3 range state is reported as
     a context fact and never changes the decision (the old gate only with `range_state_gate` = True, legacy)."""
     m15, s, V, _ = abc
+    s = {**s, "verdict_rule": "score"}                                     # §5.3 range state exists only in the legacy score rule (layer 6)
     bars = range(735, 746)
+    V = E3.V22(m15, s={**s, "c0_volume_required": False})
     base = {t: V.decide(t) for t in bars}
     monkeypatch.setattr(M, "range_state", lambda A, t, s=None: True)
     monkeypatch.setattr(M, "range_broken_by", lambda A, t, d, s=None: False)
@@ -1218,3 +1220,15 @@ def test_real_12_oct_third_touch_reads_as_confluence_line(real):
         assert next(x for x in act2 if x["id"] == lvl["id"])["line_touch"]["bar"] == rt["bar"]
     ln = TL.swing_line(V, t, M.DOWN)
     assert rt["price"] < ln["p1"][1] + ln["slope"] * (rt["bar"] - ln["p1"][0])   # it turned short of the line: a reaction, not a wick touch
+
+
+def test_real_12_oct_method_verdict_and_label(real):
+    """Layer 6a (method §4 / §5) on the golden case: 12 Oct 09:30 = setup on the required set, label A because confirming evidence is
+    present (RSI divergence, confluence: line); the evidence is listed, never scored; a wait carries no label."""
+    m15, ltf, fut, V = real
+    ix = _day_bars(V, "2026-10-12")
+    r915, r930 = V.decide(ix[0]), V.decide(ix[1])
+    assert r930["decision"] == "setup" and r930["verdict_rule"] == "method" and r930["conv_score"] is None
+    assert r930["evidence_list"]["required"] == "present" and r930["conviction"] == "A"
+    assert r930["confirming"]["rsi_divergence"] is True and r930["confirming"]["confluence"] is True
+    assert r915["decision"] == "wait" and r915["conviction"] is None

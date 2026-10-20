@@ -176,9 +176,11 @@ def test_swing_line_dies_on_close_through_and_wrong_side_area_dropped(mirror):
     assert TL.confluence_areas(V2, 15, d, [near]) == []
 
 
-def test_tl_birth_does_not_raise_grade_over_parent(case):
-    """Review: "tl" जन्म grade वाढवत नाही — confluence area चा level ★ / conviction parent level इतकाच; confluence फक्त पुरावा-नोंद."""
+def test_tl_birth_does_not_raise_grade_over_parent(case, monkeypatch):
+    """Review: "tl" जन्म grade वाढवत नाही — confluence area चा level ★ / conviction parent level इतकाच; confluence फक्त पुरावा-नोंद.
+    (Legacy score rule — pinned. Under the method rule a line meeting the area IS a confirming piece: method §5.)"""
     mirror, (V, m15, fut, ltf, bars) = case
+    monkeypatch.setitem(V.s, "verdict_rule", "score")
     trend = "UP" if mirror else "DOWN"
     t = bars[2]
     ok1, _w, _st, ctx = V.step1(t)
@@ -189,9 +191,9 @@ def test_tl_birth_does_not_raise_grade_over_parent(case):
     par = next(x for x in act if x["id"] == a["parent_level"])
     _d1, _p1, e_par = V._level_eval(t, trend, par, ctx["cap"], ctx["notes"])
     _d2, _p2, e_tl = V._level_eval(t, trend, a, ctx["cap"], ctx["notes"])
-    assert e_tl["evidence"]["tl_confluence"] is True and e_par["evidence"]["tl_confluence"] is None
+    assert e_tl["evidence"]["tl_confluence"] is True and e_par["evidence"]["tl_confluence"] is False   # absent, not NA
     assert e_tl["evidence"]["level_star"] == e_par["evidence"]["level_star"]
-    assert e_tl["conv_score"] == e_par["conv_score"]
+    assert e_tl["conv_score"] == e_par["conv_score"] and e_tl["conv_score"] is not None
 
 
 def test_replay_loaders_drop_nifty_holdout_rows():
