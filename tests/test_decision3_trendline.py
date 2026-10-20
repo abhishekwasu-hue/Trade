@@ -147,8 +147,8 @@ def test_a_reaction_rising_out_of_an_area_and_turning_at_the_line_is_a_touch():
             "confluence: Daily 1–2; line (touch 3)"
         assert TL.reaction_touch(V, 15, d, ln) is None                      # not yet confirmed (the move has not gone away)
         V2, ln2, _ = _rt_V(highs, [("H", 107.5, 11, 12), ("L", 99.0, 12, 13), ("H", 104.0, 14, 16)], mirror)   # an earlier turn came
-        assert TL.reaction_touch(V2, 17, d, ln2)["bar"] == 11               # closer: 107.5 at bar 11 (line 109) was 1.5 short ⇒ that is
-                                                                            # the reaction's own turn (L4-g 2), bar 14 stayed farther away
+        assert TL.reaction_touch(V2, 17, d, ln2)["bar"] == 14               # bar 11 (closer) belongs to the reaction before the low at 12:
+                                                                            # this reaction's own turn is 14 (L4-g: one reaction per swing)
         V6, ln6, _ = _rt_V(highs, [("H", 109.5, 11, 12), ("L", 99.0, 12, 13), ("H", 104.0, 14, 16)], mirror)   # bar 11 reached the
         assert TL.reaction_touch(V6, 17, d, ln6)["bar"] == 14               # line (109.5 ≥ 109) ⇒ a new previous touch; 14 is then the closest
         V3, ln3, _ = _rt_V(highs, piv, mirror)
@@ -186,4 +186,42 @@ def test_touches_are_counted_by_reactions_not_contacts():
         known = [NS(kind=opp, price=f(95.0), bar=5), NS(kind=opp, price=f(96.0), bar=14)]
         g = TL.touch_groups(A, known, kind, line, 0, 10, 17)
         assert g == [[0], [10, 11, 12], [16]]
+
+
+def test_reactions_are_split_by_the_lines_structure_and_counted():
+    """Abhi L4-g with the line's own structure (D2, `known_pivots`) apart from the finest turns: a reaction out of the area turns at 14
+    (touch 3); a structure low at 20 starts a new reaction, which turns at 30 ⇒ touch 4, and the touch / label move to it — the bar-14
+    touch is history even when the new turn stays farther from the line (a later visit). Within one reaction, a later turn that stays
+    away keeps the earlier, closer one. Mirror."""
+    for mirror in (False, True):
+        f = (lambda x: 200.0 - x) if mirror else (lambda x: float(x))       # noqa: E731
+        kind, opp = ("L", "H") if mirror else ("H", "L")
+        d = TL.UP if mirror else TL.DOWN
+        n = 40
+        for h30, h33 in ((116.0, None), (113.0, None), (113.0, 111.0)):
+            c = np.full(n, f(100.0))
+            hi, lo = np.full(n, 100.5), np.full(n, 99.5)
+            hi[0], hi[10], hi[14], hi[30], lo[20] = 120.0, 119.0, 116.6, h30, 90.0
+            if h33:
+                hi[33] = h33
+            H, L = ([f(x) for x in lo], [f(x) for x in hi]) if mirror else (hi, lo)
+            A = {"open": c.copy(), "close": c.copy(), "high": np.array(H), "low": np.array(L)}
+            k0 = [NS(kind=opp, price=f(99.0), bar=12, confirm_bar=13), NS(kind=kind, price=f(116.6), bar=14, confirm_bar=16),
+                  NS(kind=opp, price=f(90.0), bar=20, confirm_bar=22), NS(kind=kind, price=f(h30), bar=30, confirm_bar=32)]
+            if h33:
+                k0.append(NS(kind=kind, price=f(h33), bar=33, confirm_bar=35))
+            d2 = [NS(kind=kind, price=f(120.0), bar=0), NS(kind=opp, price=f(95.0), bar=5), NS(kind=kind, price=f(119.0), bar=10),
+                  NS(kind=opp, price=f(99.0), bar=12), NS(kind=opp, price=f(90.0), bar=20)]
+            area = {"id": 7, "lo": min(f(98.0), f(102.0)), "hi": max(f(98.0), f(102.0)), "role": "support" if mirror else "resistance"}
+            lv = NS(A=A, _known0=k0, known_pivots=lambda t, d2=d2: d2, snapshot=lambda t, a=area: [a])
+            V = NS(levels=lv, s={"line_rule": "logic"})
+            line = (lambda b: f(120.0 - 0.1 * b))                           # noqa: E731
+            g = TL.touch_groups(A, d2, kind, line, 0, 10, 36)
+            ln = {"p1": [0, f(120.0)], "p2": [10, f(119.0)], "slope": -0.1 if not mirror else 0.1, "touch_groups": g}
+            assert g == [[0], [10]]
+            r17 = TL.reaction_touch(V, 17, d, ln)
+            assert r17["bar"] == 14 and r17["touch_no"] == 3 and r17["trade_location"] is True
+            assert TL.reaction_touch(V, 25, d, ln) is None                  # the low at 20 ended that reaction; no new turn yet
+            r = TL.reaction_touch(V, 36, d, ln)
+            assert r["bar"] == 30 and r["touch_no"] == 4                    # the new reaction (a later visit) is the touch now
 
