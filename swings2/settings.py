@@ -2,7 +2,7 @@
 Test: register मध्ये नसलेला अंदाज-आकडा code मध्ये नाही."""
 
 DEFAULTS = {
-    "k": {0: 2.0, 1: 4.0, 2: 6.0, 3: 16.0, 4: 32.0},         # θ_D = k_D × σ (D1 = 4, D2 = 6: Abhi ची निवड, SWING CHECK run1)
+    "k": {0: 2.0, 1: 4.0, 2: 6.0, 3: 16.0, 4: 32.0},         # θ_D = k_D × σ (D1 = 4, D2 = 6: Abhi calibration — his approved swing charts)
     "sigma_sessions": 20,
     "warmup_sessions": {0: 3, 1: 3, 2: 10, 3: 30, 4: 60},
     "eq_tol_sigma": 0.1,
@@ -31,7 +31,10 @@ K_OPTIONS = {0: (1.5, 2.0, 2.5), 1: (3.0, 4.0, 5.0), 2: (4.0, 6.0, 8.0), 3: (12.
 
 # आकडा: (default, पर्याय, वर्ग, स्रोत)
 REGISTER = {
-    "k": ("2/4/6/16/32", "K_OPTIONS", "Abhi (charts)", "थर 1 §1.2; D1 = 4, D2 = 6 Abhi ची निवड (SWING CHECK run1 k-तुलना)"),
+    "k": ("2/4/6/16/32", "K_OPTIONS", "Abhi calibration (visual, his own charts)",
+          "थर 1 §1.2; D1 = 4, D2 = 6 Abhi ची निवड (SWING CHECK run1 k-तुलना). Abhi (layer 1 ✅): approved D1 / D2 हीच swing ची व्याख्या — "
+          "swing चं महत्त्व नेहमी market च्या स्वतःच्या सामान्य हालचालीशी (σ) तुलनेने; scale = Abhi चं visual calibration, ठरलेला point आकडा "
+          "नाही. Engine साठी advanced dashboard setting (decision3 `swing_k`)."),
     "sigma_sessions": (20, "—", "व्याख्या", "MASTER §3 σ"),
     "warmup_sessions": ("3/3/10/30/60", "±50%", "अंदाज", "थर 1 §1.4"),
     "eq_tol_sigma": (0.1, "0.05/0.1/0.15", "अंदाज", "थर 1 §2.1"),

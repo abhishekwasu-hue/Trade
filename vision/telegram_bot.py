@@ -108,7 +108,26 @@ def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_sen
         AP.prompt_reason(row, send_buttons)
     if row.get("bot") == "manual":                                       # ✋ /paper: bot cycle नाही ⇒ इथेच (✅ ⇒ entry, ❌ ⇒ बंद)
         _manual_sweep(path, only_signal=sid, send=execute_send)
+    elif action == "A":                                                  # Abhi: ✅ ⇒ the PAPER entry at once, not on the bot's next minute
+        _engine_enter_now(row, send=execute_send)
     return True, text
+
+
+def _engine_enter_now(row, send=None, enter_fn=None):
+    """✅ on an engine signal of a bot listed in `paper.engine_entry.BOT_SETTINGS_KEY` ⇒ its engine cycle now (same lock as the cron
+    cycle ⇒ one entry). A TEST / dry-run row is the test runner's own (it opens the order itself) ⇒ skipped here. Never raises."""
+    try:
+        from vision.gate import _row_tags
+        tags = _row_tags(row)
+        if tags.get("dry_run") or not tags.get("engine"):
+            return None
+        if enter_fn is None:
+            from paper import engine_entry as EE
+            enter_fn = EE.enter_now
+        return enter_fn(row.get("bot"), row.get("symbol"), send=send or TG.send_text)
+    except Exception as exc:                                             # noqa: BLE001
+        print(f"⚠️ engine enter on ✅: {type(exc).__name__}: {exc}")
+        return None
 
 
 def handle_command(text, from_, chat, path=None, send=None, trading_mode_fn=None):

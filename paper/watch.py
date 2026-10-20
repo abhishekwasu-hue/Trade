@@ -173,6 +173,16 @@ def on_entry(t, orders, send=None, jpath=None, tag="", ss_settings=None, engine_
     return row
 
 
+def exit_head(reason):
+    """Abhi: SL hit and target hit each read as such on Telegram (any other exit: "PAPER exit")."""
+    r = str(reason or "").upper()
+    if "TARGET" in r:
+        return "🎯 <b>PAPER target hit</b>"
+    if r in ("SL", "TSL_SL", "PCT_TRAILING_SL", "MANUAL_SL_OVERRIDE") or r.endswith("_SL"):
+        return "🛑 <b>PAPER SL hit</b>"
+    return "🔴 <b>PAPER exit</b>"
+
+
 def on_exit(t, orders, j, send=None, jpath=None, tag=""):
     legs = PJ.load_legs(t.get("legs_json"))
     xo = orders[len(legs):]
@@ -183,7 +193,7 @@ def on_exit(t, orders, j, send=None, jpath=None, tag=""):
     net = round(gross - float(j.get("entry_charges") or 0.0) - xch, 2)
     PJ.upsert({"trade_id": t["trade_id"], "exit_time": t.get("exit_time"), "exit_reason": t.get("exit_reason"), "gross_pnl": gross,
                "exit_charges": xch, "net_pnl": net}, jpath)
-    _say(send, f"🔴 <b>PAPER exit</b> · {BOT_LABEL.get(j['bot'], j['bot'])} · {t['symbol']} · कारण: {t.get('exit_reason')}\n"
+    _say(send, f"{exit_head(t.get('exit_reason'))} · {BOT_LABEL.get(j['bot'], j['bot'])} · {t['symbol']} · कारण: {t.get('exit_reason')}\n"
                f"gross ₹{gross:,.0f} − charges ₹{float(j.get('entry_charges') or 0) + xch:,.0f} ⇒ <b>net ₹{net:,.0f}</b>", tag)
     return net
 

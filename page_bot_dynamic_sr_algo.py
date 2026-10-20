@@ -1396,6 +1396,7 @@ def render():
     srv3_signal_source = settings.get("srv3_signal_source", "own")
     import engine3_live as _L3                                       # तोच parser (stored "false" ⇒ unchecked; रिकामं ⇒ default ON)
     engine3_use_1m = _L3.use_1m({"engine3_use_1m": settings.get("engine3_use_1m")})
+    engine3_swing_k = {d: settings.get(f"engine3_swing_k_d{d}") for d in (1, 2)}   # रिकामं ⇒ approved scale (D1 = 4, D2 = 6)
     from bots_common import plain_text as _PT
     approval_band_warn_pts = _PT.band_warn_pts(settings)
     if strategy_key in ("1m_instant", "15m_dynamic_sr"):
@@ -1421,6 +1422,28 @@ def render():
                                                          value=float(approval_band_warn_pts), step=10.0,
                                                          key=_widget_key(strategy_key, symbol, "approval_band_warn_pts"),
                                                          help="फक्त Telegram संदेशात इशारा — निर्णय / gate / order बदलत नाही. Default 150.")
+                # 🎓 Abhi (layer 1 ✅): swing scale = त्यांचं visual calibration (swings2 D1 / D2, his approved charts). Advanced —
+                # default बदलायचा नाही; बदल फक्त engine च्या swings साठी (charts / replay approved scale वरच).
+                from swings2 import settings as _SW
+                if st.checkbox("Advanced: swing scale (Abhi calibration)", value=any(v not in (None, "") for v in engine3_swing_k.values()),
+                               key=_widget_key(strategy_key, symbol, "engine3_swing_adv")):
+                    _kc = st.columns(2)
+                    for _d, _col in zip((1, 2), _kc):
+                        _opts = list(_SW.K_OPTIONS[_d])
+                        try:                                             # a bad stored value never breaks the page
+                            _cur = float(engine3_swing_k[_d]) if engine3_swing_k[_d] not in (None, "") else float(_SW.DEFAULTS["k"][_d])
+                        except (TypeError, ValueError):
+                            _cur = float(_SW.DEFAULTS["k"][_d])
+                        engine3_swing_k[_d] = _col.selectbox(f"D{_d} k (× σ)", _opts, index=_opts.index(_cur) if _cur in _opts else
+                                                             _opts.index(float(_SW.DEFAULTS["k"][_d])),
+                                                             key=_widget_key(strategy_key, symbol, f"engine3_swing_k_d{_d}"))
+                    st.caption("Swing चं महत्त्व market च्या स्वतःच्या सामान्य हालचालीशी (σ) तुलना करून. Approved: D1 = 4, D2 = 6 (Abhi च्या "
+                               "charts वरून). बदल = नवं calibration — फक्त engine च्या swings वर; charts / replay approved scale वरच.")
+                    if not float(engine3_swing_k[2]) > float(engine3_swing_k[1]):
+                        st.error("D2 हा D1 पेक्षा मोठा हवा — approved scale (D1 = 4, D2 = 6) जतन होईल.")
+                        engine3_swing_k = {1: None, 2: None}
+                else:
+                    engine3_swing_k = {1: None, 2: None}
 
     st.markdown("---")
     if st.button("💾 Settings जतन करा", key="bdsr_save_btn", type="primary"):
@@ -1467,6 +1490,8 @@ def render():
 
         if strategy_key == "15m_dynamic_sr":
             new_settings["engine3_use_1m"] = bool(engine3_use_1m)
+            for _d in (1, 2):                                            # रिकामं ("") ⇒ approved scale
+                new_settings[f"engine3_swing_k_d{_d}"] = "" if engine3_swing_k[_d] in (None, "") else float(engine3_swing_k[_d])
             new_settings["approval_band_warn_pts"] = float(approval_band_warn_pts)
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice

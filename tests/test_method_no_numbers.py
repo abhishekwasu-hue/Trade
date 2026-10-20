@@ -1,7 +1,8 @@
 """Abhi's method (docs/knowledge/CHART_READER_METHOD.md §1 P1, §6, §7): no numeric thresholds in the reading path.
 
 Every numeric default of the decision3 reading engine must be classified. Numbers allowed to stay are legacy what-if switches that are
-off by default, operational / display settings, or data-quality checks. Every other number is `PENDING` with the layer PR that removes
+off by default, operational / display settings, data-quality checks, or Abhi's swing calibration (layer 1 ✅: significance against the
+market's own normal movement at the scale he chose from his charts). Every other number is `PENDING` with the layer PR that removes
 it (docs/reports/v22/METHOD_MAP.md). A new unclassified number fails this test; at the end of layer 6 `PENDING` must be empty.
 Scope: the decision3 settings (S3.DEFAULTS). Numbers written directly in code are reviewed per layer (METHOD_MAP), not scanned here.
 """
@@ -13,6 +14,9 @@ from decision3 import settings as S3
 D3 = pathlib.Path(S3.__file__).parent
 
 LEGACY = {                       # used only by a non-default rule / gate (what-if): {setting: (switch, the only decision3 files that read it)}
+    # Daily RANGE "equal" σ tolerance: the reading (fold_impulse) uses C-13 logic; read only by the legacy minor fold and the Daily
+    # chart's display bands / range_check report
+    "range_eq_sigma_d": ("daily_trend_mode = minor; Daily chart display bands", {"daily.py", "daily_swings.py"}),
     "corr_degree_frac": ("corr_degree_rule = ratio", {"daily.py"}),
     "daily_dc_k": ("daily_swing_method = dc", {"daily.py"}),
     "level_min_width_sigma": ("0 by default; > 0 = the old minimum width", {"levels.py", "trendline.py"}),
@@ -59,9 +63,16 @@ OPERATIONAL = {                  # display / chart / ticket formatting, never a 
 DATA_QUALITY = {                 # is there enough / complete data (method §1 P1 allows data-quality checks)
     "weekly_min_bars", "daily_min_sessions", "daily_sigma_sessions", "vol_gap_max_frac", "flip_vol_min_coverage",
 }
+CALIBRATION = {                  # Abhi (layer 1 ✅): a swing's significance is judged against the market's own normal movement (σ) at
+                                 # the scale he chose from his own charts — his visual calibration, not a fixed point value: {setting: source}
+    "level_degree": "the zone's structure = the approved D2 (1H trend degree)",
+    "tl_degree": "one degree below the zone's structure = the approved D1 (the pullback's legs)",
+    "flip_pullback_inner_degree": "one degree below the zone's structure = the approved D1",
+}
 PENDING = {                      # still a number in the reading path ⇒ removed in the named layer
-    "daily_pivot_n": 1, "range_eq_sigma_d": 1, "maturity_sigma_d": 1, "level_degree": 1, "tl_degree": 1,
-    "flip_pullback_inner_degree": 1, "k_reset_sigma": 1,
+    # Abhi (L1-b): only the swings2 scale stays a calibration. The Daily pivot size has no decided logic yet (C-13 covers "equal" and
+    # maturity) — OPEN_QUESTIONS L1-c, for Abhi
+    "daily_pivot_n": 1,
     # decision3 reads touch_window_bars only behind the legacy visit rules, but facts/dossier `_visits` still counts it (layer 6)
     "touch_window_bars": 6,
 }
@@ -73,9 +84,9 @@ def _numeric(v):
 
 def test_every_reading_number_is_classified():
     nums = {k for k, v in S3.DEFAULTS.items() if _numeric(v)}
-    classified = set(LEGACY) | OPERATIONAL | DATA_QUALITY | set(PENDING)
+    classified = set(LEGACY) | OPERATIONAL | DATA_QUALITY | set(CALIBRATION) | set(PENDING)
     assert not (nums - classified), f"unclassified numbers in the reading path (method P1): {sorted(nums - classified)}"
-    groups = [set(LEGACY), OPERATIONAL, DATA_QUALITY, set(PENDING)]
+    groups = [set(LEGACY), OPERATIONAL, DATA_QUALITY, set(CALIBRATION), set(PENDING)]
     assert all(not (a & b) for i, a in enumerate(groups) for b in groups[i + 1:]), "a setting is in two classes"
     assert not (classified - nums - {"level_min_width_sigma"}), f"stale entries: {sorted(classified - nums)}"
 
@@ -114,6 +125,45 @@ def test_layer_three_reading_rules_are_logic():
 def test_layer_four_lines_are_logic():
     """Layer 4 (lines + confluence): touch by the candle, two separate reactions, confluence labels the area — no σ tolerance or count."""
     assert S3.DEFAULTS["line_rule"] == "logic" and not [k for k, layer in PENDING.items() if layer == 4]
+
+
+def test_layer_one_swings_are_abhis_calibration():
+    """Abhi (layer 1 ✅): the approved swings2 D1 / D2 ARE the swing definition — significance against the market's own normal movement
+    at his calibrated scale. Nothing of layer 1 stays PENDING; the scale is a registered calibration setting (advanced dashboard)."""
+    from swings2 import settings as SS
+    assert [k for k, layer in PENDING.items() if layer == 1] == ["daily_pivot_n"]       # L1-c, for Abhi
+    import inspect
+    from decision3 import daily as DD
+    from decision3 import method as M
+    src = inspect.getsource(DD.fold_impulse)                             # L1-b ⇒ C-13: no σ tolerance in the Daily reading
+    assert "range_eq_sigma_d" not in src and "maturity_sigma_d" not in src and "k_reset_sigma" not in inspect.getsource(M)
+    assert "maturity_sigma_d" not in S3.DEFAULTS and "k_reset_sigma" not in S3.DEFAULTS
+    assert SS.DEFAULTS["k"][1] == 4.0 and SS.DEFAULTS["k"][2] == 6.0 and "calibration" in SS.REGISTER["k"][2]
+    assert S3.DEFAULTS["swing_k"] is None and "calibration" in S3.REGISTER["swing_k"][3]
+
+
+
+def test_v22_hands_the_calibrated_scale_to_swings2(monkeypatch):
+    """`swing_k` (advanced dashboard) reaches swings2.build as its `k`; None ⇒ swings2's own approved scale."""
+    import pandas as pd
+    import pytest
+    from swings2 import engine as SE
+    from decision3 import engine as E3
+    seen = []
+
+    class Stop(Exception):
+        pass
+
+    def build(m15, df1m=None, s=None, m1_status_map=None):
+        seen.append(s)
+        raise Stop
+    monkeypatch.setattr(SE, "build", build)
+    m15 = pd.DataFrame({"timestamp": pd.to_datetime(["2030-01-01 09:15"]), "bar_end": pd.to_datetime(["2030-01-01 09:30"]),
+                        "open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0]})
+    for s, want in ((None, None), ({"swing_k": {1: 5.0, 2: 8.0}}, {"k": {1: 5.0, 2: 8.0}})):
+        with pytest.raises(Stop):
+            E3.V22(m15, s=s)
+        assert seen[-1] == want
 
 
 def test_layer_six_verdict_is_the_method_no_scores():
