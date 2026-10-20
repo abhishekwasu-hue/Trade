@@ -1212,3 +1212,17 @@ def test_real_12_oct_third_touch_reads_as_confluence_line(real):
     assert str(V.levels.ts.iloc[rt["bar"]])[:16] == "2026-10-12 09:15" and rt["price"] > lvl["hi"]
     ln = TL.swing_line(V, t, M.DOWN)
     assert rt["price"] < ln["p1"][1] + ln["slope"] * (rt["bar"] - ln["p1"][0])   # it turned short of the line: a reaction, not a wick touch
+
+
+def test_real_12_oct_rsi_read_one_degree_below_the_zone(real):
+    """Abhi L5-a on the golden case (reported, not tuned): at the 1H zone (D2) the pushes of the move into it are read at D1. On 12 Oct
+    the D1 / D2 highs before the 09:15 high are higher (7 Oct) ⇒ no divergence at D1 or D2; the D0 pair Abhi read (9 Oct 14:15 push high
+    → 12 Oct 09:15, RSI lower) exists only at D0 — kept in the history, not the evidence (OPEN_QUESTIONS L5-a)."""
+    m15, ltf, fut, V = real
+    ix = _day_bars(V, "2026-10-12")
+    r = V.decide(ix[1])
+    rd = r["zone_read"]["summary"]["rsi_divergence"]
+    assert rd["degree"] == 1 and rd["found"] is False and rd["zone_degree"] == []
+    assert any("D1" in x and "lower high" in x for x in rd["statements"])
+    d0 = [x for x in V._rsi.history(ix[1]) if x["degree"] == 0 and x["side"] == "bear" and str(x["L2"]["time"])[:16] == "2026-10-12 09:15"]
+    assert d0 and str(d0[0]["L1"]["time"])[:16] == "2026-10-09 14:15" and d0[0]["L2"]["rsi"] < d0[0]["L1"]["rsi"]
