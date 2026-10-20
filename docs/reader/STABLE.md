@@ -25,15 +25,15 @@ Owner decision (Abhi): Trade will be archived only on Abhi's own word; ATP ports
 |---|---|---|---|---|---|---|
 | — | — | — | (no stable layer yet) | — | — | — |
 
-## Where each layer stands (not stable until the ✅ above)
+## Where each layer stands (stable = a row in the register above: ✅ + tag + parity fixtures)
 
 | Layer | Spec (CHART_READER_METHOD.md) | State |
 |---|---|---|
-| 1 | Swings / structure | Abhi picked A in all 12 cases. His rule, implemented exactly as stated, matches A in 4 of 12; the 8 differing cases (charts + reasons) are with him (trade-data `review/method_layer1_rule/`). Not stable; no code change until he decides. |
-| 2 | Areas + lifecycle | Merged (#332) and reported with charts. Summary for ✅ sent (trade-data `review/layers_2_4_summary/`). Waiting for Abhi's ✅. |
-| 3 | Visit, zone study, commitment, LTF | Merged (#331, #333, #334, #335, #338). Commitment volume = above the AVERAGE of the approach leg + the visit's opposite side (Abhi L3-c); real 12 Oct 09:30 = bear call (grade B), 13 Oct no call. Summary for ✅ sent. Waiting for Abhi's ✅. |
-| 4 | Lines + confluence | Merged (#336, #339): logic lines, candle touch, break = close + swing beyond, confluence = the line through the area or a reaction out of it turning at the line ("confluence: line"; golden 12 Oct reads so). Two counting questions to Abhi (OPEN_QUESTIONS L4-g). Summary for ✅ sent. Waiting for Abhi's ✅. |
-| 5 | RSI | Not started. |
-| 6 | Output (charts, dossier, display finder) | Not started. |
+| 1 | Swings / structure | **Abhi ✅** (his approved swing charts are the acceptance): the approved swings2 D1 / D2 are the definition — his calibration setting (OPEN_QUESTIONS L1-a). Tag after the calibration PR merges. |
+| 2 | Areas + lifecycle | **Abhi ✅** (#332). Tag + parity fixtures next. |
+| 3 | Visit, zone study, commitment, LTF | **Abhi ✅** (#331, #333, #334, #335, #338). Tag + parity fixtures next. |
+| 4 | Lines + confluence | **Abhi ✅** (#336, #339; his L4-g answers — touches by reactions — land before the tag). |
+| 5 | RSI | Merged (#341). Abhi L5-a (degree) implemented with one reading question back to him. Not stable. |
+| 6 | Output (charts, dossier, display finder) | 6a (the verdict: required set ⇒ enter; A / B by confirming evidence; no scores) in review. Not stable. |
 
 The level bots are **not** rebuilt here (Abhi): they are rebuilt in ATP on the ported reader, and stay off in one-bot mode meanwhile.
