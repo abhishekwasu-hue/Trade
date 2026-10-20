@@ -91,7 +91,7 @@ class FakeIO:
                   "vision": {"approval_required": True, "symbols": ["NIFTY", "BANKNIFTY"]}, "pp": {"paused": False}, "tp": {"paused": False},
                   "cron": "* 4-10 * * 1-5 cd /root/Trade && python3 srv2_momentum_reversal_strategy.py\n"
                           "1,16,31,46 3-10 * * 1-5 python3 scripts/engine_signal_run.py\n* 4-10 * * 1-5 python3 trade_monitor.py\n",
-                  "svc": "active", "env": True, "token": True}
+                  "svc": "active", "env": True, "token": "valid"}
         self.v.update(over)
 
     def settings(self, s):
@@ -139,7 +139,9 @@ def test_status_is_active_only_when_everything_is_ready(capsys):
     ({"cron": "* 4-10 * * 1-5 python3 srv2_momentum_reversal_strategy.py\n"}, "cron trade_monitor (exits) absent"),
     ({"cron": "* 4-10 * * 1-5 python3 srv2_momentum_reversal_strategy.py --mode LIVE\n1 3 * * * scripts/engine_signal_run.py\n"
               "* 4 * * * trade_monitor.py\n"}, "cron 15M SRv2 bot LIVE"),
-    ({"token": False}, "Upstox token missing"),
+    ({"token": "missing"}, "Upstox token missing"),
+    ({"token": "rejected (HTTP 401)"}, "Upstox token rejected (HTTP 401)"),             # present but expired ⇒ never a false OK
+    ({"token": "not verified (HTTP 500)"}, "Upstox token not verified"),
     ({"env": False}, "missing (.env)"),
     ({"vision": {"approval_required": True, "symbols": ["NIFTY"]}}, "Vision approval list"),
 ])
@@ -196,3 +198,24 @@ def test_test_card_label_on_the_vision_card():
     from vision import worker as W
     src = open(W.__file__, encoding="utf-8").read()
     assert '"🧪 TEST — not a trade · "' in src and 'tags.get("test_only")' in src
+
+
+@pytest.mark.parametrize("stored,code,want", [("", None, "missing"), ("abc", 200, "valid"), ("abc", 401, "rejected (HTTP 401)"),
+                                              ("abc", 403, "rejected (HTTP 403)"), ("abc", 503, "not verified (HTTP 503)"),
+                                              ("abc", "boom", "not verified (ConnectionError)")])
+def test_token_is_checked_with_upstox_not_just_present(stored, code, want, monkeypatch):
+    import cloud_db
+    import requests
+    from types import SimpleNamespace as NS
+    seen = []
+
+    def get(url, headers=None, timeout=None):
+        seen.append((url, headers["Authorization"]))
+        if code == "boom":
+            raise requests.ConnectionError("failed for abc")                # the message carries the token ⇒ must not leak
+        return NS(status_code=code)
+    monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda acc=None: stored)
+    monkeypatch.setattr(requests, "get", get)
+    got = PS.IO().token()
+    assert got == want and "abc" not in got                              # the token value is never in the output
+    assert seen == ([] if not stored else [(PS.PROFILE_URL, "Bearer abc")])
