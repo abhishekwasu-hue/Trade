@@ -134,7 +134,7 @@ def test_proposal_caption_asks_for_decision_codes_below(monkeypatch):
     v0 = VW.caption({**row, "tags": {}}, res, "notify")
     _shape(v0, "Decision needed: none — information")
     dry = VW.v1_caption({**row, "setup_json": json.dumps({"tags": {"dry_run": True}})}, res, d, "2026-10-09T12:25:00")
-    assert dry.startswith("🧪 [TEST · DRY-RUN] NIFTY:")
+    assert dry.startswith("🧪 [DRY-RUN] NIFTY:")
 
 
 def test_modified_ticket_headline():

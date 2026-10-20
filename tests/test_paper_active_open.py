@@ -166,16 +166,33 @@ def test_status_unreadable_settings_is_a_reason_not_a_pass(capsys):
     assert "Vision settings unreadable" in capsys.readouterr().out
 
 
-def test_test_order_writes_only_to_its_own_trades_db_and_journal(tmp_path):
-    """The TEST process points config.DB_PATH and the journal at TEST files before anything binds them; the real files are untouched."""
-    code = ("import sys, os; sys.path.insert(0, %r); os.environ['PAPER_DATA_DIR'] = %r\n"
-            "from scripts import paper_test_order as T\n"
-            "real_db, real_j, tdb, tj = T.isolate(%r)\n"
-            "import trading_engine, database, config\n"
-            "from paper import journal as PJ\n"
-            "assert trading_engine.DB_PATH == tdb == database.DB_PATH == config.DB_PATH, (trading_engine.DB_PATH, tdb)\n"
-            "assert PJ.db_path(None) == tj and tj != real_j and tdb != real_db\n"
-            "assert T.count_rows(tdb, 'live_trades') == 0\n"
-            "print('OK')\n") % (ROOT, str(tmp_path), str(tmp_path))
-    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, timeout=120)
-    assert r.returncode == 0 and "OK" in r.stdout, r.stderr[-2000:]
+def test_test_card_goes_through_the_real_gate_and_never_orders():
+    """The TEST card: the bot's real Vision gate (HOLD ⇒ worker card with the buttons), tagged test_only + dry_run, and no order function
+    anywhere in the script; the ✅ path skips test rows."""
+    from scripts import paper_test_card as TC
+    from types import SimpleNamespace as NS
+    import inspect
+    calls, sent, st = [], [], iter(["PENDING_HUMAN", "APPROVED"])
+
+    def gate(*a, **k):
+        calls.append((a, k))
+        return NS(action="HOLD", signal_id="sig1", note="queued")
+    out = TC.run("tok", "NIFTY", 1, sent.append, gate_fn=gate, status_fn=lambda sid: next(st), sleep=lambda s: None,
+                 levels_fn=lambda tok, sym: ("2026-10-19", 24000.0, 24300.0, 24200.0, None),
+                 settings_fn=lambda k, s: {"lots": 1, "naked_lots": 1})
+    assert out == "APPROVED" and len(calls) == 1
+    a, k = calls[0]
+    assert a[0] == "srv2_momentum_reversal" and a[2] == "PAPER" and k["tags"]["test_only"] is True and k["tags"]["dry_run"] is True
+    assert all(m.startswith("🧪 TEST — not a trade") for m in sent) and "NO position" in sent[-1]
+    src = inspect.getsource(TC)
+    assert "open_paper" not in src and "open_multi_leg_trade" not in src and "close_trade" not in src
+    from vision import telegram_bot as TB
+    row = {"bot": "srv2_momentum_reversal", "symbol": "NIFTY", "setup_json": json.dumps({"tags": {"test_only": True, "dry_run": True,
+                                                                                                   "engine": True}})}
+    assert TB._engine_enter_now(row, enter_fn=lambda *a, **k: pytest.fail("a TEST card must never enter")) is None
+
+
+def test_test_card_label_on_the_vision_card():
+    from vision import worker as W
+    src = open(W.__file__, encoding="utf-8").read()
+    assert '"🧪 TEST — not a trade · "' in src and 'tags.get("test_only")' in src

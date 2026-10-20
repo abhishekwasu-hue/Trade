@@ -8,47 +8,34 @@ from the dashboard. The position and its exits are tracked live (trade_monitor);
 updates, and the exit as **🛑 PAPER SL hit** / **🎯 PAPER target hit** / 🔴 PAPER exit (any other reason). **LIVE stays OFF** — nothing
 here changes a LIVE setting or places a real-money order. Exits are never blocked (pause / kill switch only stop new entries).
 
-## 1. VPS block (Abhi runs it, after the PR is merged into main)
+## 1. ONE VPS block (Abhi runs it tonight — market closed)
 
-Stops at the first problem and says why; the last step must print `PAPER TRADING: ACTIVE` for both symbols — otherwise it stops with
-`NOT ACTIVE — <symbol>: <reasons>` (never a false OK). `.env` is only read; no secret is printed.
+Deploys main with the existing one-bot deploy, prints the status, then sends ONE "🧪 TEST — not a trade" card through the real path.
+Stops at the first problem and says why. `.env` is only read; no secret is printed.
 
 ```
 bash -c 'set -euo pipefail; cd /root/Trade
-[ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "❌ tracked changes on the VPS — stopped:"; git status --short --untracked-files=no; exit 1; }
-OLD=$(git rev-parse HEAD); CUR=$(git rev-parse --abbrev-ref HEAD); echo "$CUR $OLD" > /root/paper_open_rollback.txt; echo "rollback: $(cat /root/paper_open_rollback.txt)"
-git fetch -q origin +main:refs/remotes/origin/main
-W=$(mktemp -d); trap "git worktree remove --force $W >/dev/null 2>&1 || true; rm -rf $W" EXIT; git worktree add -q --detach "$W" origin/main
-git diff --quiet "$OLD" origin/main -- requirements.txt || python3 -m pip install -q -r "$W/requirements.txt"
-( cd "$W" && python3 -c "import paper.engine_entry, paper.watch, vision.telegram_bot, vision.worker, srv2_momentum_reversal_strategy, trade_monitor, scripts.paper_status, scripts.paper_test_order" >/dev/null ) || { echo "❌ imports failed — nothing changed"; exit 1; }
-git checkout -q -B deploy-main origin/main; echo "code: $(git log -1 --oneline)"
-set -a; . ./.env; set +a
-python3 -c "import cloud_db; s=[x.upper() for x in cloud_db.get_signal_symbols()]; need=[\"NIFTY\",\"BANKNIFTY\"]; s2=sorted(set(s)|set(need), key=lambda x: (x not in need, x)); (s2==s) or cloud_db.save_signal_symbols(s2); print(\"signal_symbols:\", cloud_db.get_signal_symbols())"
-python3 scripts/set_one_bot_mode.py
-bash scripts/install_engine_schedule.sh
-SVCS=""; for u in vision_worker.service vision_telegram.service; do systemctl cat "$u" >/dev/null 2>&1 && SVCS="$SVCS $u"; done
-[ -n "${SVCS// /}" ] || { echo "❌ vision_worker / vision_telegram services are not installed"; exit 1; }
-systemctl restart $SVCS; sleep 3
-python3 scripts/paper_status.py --symbols NIFTY,BANKNIFTY || { echo "❌ PAPER TRADING is NOT active — see the reasons above; nothing else to do until they are fixed"; exit 1; }
-echo "✅ PAPER trading ready for the open (LIVE untouched)"'
+bash scripts/deploy_one_bot.sh
+set +u; set -a; . ./.env; set +a; set -u
+echo "== status (one-bot)"; python3 scripts/set_one_bot_mode.py --status
+echo "== status (PAPER trading)"; python3 scripts/paper_status.py --symbols NIFTY,BANKNIFTY || { echo "❌ PAPER TRADING NOT ACTIVE — reasons above; fix them first (nothing else was sent)"; exit 1; }
+echo "== TEST card (Telegram: chart + Vision + ✅ / ✏️ / ❌ — press any; NO position is ever created)"
+python3 scripts/paper_test_card.py --symbol NIFTY --wait-min 10'
 ```
 
-- Step by step: deploy main (stops on tracked changes / failed imports) · signal_symbols include NIFTY and BANKNIFTY · one-bot mode
-  (`set_one_bot_mode.py`: 15M SRv2 ON for both, PAPER, engine; Vision approvals for both; PAPER instruments enabled; other bots off;
-  LIVE combos untouched) · cron (`install_engine_schedule.sh`: engine + 15M SRv2; refuses to run without the trade_monitor exits line)
-  · restart the Vision services · **status check**.
-- Status alone (any time): `cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/paper_status.py`
-- Code rollback: `bash -c 'set -e; cd /root/Trade; read -r B H < /root/paper_open_rollback.txt; if [ "$B" = HEAD ]; then git checkout -q --detach "$H"; else git checkout -q -B "$B" "$H"; fi; systemctl restart vision_worker vision_telegram; git log -1 --oneline'`
-  (settings stay; to stop new PAPER entries at any time: Telegram `/pause`, `/resume` — exits continue).
+- `deploy_one_bot.sh`: pull main (stops on tracked changes / failed imports; rollback file `/root/one_bot_rollback.txt`) → engine
+  schedule (decision3, refuses without the trade_monitor exits line) → one-bot settings (only 15M SRv2 ON for NIFTY + BANKNIFTY,
+  PAPER, signal_source engine, Vision approval required, SENSEX and every other bot off, LIVE combos untouched) → restart the services
+  → pre-open dry-run → engine dry-run → status.
+- `paper_status.py` must print `PAPER TRADING: ACTIVE — NIFTY` and `… — BANKNIFTY`; otherwise the block stops with the reasons.
+- The TEST card: the 15M SRv2 bot's real Vision gate ⇒ vision_worker sends the chart + Vision verdict + ✅ Approve / ✏️ change the
+  entry only / ❌ Reject (+ reason) ⇒ press any button ⇒ the script reports your button and checks the real trades DB / journal are
+  unchanged (`no position created`). Its level is the last closed day's high (replay only).
+- **Rollback (one line):** `cd /root/Trade && bash scripts/deploy_one_bot.sh --revert`
+- Status alone, any time: `cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/paper_status.py`
 
-## 2. Tonight's TEST (market closed; one signal, NIFTY)
+## 2. Tomorrow
 
-```
-cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/paper_test_order.py --symbol NIFTY --wait-min 10
-```
-
-A card labelled **🧪 [TEST · DRY-RUN]** comes on Telegram ⇒ press ✅ ⇒ a PAPER TEST order is created and closed at once ⇒ Telegram
-lines start **🧪 [TEST]**. It is kept out of the real journal and P&L: the order is written to `data/historical_data_TEST.db` and its
-journal to `data/paper_journal_TEST.db`; the script compares the real trades DB and journal before / after and says
-`real journal / P&L untouched: yes` (anything else ⇒ exit 1 and a ❌ line). It refuses while the market is open. Log:
-`data/paper_test_order.log`.
+The pre-open message as usual (09:00). A real card comes only if the reader finds a setup (NIFTY / BANKNIFTY 15M). On ✅ the PAPER order
+is placed at once with the dashboard's lots / strikes / SL / target; Telegram: 🟢 entry · updates · 🛑 SL hit / 🎯 target hit / 🔴 exit.
+Stop new PAPER entries any time: Telegram `/pause` (exits continue); `/resume`.

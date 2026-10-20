@@ -192,6 +192,8 @@ def enter_now(bot, symbol, send=None, settings_fn=None, token_fn=None, cycle_fn=
         settings = settings_fn(key, symbol)
         if str(settings.get("trading_mode", "PAPER")).upper() != "PAPER":
             msg = f"{symbol}: {settings.get('trading_mode')} ⇒ no PAPER entry on ✅ (LIVE never from here)"
+        elif not settings.get("symbol_enabled", str(symbol).upper() == "NIFTY"):
+            msg = f"{symbol}: 15M SRv2 switched off (symbol_enabled) ⇒ no entry on ✅"
         else:
             if token_fn is None:
                 import cloud_db
