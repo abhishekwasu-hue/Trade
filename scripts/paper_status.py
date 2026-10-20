@@ -14,7 +14,8 @@ What ACTIVE needs (each from the same getters the bot uses):
   • cron: the 15M SRv2 bot, the engine (decision3) and trade_monitor (exits) — uncommented, never --mode LIVE;
   • services: vision_worker (sends the ✅ card) and vision_telegram (handles ✅) active;
   • Telegram / approval settings present (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_APPROVER_IDS, VISION_CALLBACK_SECRET) — names
-    only, values are never printed; an Upstox token present (it is refreshed by the morning login).
+    only, values are never printed; the Upstox token present AND accepted by Upstox (one free read-only profile call — a present
+    but expired token fails the engine's FUT resolve with HTTP 401 ⇒ no entry; refreshed by the morning login).
 LIVE is never touched here; a LIVE 15M SRv2 for a symbol is a NOT ACTIVE reason (PAPER only).
 
   cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/paper_status.py [--symbols NIFTY,BANKNIFTY]
@@ -32,6 +33,7 @@ SERVICES = ("vision_worker", "vision_telegram")
 ENV = ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "TELEGRAM_APPROVER_IDS", "VISION_CALLBACK_SECRET")
 CRON = {"15M SRv2 bot": "srv2_momentum_reversal_strategy.py", "engine (decision3)": "scripts/engine_signal_run.py",
         "trade_monitor (exits)": "trade_monitor.py"}
+PROFILE_URL = "https://api.upstox.com/v2/user/profile"
 
 
 def _sh(cmd):
@@ -79,8 +81,19 @@ class IO:
         return bool((os.environ.get(name) or "").strip())
 
     def token(self):
+        """"valid" / "missing" / "rejected (HTTP 401)" / "not verified (…)" — the token value is never printed."""
         import cloud_db
-        return bool(cloud_db.get_effective_upstox_token(None))
+        import requests
+        tok = (cloud_db.get_effective_upstox_token(None) or "").strip()
+        if not tok:
+            return "missing"
+        try:
+            r = requests.get(PROFILE_URL, headers={"Accept": "application/json", "Authorization": f"Bearer {tok}"}, timeout=10)
+        except Exception as exc:                                         # noqa: BLE001
+            return f"not verified ({type(exc).__name__})"
+        if r.status_code == 200:
+            return "valid"
+        return f"rejected (HTTP {r.status_code})" if r.status_code in (401, 403) else f"not verified (HTTP {r.status_code})"
 
 
 def cron_line(text, script):
@@ -134,10 +147,10 @@ def check(symbols, io=None):
         shared.append(f"{e}: {'set' if ok else 'MISSING'}")
         if not ok:
             common.append(f"{e} missing (.env)")
-    tok = guard("Upstox token", io.token, False)
-    shared.append(f"Upstox token: {'present' if tok else 'MISSING'}")
-    if not tok:
-        common.append("Upstox token missing — do the morning login")
+    tok = guard("Upstox token", io.token, "not verified")
+    shared.append(f"Upstox token: {tok}")
+    if tok != "valid":
+        common.append(f"Upstox token {tok} — do the morning login, then run this again")
     out = {}
     vsyms = [str(x).upper() for x in vis.get("symbols") or []]
     for sym in symbols:
