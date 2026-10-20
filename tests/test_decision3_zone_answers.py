@@ -927,3 +927,15 @@ def test_a_swing_on_the_touching_candle_does_not_empty_the_approach_leg():
     V, lvl = _visit_v(rows, swings=[("L", 96.8, 0, 1), ("L", 96.5, 2, 3)])
     vi = V.visit(3, lvl, DOWN)
     assert vi["start"] == 2 and vi["approach_from"] == 1
+
+
+
+def test_a_swing_on_the_first_visit_candle_starts_the_next_leg_after_a_failed_commitment():
+    """Review: the visit's first candle is itself a swing built away and the visit ends with a failed commitment — the next visit's
+    approach leg starts after that swing, not after the older one."""
+    rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 98.6, 97.4, 98.5), (98.5, 100.4, 96.5, 96.9), (96.9, 99.0, 96.8, 98.8),
+            (98.8, 99.2, 97.6, 97.8), (97.8, 98.0, 97.0, 97.8), (97.8, 100.5, 97.7, 100.2)]
+    V, lvl = _visit_v(rows, swings=[("L", 96.8, 0, 1), ("L", 96.5, 2, 3)])
+    V._failed_commit_outside = lambda i, *a: i == 4                         # the visit (from bar 2) ends at bar 4
+    vi = V.visit(6, lvl, DOWN)
+    assert (vi["start"], vi["prev_end"], vi["ended_by"], vi["approach_from"]) == (6, 4, "commitment", 3)

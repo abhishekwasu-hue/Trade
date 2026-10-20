@@ -284,7 +284,9 @@ class V22:
                     start, prev_end, ended_by, last_piv = None, i, "swing", i
                     continue
                 if i < t and self._failed_commit_outside(i, start, lvl, d):
+                    inside = [p for p in piv if start <= p <= i]           # a swing on the visit's first candle still starts the next leg
                     start, prev_end, ended_by = None, i, "commitment"
+                    last_piv = max(inside) if inside else last_piv
                 continue
             if A["low"][i] <= hi and A["high"][i] >= lo:                   # a swing ON the touching candle is not before the visit
                 start = i

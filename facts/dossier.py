@@ -486,15 +486,16 @@ def _visits(c, s3):
 
 
 def _structure_swings(c, t):
-    """The finest structure degree's swings (swings2, Abhi's approved D1 / D2) confirmed by bar t — the decision engine's own source."""
+    """The finest structure degree's swings (swings2, Abhi's approved D1 / D2) confirmed by bar t — the decision engine's own source.
+    Returns (swings, error); an error ⇒ no approach leg (never invented), and the reason is kept."""
     from swings2 import settings as S2
     try:
         res, _, _ = c.swings()
-    except Exception:                                                      # noqa: BLE001 — no structure ⇒ no approach leg (never invented)
-        return []
+    except Exception as exc:                                               # noqa: BLE001
+        return [], str(exc)
     low = min((res.get("settings") or S2.DEFAULTS).get("structure_degrees", S2.DEFAULTS["structure_degrees"]))
     deg = next((d for d in sorted(res["pivots"]) if d >= low and res["pivots"].get(d)), None)
-    return [p for p in (res["pivots"].get(deg, []) if deg is not None else []) if p.confirm_bar <= t]
+    return [p for p in (res["pivots"].get(deg, []) if deg is not None else []) if p.confirm_bar <= t], None
 
 
 def candles(c):
@@ -512,7 +513,7 @@ def candles(c):
         f = M.reversal_form(A, t, d, s3, tss)
         forms[name] = None if f is None else {"form": f[0], "candles": f[1]}
     studies = []
-    known = _structure_swings(c, t)
+    known, known_err = _structure_swings(c, t)
     for v in _visits(c, s3):
         b, d, a = v["band"], v["d"], v["arrival_bar"]
         lvl = {"lo": b["lo"], "hi": b["hi"]}
@@ -521,6 +522,8 @@ def candles(c):
         appr = range(max(away) + 1, a) if away else None                  # method §3 / Abhi (P2): the leg from the last swing built away
         present, why, cm = M.commitment(A, t, d, lvl, s3, tss, win=a, approach=appr)   # from the area, across gaps and sessions
         cm["approach_from"] = None if appr is None else str(c.m15["timestamp"].iloc[appr.start]) if appr.start < a else None
+        if known_err:
+            cm["approach_error"] = f"swings2 unavailable ({known_err})"
         cm["read"] = M.candle_read(A, t, s3, a)                            # "big" = vs this visit's own candles (method §3)
         studies.append({"band_tf": v["tf"], "band": [b["lo"], b["hi"]], "role": b["role"], "reaction_side": "up" if d > 0 else "down",
                         "arrival": {"bar": a, "ts": str(c.m15["timestamp"].iloc[a])}, "bars_in_study": t - a + 1,
