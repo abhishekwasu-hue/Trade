@@ -8,6 +8,9 @@ setting `signal_symbols` (default NIFTY / BANKNIFTY; `--symbols` दिले �
 बंद होणारा प्रत्येक 15M bar. `--engine decision2` = जुना मार्ग (NIFTY 1m ⇒ थर 1–7), तसाच.
 Fail-closed: data नाही / exception ⇒ त्या bar ची "error" row (नवा entry नाही) + Telegram ओळ (पहिलं अपयश, अजून अपयशी ⇒ 60 मिनिटांनी पुन्हा,
 परत चालू ⇒ "recovered").
+Token तपासणी (decision3; env ENGINE_TOKEN_CHECK, default on — Abhi): run सुरू होताना एक GET /v2/user/profile. Upstox ने token नाकारला
+(401 / 403 / UDAPI100050) ⇒ प्रत्येक symbol ची error row + "🔴 Upstox token rejected …" (दर 15M bar, throttle नाही); पुन्हा पास ⇒
+"✅ Upstox data restored …" एकदा. Network चूक ≠ नाकारला (आजचा मार्ग). Exits (trade_monitor) ना हात नाही. Token कधीच print नाही.
 
 VPS cron (UTC; `scripts/install_engine_schedule.sh` लावतो — हाताने नाही):
   1,16,31,46 4-9 * * 1-5  cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/engine_signal_run.py --engine decision3
@@ -32,7 +35,19 @@ def signal_symbols(symbols_fn=None):
     return [str(x).upper() for x in symbols_fn()]
 
 
-def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert_path=None, now=None, symbols_fn=None):
+def token_check_on():
+    """env ENGINE_TOKEN_CHECK (default on; 0 / false / off / no ⇒ run सुरुवातीची token तपासणी नाही = जुना मार्ग)."""
+    return (os.environ.get("ENGINE_TOKEN_CHECK") or "1").strip().lower() not in ("0", "false", "off", "no")
+
+
+def _token_check(tok, check_fn=None):
+    try:
+        return str((check_fn or ES.token_check)(tok) or "unknown")
+    except Exception as exc:                                             # noqa: BLE001 — तपासणी अयशस्वी ⇒ unknown (आजचा मार्ग)
+        return f"unknown ({type(exc).__name__})"
+
+
+def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert_path=None, now=None, symbols_fn=None, check_fn=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbols", default=None, help="default: decision3 ⇒ dashboard signal_symbols; decision2 ⇒ NIFTY. signal_symbols "
                                                     "बाहेरचे symbols ⇒ skip")
@@ -68,6 +83,29 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                 ES.save_error(sym, bar, msg, engine=engine)
                 ES.alert_error(sym, "Upstox token missing", send=send, state_path=alert_path, now=now)
         return 2
+    if engine == "decision3" and token_check_on():                       # Abhi: नाकारलेला token प्रत्येक 15M bar ला दिसावा
+        chk = _token_check(tok, check_fn)
+        if chk.startswith("rejected"):
+            msg = f"Upstox token {chk} — no engine reading, no entries (log in again)"
+            print(f"❌ {msg}")
+            if not a.dry_run:
+                for sym in syms:
+                    try:
+                        ES.save_error(sym, bar, msg, engine=engine)
+                    except Exception as exc2:                            # noqa: BLE001
+                        print(f"⚠️ {sym}: error row लिहिता आली नाही: {exc2}")
+                try:
+                    ES.alert_token_rejected(send=send, state_path=alert_path, now=now, detail=chk)
+                except Exception as exc2:                                # noqa: BLE001
+                    print(f"⚠️ token alert पाठवता आला नाही: {type(exc2).__name__}: {exc2}")
+            return 2
+        if chk.startswith("unknown"):
+            print(f"⚠️ Upstox token check {chk} ⇒ engine तसाच चालतो (network चूक ≠ token नाकारला)")
+        if chk == "ok" and not a.dry_run:
+            try:
+                ES.alert_token_restored(send=send, state_path=alert_path, now=now)
+            except Exception as exc2:                                    # noqa: BLE001 — alert मुळे run कधीच थांबत नाही
+                print(f"⚠️ token restored alert पाठवता आला नाही: {type(exc2).__name__}: {exc2}")
     if run_fn is None:
         if engine == "decision3":
             run_fn = lambda sym, t: ES.run3(sym, t, now=now, dry_run=a.dry_run, s=ES.engine3_settings(sym))  # noqa: E731
@@ -99,7 +137,12 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                     ES.save_error(sym, bar, msg, engine=engine)
                 except Exception as exc2:                                # noqa: BLE001
                     print(f"⚠️ {sym}: error row लिहिता आली नाही: {exc2}")
-                if getattr(exc, "data_problem", False) and _fut_required(sym):   # Abhi Z-1c: FUT volume missing ⇒ एकच ओळ, दिवसातून एकदा
+                if getattr(exc, "token_rejected", False):               # engine3_live.TokenRejected ⇒ तीच 🔴 ओळ (दर bar, एकदाच)
+                    try:
+                        ES.alert_token_rejected(send=send, state_path=alert_path, now=now, detail=str(exc))
+                    except Exception as exc2:                            # noqa: BLE001
+                        print(f"⚠️ token alert पाठवता आला नाही: {type(exc2).__name__}: {exc2}")
+                elif getattr(exc, "data_problem", False) and _fut_required(sym):   # Abhi Z-1c: FUT volume missing ⇒ एकच ओळ, दिवसातून एकदा
                     ES.alert_data_problem(sym, str(exc), send=send, state_path=alert_path, now=now)
                 else:
                     ES.alert_error(sym, msg, send=send, state_path=alert_path, now=now,

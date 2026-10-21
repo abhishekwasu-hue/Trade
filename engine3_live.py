@@ -47,6 +47,74 @@ class FutVolumeMissing(EngineDataError):
     data_problem = True
 
 
+class TokenRejected(EngineDataError):
+    """Upstox ने token नाकारला (HTTP 401 / 403, उदा. UDAPI100050 "Invalid token used to access API" — दुसऱ्या system साठी नवा token
+    काढला की bot चा token रद्द होतो) ⇒ bot आंधळा. EngineDataError च ⇒ आजचे सर्व fail-closed मार्ग तसेच; caller (engine_signal_run)
+    वेगळी Telegram ओळ (दर 15M bar). Message मध्ये token कधीच नाही."""
+    token_rejected = True
+
+
+TOKEN_REJECTED_CODES = ("UDAPI100050",)                                   # Upstox: "Invalid token used to access API"
+
+
+def _upstox_code(body=None, error=None):
+    """Upstox errorCode (UDAPI…) body / error text मधून; नाही ⇒ ""."""
+    import re
+    try:
+        text = json.dumps(body, default=str) if body is not None else ""
+    except (TypeError, ValueError):
+        text = ""
+    m = re.search(r"UDAPI\d+", f"{text} {error or ''}")
+    return m.group(0) if m else ""
+
+
+def token_rejected(status, body=None, error=None):
+    """एकच detector: Upstox ने token नाकारला का? HTTP 401 / 403 (authenticated endpoint) किंवा body / error मध्ये UDAPI100050 /
+    "Invalid token". 200 / network error (status None) ⇒ False (network चूक = token नाकारला नाही)."""
+    if status is None or status == 200:
+        return False
+    if status in (401, 403):
+        return True
+    text = f"{_upstox_code(body, error)} {error or ''}".lower()
+    return any(c.lower() in text for c in TOKEN_REJECTED_CODES) or "invalid token" in text
+
+
+def raise_if_token_rejected(what, status, body=None, error=None):
+    """token_rejected ⇒ TokenRejected (फक्त HTTP status + Upstox code, token नाही). नाहीतर काही नाही (आजचा मार्ग तसाच)."""
+    if token_rejected(status, body, error):
+        code = _upstox_code(body, error)
+        raise TokenRejected(f"{what}: Upstox token rejected (HTTP {status}{' ' + code if code else ''})")
+
+
+PROFILE_PATH = "/user/profile"                                            # = scripts/paper_status.PROFILE_URL (test तपासतो)
+PROFILE_TIMEOUT = (5, 5)                                                  # (connect, read) सेकंद — run सुरुवातीची तपासणी लहानच
+
+
+def profile_url():
+    """GET /v2/user/profile — verify_opportunity_data_availability.BASE_V2 वरून (scripts/ import नाही ⇒ VPS वर ImportError नाही)."""
+    import verify_opportunity_data_availability as V
+    return f"{V.BASE_V2}{PROFILE_PATH}"
+
+
+def profile_check(token, get=None):
+    """Run सुरुवातीची एकच स्वस्त authenticated तपासणी: GET /v2/user/profile (paper_status सारखाच URL), retry नाही, timeout (5, 5).
+    रिटर्न "ok" / "rejected (HTTP 401 UDAPI100050)" / "unknown (…)" (network / इतर status ⇒ unknown = आजचा मार्ग). कधीच raise नाही;
+    token कधीच output मध्ये नाही."""
+    try:
+        if get is None:
+            import verify_opportunity_data_availability as V
+            get = lambda url, tok: V._get(url, tok, timeout=PROFILE_TIMEOUT, retries=0)  # noqa: E731
+        status, body, error = get(profile_url(), token)
+    except Exception as exc:                                             # noqa: BLE001
+        return f"unknown ({type(exc).__name__})"
+    if status == 200:
+        return "ok"
+    if token_rejected(status, body, error):
+        code = _upstox_code(body, error)
+        return f"rejected (HTTP {status}{' ' + code if code else ''})"
+    return f"unknown (HTTP {status})" if status is not None else "unknown (network)"
+
+
 def cache_dir():
     return os.environ.get("ENGINE3_CACHE_DIR") or os.path.join(ROOT, "data", "engine3_cache")
 
@@ -67,6 +135,7 @@ def resolve_future(token, symbol, today):
     exch = FUT_EXCHANGE.get(symbol.upper(), "NSE")
     params = {"query": symbol.upper(), "exchanges": exch, "segments": "FO", "instrument_types": "FUT", "page_number": 1, "records": 30}
     status, body, error = V._get(f"{V.BASE_V2}/instruments/search", token, params=params)
+    raise_if_token_rejected(f"{symbol}: FUT resolve", status, body, error)
     if status != 200:
         raise EngineDataError(f"{symbol}: FUT resolve HTTP {status} ({str(error)[:80]})")
     rows = [r for r in ((body or {}).get("data") or []) if V._name_before_fut(r.get("trading_symbol")) == symbol.upper()
@@ -109,6 +178,7 @@ class UpstoxFeed:
         while to > start:
             frm = max(start, to - dt.timedelta(days=self.CHUNK[interval]))
             r = V.fetch_candles_window(self.token, key, interval, frm, to)
+            raise_if_token_rejected(f"{key} {interval} history", r["status"], None, r["error"])
             if r["status"] != 200:
                 raise EngineDataError(f"{key} {interval} history HTTP {r['status']} ({str(r['error'])[:80]})")
             out.extend(r["candles"])
@@ -122,6 +192,7 @@ class UpstoxFeed:
         unit, val = V._V3_UNITS[interval]
         enc = urllib.parse.quote(key, safe="")
         st, body, err = V._get(f"{V.BASE_V3}/intraday/{enc}/{unit}/{val}", self.token)
+        raise_if_token_rejected(f"{key} {interval} intraday", st, body, err)
         if st != 200:
             raise EngineDataError(f"{key} {interval} intraday HTTP {st} ({str(err)[:80]})")
         return list(((body or {}).get("data") or {}).get("candles") or [])
@@ -176,6 +247,7 @@ class UpstoxFeed:
         while d < self.today:
             if d.weekday() < 5:
                 r = V.fetch_candles_window(self.token, key, interval, d, d)
+                raise_if_token_rejected(f"{key} {interval} {d} history", r["status"], None, r["error"])
                 if r["status"] != 200:
                     raise EngineDataError(f"{key} {interval} {d} history HTTP {r['status']} ({str(r['error'])[:80]})")
                 extra.extend(r["candles"])
@@ -363,6 +435,8 @@ def build_inputs(feed, symbol, now, s=None, levels_only=False):
         today_fut = fut[fut["timestamp"].dt.normalize() == m15["timestamp"].iloc[-1].normalize()] if len(fut) else fut
         if not len(today_fut) or float(today_fut["volume"].sum()) <= 0:
             fut, note = None, f"{symbol}: FUT 5M volume (आज) नाही"
+    except TokenRejected:                                                # token नाकारला ⇒ "FUT volume missing" नाही, खरं कारण
+        raise
     except Exception as exc:                                             # noqa: BLE001
         fut, note = None, f"{symbol}: FUT volume नाही ({type(exc).__name__}: {str(exc)[:80]})"
     if fut is None:
@@ -549,6 +623,8 @@ def load_m1(feed, symbol, m15, now, s=None):
         m1 = closed_session_bars(raw, 1, now)
         if HI.is_nifty(symbol):
             m1 = DP.filter_allowed(m1, "annotation")
+    except TokenRejected:                                                # token नाकारला ⇒ 1m fallback नाही, fail-closed
+        raise
     except Exception as exc:                                             # noqa: BLE001 — 1m हा आवश्यक input नाही
         return fallback(f"{type(exc).__name__}: {str(exc)[:120]}")
     if len(m15):

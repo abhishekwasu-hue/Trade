@@ -170,3 +170,14 @@ def _no_futures_volume_network(monkeypatch):
         monkeypatch.setattr(_LGB, "_default_futures_candles", lambda *a, **k: None)
     except Exception:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _no_live_upstox_token_check(monkeypatch):
+    """engine_signal_run ची run-सुरुवातीची token तपासणी (GET /v2/user/profile) tests मध्ये कधीच network वर नाही: default "ok" (आजचा
+    मार्ग). Token तपासणीचे tests check_fn / get स्वतः देतात."""
+    try:
+        import engine_signal
+    except Exception:                                                    # noqa: BLE001
+        return
+    monkeypatch.setattr(engine_signal, "token_check", lambda token: "ok")
