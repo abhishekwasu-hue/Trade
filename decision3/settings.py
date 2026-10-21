@@ -11,6 +11,9 @@ DEFAULTS = {
     "corr_degree_rule": "internal_pullback", # Q22 (Abhi): correction त्याच degree ची ⇔ impulse च्या सर्वात मोठ्या आतल्या pullback पलीकडे
     "corr_degree_frac": 0.5,                 # फक्त corr_degree_rule = "ratio" (जुना, what-if): मागच्या same-degree correction चा भाग
     "daily_start_nature_gate": True,         # Q28 (Abhi): 3-wave / corrective रचना trend लावत नाही — impulse-स्वभावाचा पाय लागतो
+    "daily_leg_read": "elliott",             # Abhi 21 Oct: a Daily leg's nature — "compare" (legs_compare: bodies / overlap vs the
+                                             # neighbouring legs of the same degree) or "elliott" (5-wave / zigzag / flat rules + legs2 C
+                                             # percentiles; today's reading, kept as the what-if). Default flips only with Abhi's ✅.
     "daily_parent_gate": True,               # A1 (Abhi review): counter impulse trend उलटवत नाही जोपर्यंत trend च्या सुरुवातीचा origin close ने तुटत नाही
     "q49_impulse_origin": "complete_impulse",  # Q49 (a) origin: "complete_impulse" = चालू leg पूर्ण 5-wave चा wave 5 असेल तर त्या
                                              # impulse ची सुरुवात (Abhi मंजुरी बाकी); "leg" = साधं वाचन (चालू impulse leg चा origin)
@@ -156,6 +159,10 @@ REGISTER = {
     "corr_degree_frac": (0.5, "0.382/0.5/0.618", "व्याख्या", "फक्त ratio what-if (Q22 आधीचा नियम)"),
     "daily_start_nature_gate": (True, "True / False", "Abhi नियम", "Q28: trend सुरुवात फक्त impulse-स्वभावाच्या पायाने (decision3/daily_legs, Q32 adapter)"),
     "q49_impulse_origin": ("complete_impulse", "complete_impulse / leg", "व्याख्या", "Q49 (a): counter-move correct करत असलेल्या impulse चा origin — विस्तार Abhi मंजूर (OPEN_QUESTIONS Q49)"),
+    "daily_leg_read": ("elliott", "compare / elliott", "Abhi नियम",
+                       "Abhi 21 Oct: Daily leg nature (Q28 / Q36 nature gate, A1 counter-move, Q49 origin, continuation start, G4 approach) "
+                       "by comparison with the neighbouring legs (decision3/legs_compare) instead of Elliott counts + legs2 percentiles; "
+                       "elliott = today's reading (what-if). Default stays elliott until Abhi's ✅ at deploy"),
     "daily_parent_gate": (True, "True / False", "Abhi नियम", "A1: impulse origin तुटला पण parent (trend सुरुवातीचा origin) टिकला ⇒ same-degree correction, flip नाही"),
     "range_after_trend": (True, "True / False", "Abhi नियम", "Q27: origin_broken + दोन समान H / L ⇒ RANGE; पट्टा ② / ③ ला"),
     "weekly_min_bars": (10, "—", "Abhi नियम", "daily_min_sessions सारखाच — weekly data अपुरा ⇒ UNKNOWN"),

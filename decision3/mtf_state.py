@@ -8,14 +8,16 @@ One vocabulary for every timeframe (W, D, 1H, 15M, 5M):
 Which existing reader gives each timeframe (no new swing detector):
   • W  — `daily.fold_impulse` on Weekly candles (V.weekly; the same DState the engine's Weekly parent uses).
   • D  — `daily.fold_impulse` (V.daily, `daily.state_at`): trend + phase + counter.
-  • 1H — swings2 degree `level_degree` (D2 = the 1H trend degree the areas are born from; settings) + `swings2.structure.fold` states /
-         events (BOS / CHoCH by 15M close — swings2's own definition).
-  • 15M — swings2 degree `tl_degree` (D1 = the pullback's legs) + `swings2.structure.fold`.
+  • 1H — swings2 degree `level_degree` (D2 = the 1H trend degree the areas are born from; settings).
+  • 15M — swings2 degree `tl_degree` (D1 = the pullback's legs).
+    (1H / 15M: the swings only — trend = trend_of on the swings with the C-13 equal, BOS / CHoCH = `dow_events` by 15M close. The
+    swings2.structure Rhea band (σ numbers) is NOT used.)
   • 5M — the LTF bars (V.ltf) with the LTF swing definition `method.ltf_choch` already uses (a high above its left neighbour and not
          below its right one; mirror for a low), alternated (`daily._add`: same kind twice ⇒ keep the more extreme).
 
 State (comparison only):
-  • range = the reader's own RANGE (Daily / Weekly RANGE band; swings2 RANGE: Rhea band or HH + LL / equal swings).
+  • range = the reader's own RANGE (Daily / Weekly RANGE band); on the swing timeframes HH + LL / LH + HL or a C-13 "equal" high / low
+    (band = the higher of the last two highs, the lower of the last two lows).
   • trending up = UP structure and the impulse leg is running: the last confirmed swing is the higher low, or price has closed beyond
     the last high (BOS) since it.
   • correction in progress = UP structure, the last confirmed swing is the high and no close beyond it since (the counter-move is
@@ -26,7 +28,7 @@ External vs internal (§2A): external = the timeframe's own (higher-degree) swin
 the current external leg (1H: D1 inside the D2 leg; 15M: D0 inside the D1 leg; D: the N − 1 Daily pivots inside the Daily leg; W: the
 Daily swings inside the Weekly leg; 5M: none). Each degree gets HH / HL / LH / LL labels and its BOS / CHoCH events:
   BOS = close beyond the last trend-direction swing (continuation); CHoCH = close beyond the last counter swing before it (the swing
-  that protects the trend) — swings2.structure's definition; the same comparison is run on D / W / 5M swings (`dow_events`).
+  that protects the trend) — swings2.structure's definition, run by `dow_events` on every timeframe's swings.
 Agreement (§1): which timeframes agree with the Daily side (or the given direction d), which are in correction, which are against.
 No look-ahead: everything is read from bars closed at the 15M bar t (pivots by confirm bar, Daily / Weekly by known_at ≤ bar_end[t],
 LTF bars with bar_end ≤ bar_end[t], 1H candles only when closed). No dates, times or fixed numbers in the reading; no new settings.
@@ -113,13 +115,13 @@ def trend_of(ps, equal=None):
     return RANGE
 
 
-def labels(ps):
-    """HH / LH (H) and HL / LL (L) against the previous swing of the same kind; EQH / EQL when the swing carries the reader's "equal"
-    flag; the first of each kind ⇒ "H" / "L" (pivots.engine.labels, for any swing object)."""
+def labels(ps, equal=None):
+    """HH / LH (H) and HL / LL (L) against the previous swing of the same kind; EQH / EQL when the later swing is "equal" to it
+    (equal(later, earlier) — the C-13 comparison) or carries an "equal" flag; the first of each kind ⇒ "H" / "L"."""
     out, last = [], {"H": None, "L": None}
     for p in ps:
         q = last[p.kind]
-        if getattr(p, "eq", False):
+        if getattr(p, "eq", False) or (equal is not None and q is not None and equal(p, q)):
             lab = "EQH" if p.kind == "H" else "EQL"
         elif q is None:
             lab = p.kind
@@ -220,23 +222,56 @@ def _m15_arrays(V):
     return _memo(V, "m15", build)
 
 
-def _folds(V):
-    """swings2.structure.fold for the 1H degree, the 15M degree and the one below it (internal of 15M)."""
+def equal_fn(V, tf):
+    """C-13 "equal" for the TF's swings (daily.c13_equal: the later extreme reaches the earlier swing candle's area, wick to body, and
+    does not go beyond it) — on the candles the swing was found on (swings2 ⇒ 15M; 5M ⇒ LTF; D / W ⇒ their own). No σ tolerance."""
+    if tf in ("1H", "15M"):
+        A = _m15_arrays(V)
+        O, C = A["o"], A["c"]
+    elif tf == "5M":
+        L = _ltf(V)
+        if L is None:
+            return None
+        O, C = L["open"], L["close"]
+    else:
+        _, d = _daily_raw(V, tf)
+        O, C = d["open"].to_numpy(float), d["close"].to_numpy(float)
+    return lambda later, earlier: DD.c13_equal(O, C, later.price, earlier.kind, earlier.order, earlier.price)
+
+
+def _swings2_events(V, d):
+    """BOS / CHoCH on the swings2 degree d (non-warm-up swings, 15M closes) — `dow_events`, run per data segment (state resets where
+    swings2 resets). Bars are 15M indices. No Rhea band: the trend is trend_of on the swings with the C-13 equal."""
     def build():
-        from swings2 import candles as SC
-        from swings2 import structure as ST
-        rr = SC.rng_ratio(V.res)
-        d1h, d15 = degrees(V)
-        out = {}
-        for d in sorted({d1h, d15, d15 - 1}):
-            if d >= 0 and d in V.res["pivots"]:
-                out[d] = ST.fold(V.res, d, rr)
+        A = _m15_arrays(V)
+        seg = A["seg"]
+        ps = [p for p in V.res["pivots"].get(d, []) if not p.warmup]
+        eq = equal_fn(V, "15M")
+        out, i = [], 0
+        n = len(seg)
+        while i < n:
+            j = i
+            while j + 1 < n and seg[j + 1] == seg[i]:
+                j += 1
+            raw = [SP(p.kind, float(p.price), int(p.bar) - i, pd.Timestamp(p.ts), int(p.confirm_bar) - i, False, int(p.bar) - i)
+                   for p in ps if i <= p.bar and p.confirm_bar <= j and V.res["segments"].get(pd.Timestamp(p.ts).normalize()) == seg[i]]
+            for e in dow_events(raw, A["c"][i:j + 1], eq_shift(eq, i)):
+                out.append({**e, "bar": e["bar"] + i, "pivot_bar": e["pivot_bar"] + i})
+            i = j + 1
         return out
-    return _memo(V, "folds", build)
+    return _memo(V, f"ev_s2_{d}", build)
+
+
+def eq_shift(eq, k):
+    """The C-13 comparison for swings whose bars are offset by k (a segment's local index)."""
+    if eq is None:
+        return None
+    return lambda later, earlier: eq(later, SP(earlier.kind, earlier.price, earlier.bar + k, earlier.ts, earlier.confirm_bar + k,
+                                               False, earlier.order + k))
 
 
 def _swings2_known(V, d, t):
-    """Non-warm-up swings2 pivots of degree d confirmed by 15M bar t, in t's data segment (swings2.structure.fold's own filter)."""
+    """Non-warm-up swings2 pivots of degree d confirmed by 15M bar t, in t's data segment (the same filter swings2.structure uses)."""
     A = _m15_arrays(V)
     seg = A["seg"][t]
     ps = [p for p in V.res["pivots"].get(d, []) if not p.warmup and p.confirm_bar <= t
@@ -263,6 +298,12 @@ def _daily_raw(V, which):
 def _daily_equal(d):
     O, C = d["open"].to_numpy(float), d["close"].to_numpy(float)
     return lambda later, earlier: DD.c13_equal(O, C, later.price, earlier.kind, earlier.bar, earlier.price)
+
+
+def _ltf_equal(V):
+    L = _ltf(V)
+    return None if L is None else (lambda later, earlier: DD.c13_equal(L["open"], L["close"], later.price, earlier.kind, earlier.bar,
+                                                                         earlier.price))
 
 
 def _daily_events(V, which):
@@ -297,7 +338,7 @@ def _ltf_raw(V):
 
 def _ltf_events(V):
     L = _ltf(V)
-    return _memo(V, "ltf_ev", lambda: dow_events(_ltf_raw(V), L["close"]) if L is not None and len(L["end"]) else [])
+    return _memo(V, "ltf_ev", lambda: dow_events(_ltf_raw(V), L["close"], _ltf_equal(V)) if L is not None and len(L["end"]) else [])
 
 
 def ltf_known(V, t):
@@ -342,9 +383,9 @@ def h1_closed(V, t):
 def _sp_swings2(V, ps, frame):
     """swings2 pivots ⇒ SP in the 15M index (frame "15M") or the 1H index (frame "1H")."""
     if frame == "15M":
-        return [SP(p.kind, float(p.price), int(p.bar), pd.Timestamp(p.ts), int(p.confirm_bar), bool(p.eq), int(p.bar)) for p in ps]
-    of = h1_view(V)["h1_of"]
-    return [SP(p.kind, float(p.price), int(of[p.bar]), pd.Timestamp(p.ts), int(of[p.confirm_bar]), bool(p.eq), int(p.bar))
+        return [SP(p.kind, float(p.price), int(p.bar), pd.Timestamp(p.ts), int(p.confirm_bar), False, int(p.bar)) for p in ps]
+    of = h1_view(V)["h1_of"]                                               # "equal" = C-13 (equal_fn), not swings2's σ flag
+    return [SP(p.kind, float(p.price), int(of[p.bar]), pd.Timestamp(p.ts), int(of[p.confirm_bar]), False, int(p.bar))
             for p in ps]
 
 
@@ -411,24 +452,18 @@ def _events(V, t, tf, internal=False):
     if tf in ("1H", "15M"):
         de = d1h if tf == "1H" else d15
         dg = de - 1 if internal else de
-        F = _folds(V).get(dg)
-        if F is None:
+        if dg < 0 or dg not in V.res["pivots"]:
             return []
         of = h1_view(V)["h1_of"] if tf == "1H" else None
-        piv = _swings2_known(V, dg, t)
+        seg = _m15_arrays(V)["seg"][t]
         out = []
-        for e in F["events"]:
-            if e["bar"] > t or e["type"] not in ("BOS", "CHoCH"):
+        for e in _swings2_events(V, dg):
+            if e["bar"] > t or _m15_arrays(V)["seg"][e["bar"]] != seg:
                 continue
-            kind = "H" if e["dir"] > 0 else "L"                            # an up-close breaks a high (BOS up / CHoCH up); mirror
-            src = next((p for p in reversed(piv) if p.bar < e["bar"] and p.kind == kind and p.price == e["level"]), None)
-            if src is None:                                                # event levels are rounded to 2 dp ⇒ the nearest such swing
-                cand = [p for p in piv if p.bar < e["bar"] and p.kind == kind]
-                src = min(reversed(cand), key=lambda p: abs(p.price - e["level"])) if cand else None
-            pb = None if src is None else int(src.bar)
+            pb = int(e["pivot_bar"])
             out.append({"type": e["type"], "dir": int(e["dir"]), "level": float(e["level"]),
                         "bar": int(e["bar"] if of is None else of[e["bar"]]), "bar15": int(e["bar"]),
-                        "pivot_bar": None if pb is None else int(pb if of is None else of[pb]), "disp": bool(e.get("disp", False))})
+                        "pivot_bar": int(pb if of is None else of[pb])})
         return out
     if tf == "5M":
         if internal:
@@ -468,6 +503,23 @@ def _daily_word(st):
     return word, dirn, f"impulse leg running{prot}{rev}"
 
 
+def _band(ext):
+    """The pivot range (HH + LL / equal swings): the higher of the last two highs, the lower of the last two lows."""
+    hs = [p.price for p in ext if p.kind == "H"][-2:]
+    ls = [p.price for p in ext if p.kind == "L"][-2:]
+    return (min(ls), max(hs)) if len(hs) == 2 and len(ls) == 2 else None
+
+
+def _protected(ext, trend):
+    """The swing that protects the trend: the last counter swing before the trend extreme (swings2's strict swing)."""
+    if trend not in (UP, DOWN):
+        return None
+    ek = "H" if trend == UP else "L"
+    e = next((p for p in reversed(ext) if p.kind == ek), None)
+    q = next((p for p in reversed(ext) if p.kind != ek and e is not None and p.bar < e.bar), None)
+    return None if q is None else q.price
+
+
 def _tf_state(V, t, tf):
     """{state, trend, side, detail, protected} for one timeframe."""
     if tf in ("D", "W"):
@@ -481,32 +533,21 @@ def _tf_state(V, t, tf):
     ev = _events(V, t, tf)
     if tf in ("1H", "15M"):
         d1h, d15 = degrees(V)
-        F = _folds(V).get(d1h if tf == "1H" else d15)
-        s = F["states"][t] if F is not None else {"trend": UNKNOWN, "range": None, "protected": None}
-        trend = s["trend"]
-        band = (s["range"]["bottom"], s["range"]["top"]) if s.get("range") else None
-        if trend == RANGE and band is None:
-            hs = [p.price for p in ext if p.kind == "H"][-2:]
-            ls = [p.price for p in ext if p.kind == "L"][-2:]
-            band = (min(ls), max(hs)) if len(hs) == 2 and len(ls) == 2 else None
         A = _m15_arrays(V)
         ext15 = _sp_swings2(V, _swings2_known(V, d1h if tf == "1H" else d15, t), "15M")    # the close checks run on 15M closes
+        trend = trend_of(ext15, equal_fn(V, tf))
+        band = _band(ext15) if trend == RANGE else None
         ev15 = [{**e, "bar": e["bar15"]} for e in ev]
         state, side, detail = swing_state(trend, ext15, A["c"], t, ev15, band)
-        prot = s.get("protected")
-        src = f"swings2 {deg} + swings2.structure.fold (15M closes)"
+        prot = _protected(ext15, trend)
+        src = f"swings2 {deg} swings, trend_of + C-13 equal, BOS / CHoCH by 15M close"
     else:
         F = frame(V, t, tf)
         if F is None or not F["n"]:
             return {"state": UNCLEAR_S, "trend": UNKNOWN, "side": 0, "detail": "LTF data missing", "source": "V.ltf", "protected": None}
-        trend = trend_of(ext)
-        state, side, detail = swing_state(trend, ext, F["c"], F["n"] - 1, ev)
-        prot = None
-        if trend in (UP, DOWN):
-            ek = "H" if trend == UP else "L"
-            e = next((p for p in reversed(ext) if p.kind == ek), None)
-            q = next((p for p in reversed(ext) if p.kind != ek and e is not None and p.bar < e.bar), None)
-            prot = None if q is None else q.price
+        trend = trend_of(ext, equal_fn(V, tf))
+        state, side, detail = swing_state(trend, ext, F["c"], F["n"] - 1, ev, _band(ext) if trend == RANGE else None)
+        prot = _protected(ext, trend)
         src = "LTF swings (method.ltf_choch definition), alternated"
     return {"state": state, "trend": trend, "side": side, "detail": detail, "source": src,
             "protected": None if prot is None else round(float(prot), 2)}
@@ -539,7 +580,8 @@ def structure(V, t, tf):
     leg (after the last external swing)."""
     ext, inn, de, di = swings(V, t, tf)
     F = frame(V, t, tf)
-    labs = labels(ext)
+    eq = equal_fn(V, tf)
+    labs = labels(ext, eq)
     hs = [p for p in ext if p.kind == "H"][-2:]
     ls = [p for p in ext if p.kind == "L"][-2:]
     w0 = min([p.bar for p in hs[:1] + ls[:1]]) if hs and ls else (ext[0].bar if ext else 0)
@@ -561,7 +603,8 @@ def structure(V, t, tf):
                 col = d["high"] if last.kind == "H" else d["low"]
                 sub = col.to_numpy(float)[ix]
                 start = int(ix[int(np.argmax(sub) if last.kind == "H" else np.argmin(sub))])
-        ilabs = labels(inn)
+        ieq = equal_fn(V, "D" if tf == "W" else tf)
+        ilabs = labels(inn, ieq)
         if tf in ("1H", "15M"):                                            # order inside the leg by the 15M bar of each swing
             leg = [(p, lab) for p, lab in zip(inn, ilabs) if p.order > last.order]
             iev = [e for e in _events(V, t, tf, internal=True) if e["bar15"] > last.order]
@@ -569,7 +612,7 @@ def structure(V, t, tf):
             leg = [(p, lab) for p, lab in zip(inn, ilabs) if p.bar > start]
             iev = [e for e in _events(V, t, tf, internal=True) if e["bar"] > start]
         internal = {"degree": di, "pivots": _pivot_rows([p for p, _ in leg], [lab for _, lab in leg], Fi),
-                    "events": _event_rows(iev, Fi), "trend": trend_of(inn), "leg_from": {"kind": last.kind, "price": round(last.price, 2),
+                    "events": _event_rows(iev, Fi), "trend": trend_of(inn, ieq), "leg_from": {"kind": last.kind, "price": round(last.price, 2),
                                                                                          "ts": str(last.ts)}}
     return {"external": out, "internal": internal}
 

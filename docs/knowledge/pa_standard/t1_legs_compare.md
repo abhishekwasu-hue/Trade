@@ -70,8 +70,8 @@ swing". A "strict majority of the measures read" is counting, not a tuned thresh
 
 ## What it is NOT
 
-- Not a gate or grade, and not the Daily `nature_ok` rule (`daily_legs.c_class` stays as it is; switching the Daily reading
-  to this comparison would be a separate, Abhi-approved option).
+- Not a gate or grade by itself. The Daily reading can use the same comparison through `daily_leg_read = compare`
+  (see t1_daily_leg_read.md; default stays `elliott` until Abhi's ✅).
 - Not an Elliott count: forms are named from the swings so far; no projection, no ratios (no Fibonacci here).
 
 ## Known gaps (honest)

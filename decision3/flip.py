@@ -126,11 +126,14 @@ def approach_context(A, ts, t, lvl, pivots, s, legs_A=None):
     out["pullback"] = {"from_bar": ext_bar, "from_ts": _ts(ts, ext_bar), "from_price": round(ext_px, 2), "to_bar": pb_bar,
                        "to_ts": _ts(ts, pb_bar), "to_price": round(pb_px, 2)}
     LA = legs_A if legs_A is not None else legs_arrays(A, ts, s)
-    c = DL.classify(LA, seq, ext_bar, ext_px, pb_bar, pb_px, t, inner_seq=inner, elliott=True)
+    if DL.leg_read(s) == "compare":                                       # Abhi 21 Oct: the pullback vs the flip impulse it follows
+        c = DL.compare_classify(LA, seq, ext_bar, ext_px, pb_bar, pb_px, t, neighbours=[(imp_bar, ext_bar)], vol=A.get("volume"))
+    else:
+        c = DL.classify(LA, seq, ext_bar, ext_px, pb_bar, pb_px, t, inner_seq=inner, elliott=True)
     out["a_read"] = {k: (round(v, 3) if isinstance(v, float) else v) for k, v in c.items()}
     out["a"] = True if c["kind"] == "corrective" else (False if c["kind"] == "impulse" else None)
     word = {True: "corrective", False: "impulsive against the flip", None: "unclear"}[out["a"]]
-    out["a_why"] = f"(a) approach {word}: {DL.tag(c)}, {c['n']} inner waves"
+    out["a_why"] = f"(a) approach {word}: {DL.tag(c)}" + ("" if c.get("form") == "compare" else f", {c['n']} inner waves")
     ib = list(range(imp_bar + 1, ext_bar + 1))
     pb = list(range(ext_bar + 1, t))
     v = A.get("volume")

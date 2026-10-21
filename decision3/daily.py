@@ -262,6 +262,7 @@ def fold_impulse(d, s=None):
         raise ValueError(f"corr_degree_rule {rule!r} — internal_pullback / ratio पैकी")
     gate, range_after = bool(s["daily_start_nature_gate"]), bool(s["range_after_trend"])
     pgate = bool(s["daily_parent_gate"])
+    lread = DL.leg_read(s)                                                 # Abhi 21 Oct: "compare" (legs_compare) / "elliott" (what-if)
     A2, mcache = DL.arrays(d), {}
 
     def piv(kind, bar):
@@ -296,13 +297,20 @@ def fold_impulse(d, s=None):
         key = (st0.bar, tb, len(low), leg_start, round(prev_int, 9))      # degree तपासणी leg_start / prev_int वर अवलंबून
         if key not in cm_cache:
             tpx = float(H[tb] if dirn < 0 else L[tb])
-            k = DL.classify(A2, seq, st0.bar, st0.price, tb, tpx, i, cache=mcache, inner_seq=low, elliott=True)["structure"]
+            if lread == "compare":                                         # Abhi 21 Oct: impulse nature by comparison with the trend leg
+                nb = [(leg_start, st0.bar)] if leg_start is not None and leg_start < st0.bar else None   # it corrects (no 5-wave count)
+                k = DL.compare_classify(A2, seq, st0.bar, st0.price, tb, tpx, i, neighbours=nb)["kind"]
+                k = "impulse" if k == "impulse" else "corrective"
+            else:
+                k = DL.classify(A2, seq, st0.bar, st0.price, tb, tpx, i, cache=mcache, inner_seq=low, elliott=True)["structure"]
             if k == "impulse":                                             # degree (Q22 माप): counter impulse चा wave 2 / 4 आधीच्या
                 own = int_pull(-dirn, st0.bar, tb, i)                      # trend-degree impulse च्या सर्वात मोठ्या आतल्या pullback इतका
                 ref = max(int_pull(dirn, leg_start, st0.bar, i), prev_int)  # हवा — Q22 degree_ref (चालू / मागच्या leg चा आतला
                                                                            # pullback); लहान ⇒ एक degree खाली
                 if own < ref:                                              # खालचा 5-wave (zigzag चा a) ⇒ trend उलटत नाही
                     k = "wave_a"
+                elif lread == "compare":                                   # no count: a same-degree impulse-natured counter-move breaks
+                    k = "wave_1a"                                          # the trend only by a close beyond the impulse origin (Q49 (a))
                 elif not DL.unfolded_123(DL.leg_prices(seq, st0.bar, st0.price, tb, tpx, i, inner_seq=low)):
                     k = "wave_1a"                                          # Q49 (Abhi): same-degree 5-wave पहिला पाय default wave A —
                                                                            # wave 1 फक्त (a) impulse origin पलीकडे close किंवा (b)
@@ -322,7 +330,7 @@ def fold_impulse(d, s=None):
         read_counter impulse आणि त्याचा wave 5 चालू leg आधीच्या correction मधून सुरू (bar: leg_cm … origin — Rule 4 चा origin
         correction चा शेवट असला तरी). P उमेदवार = origin आधीचे (trend सुरुवातीपर्यंत) उलट-प्रकारचे pivots जे नंतरच्या किंमतीने
         ओलांडलेले नाहीत (impulse ची सुरुवात त्याचा टोक असतो) — जवळचा आधी. नसेल ⇒ origin."""
-        if q49_org == "leg":
+        if q49_org == "leg" or lread == "compare":                        # compare: no complete-5-wave reading ⇒ the leg's origin
             return origin
         ok = "H" if dirn < 0 else "L"
         lo_bar = tstart_org.bar if tstart_org is not None else origin.bar
@@ -360,8 +368,14 @@ def fold_impulse(d, s=None):
         for q in cands:
             if best is not None and (q.price - best.price) * -dirn <= 0:
                 continue
-            r = DL.classify(A2, seq, q.bar, q.price, imp_end.bar, imp_end.price, i, cache=mcache, inner_seq=low, elliott=True)
-            k = r["structure"]
+            if lread == "compare":                                         # Abhi 21 Oct: the continuation q ⇒ today's extreme has impulse
+                nb = [(b0, q.bar)] if b0 < q.bar else None                 # nature vs the correction leg it follows (no 5-wave / zigzag)
+                r = DL.compare_classify(A2, seq, q.bar, q.price, imp_end.bar, imp_end.price, i, neighbours=nb)
+                k = {"impulse": "impulse", "corrective": "corrective"}.get(r["kind"], "single")
+                r = {**r, "form": None}
+            else:
+                r = DL.classify(A2, seq, q.bar, q.price, imp_end.bar, imp_end.price, i, cache=mcache, inner_seq=low, elliott=True)
+                k = r["structure"]
             if k == "impulse" or (k == "single" and q is origin):          # आतल्या swing पासूनचा एकच पाय (expanded flat च्या b चा c) नाही
                 best = q
             elif r.get("form") == "zigzag" and (wait is None or (q.price - wait.price) * -dirn > 0):
@@ -487,6 +501,15 @@ def fold_impulse(d, s=None):
         if not gate:
             return True, ""
         e = extreme(nd, org.bar, i)
+        if lread == "compare":                                             # Abhi 21 Oct: (1) / (3) vs their neighbouring legs
+            c1 = DL.compare_classify(A2, seq, w1s.bar, w1s.price, w1e.bar, w1e.price, i)
+            c3 = DL.compare_classify(A2, seq, org.bar, org.price, e, float(H[e] if nd > 0 else L[e]), i)
+            if "impulse" in (c1["kind"], c3["kind"]):
+                return True, f" ((1) {DL.tag(c1)}, (3) {DL.tag(c3)})"
+            if c1["c_cls"] == "NA" and c3["c_cls"] == "NA":                # nothing to compare yet (no neighbouring leg) ⇒ structure only
+                return True, " (nothing to compare; structure only)"
+            return False, (f"{'UP' if nd > 0 else 'DOWN'} रचना पण impulse-स्वभावाचा पाय नाही ((1) {DL.tag(c1)}, (3) {DL.tag(c3)}) "
+                           f"⇒ {tag}")
         c1 = DL.classify(A2, seq, w1s.bar, w1s.price, w1e.bar, w1e.price, i, cache=mcache, inner_seq=low)
         c3 = DL.classify(A2, seq, org.bar, org.price, e, float(H[e] if nd > 0 else L[e]), i, cache=mcache, inner_seq=low)
         kinds = (c1["kind"], c3["kind"])

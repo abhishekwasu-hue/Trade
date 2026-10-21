@@ -13,8 +13,7 @@ its output into the evidence list; track T8 draws its objects.
 - **Agreement**: which timeframes agree with the Daily side, which are in correction, which are against.
 - **External structure** = the timeframe's own (higher-degree) swings. **Internal structure** = the next lower degree's swings
   inside the current external leg.
-- **HH / HL / LH / LL** label each swing against the previous swing of the same kind (EQH / EQL when the reader's "equal"
-  flag is set).
+- **HH / HL / LH / LL** label each swing against the previous swing of the same kind (EQH / EQL when it is C-13 "equal" to it).
 - **BOS** (break of structure, continuation) = a close beyond the last trend-direction swing. **CHoCH** (change of
   character) = a close beyond the swing that protects the trend (the last counter swing before the trend extreme).
 
@@ -24,8 +23,8 @@ its output into the evidence list; track T8 draws its objects.
 |---|---|---|
 | W | `daily.fold_impulse` on Weekly candles (V.weekly), `daily.state_at` | the same close comparison (`dow_events`) on the Weekly swings |
 | D | `daily.fold_impulse` (V.daily): trend + phase + counter | `dow_events` on the Daily trend-degree swings |
-| 1H | swings2 degree `level_degree` (D2 — the 1H trend degree the areas are born from) + `swings2.structure.fold` | swings2 events (15M close) |
-| 15M | swings2 degree `tl_degree` (D1 — the pullback's legs) + `swings2.structure.fold` | swings2 events (15M close) |
+| 1H | swings2 degree `level_degree` (D2 — the 1H trend degree the areas are born from); trend = `trend_of` + C-13 equal | `dow_events` on the D2 swings (15M close) |
+| 15M | swings2 degree `tl_degree` (D1 — the pullback's legs); trend = `trend_of` + C-13 equal | `dow_events` on the D1 swings (15M close) |
 | 5M | LTF bars (V.ltf); the LTF swing of `method.ltf_choch` (a high above its left neighbour, not below its right one), alternated | `dow_events` on 5M closes |
 
 Internal degree: 1H → D1 inside the D2 leg · 15M → D0 inside the D1 leg · D → the N − 1 Daily swings inside the Daily leg ·
@@ -33,7 +32,10 @@ W → the Daily swings inside the Weekly leg · 5M → none.
 
 ## States (comparison only)
 
-- **range** — the reader's own RANGE: the Daily / Weekly RANGE band, or swings2 RANGE (Rhea band, or HH + LL / equal swings).
+- **range** — the Daily / Weekly RANGE band (DState); on the swing timeframes: the last two highs / lows disagree (HH + LL or LH +
+  HL) or a later swing is C-13 "equal" to the earlier one (it reaches the earlier swing candle's area, wick to body, and does not go
+  beyond). Band = the higher of the last two highs, the lower of the last two lows. The swings2.structure Rhea band (σ numbers)
+  is **not** used; range edges as areas are track T7's (same C-13 helpers).
 - **trending up** — UP structure and the impulse leg is running: the newest confirmed swing is the higher low, or price has
   closed above the last high (BOS) since it.
 - **correction in progress** — UP structure and either (a) the newest confirmed swing is the high and no close beyond it yet
@@ -89,8 +91,8 @@ compares the last 15M bar's end with the hour's end (or the session end) — a d
 
 ## Known gaps (honest)
 
-- The 1H state uses the D2 swings measured on 15M bars and 15M closes for BOS / CHoCH (swings2's own definition), not a
-  separate swing reading on 1H candles.
+- The 1H state uses the D2 swings measured on 15M bars and 15M closes for BOS / CHoCH (swings2's definition), not a
+  separate swing reading on 1H candles. The swings2 D1 / D2 scale itself (k × σ) is Abhi's approved calibration, kept as is.
 - 5M swings are the simple neighbour swings `ltf_choch` uses — many small swings; the 5M state turns often.
 - The Weekly candle of the current (unfinished) week follows `daily.weekly_from_daily` as the engine does.
 - BANKNIFTY has no 5M / FUT data in trade-data ⇒ its 5M state is "unclear (LTF data missing)".
