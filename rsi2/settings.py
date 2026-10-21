@@ -46,7 +46,8 @@ REGISTER = {
                  "bar window (safety cap ≈ 3–4 × RSI period); cap ने नाकारलेल्या जोड्या `cap_rejected` मध्ये नोंद"),
     "div_bar_window": ("off", "on / off", "Abhi नियम (final)", "RSI divergence = लागोपाठचे खरे swings; bar counts / gaps नाहीत (on = जुनं what-if)"),
     "div_hidden": ("off", "on / off", "Abhi spec (K-RSI §4)", "hidden divergence: फक्त fact, verdict मध्ये कधीच नाही"),
-    "div_degrees": ("D0, D1, D2", "—", "व्याख्या (layer 1 सोबत — L5-a)", "swings2 degrees: प्रत्येक degree चे लागोपाठचे same-kind pivots; \"real swings\" = layer 1 (OPEN_QUESTIONS L5-a)"),
+    "div_degrees": ("D0, D1, D2", "—", "व्याख्या", "swings2 degrees: प्रत्येक degree चे लागोपाठचे same-kind pivots (display / facts सगळ्या degrees); "
+                    "decision3 पुरावा फक्त zone च्या एक degree खाली + zone ची degree माहिती (Abhi L5-a, decision3 `div_degree_rule`)"),
     "div_show": ("on", "on / off", "Abhi spec (K-RSI §8a)", "dashboard toggle 'Show RSI divergences' — display only, trading वर परिणाम नाही"),
 }
 

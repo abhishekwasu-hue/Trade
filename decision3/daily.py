@@ -59,7 +59,7 @@ class DState:
                                # (impulse origin तुटला, parent टिकला ⇒ same-degree correction नक्की) / None
     leg_start: int = None      # चालू impulse leg चा origin bar (chart: legs / corrections objects)
     corr_bars: tuple = ()      # चालू leg मधले same-degree correction swings (bars, confirmed)
-    origin_risk: bool = False  # B1: correction किंमत origin च्या maturity_sigma_d × σ_D आत (पुरावा, gate नाही)
+    origin_risk: bool = False  # B1: correction किंमत protected origin च्या area पर्यंत पोहोचली (C-13; पुरावा, gate नाही)
     sharp: tuple = None        # ABC_FIX rule 2: (lo, hi, bar) sharp-fall (DOWN) / sharp-rise (UP) zone
     evidence: tuple = ()       # ABC_FIX rule 3: continuation पुरावा (उदा. correction sharp zone मध्ये संपली)
     corr_zone: tuple = None    # ABC_FIX rule 2 / 5: चालू leg ज्या correction नंतर सुरू झाला ती sharp zone मध्ये संपली ⇒ (lo, hi, bar)
@@ -184,7 +184,7 @@ def complete_impulse_start(cands, seq, low, end, w_lo, w_hi, upto):
 def fold_impulse(d, s=None):
     """Q15 (Abhi, FINAL): degree-aware Dow — trend = शेवटच्या **impulse** leg ची दिशा; protected = त्या impulse चा **origin**.
 
-    • सुरुवात: LH (H2 < H1 − tol) confirmed आणि Daily **close** त्या दोन H मधल्या L खाली (LL) ⇒ DOWN. रचना = (1) H1 → L, (2) L → H2
+    • सुरुवात: LH (H2 हा H1 च्या area पर्यंत पोहोचत नाही — C-13) confirmed आणि Daily **close** त्या दोन H मधल्या L खाली (LL) ⇒ DOWN. रचना = (1) H1 → L, (2) L → H2
       (LH), आता (3). Origin = H2; (1) ची लांबी = H1 − L; correction-degree संदर्भ = (2) चा आकार (H2 − L). UP आरसा.
     • Impulse टोक = origin नंतरचं सर्वात टोकाचं low (correction सुरू होईपर्यंत रोज पुढे).
     • Correction (त्याच degree ची) = impulse टोकानंतरचा confirmed उलट swing ज्याचा आकार ≥ `corr_degree_frac` × मागच्या same-degree
@@ -199,9 +199,9 @@ def fold_impulse(d, s=None):
       wave 1 (flip शक्य) फक्त (a) तो correct करत असलेल्या impulse च्या origin पलीकडे close (`imp_origin`: चालू impulse leg चा
       origin, किंवा तो leg ज्या पूर्ण 5-wave चा wave 5 आहे त्याची सुरुवात — ABC_FIX rule 1) किंवा (b) counter-move स्वतःची same-degree 5-wave रचना
       (`daily_legs.unfolded_123`: "1" 5, "2" 3, "3" "1" पलीकडे स्वतः 5). Ratios / खोली नाहीत.
-    • Maturity (पुरावा, gate नाही): wave (5) किंवा पुढे (impulse) आणि किंमत target च्या `maturity_sigma_d` × σ_D आत / पलीकडे.
+    • Maturity (पुरावा, gate नाही): wave (5) किंवा पुढे (impulse) आणि किंमत target च्या area मध्ये / पलीकडे (C-13: swing candle, wick ते body).
       Targets: (5) = (4) टोक − (1) ची लांबी (DOWN), आणि (1) सुरू होण्याआधीचा उलट swing (उदा. (A) low).
-    RANGE: trend नसताना दोन H / दोन L जवळपास समान (tol). UNKNOWN फक्त ≤ daily_min_sessions candles."""
+    RANGE: trend नसताना दोन H / दोन L "समान" (C-13: नंतरचा टोक आधीच्या पलीकडे नाही). UNKNOWN फक्त ≤ daily_min_sessions candles."""
     s = S3.load(s)
     d = d.reset_index(drop=True)
     kat = known_at_of(d)
@@ -219,8 +219,20 @@ def fold_impulse(d, s=None):
     low_by = {}
     for p in low_all:
         low_by.setdefault(p.confirm_bar, []).append(p)
-    eq = float(s["range_eq_sigma_d"])
-    msig = float(s["maturity_sigma_d"])
+    # Abhi (L1-b ⇒ C-13): no σ tolerances in the Daily reading — "equal" = the later extreme does not go beyond the earlier one;
+    # maturity is context only and "near" = price reached the projection's area (its swing candle, wick to body)
+    O_ = d["open"].to_numpy(float)
+
+    def body_edge(bar, dn):                                                # the far edge of a swing candle's body: a low's area runs
+        return float(min(O_[bar], C[bar]) if dn < 0 else max(O_[bar], C[bar]))   # from its wick up to its body (a high's: mirror)
+
+    def equal(later, earlier):                                             # method "equal": the later extreme reaches the earlier swing
+        dn = -1 if earlier.kind == "L" else 1                              # candle's area (wick to body) and does not go beyond it
+        return (later.price - earlier.price) * dn <= 0 and (later.price - body_edge(earlier.bar, dn)) * dn >= 0
+
+    def short_of(later, earlier):                                          # a lower high / higher low: stays short of the earlier area
+        dn = -1 if earlier.kind == "L" else 1
+        return (later.price - body_edge(earlier.bar, dn)) * dn < 0
     cfrac = float(s["corr_degree_frac"])
     rule = s["corr_degree_rule"]
     if rule not in ("internal_pullback", "ratio"):
@@ -351,7 +363,7 @@ def fold_impulse(d, s=None):
         च्या आधीचाही चालतो (BANKNIFTY: Feb top आधीचा late-Jan low) — अट एकच: त्याचा पहिला close-break a नंतर, धावेतल्या candle ने
         झाला असेल तरच तो उमेदवार; सर्वात आधी तुटलेला निवडला (एकाच candle ने दोन ⇒ आधी ओलांडलेला, म्हणजे
         DOWN ⇒ उंच). Zone = swing candle चं टोक + base candles (swing आणि शेजारचे candles) चे bodies, ± इतर पट्ट्यांसारखा half
-        (range_eq_sigma_d × σ_D). फक्त confirmed (≤ i) pivots आणि ≤ i bars. नसेल ⇒ None."""
+        (C-13: half = 0 — the area itself, never widened). फक्त confirmed (≤ i) pivots आणि ≤ i bars. नसेल ⇒ None."""
         if b - a < 2:
             return None
         O = d["open"].to_numpy(float)
@@ -384,7 +396,7 @@ def fold_impulse(d, s=None):
         if best is None:
             return None
         q = best[1]
-        half = eq * sig[i] if np.isfinite(sig[i]) else 0.0
+        half = 0.0                                                         # Abhi (C-13): the area itself, never widened by a σ band
         k0, k1 = max(q.bar - 1, 0), min(q.bar + 1, len(d) - 1)
         if dn < 0:                                                         # supply: swing low पासून base bodies च्या वरपर्यंत
             lo, hi = float(L[q.bar]), float(max(max(O[k], C[k]) for k in range(k0, k1 + 1)))
@@ -547,7 +559,6 @@ def fold_impulse(d, s=None):
         for p in by_conf.get(i, []):
             _add(seq, p)
         low.extend(low_by.get(i, []))
-        tol = eq * sig[i] if np.isfinite(sig[i]) else 0.0
         ek = "L" if dirn < 0 else "H"
         if dirn != 0 and phase == "origin_broken":
             why = flip(i) or why
@@ -663,7 +674,7 @@ def fold_impulse(d, s=None):
         if range_after and dirn != 0 and phase == "origin_broken":           # Q27: origin तुटला + उलट impulse नाही + दोन समान H / L
             hs = [p for p in seq if p.kind == "H" and p.bar > imp_end.bar and p.confirm_bar <= i]
             ls = [p for p in seq if p.kind == "L" and p.bar > imp_end.bar and p.confirm_bar <= i]
-            if len(hs) >= 2 and len(ls) >= 2 and abs(hs[-1].price - hs[-2].price) <= tol and abs(ls[-1].price - ls[-2].price) <= tol:
+            if len(hs) >= 2 and len(ls) >= 2 and equal(hs[-1], hs[-2]) and equal(ls[-1], ls[-2]):   # C-13 equal edges
                 bd = (min(ls[-1].price, ls[-2].price), max(hs[-1].price, hs[-2].price))
                 if bd[0] <= C[i] <= bd[1]:                                 # close पट्ट्यात असेल तेव्हाच (नाहीतर लगेच तुटलेली range)
                     trend, dirn, phase, brk, band = "RANGE", 0, None, broken_at, bd
@@ -674,7 +685,7 @@ def fold_impulse(d, s=None):
             if len(Hs) >= 2:                                               # DOWN: LH + close खाली मधल्या L
                 h1, h2 = Hs[-2], Hs[-1]
                 mid = [p for p in Ls if h1.bar < p.bar < h2.bar]
-                if mid and h2.bar > brk and h2.price < h1.price - tol and C[i] < mid[-1].price:
+                if mid and h2.bar > brk and short_of(h2, h1) and C[i] < mid[-1].price:
                     lm = mid[-1]
                     ok_n, why_n = nature_ok(-1, h1, lm, h2, i)
                     if ok_n:
@@ -685,7 +696,7 @@ def fold_impulse(d, s=None):
             if trend in ("NEUTRAL", "RANGE") and len(Ls) >= 2:             # UP आरसा
                 l1, l2 = Ls[-2], Ls[-1]
                 mid = [p for p in Hs if l1.bar < p.bar < l2.bar]
-                if mid and l2.bar > brk and l2.price > l1.price + tol and C[i] > mid[-1].price:
+                if mid and l2.bar > brk and short_of(l2, l1) and C[i] > mid[-1].price:
                     hm = mid[-1]
                     ok_n, why_n = nature_ok(1, l1, hm, l2, i)
                     if ok_n:
@@ -696,7 +707,7 @@ def fold_impulse(d, s=None):
             if trend == "NEUTRAL":
                 h1, h2 = _last2(seq, "H")
                 l1, l2 = _last2(seq, "L")
-                if h1 and l1 and h2.bar > brk and l2.bar > brk and abs(h2.price - h1.price) <= tol and abs(l2.price - l1.price) <= tol:
+                if h1 and l1 and h2.bar > brk and l2.bar > brk and equal(h2, h1) and equal(l2, l1):   # C-13 equal edges
                     trend, band, why = "RANGE", (min(l1.price, l2.price), max(h1.price, h2.price)), "दोन H आणि दोन L जवळपास समान"
             elif trend == "RANGE" and band and (C[i] > band[1] or C[i] < band[0]):
                 trend, why, brk, band = "NEUTRAL", "close range पट्ट्याबाहेर", i, None
@@ -716,7 +727,6 @@ def fold_impulse(d, s=None):
                             abs(p.price - prev_px) >= lref if rule == "ratio" else (lref > 0 and abs(p.price - prev_px) > lref)):
                         prev_px, prev_k, n_after = p.price, p.kind, n_after + 1
                 corr_label = "abcde"[min(n_after, 4)]                      # 1 swing ⇒ a पूर्ण, b चालू
-            near = msig * (sig[i] if np.isfinite(sig[i]) else 0.0)
             t_live = t_first is not None and phase in ("impulse", "correction") and (pcorr or imp_end.bar > t_first.bar)
             passed = t_live and ((porg if pcorr else origin).price - t_first.price) * dirn >= 0
             if t_live and not passed:
@@ -725,8 +735,8 @@ def fold_impulse(d, s=None):
                 # असताना target दिसतो (पुढचा leg तिथे जाईल), पण mature फक्त नवा leg चालू असताना (A3): चालू leg चं टोक target च्या near आत /
                 # पलीकडे. Protected आधीच target च्या पलीकडे (नवा impulse target ओलांडून पुढे गेला) ⇒ तो जुना, दाखवत नाही
                 # (passed ⇒ caption "target passed", रचना नसल्याचा "none" नाही).
-                tg = [t_first.price]
-                mature = (not pcorr) and any((imp_end.price - x) * dirn >= -near for x in tg)
+                tg = [t_first.price]                                       # C-13: mature = the leg's extreme reached the target's area
+                mature = (not pcorr) and (imp_end.price - body_edge(t_first.bar, dirn)) * dirn >= 0
                 targets = tuple(round(float(x), 2) for x in tg)
             cbars = tuple(int(p.bar) for p in corr) if phase in ("impulse", "correction") else ()
             if pcorr:
@@ -738,7 +748,8 @@ def fold_impulse(d, s=None):
             if phase in ("correction", "origin_broken") or counter == "pullback":
                 prot_px = porg.price if pcorr else origin.price           # B1: correction किंमत protected origin जवळ ⇒ origin धोक्यात
                 ext_c = H[i] if dirn < 0 else L[i]
-                risk = (ext_c - prot_px) * dirn <= near and phase != "origin_broken"
+                prot_bar = porg.bar if pcorr else origin.bar               # C-13: price reached the protected origin's area
+                risk = (ext_c - body_edge(prot_bar, -dirn)) * dirn <= 0 and phase != "origin_broken"
         shown = trend if i + 1 > int(s["daily_min_sessions"]) else "UNKNOWN"
         tr = shown in ("UP", "DOWN")
         prot = (porg if pcorr else origin) if trend in ("UP", "DOWN") else None   # A1: parent टिकलेल्या correction मध्ये protected = parent

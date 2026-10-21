@@ -382,6 +382,22 @@ def use_1m(s=None):
     return bool(v)
 
 
+def swing_scale(s=None):
+    """Abhi calibration (layer 1 ✅): advanced dashboard `engine3_swing_k_d1` / `engine3_swing_k_d2` ⇒ V22 settings {"swing_k": {1: k, 2: k}}.
+    रिकामं / None ⇒ None (swings2 चा approved scale, D1 = 4, D2 = 6). Bad value ⇒ ValueError (engine run fails closed, Telegram)."""
+    k = {}
+    for d in (1, 2):
+        v = (s or {}).get(f"engine3_swing_k_d{d}")
+        if v is None or (isinstance(v, str) and not v.strip()):
+            continue
+        k[d] = float(v)
+    if not k:
+        return None
+    from decision3 import engine as E3
+    E3.swing_scale({"swing_k": k})                                       # refuse a bad value here (never blamed on the 1m fallback)
+    return {"swing_k": k}
+
+
 def load_m1(feed, symbol, m15, now, s=None):
     """Abhi Z-1o (a): spot 1m ⇒ (df1m | None, info). फक्त बंद 1m (start + 1 ≤ now), session मधले, m15 च्या पहिल्या bar पासून शेवटच्या
     बंद 15M bar च्या bar_end पर्यंत (त्यानंतरचा 1m कधीच नाही ⇒ look-ahead नाही); NIFTY ⇒ holdout rows नाहीत. 1m नाही / त्रुटी ⇒ None +
@@ -514,13 +530,14 @@ def watched_levels(symbol, feed, now, s=None):
     m15, daily, _l, _f, _n = build_inputs(feed, symbol, now, s, levels_only=True)
     m1, info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)           # live compute सारखाच 1m ⇒ pre-open = engine चे पट्टे
     m15 = m15.drop(columns=[c for c in ("volume",) if c in m15.columns])
-    prev = INS._current["name"]
+    s3 = swing_scale(s)                                                  # live compute सारखाच swing scale (Abhi calibration); bad ⇒ raise
+    prev = INS._current["name"]                                          # before the process-wide instrument changes
     INS.set_current(symbol)
 
     def build(df1m):
         with fold_cache(symbol.upper()), warnings.catch_warnings(), contextlib.redirect_stdout(io.StringIO()):
             warnings.simplefilter("ignore")
-            return E3.V22(m15, df1m, daily, sealed=HI.sealed_fn(symbol))
+            return E3.V22(m15, df1m, daily, sealed=HI.sealed_fn(symbol), **({"s": s3} if s3 else {}))
     try:
         if m1 is None:
             V = build(None)
@@ -612,7 +629,7 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
 def compute(symbol, feed, now, s=None):
     m15, daily, ltf, fut, note = build_inputs(feed, symbol, now, s)
     m1, m1_info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)
-    r = evaluate(symbol, m15, daily, ltf, fut, m1=m1, m1_info=m1_info)
+    r = evaluate(symbol, m15, daily, ltf, fut, s3=swing_scale(s), m1=m1, m1_info=m1_info)
     r["volume_note"] = note
     r["m1"] = m1_info                                                    # Z-1o: 1m वापरला का / fallback कारण (row payload)
     return r

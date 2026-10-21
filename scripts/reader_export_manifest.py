@@ -46,10 +46,12 @@ ITEMS = [
 ] + [("data", f"review/{d}", "Abhi's approved charts and marks", True,
       "Review run Abhi gave ✔ / ✘ on — kept exactly as he saw it (a re-render with later code would differ)")
      for d in ("swings", "legs", "patterns", "k10", "v22")] + [
-    ("data", "review/method_layer1", "Reader layer reports", True, "Layer 1 question pack (Abhi's A / B picks become the definition)"),
+    ("data", "review/method_layer1", "Reader layer reports", True, "Layer 1 question pack (Abhi picked A in all 12 cases)"),
+    ("data", "review/method_layer1_rule", "Reader layer reports", True, "Layer 1: Abhi's swing rule as stated on the 12 cases (4 match A, 8 differ; charts + reasons)"),
     ("data", "review/method_layer2", "Reader layer reports", True, "Layer 2 report charts"),
     ("data", "review/method_layer3", "Reader layer reports", True, "Layer 3 report charts"),
-    ("data", "review/method_layer4", "Reader layer reports", True, "Layer 4 question (12 Oct line vs area)"),
+    ("data", "review/method_layer4", "Reader layer reports", True, "Layer 4 question (12 Oct line vs area; Abhi answered B)"),
+    ("data", "review/layers_2_4_summary", "Reader layer reports", True, "Layers 2–4 summary sent for Abhi's ✅ (+ layer 1 rule result, L4-g questions)"),
     ("data", "visual_audit", "Vision logs", True, "Vision visual-audit charts + records (pushed by scripts/vision_archive.py)"),
     ("data", "review/vision_test", "Vision logs", True, "Vision test runs (input / marked charts)"),
     ("repo", "docs/knowledge/KNOWLEDGE_BASE.md", "KB and Method Pack", True, "The KB (owned here until the switch-over)"),

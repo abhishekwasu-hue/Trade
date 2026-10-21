@@ -305,7 +305,7 @@ def test_journal_entry_updates_exit_with_charges(tmp_path, monkeypatch):
     assert out["exits"] == 1
     j = PJ.get("PAPER_1", jp)
     assert j["exit_charges"] > 0 and j["net_pnl"] == pytest.approx(-4550 - j["entry_charges"] - j["exit_charges"], abs=0.02)
-    assert "PAPER exit" in sent[-1] and "net" in sent[-1]
+    assert "PAPER SL hit" in sent[-1] and "net" in sent[-1]                  # Abhi: an SL exit reads as an SL hit
     assert PW.run_cycle("tok", now=t0 + pd.Timedelta(minutes=51), db_path=dbp, send=sent.append, jpath=jp, cfg=cfg)["exits"] == 0
 
 

@@ -43,7 +43,7 @@ def fake_v22(monkeypatch):
 
     class FakeV22:
         def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
-            seen.update(m15=m15, df1m=df1m, ltf=ltf, futures=futures)
+            seen.update(m15=m15, df1m=df1m, ltf=ltf, futures=futures, s=s)
             self.m15 = m15
 
         def decide(self, t):
@@ -241,11 +241,12 @@ def test_upstox_1m_cache_refetches_when_15m_gets_a_newer_day(monkeypatch, tmp_pa
 def fake_v22_levels(monkeypatch):
     """V22 stub with levels.snapshot + swings2-like res stream (m1_status per bar) — records df1m per build."""
     from decision3 import engine as E3
-    seen = {"df1m": [], "status": "complete", "boom": False}
+    seen = {"df1m": [], "status": "complete", "boom": False, "s": []}
 
     class FakeV22:
         def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
             seen["df1m"].append(df1m)
+            seen["s"].append(s)
             if df1m is not None and seen["boom"]:
                 raise ValueError("swings2 1m join failed (test)")
             self.m15 = m15
@@ -363,3 +364,40 @@ def test_prune_cache_only_touches_engine3_cache_files_and_clamps_keep_days(monke
     assert sorted(p.name for p in tmp_path.iterdir()) == ["hist_today.pkl", "notes.txt", "other.pkl"]   # old hist_ / fold_ (+ .tmp) gone
     assert L.cache_keep_days(-2) == 3.0 and L.cache_keep_days("x") == 3.0 and L.cache_keep_days(None) == 3.0
     assert L.cache_keep_days(0) == 1.0 and L.cache_keep_days(7) == 7.0
+
+
+def test_swing_scale_is_abhis_calibration_empty_means_the_approved_scale(fake_v22_levels):
+    """Abhi (layer 1 ✅): the swing scale is his calibration — an advanced dashboard setting. Empty ⇒ the approved swings2 scale (V22
+    gets no override); set ⇒ the same override reaches the live decision and the pre-open levels."""
+    from decision3 import engine as E3
+    assert L.swing_scale(None) is None and L.swing_scale({"engine3_swing_k_d1": "", "engine3_swing_k_d2": " "}) is None
+    assert L.swing_scale({"engine3_swing_k_d1": "5", "engine3_swing_k_d2": 8}) == {"swing_k": {1: 5.0, 2: 8.0}}
+    import cloud_db
+    d = cloud_db.STRATEGY_SETTINGS_DEFAULTS[ES.ENGINE3_SETTINGS_KEY]
+    assert d["engine3_swing_k_d1"] == d["engine3_swing_k_d2"] == ""
+    assert ES.engine3_settings("nifty", lambda k, s: {"engine3_swing_k_d1": 5.0, "lots": 1}) == {"engine3_swing_k_d1": 5.0}
+    L.compute("BANKNIFTY", Feed1m(), NOW, {"engine3_use_1m": False})
+    assert fake_v22_levels["s"][-1] is None
+    L.compute("BANKNIFTY", Feed1m(), NOW, {"engine3_use_1m": False, "engine3_swing_k_d1": "5", "engine3_swing_k_d2": "8"})
+    assert fake_v22_levels["s"][-1] == {"swing_k": {1: 5.0, 2: 8.0}}
+    L.watched_levels("BANKNIFTY", Feed1m(), PRE, {"engine3_use_1m": False, "engine3_swing_k_d1": "5", "engine3_swing_k_d2": "8"})
+    assert fake_v22_levels["s"][-1] == {"swing_k": {1: 5.0, 2: 8.0}}
+    assert E3.swing_scale({"swing_k": None}) is None and E3.swing_scale({"swing_k": {1: 5, 2: 8}}) == {"k": {1: 5.0, 2: 8.0}}
+    for bad in ({1: 6, 2: 4}, {1: 0, 2: 6}, {3: 16}):
+        with pytest.raises(ValueError):
+            E3.swing_scale({"swing_k": bad})
+
+
+
+def test_a_bad_swing_scale_fails_before_the_engine_and_the_instrument_switch(fake_v22_levels):
+    """A bad stored scale (text, D2 ≤ D1 — also against the approved default when only one is set) is refused at the start: never blamed on
+    the 1m fallback, never leaves the process-wide instrument switched."""
+    import instruments as INS
+    prev = INS._current["name"]
+    for bad in ({"engine3_swing_k_d1": "abc"}, {"engine3_swing_k_d1": 7}, {"engine3_swing_k_d1": 5, "engine3_swing_k_d2": 5},
+                {"engine3_swing_k_d2": "nan"}):
+        with pytest.raises(ValueError):
+            L.swing_scale(bad)
+        with pytest.raises(ValueError):
+            L.watched_levels("BANKNIFTY", Feed1m(), PRE, {"engine3_use_1m": False, **bad})
+        assert INS._current["name"] == prev and fake_v22_levels["df1m"] == []

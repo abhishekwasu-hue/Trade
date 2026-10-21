@@ -204,7 +204,14 @@
 - **CHoCH** = protected HL च्या खाली close ⇒ UPTREND_WEAK. हा **इशारा** आहे, reversal नाही.
 - **Reversal confirmed:** CHoCH नंतर LH तयार होतो, आणि मग CHoCH नंतरच्या low च्या खाली close. (Dow: पहिला break = इशारा; failed rally (LH) नंतरच reversal.)
 - Range: 4 नवे swings आणि कोणताही निर्णय नाही ⇒ RANGE.
-- Swing ग्राह्य धरण्यासाठी किमान आकार ≥ 1.5–2 MR, म्हणजे noise swings मोजले जात नाहीत.
+- Swing ग्राह्य धरण्यासाठी किमान आकार ≥ 1.5–2 MR, म्हणजे noise swings मोजले जात नाहीत. (जुनी नोंद; खालचा Abhi calibration नियम वरचढ.)
+
+**खरा swing — Abhi calibration (layer 1 ✅).**
+- Abhi ने मंजूर केलेले swings2 D1 / D2 swings **हीच** swing ची व्याख्या.
+- Swing चं महत्त्व नेहमी market च्या स्वतःच्या सामान्य हालचालीशी (σ) तुलना करून ठरतं. swings2 नेमकं तेच करतो, Abhi ने स्वतःच्या charts वरून निवडलेल्या scale वर (D1 = 4 σ, D2 = 6 σ).
+- हा scale म्हणजे Abhi चं visual calibration: एक setting (advanced dashboard), ठरलेला point आकडा नाही. त्याची स्वीकृती = Abhi चे मंजूर swing charts.
+- शुद्ध तुलनात्मक नियम ("leg त्याच्या आतल्या pullbacks पेक्षा मोठा") वापरायचा नाही: तो एका candle च्या वळणांनाही swing मानतो (12 पैकी 4 जुळले).
+- Zone ची रचना = D2; zone मधला pullback = एक degree खाली (D1).
 
 **Pullback वाचनात उपयोग.**
 - Pullback चा low आधीच्या HL च्या वर टिकला ⇒ trend जिवंत.
@@ -229,7 +236,9 @@ Read top-down, in this order, every time:
 1. **Weekly** — the overall market state (P9 [Abhi]). Macro / sentiment (FII / DII flows, global cues, VIX) is context and evidence,
    never a trigger.
 2. **Daily** — the trend is decided here at least. Dow structure: higher highs + higher lows = UP; lower highs + lower lows = DOWN;
-   four new swings without a decision = RANGE. Count only real swings (≥ 1.5–2 MR); minor wiggles are noise.
+   four new swings without a decision = RANGE. Count only real swings: the approved swings2 D1 / D2 swings (Abhi's calibration — a
+   swing's significance is judged against the market's own normal movement at the scale he chose from his own charts; a setting, not a
+   fixed point value); minor wiggles are noise.
    - **Degree-aware:** degree is the place in the count, not the timeframe (P1). The trade follows the **parent** direction — the
      motive sequence that the correction we trade belongs to. A higher (grandparent) degree pointing the other way is negative evidence
      only, not a ban [Abhi].
@@ -742,6 +751,8 @@ completed pattern allows, the count is wrong.
   - एकाच किमतीवर वारंवार reactions ⇒ **horizontal.**
   - **रेषा area मधून जात असेल ⇒ तो area सगळ्यात उच्च दर्जाचा (confluence) — तोच area, label सह; नवा / अरुंद पट्टा नाही [Abhi, method §3]**, chart label **"confluence"** (K4).
   - **Reaction-touch [Abhi, layer 4 B]:** area मधून वर उठलेली (खाली पडलेली) reaction रेषेजवळ वळली तर तो रेषेचा touch: वळण (रचनेचा swing) हे रेषेच्या आधीच्या touch नंतरचं रेषेला सगळ्यात जवळचं वळण, मधे कोणताही close रेषेपलीकडे नाही, आणि नंतर चाल रेषेपासून दूर जाते. तिथे area आणि रेषा भेटतात ⇒ area ला label **"confluence: line"**. Golden third-touch case असाच वाचायचा.
+  - **Touches कसे मोजायचे [Abhi, L4-g]:** contacts नाही, **reactions** मोजायच्या. दोन contacts च्या मधे रेषेच्या रचनेचा खरा उलट swing नसेल तर तो एकच touch. तिसऱ्या touch पासून पुढचा प्रत्येक touch trade location (रेषा अखंड असेपर्यंत); touch क्रमांक माहिती म्हणून दाखवायचा ("confluence: line (touch 3)").
+  - **Touch point [Abhi, L4-g]:** reaction चं स्वतःचं वळण (ती रेषेजवळ बनवते तो swing). नंतरचं वळण रेषेपासून दूर राहिलं तरी त्या visit साठी confluence label जात नाही.
 - **6.5 Break वि. false break:**
   - Real (method §3, area सारखा) = रेषेपलीकडे close **आणि** पलीकडे swing बनला.
   - False = पलीकडे swing बनण्याआधी परत रेषेच्या बाजूला (throw-over / sweep).
@@ -787,6 +798,10 @@ completed pattern allows, the count is wrong.
   reaction rises out of (falls out of) the area and turns at the line [Abhi]:** the turn (a swing of the structure) is the closest
   approach to the line since the line's previous touch, no candle closes beyond the line, and the move then goes away from it — that
   turn is a touch, and the area is labelled "confluence: line". Never look only at horizontals and forget the trendline.
+- **Counting touches [Abhi]:** count reactions, not contacts — contacts with no real opposite swing of the line's structure between
+  them are one touch. From the 3rd touch on, every touch is a trade location while the line is unbroken; the touch number is shown as
+  information ("confluence: line (touch 3)"). A reaction's touch point is its own turn (the swing it forms at the line); a later turn
+  that stays away from the line does not remove the confluence label for that visit.
 - **Elliott channeling (measuring tool):** wave 4 often ends near the parallel through wave 2; a zigzag's C often ends near the line
   drawn through A's end parallel to the line joining A's start and B's end — the correction's own channel (C target where C reaches
   it; confluence with C = A). Throw-over in the last wave: a brief poke beyond the channel and a close back inside.
@@ -1062,14 +1077,17 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rsi_divergence`.
 
 **व्याख्या (तर्क, आकडा नाही).**
-- **खरे swings, एकाच degree चे:** लागोपाठचे swings, प्रत्येक degree आपापल्यात (swings2 degrees; "खरा swing" ची व्याख्या layer 1 —
-  अबींच्या निर्णयानुसार — ठरेल). दोन swings लागोपाठचे pushes: त्यांच्या मधे त्याहून टोकाची किंमत नाही. वेगवेगळ्या degree चे swings
-  कधीच जोडायचे नाहीत.
+- **खरे swings, एकाच degree चे:** लागोपाठचे swings (swings2 D1 / D2 = Abhi चं calibration, layer 1 ✅). दोन swings लागोपाठचे pushes:
+  त्यांच्या मधे त्याहून टोकाची किंमत नाही. वेगवेगळ्या degree चे swings कधीच जोडायचे नाहीत.
+- **कोणती degree (Abhi, L5-a — अंतिम; बदलता येईल):** zone मध्ये येणाऱ्या चालीच्या **आतले** लागोपाठचे pushes. चाल तिच्या स्वतःच्या
+  swing पासून सुरू होते (area पासून दूर बनलेला शेवटचा swing). ज्या सर्वात मोठ्या degree वर त्या चालीत किमान दोन pushes दिसतात तीच degree
+  वापरायची. चाल सुरू होण्याआधीचा swing (उदा. चालीच्या स्वतःच्या low आधीचा D1 high) कधीच तुलनेत नाही. Zone च्या स्वतःच्या degree ची
+  divergence असेल तर तीही नोंदवायची (माहिती).
 - **Bearish:** price **नवा उंच high** करते (आधीच्या high पलीकडे — बरोबर high नवा high नाही) आणि RSI आधीच्या high च्या RSI पलीकडे
   जात नाही — **बरोबर RSI सुद्धा divergence** [Abhi].
 - **Bullish (आरसा):** price नवा खालचा low आणि RSI आधीच्या low च्या RSI खाली जात नाही (बरोबर RSI सुद्धा).
 - **Swing वरचा RSI:** त्या swing च्या स्वतःच्या span मधला RSI चा टोक (शेजारच्या उलट swings मधला भाग) — bar count / ± window नाही.
-  *(ही code ची व्याख्या आहे, अबींचे शब्द नाहीत — NUMBERS_INVENTORY C-24 / OPEN_QUESTIONS L5-a, अबींचा होय / नाही बाकी.)*
+  *(ही code ची व्याख्या आहे, अबींचे शब्द नाहीत — NUMBERS_INVENTORY C-24, अबींचा होय / नाही बाकी.)*
 - Bars ची किमान / कमाल संख्या नाही; RSI फरकाला किमान मर्यादा नाही. Hidden divergence: वापरात नाही (फक्त what-if).
 - RSI = Wilder RSI spot close वर (indicator ची स्वतःची व्याख्या). Futures फक्त volume साठी.
 
@@ -1115,7 +1133,10 @@ Owner = `rsi2.engine.Divergence` (evidence only); V22 मध्ये `engine.rs
 
 - **RSI divergence is the only indicator, and it is evidence inside the area — never a trigger alone, never a gate.** Its absence is
   stated too ("no divergence: RSI made a new high with price").
-- Compare **consecutive real swings of the same degree** (each degree on its own; nothing more extreme between them).
+- Compare **consecutive real swings of the same degree** (nothing more extreme between them): the consecutive pushes **inside the
+  move into the zone** — the move begins at its own swing (the last swing built away from the area); use the highest degree at which
+  that move shows at least two pushes; a swing from before the move began is never compared [Abhi, L5-a]. A divergence at the zone's
+  own degree is reported too, as information.
   **Bearish:** price makes a higher high while RSI does not go above its previous high — an equal RSI high counts. **Bullish (mirror):**
   price makes a lower low while RSI does not go below its previous low — an equal RSI low counts. An equal price high / low is not a
   new extreme.

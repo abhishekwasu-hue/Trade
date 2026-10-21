@@ -2888,3 +2888,57 @@ legs owner वि. reader2 gate).
   score नाही. Evidence list: required (वाचन) आणि entry hours (operational) वेगळे; tl_confluence absent ≠ NA.
 - Guard: layer-6 decision numbers LEGACY; `test_layer_six_verdict_is_the_method_no_scores`.
 
+## 2026-10-20 · Abhi on L4-g: touches by reactions (branch `claude/method-l4g-touch-count`)
+
+- **(1)** Touches = reactions, contacts नाही: मधे रेषेच्या रचनेचा खरा उलट swing नसेल तर contacts = एकच touch (`trendline.touch_groups`).
+  तिसऱ्या touch पासून प्रत्येक touch trade location (रेषा अखंड); क्रमांक माहिती ⇒ label "confluence: line (touch N)".
+- **(2)** Touch point = reaction चं स्वतःचं वळण (आधीच्या touch नंतर रेषेच्या सगळ्यात जवळचं); नंतरचं दूरचं वळण label काढत नाही.
+- **Golden (real):** 7 Oct 12:00 चा wick contact 6 Oct anchor सोबत एकच touch (मधे swing low नाही) ⇒ 12 Oct 09:15 चं वळण = **touch 3**;
+  09:30, 09:45, 10:00 ला 1H supply = "confluence: … line (touch 3)" (test).
+
+## 2026-10-20 · Abhi on L5-a: RSI divergence one degree below the zone (branch `claude/method-l5a-degree`)
+
+- **Abhi:** zone मध्ये येणाऱ्या चालीचे लागोपाठचे pushes = zone च्या रचनेच्या एक degree खालचे swings (zone मधल्या pullback चीच degree);
+  zone च्या स्वतःच्या degree ची divergence असल्यास तीही नोंद.
+- **Code:** `engine.rsi_divergence` — `found` = D(level_degree − 1) (1H zone ⇒ D1); `zone_degree` = D2 (माहिती, confirming नाही — गृहीत);
+  `div_degree_rule = all` = जुनं D0–D2 what-if. KB K10.4 / Pack 5c, rsi2 register, METHOD_MAP, NUMBERS_INVENTORY C-19.
+- **Golden (real, tuning नाही):** 12 Oct 09:30 ला D1 / D2 वर divergence नाही — दोन्हीवर आधीचा high (7 Oct 22,717.65 / 6 Oct 22,731.85)
+  12 Oct 09:15 (22,651.10) पेक्षा उंच ⇒ lower high. Abhi ची जोडी (9 Oct 14:15 22,580.75 RSI 67.09 → 12 Oct 09:15 RSI 66.41) फक्त D0
+  वर ⇒ history मध्ये आहे, पुरावा नाही. Label तरीही A (confluence). OPEN_QUESTIONS L5-a (chart: trade-data `review/method_layer5/`).
+
+## 2026-10-20 · Abhi on L5-a (final): pushes INSIDE the move into the zone
+
+- चाल = area पासून दूर बनलेल्या शेवटच्या swing पासून (approach leg चा स्वतःचा swing). त्या चालीत किमान दोन pushes दाखवणारी सर्वात मोठी
+  degree वाचायची; चालीआधीचा swing कधीच नाही; zone degree ची divergence माहिती. Code: `rsi_divergence(…, move_from)` (`degree`, `pushes`).
+- **Golden (real):** 12 Oct — D1 वर चालीत एकच push, D0 वर दोन ⇒ D0: 9 Oct 14:15 → 12 Oct 09:15 (RSI 67.09 → 66.41) = bear divergence
+  परत; 09:30 setup **A** (RSI divergence + confluence). Default म्हणून नोंद — Abhi बदलू शकतात.
+
+## 2026-10-20 · Layer 1 rule result + layers 2–4 summary sent (trade-data)
+
+- **Layer 1 (Abhi: A in all 12 cases):** his swing rule applied exactly as stated matches A in 4 of 12; the 8 differing cases (chart
+  + one-line reason each) are in trade-data `review/method_layer1_rule/RULE_CASES.md`. Not tuned, no code change (OPEN_QUESTIONS L1-a).
+- **Layers 2–4:** summary for Abhi's ✅ in trade-data `review/layers_2_4_summary/SUMMARY.md` (with the L4-g questions). No tag until ✅.
+- `docs/reader/EXPORT_MANIFEST.md` regenerated: the two new trade-data folders added; layer 1 / layer 4 rows say Abhi has answered.
+
+## 2026-10-20 · Abhi: layers 1–4 ✅; L1 / L4-g / L5-a answered
+
+- **Layer 1 ✅:** approved swings2 D1 / D2 = swing ची व्याख्या (Abhi चं calibration — market च्या सामान्य हालचालीशी तुलना, त्यांच्या charts
+  वरून निवडलेला scale); शुद्ध तुलनात्मक नियम नाही. C-1 resolved; scale = advanced dashboard calibration setting (calibration PR).
+- **Layers 2, 3, 4 ✅** ⇒ tags + parity fixtures (STABLE.md). L4-g (touches by reactions) layer 4 च्या tag आधी (#343; OPEN_QUESTIONS L4-g तिथे).
+- **L5-a:** zone च्या रचनेच्या एक degree खाली (#344, OPEN_QUESTIONS L5-a तिथे; golden वर एक वाचन-प्रश्न परत Abhi कडे).
+
+## 2026-10-20 · Layer 1 ✅: the swing scale is Abhi's calibration (branch `claude/method-layer1-calibration`)
+
+- swings2 `k` register = "Abhi calibration (visual, his own charts)"; decision3 `swing_k` (None = approved D1 = 4, D2 = 6) ⇒ `swings2.build`.
+- Advanced dashboard (15M SRv2 पान, engine section): "Advanced: swing scale (Abhi calibration)" — D1 / D2 k (swings2 K_OPTIONS),
+  रिकामं = approved scale; `engine3_swing_k_d1` / `_d2` ⇒ `engine3_live.swing_scale` ⇒ live decision आणि pre-open levels दोन्ही.
+- Guard: नवा CALIBRATION वर्ग (level / tl / pullback degree, daily N, k reset, Daily RANGE / maturity σ — L1-b); layer 1 PENDING रिकामं.
+- KB K1 + Pack 1, CHART_READER_METHOD (Calibration), METHOD_MAP (Swing / Degree 1 ✅), NUMBERS_INVENTORY C-1 / C-2 / C-21 resolved.
+
+## 2026-10-20 · Abhi on L1-b: Daily structure by C-13 logic (only the swings2 scale stays a calibration)
+
+- Equal = नंतरचा टोक आधीच्या swing candle च्या area (wick ते body) पर्यंत, पलीकडे नाही (RANGE कडा, Q27); LH / HL = आधीच्या area पर्यंत
+  पोहोचत नाही; maturity "near" = leg चा टोक target swing च्या area पर्यंत पोहोचला; origin risk = protected origin च्या area पर्यंत; sharp
+  zone = area स्वतः; K reset = जुन्या टोकापलीकडे (σ नाही). `maturity_sigma_d`, `k_reset_sigma` काढले; `range_eq_sigma_d` फक्त legacy /
+  display. `daily_pivot_n` = L1-c (Abhi ला प्रश्न; default N = 2).
+
