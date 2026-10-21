@@ -68,7 +68,7 @@ class _Stub(E3.V22):
     high पर्यंत, engine सारखा: entry close, SL पट्ट्याची दूरची कडा) फक्त legacy `rr_step` = True — engine सारखंच (default ⑦ नाही)."""
 
     def __init__(self, A, levels, trend, rr_step=False):
-        self.s, self.A, self.act, self.trend, self.sealed = S3.load({"rr_step": rr_step}), A, levels, trend, None
+        self.s, self.A, self.act, self.trend, self.sealed = S3.load({"rr_step": rr_step, "entry_gate": "legacy_k"}), A, levels, trend, None
         n = len(A["close"])
         ts = pd.date_range("2030-01-07 09:15", periods=n, freq="15min")
         self.m15 = pd.DataFrame({"timestamp": ts})

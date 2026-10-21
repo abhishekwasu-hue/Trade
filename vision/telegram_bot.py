@@ -103,7 +103,7 @@ def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_sen
         answer(cq.get("id"), "आधीच ठरलं")
         return False, "race"
     answer(cq.get("id"), text)
-    edit(row.get("tg_message_id"), f"{text} · {row['symbol']} {row['direction']} L{float(row['level'] or 0):,.0f}")
+    edit(row.get("tg_message_id"), f"{text} · {_model_prefix(row)}{row['symbol']} {row['direction']} L{float(row['level'] or 0):,.0f}")
     if action == "R":                                                    # Abhi §10b: कारण एक tap (निर्णय आधीच लागू — position नाही)
         AP.prompt_reason(row, send_buttons)
     if row.get("bot") == "manual":                                       # ✋ /paper: bot cycle नाही ⇒ इथेच (✅ ⇒ entry, ❌ ⇒ बंद)
@@ -111,6 +111,17 @@ def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_sen
     elif action == "A":                                                  # Abhi: ✅ ⇒ the PAPER entry at once, not on the bot's next minute
         _engine_enter_now(row, send=execute_send)
     return True, text
+
+
+def _model_prefix(row):
+    """Engine entry model signal ⇒ "E1 — Aggressive · " (four cards on one area stay apart); any other signal ⇒ "". Never raises."""
+    try:
+        from vision import card_summary as CS
+        from vision.gate import _row_tags
+        ml = CS.model_label(_row_tags(row))
+        return f"{ml} · " if ml else ""
+    except Exception:                                                    # noqa: BLE001
+        return ""
 
 
 def _engine_enter_now(row, send=None, enter_fn=None):
@@ -138,7 +149,7 @@ def handle_command(text, from_, chat, path=None, send=None, trading_mode_fn=None
     cmd = parts[0].split("@")[0].lower() if parts else ""
     if cmd == "/pending":
         rows = VS.rows_with_status(("QUEUED", "RUNNING", "PENDING_HUMAN", "APPROVED", "REJECTED"), path)
-        lines = [f"{r['signal_ts'][11:16]} {r['bot']} {r['symbol']} {r['direction']} L{float(r['level'] or 0):,.0f} → {r['status']}"
+        lines = [f"{r['signal_ts'][11:16]} {r['bot']} {_model_prefix(r)}{r['symbol']} {r['direction']} L{float(r['level'] or 0):,.0f} → {r['status']}"
                  + (f" (⏱ {r['deadline'][11:16]})" if r.get("deadline") and r["status"] == "PENDING_HUMAN" else "") for r in rows]
         send("⏳ <b>उघडे signals</b>\n" + ("\n".join(lines) if lines else "काहीच नाही"))
         return True, "pending"
@@ -149,8 +160,13 @@ def handle_command(text, from_, chat, path=None, send=None, trading_mode_fn=None
         for r in rows:
             by[r["status"]] = by.get(r["status"], 0) + 1
         u = VS.usage_summary(day, path)
+        try:                                                             # entry models E1–E4 (no activity ⇒ "" ⇒ today's text)
+            from paper import engine_entry as EE
+            mline = EE.models_summary_text(day, vpath=path)
+        except Exception:                                                # noqa: BLE001 — display only
+            mline = ""
         send(f"📊 <b>आज</b>: signals {len(rows)} · " + ", ".join(f"{k} {v}" for k, v in sorted(by.items()))
-             + f"\nVision खर्च ${u['cost_usd']:.3f} ({u['calls']} calls)")
+             + f"\nVision खर्च ${u['cost_usd']:.3f} ({u['calls']} calls)" + (f"\n{mline}" if mline else ""))
         return True, "today"
     if cmd == "/vision":
         if len(parts) != 3:

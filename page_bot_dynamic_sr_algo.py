@@ -1399,6 +1399,8 @@ def render():
     engine3_swing_k = {d: settings.get(f"engine3_swing_k_d{d}") for d in (1, 2)}   # रिकामं ⇒ approved scale (D1 = 4, D2 = 6)
     engine3_switches = {k: settings.get(k) for k in _L3.METHOD_SWITCHES}   # रिकामं ⇒ method (default); parsing = _L3.switch_choice
     engine3_daily_pivot_n = settings.get("engine3_daily_pivot_n")         # रिकामं ⇒ provisional N = 2 (L1-c); parsing = _L3.pivot_n_choice
+    from paper import engine_entry as _EE                              # entry models E1–E4: same safe parsing as the live path
+    engine3_models = {m: _EE.model_on(settings, m) for m in ("E1", "E2", "E3", "E4")}   # signal switch only
     from bots_common import plain_text as _PT
     approval_band_warn_pts = _PT.band_warn_pts(settings)
     from bots_common import preopen_crux as _PC
@@ -1431,6 +1433,17 @@ def render():
                                              key=_widget_key(strategy_key, symbol, "preopen_charts"),
                                              help="ON (default) = सकाळच्या संदेशाच्या वर मुख्य मुद्दे + charts · OFF = जुनाच text संदेश. "
                                                   "Chart अयशस्वी ⇒ संदेश तसाच जातो.")
+                # 🎓 Abhi (entry models E1–E4): कोणते models signal देतात — signal switch फक्त, execution याच पानाचे settings.
+                st.markdown("**Entry models (E1–E4)** — कोणते models signal देतात")
+                import engine_signal as _ES
+                _mc = st.columns(4)
+                for _m, _col in zip(("E1", "E2", "E3", "E4"), _mc):
+                    engine3_models[_m] = bool(_col.checkbox(f"{_m} — {_ES.MODEL_NAMES[_m]}", value=engine3_models[_m],
+                                                            key=_widget_key(strategy_key, symbol, _EE.model_key(_m, "on"))))
+                st.caption("Engine फक्त signal देतो: प्रत्येक model चा signal स्वतंत्र Telegram card (\"E1 — Aggressive\" …; area, बाजू, "
+                           "invalidation फक्त माहिती, evidence), Vision मत, ✅ / ✏️ / ❌. एका area च्या visit मध्ये एक model एकदाच. ✅ नंतर "
+                           "execution = याच पानाचे आजचे settings (lots, naked lots, strikes, SL / target / TSL, एका वेळी एकच position). "
+                           "OFF ⇒ त्या model चे signals / cards नाहीत. फक्त PAPER — LIVE ला हात नाही.")
                 # 🎓 Abhi (layer 1 ✅): swing scale = त्यांचं visual calibration (swings2 D1 / D2, his approved charts). Advanced —
                 # default बदलायचा नाही; बदल फक्त engine च्या swings साठी (charts / replay approved scale वरच).
                 from swings2 import settings as _SW
@@ -1478,6 +1491,8 @@ def render():
                     "engine3_div_degree_rule": "Layer 5 RSI divergence: zone = zone मध्ये येणाऱ्या चालीच्या आतले pushes (method) · "
                                                "all = जुनं D0–D2 वाचन.",
                     "engine3_verdict_rule": "Layer 6a verdict: method = required set ⇒ entry, A / B पुराव्याने · score = जुनं score / weights.",
+                    "engine3_entry_gate": "Layer 3 entry gate: models = चार entry models E1–E4 (Abhi 21 Oct, method) · legacy_k = जुना ③ "
+                                          "(BOS impulse + K pullback) gate — जुनं वर्तन.",
                 }
                 _sw_shown = {k: _L3.switch_choice(k, engine3_switches[k]) for k in _L3.METHOD_SWITCHES}
                 if st.checkbox("Advanced: method layers (legacy fallback)",
@@ -1549,6 +1564,8 @@ def render():
             new_settings.update(_L3.switches_to_save(engine3_switches)[0])    # रिकामं ("") ⇒ method; incoherent ⇒ visit / volume method
             new_settings["approval_band_warn_pts"] = float(approval_band_warn_pts)
             new_settings["preopen_charts"] = bool(preopen_charts)
+            for _m, _on in engine3_models.items():                        # entry models E1–E4: signal switch only
+                new_settings[_EE.model_key(_m, "on")] = bool(_on)
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_support_max"] = int(rsi_support_max)

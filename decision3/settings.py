@@ -44,7 +44,8 @@ DEFAULTS = {
     "prior_level_atr_n": 14,                 # Q40: ATR_D = window आधीच्या इतक्या Daily candles चा सरासरी true range
     "level_merge": False,                    # Abhi Z-1u: पट्टे फक्त बांधायचे, merge ने रुंद नाहीत (प्रत्येक timeframe वेगळा). True = जुनं
                                              # merge + widen — फक्त जुने synthetic tests / what-if (dashboard वर नाही)
-    "zone_visit_rule": "structure",          # method §3 Visit: संपते फक्त रचनेने — area पासून दूर swing, किंवा अपयशी commitment बाहेर close.
+    "zone_visit_rule": "structure",          # method §3 Visit: संपते फक्त रचनेने — area पासून दूर swing (Abhi 21 Oct: एका candle चा बाहेर close /
+                                             # "अपयशी commitment बाहेर" visit संपवत नाही — तो जुना शेवट फक्त entry_gate = legacy_k मध्ये).
                                              # "close_away" (Z-1v: बाहेर एक close) / "touch_window" = जुनं — फक्त जुने tests / what-if
     "trade_band_max_sigma": None,            # Abhi Z-1x (final): zone रुंदीला आकड्याची मर्यादा नाही — रुंद दिसणारा zone = दोन bases एकत्र ⇒ रचना
                                              # दुरुस्त (Z-1u). फक्त what-if (× σ_1H) — dashboard वर नाही
@@ -97,6 +98,10 @@ DEFAULTS = {
     "line_rule": "logic",                    # method §3 Lines: touch = wick reaches the line, body on its side; two reactions = a line;
                                              # confluence = the line passes through the area, or a reaction out of it turns at the line
                                              # (Abhi 4 B) ⇒ labelled "confluence: line", never a new band; "sigma" = जुनं
+    "entry_gate": "models",                  # Abhi 21 Oct: entry = चार entry models (E1 aggressive / E2 confirmation / E3 structure / E4
+                                             # sweep-retest), फक्त आधीच्या थरांच्या outputs वरून (engine.entry_models). "legacy_k" = जुना ③
+                                             # (BOS impulse + K pullback) gate + जुना visit शेवट — exact जुनं वर्तन (golden reproduce)
+    "entry_models_on": ("E1", "E2", "E3", "E4"),   # replays / what-if: कोणते models चालू (live on/off live थरात, इथे नाही)
     "sharp_reversal_handover": True,         # Abhi Z-1z: zone मध्ये push नाकारला + dominant उलट candle ने गिळला = handover (तुलना, आकडा नाही)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
     "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.
@@ -180,7 +185,14 @@ REGISTER = {
     "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
     "level_merge": (False, "False / True (legacy)", "Abhi नियम", "Abhi Z-1u: bands built, never widened; True फक्त जुने tests / what-if"),
     "zone_visit_rule": ("structure", "structure / close_away / touch_window (legacy)", "Abhi नियम", "Abhi's method §3 Visit: ends only by "
-                        "structure — a swing built away from the area, or a failed commitment closing outside; time never ends it"),
+                        "structure — a swing built away from the area; time never ends it. Abhi 21 Oct: one candle (a commitment) "
+                        "closing outside never ends it (that old end stays only under entry_gate = legacy_k, logged as a note otherwise)"),
+    "entry_gate": ("models", "models / legacy_k", "Abhi नियम", "Abhi 21 Oct: the four entry models E1–E4 (built only from layers "
+                   "1–5 outputs: trend side, areas + K4, visits, commitment c0 with volume, LTF CHoCH c1, lines, RSI) decide; the old ③ "
+                   "(BOS impulse + K pullback) is logged as legacy_k_gate, never decides. legacy_k = the old ③ gate + old visit end "
+                   "(exact old behaviour, golden reproduce)"),
+    "entry_models_on": (("E1", "E2", "E3", "E4"), "subset of E1 / E2 / E3 / E4", "Abhi नियम", "Abhi 21 Oct: replays / what-if only — "
+                        "per-model on / off for live sits in the live layer"),
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
     "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),

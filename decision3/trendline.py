@@ -318,3 +318,206 @@ def confluence_areas(V, t, d, cands):
         out.append({**x, "id": f"{x['id']}+TL", "lo": round(lo, 2), "hi": round(hi, 2), "births": list(x["births"]) + ["tl"],
                     "dist": round(dist, 2), "above": lo > c, "below": hi < c, "tl": ln, "parent_level": x["id"]})
     return sorted(out, key=lambda a: a["dist"])                           # Abhi's method §4: every area ahead, nearest first
+
+
+# ------------------------------------------------------------------------------------------------ both channel lines (Abhi 21 Oct)
+FAMILIES = (("H", 1), ("H", -1), ("L", 1), ("L", -1))                      # (swings of, slope): rising / falling line of highs / lows
+
+
+def _broken_at(C, pivs, kind, line, side, start, end):
+    """`broken_by` (method §3 / K6.5: a close beyond AND a swing of `kind` formed beyond after it, no close back between) — the same
+    answer, read run by run instead of bar by bar (the earliest excursion close that a later swing beyond confirms)."""
+    if end < start:
+        return None
+    b = np.arange(start, end + 1)
+    bey = (C[start:end + 1] - np.array([line(i) for i in b])) * side > 0
+    best = None
+    for p in pivs:
+        pb = int(p.bar)
+        if p.kind != kind or not (start <= pb <= end) or (float(p.price) - line(pb)) * side <= 0:
+            continue
+        j = pb - start                                                     # the run of beyond closes that reaches p (bars i … p.bar − 1)
+        if j > 0 and bey[j - 1]:
+            i = j - 1
+            while i > 0 and bey[i - 1]:
+                i -= 1
+        elif bey[j]:
+            i = j
+        else:
+            continue
+        best = i + start if best is None else min(best, i + start)
+    return best
+
+
+def _pair_ok(C, known, b1, y1, b2, y2, kind):
+    """Method §3 Lines (logic): two separate reactions and no candle closes through the line between them (a wick = touch / sweep)."""
+    if not separate(known, b1, b2, kind):
+        return False
+    side = 1 if kind == "H" else -1                                        # beyond a line of highs = above; of lows = below
+    if b2 - b1 < 2:
+        return True
+    j = np.arange(b1 + 1, b2)
+    return not bool((((C[b1 + 1:b2] - (y1 + (y2 - y1) / (b2 - b1) * (j - b1))) * side) > 0).any())
+
+
+def _known_deg(V, t, g):
+    """Swings of degree g known by bar t (confirm_bar ≤ t), in bar order. The trend degree (`level_degree`) = the Levels' own pivots."""
+    lv = V.levels
+    if g == int(V.s.get("level_degree", 2)):
+        return sorted((p for p in lv.known_pivots(t) if p.bar <= t), key=lambda p: p.bar)
+    res = getattr(lv, "res", None) or {}
+    return sorted((p for p in (res.get("pivots") or {}).get(g, []) if p.confirm_bar <= t and p.bar <= t), key=lambda p: p.bar)
+
+
+TF_OF_DEGREE = {2: "1H", 1: "15M"}
+
+
+def line_degrees(V):
+    """The structures the lines are drawn on: the trend degree (`level_degree`, the 1H areas' own swings — the main swings) and the
+    finest structure below it (D1, the 15M structure) — Abhi 21 Oct "on each timeframe"."""
+    g = int(V.s.get("level_degree", 2))
+    return tuple(dict.fromkeys((g, 1)))
+
+
+def channel_lines(V, t, degree=None):
+    """Abhi 21 Oct — lines on BOTH sides and in BOTH directions, whatever the Daily trend: for each family (a rising / falling line
+    through swing highs / lows of `degree`, default the trend degree `level_degree`, known by t) the newest line by the method §3 logic
+    (`swing_line`'s own pair rule: two separate reactions, no close through between them), with its anchors, touches (by reactions,
+    `touch_groups`) and break state by the existing definition (a close beyond + a swing beyond — K6.5, `broken_by`). A swing that breaks
+    a line is itself the newest swing, so the line through it is the chain's new line; the line it broke is kept as that family's
+    `broken` line (the newest broken one), so a retest of it can be read.
+    Returns [{family, kind, slope_dir, degree, tf, p1, p2, slope, touches, touch_groups, value_t, broken, break_bar, break_side, state,
+    id}]. `swing_line` (the trade-side line the decision has always used — confluence, ② labels) is unchanged."""
+    g = int(V.s.get("level_degree", 2)) if degree is None else int(degree)
+    memo = V.__dict__.setdefault("_chan_memo", {})
+    if (t, g) in memo:
+        return memo[(t, g)]
+    lv = V.levels
+    C = lv.A["close"]
+    known = _known_deg(V, t, g)
+    out = []
+    for kind, sd in FAMILIES:
+        side = 1 if kind == "H" else -1
+        pts = [(int(p.bar), float(p.price)) for p in known if p.kind == kind]
+        bars = np.array([b for b, _ in pts], int)
+        ys = np.array([y for _, y in pts], float)
+        cur = brk = None
+        for k2 in range(len(pts) - 1, 0, -1):
+            b2, y2 = pts[k2]
+            if cur is not None and b2 < cur["p1"][0]:                      # older than the live line's own first anchor: history
+                break
+            cand = np.flatnonzero(((y2 - ys[:k2]) * sd > 0) & (bars[:k2] < b2))[::-1]
+            if (kind == "H") == (sd > 0) and len(cand):                    # rising highs / falling lows: a close beyond p2's own price
+                seg = C[:b2]                                               # between the anchors is beyond the line too ⇒ no older p1
+                bad = np.flatnonzero((seg - y2) * side > 0)
+                if len(bad):
+                    cand = cand[bars[cand] >= bad[-1]]
+            pair = None
+            for k1 in cand:
+                b1, y1 = pts[int(k1)]
+                if _pair_ok(C, known, b1, y1, b2, y2, kind):
+                    pair = (b1, y1)
+                    break
+            if pair is None:
+                continue
+            b1, y1 = pair
+            slope = (y2 - y1) / (b2 - b1)
+
+            def line(b, y1=y1, b1=b1, slope=slope):
+                return y1 + slope * (b - b1)
+            bb = _broken_at(C, known, kind, line, side, b2 + 1, t)
+            groups = touch_groups(lv.A, known, kind, line, b1, b2, t if bb is None else bb)
+            x = {"family": f"{'rising' if sd > 0 else 'falling'} line of {'highs' if kind == 'H' else 'lows'}", "kind": kind,
+                 "slope_dir": "rising" if sd > 0 else "falling", "degree": g, "tf": TF_OF_DEGREE.get(g, f"D{g}"),
+                 "p1": [b1, round(y1, 2)], "p2": [b2, round(y2, 2)],
+                 "slope": round(slope, 4), "touches": len(groups), "touch_groups": groups, "value_t": round(line(t), 2),
+                 "broken": bb is not None, "break_bar": bb, "break_side": "up" if side > 0 else "down",
+                 "state": "BROKEN" if bb is not None else "ACTIVE", "id": f"D{g}:{kind}{'+' if sd > 0 else '-'}:{b1}-{b2}"}
+            if bb is None and cur is None:
+                cur = x
+            elif bb is not None:
+                if brk is None:
+                    brk = x
+                break                                                      # the newest broken line of this family found
+        out.extend(z for z in (cur, brk) if z is not None)
+    memo[(t, g)] = out
+    return out
+
+
+def channels(V, t, degree=None):
+    """Abhi 21 Oct — CHANNELS: each line of `channel_lines` with its parallel through the opposite extreme of the same move (the
+    lowest low between the anchors of a line of highs; the highest high for a line of lows). The parallel's break = the same K6.5 rule
+    (a close beyond + a swing of its kind beyond). State at t: "inside" (the close between the two lines, none broken), "outside" (no
+    break), "<lower|upper> line broken", or "retest of the broken <lower|upper> line" (bar t's wick reaches the broken line again).
+    Facts / evidence only (a broken rising channel in a downtrend = handover evidence); a broken line is a retest level (E4 b).
+    Returns [{id, tf, degree, slope_dir, base, parallel, upper_t, lower_t, state, broken_side, broken_lines}]."""
+    g = int(V.s.get("level_degree", 2)) if degree is None else int(degree)
+    memo = V.__dict__.setdefault("_chanl_memo", {})
+    if (t, g) in memo:
+        return memo[(t, g)]
+    lv = V.levels
+    A = lv.A
+    C = A["close"]
+    known = _known_deg(V, t, g)
+    out = []
+    for ln in channel_lines(V, t, g):
+        (b1, _y1), (b2, _y2) = ln["p1"], ln["p2"]
+        seg = np.arange(int(b1), int(b2) + 1)
+        if ln["kind"] == "H":
+            bo = int(seg[np.argmin(A["low"][seg])])
+            yo, pk, pside = float(A["low"][bo]), "L", -1
+        else:
+            bo = int(seg[np.argmax(A["high"][seg])])
+            yo, pk, pside = float(A["high"][bo]), "H", 1
+        sl = float(ln["slope"])
+
+        def par(b, yo=yo, bo=bo, sl=sl):
+            return yo + sl * (b - bo)
+        pb = _broken_at(C, known, pk, par, pside, int(b2) + 1, t)
+        pl = {"family": f"{ln['slope_dir']} line of {'lows' if pk == 'L' else 'highs'} (parallel)", "kind": pk,
+              "slope_dir": ln["slope_dir"], "degree": g, "tf": ln["tf"], "p1": [bo, round(yo, 2)], "p2": [bo + 1, round(par(bo + 1), 2)],
+              "slope": ln["slope"], "value_t": round(par(t), 2), "broken": pb is not None, "break_bar": pb,
+              "break_side": "up" if pside > 0 else "down", "state": "BROKEN" if pb is not None else "ACTIVE",
+              "id": f"{ln['id']}|par", "parallel_of": ln["id"]}
+        up_, lo_ = (ln, pl) if ln["kind"] == "H" else (pl, ln)
+        ut, lt = line_value(up_, t), line_value(lo_, t)
+        broken = [x for x in (up_, lo_) if x["broken"]]
+        if broken:
+            x = max(broken, key=lambda z: z["break_bar"])
+            nm = "upper" if x is up_ else "lower"
+            v = line_value(x, t)
+            retest = (A["high"][t] >= v) if x["break_side"] == "down" else (A["low"][t] <= v)
+            state = f"retest of the broken {nm} line" if retest else f"{nm} line broken"
+            bside = x["break_side"]
+        else:
+            state = "inside" if lt <= C[t] <= ut else "outside (no break)"
+            bside = None
+        out.append({"id": f"ch:{ln['id']}", "tf": ln["tf"], "degree": g, "slope_dir": ln["slope_dir"], "base": ln["id"],
+                    "base_line": ln, "parallel": pl, "upper_t": round(ut, 2), "lower_t": round(lt, 2), "state": state,
+                    "broken_side": bside, "broken_lines": [x["id"] for x in broken]})
+    memo[(t, g)] = out
+    return out
+
+
+def line_value(ln, b):
+    """The price of a line dict (`channel_lines` / `channels` / `swing_line`) at bar b."""
+    (b1, y1) = ln["p1"]
+    return float(y1) + float(ln["slope"]) * (int(b) - int(b1))
+
+
+def break_known_at(V, ln):
+    """The bar from which a broken line is KNOWN broken: the confirmation of the first swing beyond it after the break close (K6.5)."""
+    if not ln.get("broken"):
+        return None
+    side = 1 if ln["kind"] == "H" else -1
+    bb = int(ln["break_bar"])
+    C = V.levels.A["close"]
+    run_end = bb                                                           # the excursion's closes beyond: bb … run_end − 1
+    while run_end < len(C) and (float(C[run_end]) - line_value(ln, run_end)) * side > 0:
+        run_end += 1
+    g = int(ln.get("degree") or V.s.get("level_degree", 2))
+    pv = V.levels._pv_sorted if g == int(V.s.get("level_degree", 2)) else \
+        list(((getattr(V.levels, "res", None) or {}).get("pivots") or {}).get(g, []))
+    cands = [int(p.confirm_bar) for p in pv if p.kind == ln["kind"] and bb <= int(p.bar) <= run_end
+             and (float(p.price) - line_value(ln, p.bar)) * side > 0]
+    return min(cands) if cands else None
