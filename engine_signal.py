@@ -183,8 +183,9 @@ def _alert_path(state_path):
     return state_path or os.path.join(ROOT, "data", "engine_signal_alerts.json")
 
 
-def alert_error(symbol, msg, send=None, state_path=None, now=None):
-    """Engine error ⇒ Telegram: पहिल्या अपयशाला एक ओळ; अजून अपयशी असेल तर `ALERT_REPEAT_MIN` नंतरच पुन्हा. रिटर्न पाठवलं का. raise नाही."""
+def alert_error(symbol, msg, send=None, state_path=None, now=None, setting=False):
+    """Engine error ⇒ Telegram: पहिल्या अपयशाला एक ओळ; अजून अपयशी असेल तर `ALERT_REPEAT_MIN` नंतरच पुन्हा. रिटर्न पाठवलं का. raise नाही.
+    setting = True (dashboard `engine3_*` setting error, engine3_live.SettingError) ⇒ "setting error — fix it on the dashboard"."""
     p, sym = _alert_path(state_path), str(symbol).upper()
     now = _naive(now or now_ist())
     st = _alert_state(p)
@@ -193,7 +194,8 @@ def alert_error(symbol, msg, send=None, state_path=None, now=None):
     if cur.get("failing") and last is not None and now - last < pd.Timedelta(minutes=ALERT_REPEAT_MIN):
         return False
     again = " (still failing)" if cur.get("failing") else ""
-    _alert_send(f"❌ Engine {sym}{again}: {str(msg)[:160]} ⇒ no new engine entry for {sym} until the data is back (exits unaffected)", send)
+    until = "— setting error — fix it on the dashboard" if setting else "until the data is back"
+    _alert_send(f"❌ Engine {sym}{again}: {str(msg)[:160]} ⇒ no new engine entry for {sym} {until} (exits unaffected)", send)
     st[sym] = {"failing": True, "since": cur.get("since") or str(now), "last_sent": str(now)}
     try:
         os.makedirs(os.path.dirname(p), exist_ok=True)

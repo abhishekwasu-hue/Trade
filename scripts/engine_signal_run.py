@@ -102,7 +102,8 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                 if getattr(exc, "data_problem", False) and _fut_required(sym):   # Abhi Z-1c: FUT volume missing ⇒ एकच ओळ, दिवसातून एकदा
                     ES.alert_data_problem(sym, str(exc), send=send, state_path=alert_path, now=now)
                 else:
-                    ES.alert_error(sym, msg, send=send, state_path=alert_path, now=now)
+                    ES.alert_error(sym, msg, send=send, state_path=alert_path, now=now,
+                                   setting=bool(getattr(exc, "setting_error", False)))   # dashboard engine3_* setting ⇒ "fix it on the dashboard"
     return rc
 
 
