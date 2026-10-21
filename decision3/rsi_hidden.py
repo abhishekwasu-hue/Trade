@@ -56,13 +56,16 @@ def _ts(V, D, i):
 def frame_of(V, t, d, move_from=None, arm=None, lvl=None, row=None):
     """The reading frame at bar t for trade direction d (+1 = uptrend pullback / bull call, −1 = mirror), first that is known:
     1. `move_from` given (the decision's `commit.move_from_bar`) — exactly the regular divergence's frame (`zone_move`);
-    2. a decision row (`V.decide(t)`) ⇒ its `commit.move_from_bar` / `arm_bar`;
+    2. a decision row (`V.decide(t)`) ⇒ its `commit.move_from_bar` / `arm_bar` (no commit facts but a level ⇒ that level, as 3.);
     3. an area `lvl` ⇒ V.visit (the same visit `_confirm` reads): move_from = approach_from − 1, arm = visit start;
     4. else the K pullback (`V.pb.at(t, d)`): the pullback begins at the impulse end (`i_end_bar`), `pullback_K`.
     Returns {kind, move_from, arm, why}; move_from None ⇒ not known (NA)."""
     if move_from is not None:
         return {"kind": "zone_move", "move_from": int(move_from), "arm": None if arm is None else int(arm),
                 "why": "the move into the area (from its own swing)"}
+    if row is not None and (row.get("commit") or {}).get("move_from_bar") is None and row.get("level") and lvl is None:
+        lvl = row["level"]                                              # ③ not reached ⇒ no commit facts: read the area's own visit
+        row = None
     if row is not None:
         cm = row.get("commit") or {}
         mf = cm.get("move_from_bar")

@@ -125,6 +125,22 @@ def test_decision_row_frame_and_na_when_the_move_is_not_known():
     assert na["found"] is None and "not known" in na["na"]
 
 
+def test_level_frame_uses_the_areas_visit_like_the_confirmation():
+    """A row with a level but no commit facts (③ not reached) ⇒ the area's own visit (V.visit): move_from = approach_from − 1."""
+    df, ps, r = bull_hidden()
+    calls = []
+
+    def visit(t, lvl, d, k0=0):
+        calls.append((t, d, k0))
+        return {"start": 20, "approach_from": 6} if lvl["id"] == "a" else {"start": None, "approach_from": None, "why": "no visit in progress"}
+    V = V_of(hid(df, ps, r), df, pb=NS(at=lambda t, d: {"k_open_bar": 12}))
+    V.visit = visit
+    got = RH.read_hidden_divergence(V, 30, row={"trend_used": "UP", "level": {"id": "a", "role": "SUP"}, "commit": {}})
+    assert got["found"] is True and (got["frame"]["move_from"], got["frame"]["arm"]) == (5, 20) and calls == [(30, 1, 12)]
+    na = RH.read_hidden_divergence(V, 30, +1, lvl={"id": "b"})
+    assert na["found"] is None and "no visit in progress" in na["na"]
+
+
 def test_pullback_K_frame_and_both_sides_when_d_is_none():
     df, ps, r = bull_hidden()
     pb = NS(at=lambda t, d: {"i_end_bar": 5, "open": True} if d == 1 else None)
