@@ -296,3 +296,23 @@ def test_crux_edge_cases_no_area_na_unclear():
     # line touch N (reader चं confluence_areas) ⇒ confluence शब्द
     f = PC.facts(NIFTY, 22889.0, [(LR.BEAR, 23039.0, 23111.0, "ENGINE_LEVEL_1D")], LEVELS["NIFTY"], {1: "line (touch 3)"})
     assert f["nearest"]["conf"] == "line (touch 3)"
+
+
+def test_nearest_is_by_edge_distance_not_midpoint_order():
+    """12 Oct-like: the message lists 22,570–22,579 first (midpoint ≈211 pts) but price reaches 22,544–22,622 first (edge ≈181 pts)."""
+    P = _preopen()
+    last = 22363.0
+    levels = [{"id": 1, "tf": "1H", "role": "resistance", "lo": 22570.0, "hi": 22579.0, "state": "ACTIVE", "tests": 0},
+              {"id": 2, "tf": "1H", "role": "resistance", "lo": 22544.0, "hi": 22622.0, "state": "TESTED", "tests": 5},
+              {"id": 3, "tf": "1H", "role": "resistance", "lo": 22723.0, "hi": 22732.0, "state": "ACTIVE", "tests": 0}]
+    areas = [(LR.BEAR, x["lo"], x["hi"], "ENGINE_LEVEL_1H") for x in levels]
+    ordered = P.nearest(areas, last, 3)
+    assert (ordered[0][1], ordered[0][2]) == (22570.0, 22579.0)                                # the message's own order: midpoint
+    f = PC.facts(NIFTY, last, ordered, levels)
+    assert (f["nearest"]["lo"], f["nearest"]["hi"], f["nearest"]["dist"]) == (22544.0, 22622.0, 181.0)
+    assert (f["next"]["lo"], f["next"]["hi"]) == (22570.0, 22579.0)
+    out = PC.lines("NIFTY", NIFTY, "UP", last, f)
+    assert out[1] == "Nearest: supply 22,544–22,622 (1H, ≈181 pts above last close 22,363) · tested 5× · confluence: none"
+    assert out[3].startswith("Invalid: a 15M close above 22,622 (beyond the area)")
+    assert out[4].endswith("if it breaks, next: supply 22,570–22,579 (1H).")
+    assert [(a["lo"], a["hi"]) for a in f["watched"]] == [(x[1], x[2]) for x in ordered]       # everything else unchanged

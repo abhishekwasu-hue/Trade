@@ -102,7 +102,8 @@ def _dist(side, lo, hi, last):
 
 
 def facts(ctx, last, areas, levels=None, line_tags=None):
-    """Crux / chart साठी तथ्यं (नवा आकडा नाही). areas = संदेशातलाच watched list (`nearest()`: (side, lo, hi, zone_type), जवळचा पहिला);
+    """Crux / chart साठी तथ्यं (नवा आकडा नाही). areas = संदेशातलाच watched list (`nearest()`: (side, lo, hi, zone_type), मध्य-क्रम);
+    nearest = किंमत ज्या पट्ट्याच्या कडेला आधी पोहोचेल तो (last close पासून कडेपर्यंतचं अंतर सर्वात कमी), next = त्याच बाजूचा पुढचा;
     levels = engine चे tradeable पट्टे (`watched_levels`, state / tf / confluence सह) किंवा None (own source); line_tags = {level id:
     "line (touch N)"} (reader चं `trendline.confluence_areas`) किंवा None.
     target = विरुद्ध बाजूचा (bear ⇒ किंमतीखालचा support, bull ⇒ वरचा resistance) सर्वात जवळचा जिवंत पट्टा — reader चा `method.risk`
@@ -119,9 +120,11 @@ def facts(ctx, last, areas, levels=None, line_tags=None):
              "id": (lv or {}).get("id"), "confluence": list((lv or {}).get("confluence") or ())}
         out["watched"].append(a)
     if out["watched"]:
-        out["nearest"] = out["watched"][0]
+        # nearest = the band edge price reaches first (edge distance from the last close), not the midpoint order of the list
+        by_edge = sorted(out["watched"], key=lambda a: (a["dist"], a["lo"] if a["side"] == LR.BEAR else -a["hi"]))
+        out["nearest"] = by_edge[0]
         side = out["nearest"]["side"]
-        same = [a for a in out["watched"][1:] if a["side"] == side]
+        same = [a for a in by_edge[1:] if a["side"] == side]
         out["next"] = same[0] if same else None
         opp_role = "support" if side == LR.BEAR else "resistance"
         cands = []
