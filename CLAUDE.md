@@ -23,6 +23,7 @@ First line of every report to Abhi: `Rules re-read: CLAUDE.md, REPORT_STANDARD.m
   (Z-1u). No union band in any entry, payload or card; `max_hits_per_zone` counts the visited area.
 - Refined base (RC2, RESEARCH DEFAULT, review after the replay — `entry_area_refine = setup_tf`): the 1H / Daily area is the context;
   the refined 15M base inside it (TA4) gives trigger proximity, the E1 entry and the invalidation; no refined base yet ⇒ the models wait.
+- A BOS-origin area is the base the impulse left (never the breakout candle); every area band is wick to body, no wick ⇒ the body.
 - E4 (b): a broken line / area is being revisited only while price is actually back at it; the revisit ends when price leaves it by
   structure (a new swing that does not reach it).
 - FUT (near-month) volume for indices; spot for structure / areas / RSI. RSI divergence is the only indicator.

@@ -788,11 +788,11 @@ Walk-forward replay of the reader as merged (layers 1–4, 5, 6a; default settin
 
 ## BANKNIFTY replay reading checks (deployed code da7cbbc; report in private trade-data `review/replay_banknifty_6m/da7cbbc/checks/`)
 Misreads are bugs against a named concept of the Price Action Standard (never one-chart rules). Not fixed yet — fix in a separate PR.
-- **BUG — concept C (area base), BOS-origin area (birth "b").** A 1H support area was built from the BOS breakout candle itself
+- **FIXED (branch `claude/models-inside-area-clean-charts`, `levels._base`, tests/test_levels_bos_base.py) — BUG — concept C (area base), BOS-origin area (birth "b").** Now: the first trend-direction 1H candle after the origin that is complete before the BOS bar's hour; none ⇒ the origin's own candle (the base the impulse left); never the breakout candle. A 1H support area was built from the BOS breakout candle itself
   (the base 1H candle cut at the BOS bar = the breakout 15M candle), not from the candles where buyers acted. Method §3 Areas: "An
   area is built from ONE base or reaction: the candles where buyers or sellers acted (wick to body)". Owner: `decision3/levels.py`
   (BOS base selection).
-- **BUG — concept C (area band), Z-1x.** When the base candle has no wick on the area side, the code takes the whole candle
+- **FIXED (same branch, `levels.bos_band` = `_band_swing`'s rule) — BUG — concept C (area band), Z-1x.** When the base candle has no wick on the area side, the code takes the whole candle
   (`decision3/levels.py` ~503–505) instead of the body (Z-1x: wick-to-body; no wick ⇒ body).
 - **Checked, matches the method — concept C:** a swing-born 1H area (birth "a") ~300 points wide is one 1H candle's wick-to-body
   after a sharp first-hour push; no merge of bases or timeframes (Z-1u holds).
@@ -837,6 +837,6 @@ Effects to review (07–21 Oct, trade-data `review/replay_banknifty_6m/<sha>/gro
   bear-call fixture (tests/oct12_fixture — "the structure Abhi described") triggers on a candle that spikes through the area and
   closes below it; under RC3 it is no entry. The real 12 Oct golden test stays pinned to `legacy_k` (unchanged). Provisional: RC3 wins
   (his newer explicit rule); the row-shape tests read that fixture with `entry_trigger_rule = legacy`.
-- Wide single areas (~300 pts, 3.5–4× the median) still exist in levels (births a:D2 + c): not a cluster effect — the two concept-C
-  bugs logged above (BOS base = breakout candle; no-wick band) remain open for their own PR. The refined base now bounds the trade
-  location inside them.
+- Wide single areas (~300 pts, 3.5–4× the median): not a cluster effect. The BOS-origin one (Abhi's 300, births b + c) came from the
+  two concept-C bugs above — fixed here (C-1 / C-2); the swing-born ones (a:D2, one sharp 1H candle wick to body) match the method and
+  stay; the refined 15M base now bounds the trade location inside them.

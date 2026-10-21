@@ -162,6 +162,14 @@ def _band_swing(kind, o, h, l, c, price, w):
     return lo, hi
 
 
+def bos_band(d, c4):
+    """The BOS-origin base candle's band — the same TA4 / Z-1x rule as a swing candle (`_band_swing`): the wick on the area side to
+    the body (bull: the low to the body's bottom; bear: the body's top to the high); no wick on that side ⇒ the body; no body either ⇒
+    the whole candle (never one price). Abhi C-2: before, a candle with no wick on the area side gave the whole candle."""
+    o, h, l, c = (float(x) for x in c4)
+    return _band_swing("L" if d > 0 else "H", o, h, l, c, l if d > 0 else h, 0)
+
+
 class Levels:
     """सगळ्या levels चा जीवनक्रम (एकदा, bar क्रमाने). snapshot(t) फक्त t पर्यंतची माहिती वापरतो."""
 
@@ -394,15 +402,18 @@ class Levels:
         return None
 
     def _base(self, d, origin, t):
-        """origin नंतरची पहिली trend-दिशेची 1H candle (BOS bar पर्यंत; t पर्यंतचाच भाग). Origin ची स्वतःची 1H candle वगळली (spec ② (b)
-        "origin नंतरची"); BOS त्याच तासात झाला तर ती candle (दुसरी नाही)."""
+        """The BOS-origin (birth b) base — Abhi C-1 (07–21 Oct BANKNIFTY review, concept C): the candle(s) where buyers / sellers acted
+        BEFORE the breakout, the base the impulse left — NEVER the breakout candle itself. The first trend-direction 1H candle after the
+        origin (spec ② (b) "origin नंतरची") that is COMPLETE before the hour of the BOS bar t; none ⇒ the origin's own 1H candle (where
+        the impulse started), read only up to the bar before t. Returns (j, (open, high, low, close)) or None."""
         h1_of = self.h1_of
         j0, j1 = h1_of[origin.bar], h1_of[t]
-        for j in range(min(j0 + 1, j1), j1 + 1):
-            c4 = self._h1_upto(j, t)                                     # t पर्यंतचाच भाग (अपूर्ण तास ⇒ पुढचे bars नाहीत)
+        for j in range(j0 + 1, j1):                                       # the BOS bar's own hour is the breakout ⇒ never the base
+            c4 = self._h1_upto(j, t - 1)
             if c4 is not None and (c4[3] - c4[0]) * d > 0:
                 return j, c4
-        return None
+        c4 = self._h1_upto(j0, t - 1) if t > 0 else None                  # the base the impulse left: the origin's own candle
+        return (j0, c4) if c4 is not None else None
 
     # ------------------------------------------------------------------------------------------ जीवनक्रम
     def _run(self):
@@ -499,10 +510,8 @@ class Levels:
                 self.bos.append((t, d, origin))
                 jb = self._base(d, origin, t)
                 if jb is not None:
-                    _j, (o, hh, ll, _c) = jb
-                    lo, hi = (ll, o) if d > 0 else (o, hh)
-                    if hi <= lo:                                           # opened at its extreme ⇒ the base candle's whole range (never one price)
-                        lo, hi = ll, hh
+                    _j, c4 = jb
+                    lo, hi = bos_band(d, c4)                               # Abhi C-2 / Z-1x: wick to body; no wick ⇒ the body
                     w = self._w(t)
                     if hi - lo < w:
                         if d > 0:
