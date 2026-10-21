@@ -1397,6 +1397,8 @@ def render():
     import engine3_live as _L3                                       # तोच parser (stored "false" ⇒ unchecked; रिकामं ⇒ default ON)
     engine3_use_1m = _L3.use_1m({"engine3_use_1m": settings.get("engine3_use_1m")})
     engine3_swing_k = {d: settings.get(f"engine3_swing_k_d{d}") for d in (1, 2)}   # रिकामं ⇒ approved scale (D1 = 4, D2 = 6)
+    engine3_switches = {k: settings.get(k) for k in _L3.METHOD_SWITCHES}   # रिकामं ⇒ method (default); parsing = _L3.switch_choice
+    engine3_daily_pivot_n = settings.get("engine3_daily_pivot_n")         # रिकामं ⇒ provisional N = 2 (L1-c); parsing = _L3.pivot_n_choice
     from bots_common import plain_text as _PT
     approval_band_warn_pts = _PT.band_warn_pts(settings)
     if strategy_key in ("1m_instant", "15m_dynamic_sr"):
@@ -1444,6 +1446,49 @@ def render():
                         engine3_swing_k = {1: None, 2: None}
                 else:
                     engine3_swing_k = {1: None, 2: None}
+                # 🎓 Abhi (L1-c): Daily swing = N candles दोन्ही बाजूला. N = 2 provisional — Abhi नंतर इथून बदलू शकतात (रिकामं ⇒ 2).
+                _pn, _pn_warn = _L3.pivot_n_choice(engine3_daily_pivot_n)
+                if st.checkbox("Advanced: Daily swing size N (L1-c)", value=_L3.pivot_n_to_save(engine3_daily_pivot_n) != "" or bool(_pn_warn),
+                               key=_widget_key(strategy_key, symbol, "engine3_pivot_adv")):
+                    if _pn_warn:
+                        st.warning(_pn_warn)
+                    engine3_daily_pivot_n = safe_number_input("Engine Daily swing: N candles दोन्ही बाजूला (2 = provisional, default)",
+                                                              min_value=1, value=int(_pn), step=1,
+                                                              key=_widget_key(strategy_key, symbol, "engine3_daily_pivot_n"))
+                    st.caption("Daily swing = त्याच्या दोन्ही बाजूला N candles पेक्षा उंच / खोल. 2 = provisional (Abhi L1-c, नंतर बदलू शकता). "
+                               "बदल फक्त live engine (निर्णय + pre-open पट्टे) — charts / replay 2 वरच.")
+                else:
+                    engine3_daily_pivot_n = ""
+                # 🎓 Abhi (live switches): प्रत्येक Chart Reader layer ⇒ method (default) किंवा त्याचा जुना what-if — deploy शिवाय fallback.
+                # रिकामं / method ⇒ आजचं वर्तन; engine3_live.method_switches तोच नियम तपासतो (चुकीचं ⇒ engine run fail-closed).
+                _E3_SW_CAPTION = {
+                    "engine3_zone_visit_rule": "Layer 3 visit: structure = visit फक्त रचनेने संपते (method) · close_away / touch_window = जुनं "
+                                               "(यांच्यासोबत commitment volume = opposite हवं).",
+                    "engine3_commit_volume_rule": "Layer 3 commitment volume: approach leg + visit च्या opposite candles च्या सरासरीपेक्षा "
+                                                  "जास्त (method) · opposite = जुनं (#329).",
+                    "engine3_line_rule": "Layer 4 lines: logic = दोन reactions, candle शी तुलना (method) · sigma = जुनं σ / touch count.",
+                    "engine3_div_degree_rule": "Layer 5 RSI divergence: zone = zone मध्ये येणाऱ्या चालीच्या आतले pushes (method) · "
+                                               "all = जुनं D0–D2 वाचन.",
+                    "engine3_verdict_rule": "Layer 6a verdict: method = required set ⇒ entry, A / B पुराव्याने · score = जुनं score / weights.",
+                }
+                _sw_shown = {k: _L3.switch_choice(k, engine3_switches[k]) for k in _L3.METHOD_SWITCHES}
+                if st.checkbox("Advanced: method layers (legacy fallback)",
+                               value=any(_w or _v != _L3.METHOD_SWITCHES[k][1][0] for k, (_v, _w) in _sw_shown.items()),
+                               key=_widget_key(strategy_key, symbol, "engine3_switch_adv")):
+                    for _k, (_v22, _allowed, _label) in _L3.METHOD_SWITCHES.items():
+                        _cur, _warn = _sw_shown[_k]
+                        if _warn:                                        # a bad stored value never breaks the page
+                            st.warning(_warn)
+                        engine3_switches[_k] = st.selectbox(f"Engine {_label}", list(_allowed), index=list(_allowed).index(_cur),
+                                                            format_func=lambda v, k=_k: _L3.switch_label(k, v),
+                                                            key=_widget_key(strategy_key, symbol, _k))
+                        st.caption(_E3_SW_CAPTION[_k])
+                    _sw_err = _L3.switches_to_save(engine3_switches)[1]
+                    if _sw_err:
+                        st.error(f"{_sw_err} — visit / commitment volume method (default) जतन होईल.")
+                    st.caption("हे फक्त live engine (निर्णय + pre-open पट्टे) साठी fallback. Charts / replay नेहमी method वरच.")
+                else:
+                    engine3_switches = {k: "" for k in _L3.METHOD_SWITCHES}
 
     st.markdown("---")
     if st.button("💾 Settings जतन करा", key="bdsr_save_btn", type="primary"):
@@ -1492,6 +1537,8 @@ def render():
             new_settings["engine3_use_1m"] = bool(engine3_use_1m)
             for _d in (1, 2):                                            # रिकामं ("") ⇒ approved scale
                 new_settings[f"engine3_swing_k_d{_d}"] = "" if engine3_swing_k[_d] in (None, "") else float(engine3_swing_k[_d])
+            new_settings["engine3_daily_pivot_n"] = _L3.pivot_n_to_save(engine3_daily_pivot_n)   # रिकामं ("") ⇒ provisional N = 2
+            new_settings.update(_L3.switches_to_save(engine3_switches)[0])    # रिकामं ("") ⇒ method; incoherent ⇒ visit / volume method
             new_settings["approval_band_warn_pts"] = float(approval_band_warn_pts)
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice

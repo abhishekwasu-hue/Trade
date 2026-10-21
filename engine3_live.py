@@ -19,6 +19,7 @@ import datetime as dt
 import hashlib
 import inspect
 import json
+import math
 import os
 import pickle
 import urllib.parse
@@ -398,6 +399,121 @@ def swing_scale(s=None):
     return {"swing_k": k}
 
 
+def daily_pivot_n(s=None):
+    """Abhi (L1-c): advanced dashboard `engine3_daily_pivot_n` ⇒ V22 settings {"daily_pivot_n": N} (Daily swing = N bars on both sides,
+    for the live decision and the pre-open levels). रिकामं / None / decision3's default (provisional N = 2) ⇒ None (today's behaviour).
+    Not a whole number ≥ 1 ⇒ ValueError (the engine run fails closed: error row + Telegram) — before any data fetch."""
+    from decision3 import settings as S3
+    v = (s or {}).get("engine3_daily_pivot_n")
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    try:
+        if isinstance(v, bool):
+            raise ValueError
+        f = float(str(v).strip())
+        if not (math.isfinite(f) and f == int(f) and f >= 1):
+            raise ValueError
+    except (TypeError, ValueError):
+        raise ValueError(f"engine3_daily_pivot_n = {v!r} — a whole number ≥ 1 (empty = {S3.DEFAULTS['daily_pivot_n']}, provisional)") from None
+    n = int(f)
+    return None if n == S3.DEFAULTS["daily_pivot_n"] else {"daily_pivot_n": n}
+
+
+# Abhi (live switches): each finished Chart Reader layer can fall back to its legacy what-if from the dashboard (advanced, 15M SRv2 engine
+# block) without a deploy. Dashboard key ⇒ (decision3 V22 setting, allowed values — the method first (= decision3's default), then the
+# registered legacy what-ifs (decision3/settings.py REGISTER), label). Empty / None / the method ⇒ V22 gets nothing ⇒ today's behaviour
+# byte-for-byte.
+METHOD_SWITCHES = {
+    "engine3_zone_visit_rule": ("zone_visit_rule", ("structure", "close_away", "touch_window"), "layer 3 visit"),
+    "engine3_commit_volume_rule": ("commit_volume_rule", ("approach_and_opposite", "opposite"), "layer 3 commitment volume"),
+    "engine3_line_rule": ("line_rule", ("logic", "sigma"), "layer 4 lines"),
+    "engine3_div_degree_rule": ("div_degree_rule", ("zone", "all"), "layer 5 RSI divergence"),
+    "engine3_verdict_rule": ("verdict_rule", ("method", "score"), "layer 6a verdict"),
+}
+
+
+def method_switches(s=None):
+    """Dashboard `engine3_*` layer switches ⇒ {V22 key: legacy value} — only the ones set away from the method (empty / the method ⇒
+    omitted). Unknown value, or a legacy visit rule without the legacy commitment volume (V22: "never a silent half-rule") ⇒ ValueError
+    with the reason (the engine run fails closed: error row + Telegram) — before any data fetch or instrument switch."""
+    out = {}
+    for key, (v22_key, allowed, _label) in METHOD_SWITCHES.items():
+        v = (s or {}).get(key)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            continue
+        v = str(v).strip().lower()
+        if v not in allowed:
+            raise ValueError(f"{key} = {v!r} — allowed: {' / '.join(allowed)} (empty = {allowed[0]}, the method)")
+        if v != allowed[0]:
+            out[v22_key] = v
+    if out.get("zone_visit_rule") and out.get("commit_volume_rule") != "opposite":
+        raise ValueError(f"engine3_zone_visit_rule = {out['zone_visit_rule']!r} (legacy) knows no approach leg — set "
+                         "engine3_commit_volume_rule = 'opposite' with it")
+    return out
+
+
+def v22_settings(s=None):
+    """Dashboard `engine3_*` ⇒ V22 settings (`s`) for the live decision and the pre-open levels: the swing scale (layer 1), the Daily
+    pivot size (L1-c) + the layer switches. Nothing set ⇒ None (V22 on decision3's defaults = the method, today's behaviour). Bad value ⇒
+    ValueError (fail closed)."""
+    out = {**(swing_scale(s) or {}), **(daily_pivot_n(s) or {}), **method_switches(s)}
+    return out or None
+
+
+# ------------------------------------------------------------------------------------------------ dashboard (advanced) parsing
+def switch_label(key, v):
+    """Dashboard option label: the method ⇒ "<v> — method (default)"; a legacy value ⇒ "legacy what-if: <v>"."""
+    return f"{v} — method (default)" if v == METHOD_SWITCHES[key][1][0] else f"legacy what-if: {v}"
+
+
+def switch_choice(key, stored):
+    """Dashboard: a stored switch ⇒ (value to show, warning | None). Empty ⇒ the method; unknown ⇒ the method + a warning (a bad stored
+    value never breaks the page; saving then stores the method)."""
+    allowed = METHOD_SWITCHES[key][1]
+    v = str(stored if stored is not None else "").strip().lower()
+    if not v:
+        return allowed[0], None
+    if v not in allowed:
+        return allowed[0], f"{key}: stored {v!r} unknown ⇒ showing the method ({allowed[0]}); saving stores the method"
+    return v, None
+
+
+def switches_to_save(choices):
+    """Dashboard save: {key: chosen value} ⇒ ({key: stored value}, error | None). The method / unknown ⇒ "" (empty = the method). An
+    incoherent combo (`method_switches` refuses it, e.g. a legacy visit without the legacy commitment volume) ⇒ visit + commitment volume
+    stored as the method, with the reason."""
+    out = {}
+    for key, (_v22, allowed, _label) in METHOD_SWITCHES.items():
+        v = str((choices or {}).get(key) or "").strip().lower()
+        out[key] = v if v in allowed[1:] else ""
+    try:
+        method_switches(out)
+    except ValueError as exc:
+        out["engine3_zone_visit_rule"] = out["engine3_commit_volume_rule"] = ""
+        return out, str(exc)
+    return out, None
+
+
+def pivot_n_choice(stored):
+    """Dashboard: stored `engine3_daily_pivot_n` ⇒ (N to show, warning | None). Empty ⇒ decision3's provisional N (2); bad ⇒ that + a
+    warning (saving then stores empty)."""
+    from decision3 import settings as S3
+    try:
+        got = daily_pivot_n({"engine3_daily_pivot_n": stored})
+    except ValueError as exc:
+        return int(S3.DEFAULTS["daily_pivot_n"]), f"{exc} ⇒ showing {S3.DEFAULTS['daily_pivot_n']}; saving stores empty"
+    return (got or {}).get("daily_pivot_n", int(S3.DEFAULTS["daily_pivot_n"])), None
+
+
+def pivot_n_to_save(n):
+    """Dashboard save: N ⇒ stored value. decision3's provisional N (2) or a bad value ⇒ "" (empty = 2); otherwise the whole number."""
+    try:
+        got = daily_pivot_n({"engine3_daily_pivot_n": n})
+    except ValueError:
+        return ""
+    return "" if got is None else int(got["daily_pivot_n"])
+
+
 def load_m1(feed, symbol, m15, now, s=None):
     """Abhi Z-1o (a): spot 1m ⇒ (df1m | None, info). फक्त बंद 1m (start + 1 ≤ now), session मधले, m15 च्या पहिल्या bar पासून शेवटच्या
     बंद 15M bar च्या bar_end पर्यंत (त्यानंतरचा 1m कधीच नाही ⇒ look-ahead नाही); NIFTY ⇒ holdout rows नाहीत. 1m नाही / त्रुटी ⇒ None +
@@ -527,10 +643,10 @@ def watched_levels(symbol, feed, now, s=None):
     import instruments as INS
     from decision3 import engine as E3
     from decision3 import history as HI
+    s3 = v22_settings(s)                                                 # live compute सारखेच V22 settings (swing scale + layer switches); bad ⇒ raise
     m15, daily, _l, _f, _n = build_inputs(feed, symbol, now, s, levels_only=True)
     m1, info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)           # live compute सारखाच 1m ⇒ pre-open = engine चे पट्टे
     m15 = m15.drop(columns=[c for c in ("volume",) if c in m15.columns])
-    s3 = swing_scale(s)                                                  # live compute सारखाच swing scale (Abhi calibration); bad ⇒ raise
     prev = INS._current["name"]                                          # before the process-wide instrument changes
     INS.set_current(symbol)
 
@@ -627,9 +743,10 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
 
 
 def compute(symbol, feed, now, s=None):
+    s3 = v22_settings(s)                                                 # dashboard swing scale + layer switches; bad ⇒ raise before any fetch
     m15, daily, ltf, fut, note = build_inputs(feed, symbol, now, s)
     m1, m1_info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)
-    r = evaluate(symbol, m15, daily, ltf, fut, s3=swing_scale(s), m1=m1, m1_info=m1_info)
+    r = evaluate(symbol, m15, daily, ltf, fut, s3=s3, m1=m1, m1_info=m1_info)
     r["volume_note"] = note
     r["m1"] = m1_info                                                    # Z-1o: 1m वापरला का / fallback कारण (row payload)
     return r
