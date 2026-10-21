@@ -11,6 +11,7 @@
 """
 import os
 
+import pandas as pd
 import pytest
 
 import engine3_live as L
@@ -82,9 +83,10 @@ class CountingFeed(Feed1m):
     ({"engine3_zone_visit_rule": "time"}, "allowed: structure / close_away / touch_window"),
     ({"engine3_commit_volume_rule": "largest"}, "allowed: approach_and_opposite / opposite"),
     ({"engine3_div_degree_rule": "d2"}, "allowed: zone / all"),
-    ({"engine3_daily_pivot_n": "0"}, "engine3_daily_pivot_n = '0' — a whole number ≥ 1"),
-    ({"engine3_daily_pivot_n": "2.5"}, "a whole number ≥ 1"),
-    ({"engine3_daily_pivot_n": "abc"}, "a whole number ≥ 1"),
+    ({"engine3_daily_pivot_n": "0"}, "engine3_daily_pivot_n = '0' — a whole number 1..5"),
+    ({"engine3_daily_pivot_n": "2.5"}, "a whole number 1..5"),
+    ({"engine3_daily_pivot_n": "abc"}, "a whole number 1..5"),
+    ({"engine3_daily_pivot_n": 6}, "engine3_daily_pivot_n = 6 — a whole number 1..5"),
     ({"engine3_zone_visit_rule": "close_away"}, "commit_volume_rule = 'opposite'"),
     ({"engine3_zone_visit_rule": "touch_window", "engine3_commit_volume_rule": "approach_and_opposite"}, "knows no approach leg"),
 ])
@@ -105,6 +107,36 @@ def test_run3_fails_closed_on_a_bad_switch(monkeypatch):
     monkeypatch.setattr(L, "UpstoxFeed", lambda tok, today=None: CountingFeed())
     with pytest.raises(ValueError, match="engine3_verdict_rule"):
         ES.run3("BANKNIFTY", "tok", now=NOW, s={"engine3_verdict_rule": "bogus"}, dry_run=True)
+
+
+@pytest.mark.parametrize("bad", [{"engine3_verdict_rule": "bogus"}, {"engine3_daily_pivot_n": 9}, {"engine3_swing_k_d1": "abc"}])
+def test_every_bad_setting_is_a_setting_error(bad):
+    with pytest.raises(L.SettingError) as e:
+        L.v22_settings(bad)
+    assert e.value.setting_error is True and isinstance(e.value, ValueError)
+    assert not getattr(L.EngineDataError("x"), "setting_error", False)
+
+
+def test_a_setting_error_alert_says_fix_it_on_the_dashboard(tmp_path, monkeypatch):
+    """The run script: a bad engine3_* setting ⇒ error row + Telegram "setting error — fix it on the dashboard" (the key named); a data
+    error keeps "until the data is back"."""
+    from scripts import engine_signal_run as ESR
+    monkeypatch.setenv("ENGINE_SIGNAL_DB", str(tmp_path / "es.db"))
+    sent = []
+
+    def bad(sym, tok):
+        return L.v22_settings({"engine3_daily_pivot_n": 9})
+
+    def data(sym, tok):
+        raise L.EngineDataError(f"{sym}: 5M spot (LTF) data नाही")
+    for fn, al in ((bad, "a.json"), (data, "b.json")):
+        assert ESR.main(["--symbols", "BANKNIFTY"], token_fn=lambda: "tok", run_fn=fn, market_fn=lambda: True, send=sent.append,
+                        alert_path=str(tmp_path / al), now=pd.Timestamp("2030-01-07 10:16"), symbols_fn=lambda: ["BANKNIFTY"]) == 1
+    assert len(sent) == 2
+    assert "engine3_daily_pivot_n = 9" in sent[0] and "setting error — fix it on the dashboard" in sent[0]
+    assert "until the data is back" not in sent[0]
+    assert "until the data is back" in sent[1] and "setting error" not in sent[1]
+    assert ES.latest("BANKNIFTY", "2030-01-07 10:17")["decision"] == ES.ERROR
 
 
 def test_cloud_db_defaults_and_engine3_settings_pass_the_switches():
@@ -130,7 +162,7 @@ def test_daily_pivot_n_empty_or_two_means_no_v22_settings(fake_v22_levels):
         assert fake_v22_levels["s"][-2:] == [None, None]
 
 
-@pytest.mark.parametrize("v,n", [("3", 3), (1, 1), (" 4 ", 4), (3.0, 3), ("5.0", 5)])
+@pytest.mark.parametrize("v,n", [("3", 3), (1, 1), (" 4 ", 4), (3.0, 3), ("5.0", 5), (L.DAILY_PIVOT_N_MAX, 5)])
 def test_daily_pivot_n_reaches_v22_live_and_preopen(fake_v22_levels, v, n):
     s = {**OFF, "engine3_daily_pivot_n": v}
     assert L.v22_settings(s) == {"daily_pivot_n": n}
@@ -149,10 +181,14 @@ def test_daily_pivot_n_combines_with_the_scale_and_the_switches(fake_v22_levels)
     assert fake_v22_levels["s"][-1] == want
 
 
-@pytest.mark.parametrize("bad", [0, -1, "0", "2.5", 2.5, "abc", "nan", "inf", True, [3]])
+@pytest.mark.parametrize("bad", [0, -1, "0", "2.5", 2.5, "abc", "nan", "inf", True, [3], 6, "10", 1000, "1e3"])
 def test_daily_pivot_n_bad_values_are_refused(bad):
+    """Bounded to the registered range (1/2/3, at most 5): a huge N would leave the Daily trend unknown and silently stop entries."""
+    assert L.DAILY_PIVOT_N_MAX == 5
     with pytest.raises(ValueError, match="engine3_daily_pivot_n"):
         L.daily_pivot_n({"engine3_daily_pivot_n": bad})
+    with pytest.raises(L.SettingError, match="engine3_daily_pivot_n"):   # the engine path: a setting error (not a data problem)
+        L.v22_settings({"engine3_daily_pivot_n": bad})
 
 
 def test_daily_pivot_n_reaches_the_daily_structure_and_its_cache_key():
@@ -203,7 +239,9 @@ def test_dashboard_pivot_n_parsing():
     n, warn = L.pivot_n_choice("abc")
     assert n == 2 and "engine3_daily_pivot_n" in warn
     assert L.pivot_n_to_save(2) == L.pivot_n_to_save("") == L.pivot_n_to_save(None) == L.pivot_n_to_save(0) == ""
-    assert L.pivot_n_to_save(3) == 3 and L.pivot_n_to_save("1") == 1
+    assert L.pivot_n_to_save(3) == 3 and L.pivot_n_to_save("1") == 1 and L.pivot_n_to_save(5) == 5
+    n, warn = L.pivot_n_choice(9)                                         # out of range ⇒ shown as 2 with a warning, saved empty
+    assert n == 2 and "1..5" in warn and L.pivot_n_to_save(9) == ""
 
 
 def test_dashboard_block_uses_the_same_parsers():
@@ -213,6 +251,7 @@ def test_dashboard_block_uses_the_same_parsers():
         assert name in src, name
     assert "Advanced: method layers (legacy fallback)" in src and "Advanced: Daily swing size N (L1-c)" in src
     assert "Charts / replay नेहमी method वरच" in src and "charts / replay 2 वरच" in src
+    assert "max_value=_L3.DAILY_PIVOT_N_MAX" in src and "Daily आणि Weekly (पालक) दोन्ही pivots बदलतात" in src
     for k in L.METHOD_SWITCHES:                                           # a one-line caption per switch
         assert f'"{k}": "Layer' in src
 

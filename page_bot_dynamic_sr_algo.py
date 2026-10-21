@@ -1453,9 +1453,10 @@ def render():
                     if _pn_warn:
                         st.warning(_pn_warn)
                     engine3_daily_pivot_n = safe_number_input("Engine Daily swing: N candles दोन्ही बाजूला (2 = provisional, default)",
-                                                              min_value=1, value=int(_pn), step=1,
+                                                              min_value=1, max_value=_L3.DAILY_PIVOT_N_MAX, value=int(_pn), step=1,
                                                               key=_widget_key(strategy_key, symbol, "engine3_daily_pivot_n"))
-                    st.caption("Daily swing = त्याच्या दोन्ही बाजूला N candles पेक्षा उंच / खोल. 2 = provisional (Abhi L1-c, नंतर बदलू शकता). "
+                    st.caption("Swing = त्याच्या दोन्ही बाजूला N candles पेक्षा उंच / खोल — Daily आणि Weekly (पालक) दोन्ही pivots बदलतात. "
+                               f"2 = provisional (Abhi L1-c, नंतर बदलू शकता), 1–{_L3.DAILY_PIVOT_N_MAX}. "
                                "बदल फक्त live engine (निर्णय + pre-open पट्टे) — charts / replay 2 वरच.")
                 else:
                     engine3_daily_pivot_n = ""

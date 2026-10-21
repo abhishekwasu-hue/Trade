@@ -399,10 +399,21 @@ def swing_scale(s=None):
     return {"swing_k": k}
 
 
+class SettingError(ValueError):
+    """A bad dashboard `engine3_*` setting (not a data problem): the engine run fails closed and the Telegram line says to fix the
+    setting on the dashboard (`setting_error`, read by scripts/engine_signal_run.py)."""
+    setting_error = True
+
+
+DAILY_PIVOT_N_MAX = 5                                                      # registered range 1/2/3 (+ margin): a huge N would leave the
+                                                                           # Daily trend unknown and silently stop entries
+
+
 def daily_pivot_n(s=None):
-    """Abhi (L1-c): advanced dashboard `engine3_daily_pivot_n` ⇒ V22 settings {"daily_pivot_n": N} (Daily swing = N bars on both sides,
-    for the live decision and the pre-open levels). रिकामं / None / decision3's default (provisional N = 2) ⇒ None (today's behaviour).
-    Not a whole number ≥ 1 ⇒ ValueError (the engine run fails closed: error row + Telegram) — before any data fetch."""
+    """Abhi (L1-c): advanced dashboard `engine3_daily_pivot_n` ⇒ V22 settings {"daily_pivot_n": N} (swing = N bars on both sides, for
+    the Daily and the Weekly parent folds; live decision and pre-open levels). रिकामं / None / decision3's default (provisional N = 2) ⇒
+    None (today's behaviour). Not a whole number in 1..DAILY_PIVOT_N_MAX ⇒ ValueError (the engine run fails closed: error row +
+    Telegram) — before any data fetch."""
     from decision3 import settings as S3
     v = (s or {}).get("engine3_daily_pivot_n")
     if v is None or (isinstance(v, str) and not v.strip()):
@@ -411,10 +422,11 @@ def daily_pivot_n(s=None):
         if isinstance(v, bool):
             raise ValueError
         f = float(str(v).strip())
-        if not (math.isfinite(f) and f == int(f) and f >= 1):
+        if not (math.isfinite(f) and f == int(f) and 1 <= f <= DAILY_PIVOT_N_MAX):
             raise ValueError
     except (TypeError, ValueError):
-        raise ValueError(f"engine3_daily_pivot_n = {v!r} — a whole number ≥ 1 (empty = {S3.DEFAULTS['daily_pivot_n']}, provisional)") from None
+        raise ValueError(f"engine3_daily_pivot_n = {v!r} — a whole number 1..{DAILY_PIVOT_N_MAX} "
+                         f"(empty = {S3.DEFAULTS['daily_pivot_n']}, provisional)") from None
     n = int(f)
     return None if n == S3.DEFAULTS["daily_pivot_n"] else {"daily_pivot_n": n}
 
@@ -456,7 +468,10 @@ def v22_settings(s=None):
     """Dashboard `engine3_*` ⇒ V22 settings (`s`) for the live decision and the pre-open levels: the swing scale (layer 1), the Daily
     pivot size (L1-c) + the layer switches. Nothing set ⇒ None (V22 on decision3's defaults = the method, today's behaviour). Bad value ⇒
     ValueError (fail closed)."""
-    out = {**(swing_scale(s) or {}), **(daily_pivot_n(s) or {}), **method_switches(s)}
+    try:
+        out = {**(swing_scale(s) or {}), **(daily_pivot_n(s) or {}), **method_switches(s)}
+    except ValueError as exc:                                            # a setting error, not a data problem (Telegram says so)
+        raise SettingError(str(exc)) from exc
     return out or None
 
 
