@@ -38,7 +38,7 @@ Owner decision (Abhi): Trade will be archived only on Abhi's own word; ATP ports
 | 2 | Areas + lifecycle | **Stable v1 on merge — tag + parity fixtures follow** (Abhi ✅, #332). |
 | 3 | Visit, zone study, commitment, LTF | **Stable v1 on merge — tag + parity fixtures follow** (Abhi ✅, #331, #333, #334, #335, #338). |
 | 4 | Lines + confluence | **Stable v1 on merge — tag + parity fixtures follow** (Abhi ✅, #336, #339; his L4-g answers merged in #343). |
-| 5 | RSI | Merged (#341); Abhi's L5-a final answer merged (#344). **Not stable** until Abhi answers ✅. |
+| 5 | RSI | Merged (#341); Abhi's L5-a final answer merged (#344): divergence read between the consecutive pushes INSIDE the move into the zone, at the highest degree showing ≥ 2 pushes; a swing from before the move is never compared; the zone-degree divergence is also reported. **Not stable** until Abhi answers ✅. |
 | 6 | Output (charts, dossier, display finder) | 6a (the verdict: required set ⇒ enter; A / B by confirming evidence; no scores) merged (#342) — **not stable** until Abhi answers ✅. 6b (output: charts, dossier, display finder) not merged — in progress on another track. |
 
 The level bots are **not** rebuilt here (Abhi): they are rebuilt in ATP on the ported reader, and stay off in one-bot mode meanwhile.
