@@ -10,7 +10,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 READING = ROOT / "decision3"
 # not reading logic: settings (the allow-list), chart / display / audit / data-loading modules
 EXCLUDE = {"__init__.py", "settings.py", "charts.py", "setup_chart.py", "preopen_chart.py", "telegram_view.py", "volume_pane.py",
-           "draw_render.py", "draw_objects.py", "vision_audit.py", "history.py", "advisory.py", "report_standard.py"}
+           "draw_render.py", "draw_objects.py", "vision_audit.py", "history.py", "advisory.py"}
 ALLOWED = {0, 1, -1, 2, -2}                                              # sign / index / pair arithmetic, not thresholds
 BASELINE = ROOT / "tests" / "data" / "reader_numeric_literals_baseline.json"
 

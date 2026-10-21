@@ -43,7 +43,8 @@ def test_story_is_two_lines():
 
 @pytest.mark.parametrize("rule", [{"horizon": "trigger_day"}, {"horizon": "session_end"}, {"horizon": "eod"},
                                   {"horizon": "structure", "cutoff": "end of the trigger day"},
-                                  {"horizon": "structure", "max_hold": "2 sessions"}])
+                                  {"horizon": "structure", "max_hold": "2 sessions"}, {"horizon": "structure", "max_hold": "48 hours"},
+                                  {"horizon": "structure", "cutoff": "till market close"}, {"horizon": "structure", "cut": "3 weeks"}])
 def test_day_based_horizon_fails(rule):
     with pytest.raises(RS.ReportStandardError):
         RS.validate_outcome_rule(rule)
@@ -127,3 +128,17 @@ def test_group_is_testable_only_with_fut_volume_on_every_spot_session():
     with pytest.raises(RS.ReportStandardError, match="not testable"):   # a not-testable group never ships a report
         RS.validate_report(report(data_status=bad))
     assert RS.validate_report(report(data_status=ok))
+
+
+@pytest.mark.parametrize("text", ["close beyond invalidation; update on new swing", "next opposite area; candidate area",
+                                  "validated by volume", "the area's far edge on the same timeframe"])
+def test_structural_words_are_not_day_words(text):
+    assert RS.validate_outcome_rule({"horizon": " Structure ", "stop": text})
+
+
+def test_malformed_inputs_raise_the_standard_error():
+    with pytest.raises(RS.ReportStandardError):
+        RS.validate_chart(None)
+    c = card(); c.pop("entry_key")
+    with pytest.raises(RS.ReportStandardError, match="entry_key"):
+        RS.validate_card(c)

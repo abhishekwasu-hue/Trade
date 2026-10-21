@@ -25,6 +25,7 @@ def test_scan_detects_a_threshold(tmp_path, monkeypatch):
 
 
 def test_no_dates_in_reading_modules():
+    # intended: every decision3 file, display modules included (CLAUDE.md: no date framing anywhere in the reader package)
     import re
     for f in RS.READING.glob("*.py"):
         assert not re.search(r"20\d\d-\d\d-\d\d", f.read_text(encoding="utf-8")), f.name
