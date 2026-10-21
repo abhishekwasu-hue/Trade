@@ -95,7 +95,7 @@ def legs(pivots, states):
     return out
 
 
-def structure_objects(d, states, s=None):
+def structure_objects(d, states, s=None, elliott=True):
     """Abhi daily review A / C1: trend-degree रचना objects (chart + JSON) — फक्त engine states वरून (नवीन संख्या नाहीत).
 
     • legs: प्रत्येक impulse leg (origin bar ⇒ leg चं टोक), एक रेषा.
@@ -103,7 +103,9 @@ def structure_objects(d, states, s=None):
       चालू (counter = candidate / correction) — "in progress". depth = correction ÷ आधीचा impulse leg (data वरून); shape =
       patterns2 नियम (daily_legs.structure) एक degree खालच्या pivots वर: zigzag / flat / 3-wave / impulse; वाचता येत नाही ⇒ None.
     • bounces: impulse leg मधले same-degree उलट swings — "pullback" (lower degree), "candidate" (चालू leg, correction ची शक्यता),
-      "correction" (पूर्ण झाली ⇒ पुढचा leg तिथून)."""
+      "correction" (पूर्ण झाली ⇒ पुढचा leg तिथून).
+    elliott = False (Abhi 21 Oct — `build` default): the Elliott family / a-b-c marks / 5-wave leg check are admin diagnostics only;
+    boxes keep their geometry, shape = None, legs drawn as trend legs unless Abhi accepted them."""
     from . import daily_legs as DL
     s = S3.load(s)
     d = d.reset_index(drop=True)
@@ -140,7 +142,8 @@ def structure_objects(d, states, s=None):
                    "par": None}
             legs.append(cur)
             if prev is not None:                                           # पूर्ण same-degree correction: prev टोक ⇒ नव्या leg चा origin
-                corrs.append(_corr(prev, x.leg_start, p0, "done", low, DL, broke_origin=prev["par"] is not None, trend_pv=tpv))
+                corrs.append(_corr(prev, x.leg_start, p0, "done", low, DL, broke_origin=prev["par"] is not None, trend_pv=tpv,
+                                   elliott=elliott))
         else:
             cur["to"], cur["p1"] = int(x.imp_end.bar), float(x.imp_end.price)
         if x.counter == "correction" and x.parent is not None:
@@ -149,7 +152,7 @@ def structure_objects(d, states, s=None):
         j = cur["to"] + 1 + int(np.argmax(H[cur["to"] + 1:]) if cur["dir"] < 0 else np.argmin(L[cur["to"] + 1:])) \
             if cur["to"] + 1 < len(d) else cur["to"]
         px = float(H[j] if cur["dir"] < 0 else L[j])
-        corrs.append(_corr(cur, j, px, "in progress", low, DL, kind=last.counter, trend_pv=tpv))
+        corrs.append(_corr(cur, j, px, "in progress", low, DL, kind=last.counter, trend_pv=tpv, elliott=elliott))
     big = [c for c in corrs if c["state"] == "done"]                       # ABC_FIX: तात्पुरती completion (a / b नंतर) नंतर पूर्ण correction
     corrs = [c for c in corrs if not any(o is not c and o["start_bar"] <= c["start_bar"] and o["end_bar"] > c["end_bar"]
                                          for o in big)]                    # मोठ्या box च्या आतला box नाही
@@ -172,10 +175,10 @@ def structure_objects(d, states, s=None):
     out_legs = [{"dir": lg["dir"], "from": lg["from"], "to": lg["to"], "p0": lg["p0"], "p1": lg["p1"]} for lg in legs]
     return {"legs": out_legs, "corrections": corrs, "bounces": bounces,
             "impulses": trend_impulses(out_legs, corrs, tpv, low, upto, live and bool(legs) and legs[-1] is cur,
-                                       int(s["chart_leg_path_points"]))}
+                                       int(s["chart_leg_path_points"]), elliott)}
 
 
-def trend_impulses(legs, corrs, trend_pv, low, upto, live=False, max_points=15):
+def trend_impulses(legs, corrs, trend_pv, low, upto, live=False, max_points=15, elliott=True):
     """Abhi review (chart, trend degree): engine चे एकाच दिशेचे सलग sub-legs (मधली correction origin तोडत नाही — A1 नाही) = एकच
     trend-degree impulse. सीमा: दिशा बदल किंवा A1 correction (broke_origin). Trend उलटल्यावरचा पहिला impulse आधीच्या उलट leg च्या टोकापासून
     (उदा. Feb top) — मधे box नसेल तर. प्रत्येक impulse वर leg_check (संपूर्ण leg, एक degree खालचे pivots); शेवटचा live ⇒ in progress.
@@ -203,11 +206,11 @@ def trend_impulses(legs, corrs, trend_pv, low, upto, live=False, max_points=15):
         end = (max if dirn > 0 else min)((legs[k] for k in g), key=lambda x: x["p1"])
         prog = bool(live and gi == len(groups) - 1)
         leg = {"dir": dirn, "from": int(a_bar), "to": int(end["to"]), "p0": float(a_px), "p1": float(end["p1"])}
-        out.append({**leg, "sub_legs": len(g), **leg_check(leg, trend_pv, low, upto, prog, max_points)})
+        out.append({**leg, "sub_legs": len(g), **leg_check(leg, trend_pv, low, upto, prog, max_points, elliott)})
     return out
 
 
-def leg_check(lg, trend_pv, low, upto, in_progress=False, max_points=15):
+def leg_check(lg, trend_pv, low, upto, in_progress=False, max_points=15, elliott=True):
     """Abhi review (chart): trend leg खरा impulse आहे का — leg च्या स्वतःच्या (एक degree खालच्या) pivots वर read_counter; pivots
     confirm_bar ≤ upto (look-ahead नाही). आधी engine चे trend-degree pivots (leg च्या आत), ते 3 waves इतकेही नसले तरच आणखी एक degree
     खाली. pivots = ते सगळे बिंदू; path = त्यांतले मोठे swings (≤ max_points, chart रेषा). verified ⇔ impulse / diagonal. style: "impulse"
@@ -217,7 +220,7 @@ def leg_check(lg, trend_pv, low, upto, in_progress=False, max_points=15):
     prices, bars = _leg_waves(lg, trend_pv, upto)
     if len(prices) - 1 < 3:
         prices, bars = _leg_waves(lg, low, upto)
-    fam = DL.read_counter(prices)["family"] if len(prices) > 2 else "single"
+    fam = (DL.read_counter(prices)["family"] if len(prices) > 2 else "single") if elliott else None   # admin diagnostics only
     ok = fam in DL.MOTIVE
     n = len(prices) - 1
     path = coarse_path(list(zip(bars, prices)), max_points)
@@ -265,19 +268,19 @@ def _leg_waves(lg, piv, upto):
     return prices, bars
 
 
-def _corr(leg, end_bar, end_px, state, low, DL, kind="correction", broke_origin=False, trend_pv=()):
+def _corr(leg, end_bar, end_px, state, low, DL, kind="correction", broke_origin=False, trend_pv=(), elliott=True):
     imp = abs(leg["p1"] - (leg["par"] if leg.get("par") is not None else leg["p0"]))   # A1: parent टिकलेली correction ⇒ parent पासूनचा impulse
     depth = abs(end_px - leg["p1"]) / imp if imp > 0 else None
     prices, bars = _box_waves(leg, end_bar, end_px, trend_pv)              # Abhi item 4: family स्वतःच्या (trend) degree वर — box मधले
     if len(prices) - 1 < 3:                                                # trend-degree swings; ते a-b-c इतकेही नसले तरच एक degree खाली
         prices, bars = _box_waves(leg, end_bar, end_px, low)
-    st = DL.structure(prices, elliott=True)
+    st = DL.structure(prices, elliott=True) if elliott else {"structure": "single", "form": None}   # Elliott family: diagnostics
     x3 = DL.reduce_waves(prices).get(3) if len(prices) > 3 else None       # a-b-c reduction ⇒ b टोक (ABC_FIX rule 4: पुढची demand)
     b_px = float(x3[2]) if x3 is not None else None
     b_bar = next((bars[k] for k in range(len(prices) - 1, 0, -1) if b_px is not None and prices[k] == b_px), None)
     shape = st["form"] if st["structure"] != "single" else None
     shape = "5-wave" if shape == "impulse" else shape                     # correction box वर "impulse" शब्द नाही
-    _, ends = DL.wave_ends(prices) if len(prices) > 2 else (None, [])      # Abhi review: family ज्या pivots वरून वाचलं तिथे a / b / c …
+    _, ends = DL.wave_ends(prices) if (elliott and len(prices) > 2) else (None, [])   # Abhi review: family ज्या pivots वरून वाचलं तिथे a / b / c …
     if state == "in progress":
         ends = [(k, w) for k, w in ends if k < len(prices) - 1]            # चालू wave (आजच्या टोकापर्यंत) ला अक्षर नाही
     marks = [{"bar": int(bars[k]), "price": float(prices[k]), "letter": w, "kind": "H" if prices[k] > prices[k - 1] else "L"}
@@ -365,12 +368,14 @@ def ago(i, n, i0=None):
     return "today" if k == 0 else f"{k} sessions ago"
 
 
-def build(df, s=None, window=500, es=None, with_elliott=True, sealed=None, symbol=None, accepted=None):
+def build(df, s=None, window=500, es=None, with_elliott=False, sealed=None, symbol=None, accepted=None, elliott_debug=False):
     """पूर्ण history वर दोन थर + elliott ⇒ view dict (chart + JSON साठी). window = दाखवायची शेवटची sessions.
     CD14: symbol ⇒ Abhi ने स्वीकारलेली वाचनं (`accepted_legs.load`) trend legs वर (`accepted`); accepted = नोंदींची list ⇒ त्याच
     (tests; symbol नसला तरी). दोन्ही नाहीत ⇒ कोणतंही स्वीकारलेलं वाचन नाही.
     sealed(ts) ⇒ True असलेल्या तारखा (Q33: NIFTY holdout) engine warm-up मध्ये वापरतो पण output (window, JSON, caption, chart) मध्ये कधीच
-    नाहीत: window शेवटच्या sealed row नंतरच सुरू होते."""
+    नाहीत: window शेवटच्या sealed row नंतरच सुरू होते.
+    Abhi 21 Oct: Elliott pieces are admin diagnostics — `with_elliott` (the CountEngine advisory) and `elliott_debug` (box family,
+    a-b-c marks, 5-wave leg check) are off by default; turn them on only for an explicit debug view."""
     s = S3.load(s)
     d = prepare(df)
     C = d["close"].to_numpy()
@@ -385,7 +390,7 @@ def build(df, s=None, window=500, es=None, with_elliott=True, sealed=None, symbo
             if i0 >= n:
                 raise ValueError("सगळ्या दाखवायच्या Daily candles sealed (holdout) — chart नाही (Q33)")
     piv = list(q15[-1].pivots)                                             # दोन्ही modes चे pivots एकच (_raw_pivots)
-    objs = structure_objects(d, q15, s)
+    objs = structure_objects(d, q15, s, elliott=elliott_debug)
     mark_accepted(objs["impulses"], d["timestamp"], s, symbol, accepted)
     tags = tag_pivots(piv)
     seg_m, seg_q = protected_segments(minor, C), protected_segments(q15, C)

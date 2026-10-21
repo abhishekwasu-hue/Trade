@@ -31,7 +31,7 @@ TWO_YEARS = 500                                                            # ≈
 
 def _long(mirror):
     d = F.ohlc(long_points(), mirror)
-    return DS.build(d, window=TWO_YEARS, with_elliott=False)
+    return DS.build(d, window=TWO_YEARS, with_elliott=False, elliott_debug=True)
 
 
 def _mirror_path(points):
@@ -40,7 +40,7 @@ def _mirror_path(points):
 
 def _fixture(mirror):
     pts = HEAD + WAVE4 + WAVE5
-    return DS.build(_mirror_path(pts) if mirror else path(pts), window=60, with_elliott=False)
+    return DS.build(_mirror_path(pts) if mirror else path(pts), window=60, with_elliott=False, elliott_debug=True)
 
 
 def _texts(fig_info):
@@ -135,7 +135,7 @@ def test_bands_trader_names_at_most_one_broken(mirror):
 def test_structure_extreme_ranks_above_window_extremes(mirror):
     """The major low / high the structure stands on (start of the last same-degree correction) outranks the window low / high."""
     d, _ = F.acceptance_banknifty_two_lows(mirror)
-    v = DS.build(d, window=len(d), with_elliott=False)
+    v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True)
     every = DS.level_bands(v, limit=None, max_broken=None)
     lab = [b["label"] for b in every]
     base = next(i for i, x in enumerate(lab) if x.startswith("structure "))
@@ -177,7 +177,7 @@ def _candle_hits(info, bb):
 
 CASES = [pytest.param(lambda: _long(False), id="long"), pytest.param(lambda: _long(True), id="long-mirror"),
          pytest.param(lambda: _fixture(False), id="c-wave"), pytest.param(lambda: _fixture(True), id="c-wave-mirror"),
-         pytest.param(lambda: DS.build(F.acceptance_banknifty()[0], window=200, with_elliott=False), id="bn-shape")]
+         pytest.param(lambda: DS.build(F.acceptance_banknifty()[0], window=200, with_elliott=False, elliott_debug=True), id="bn-shape")]
 
 
 @pytest.mark.parametrize("mk", CASES)
@@ -297,7 +297,7 @@ def test_caption_risk_to_protected_price_line2_to_band_edge(mirror):
 
 @pytest.mark.parametrize("cap_sessions, kept", [(200, True), (199, False)])
 def test_old_box_window_boundary(cap_sessions, kept):
-    v = DS.build(F.ohlc(long_points()), window=200, with_elliott=False)
+    v = DS.build(F.ohlc(long_points()), window=200, with_elliott=False, elliott_debug=True)
     assert v["n"] - v["i0"] == 200
     v["s"] = {"chart_old_box_sessions": cap_sessions}
     sp = DS.view_spec(v)
@@ -362,7 +362,7 @@ def test_broken_limit_applies_before_merging():
 def test_protected_inside_sharp_zone_is_one_band_one_label(mirror):
     from tests.test_decision3_abc_fix import _bn_points
     d = F.ohlc(_bn_points()[:-3], mirror)
-    v = DS.build(d, window=len(d), with_elliott=False)
+    v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True)
     lv = v["q15"]["levels"]
     side = "sharp-rise demand" if mirror else "sharp-fall supply"
     merged = [b for b in lv if b.get("sharp")]
@@ -463,7 +463,7 @@ def test_impulse_of_several_engine_sub_legs_is_verified_as_one_leg(mirror):
     """Waves 2 / 4 large enough for the engine to cut sub-legs (origin advances, no A1) ⇒ one trend-degree leg, read whole."""
     w = [(1300.0, "m5"), (1180.0, "c3"), (1600.0, "m5"), (1450.0, "c3"), (1750.0, "m5"), (1600.0, "c3")]
     d = F.ohlc([(1000.0, 0)] + F.build(1000.0, w), mirror)
-    v = DS.build(d, window=len(d), with_elliott=False)
+    v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True)
     ob = v["q15"]["objects"]
     assert len(ob["legs"]) >= 2 and not any(c.get("broke_origin") for c in ob["corrections"] if c["state"] == "done")
     imp = ob["impulses"]
@@ -539,7 +539,7 @@ def test_long_leg_path_is_coarse_and_on_its_pivots(mirror):
 def test_trend_legs_never_drawn_grey(mirror):
     pts = HEAD + WAVE4 + WAVE5
     d = _mirror_path(pts) if mirror else path(pts)
-    v = DS.build(d, window=len(d), with_elliott=False)
+    v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True)
     imp = v["q15"]["objects"]["impulses"]
     assert {x["style"] for x in imp} <= {"impulse", "unconfirmed"} and any(not x["verified"] for x in imp)
     fig, info, _ = _texts(CH.daily_swings_fig(v, "TEST"))
@@ -572,7 +572,7 @@ def test_leg_check_no_look_ahead(mirror):
 def test_chart_legs_follow_pivots_and_styles(mirror):
     pts = HEAD + WAVE4 + WAVE5
     d = _mirror_path(pts) if mirror else path(pts)
-    v = DS.build(d, window=len(d), with_elliott=False)
+    v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True)
     legs = DS.view_spec(v)["impulses"]
     fig, info, _ = _texts(CH.daily_swings_fig(v, "TEST"))
     ax, i0 = info["ax"], v["i0"]
@@ -597,7 +597,7 @@ def test_unverified_new_leg_is_dashed_and_caption_never_claims_impulse(mirror):
     "not verified" clutter); the debug wording keeps the structure / anatomy votes."""
     from tests.test_decision3_abc_fix import _bn_points
     d = F.ohlc(_bn_points()[:-3], mirror)
-    v = DS.build(d, window=len(d), with_elliott=False)
+    v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True)
     q = v["q15"]
     move = "advance" if mirror else "decline"
     ln = q["leg_now"]
@@ -688,7 +688,7 @@ def _default_texts(v, fig_info):
 def _head(mirror, accepted=None):
     pts = HEAD + WAVE4 + WAVE5
     d = _mirror_path(pts) if mirror else path(pts)
-    return DS.build(d, window=len(d), with_elliott=False, accepted=accepted)
+    return DS.build(d, window=len(d), with_elliott=False, elliott_debug=True, accepted=accepted)
 
 
 def _line_of(ax, lg, i0):
@@ -750,9 +750,9 @@ def test_accepted_match_by_pivot_dates_within_pivot_slack_only(mirror):
     assert not hit(_acc(v0, lg0, shift_to=n + 1))
     assert not hit(_acc(v0, lg0, direction="up" if lg0["dir"] < 0 else "down"))   # direction must agree
     d = _mirror_path(HEAD + WAVE4 + WAVE5) if mirror else path(HEAD + WAVE4 + WAVE5)
-    v = DS.build(d, window=len(d), with_elliott=False, symbol="TEST", accepted=[_acc(v0, lg0, symbol="OTHER")])
+    v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True, symbol="TEST", accepted=[_acc(v0, lg0, symbol="OTHER")])
     assert not any(x["accepted"] for x in v["q15"]["objects"]["impulses"])  # another symbol's record never matches
-    v = DS.build(d, window=len(d), with_elliott=False)                      # no symbol, no records ⇒ nothing accepted
+    v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True)                      # no symbol, no records ⇒ nothing accepted
     assert not any(x["accepted"] for x in v["q15"]["objects"]["impulses"])
 
 
@@ -760,10 +760,10 @@ def test_accepted_match_by_pivot_dates_within_pivot_slack_only(mirror):
 def test_accepted_running_leg_reads_impulse_in_title_caption_and_label(mirror):
     from tests.test_decision3_abc_fix import _bn_points
     d = F.ohlc(_bn_points()[:-3], mirror)
-    v0 = DS.build(d, window=len(d), with_elliott=False)
+    v0 = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True)
     cur = v0["q15"]["objects"]["impulses"][-1]
     assert cur["state"] == "in progress" and not cur["verified"]
-    v = DS.build(d, window=len(d), with_elliott=False, accepted=[_acc(v0, cur)])
+    v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True, accepted=[_acc(v0, cur)])
     q = v["q15"]
     assert q["leg_now"]["accepted"] and not DS.unverified(q)
     assert f"new impulse {('UP' if mirror else 'DOWN').lower()} in progress" in DS.trend_line(q)
@@ -788,7 +788,7 @@ def test_debug_view_keeps_full_verification_detail(mirror, monkeypatch):
     assert any(x.startswith("impulse (5 waves; structure vote: impulse") for x in txt)
     from tests.test_decision3_abc_fix import _bn_points                    # running unverified leg: debug title carries the votes
     d = F.ohlc(_bn_points()[:-3], mirror)
-    vb = DS.build(d, window=len(d), with_elliott=False)
+    vb = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True)
     CH.daily_swings_debug_png(vb, "TEST")
     assert "impulse not verified (structure vote:" in figs[-1].axes[0].get_title()
     _, info = CH.daily_swings_fig(vb, "TEST", full=True)                    # full (debug) variant of the default chart
@@ -845,14 +845,14 @@ def test_broken_repo_records_never_stop_the_chart(tmp_path, monkeypatch, mirror)
     monkeypatch.delenv(AL.ENV, raising=False)
     pts = HEAD + WAVE4 + WAVE5
     d = _mirror_path(pts) if mirror else path(pts)
-    v = DS.build(d, window=len(d), with_elliott=False, symbol="TEST")
+    v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True, symbol="TEST")
     assert not any(x["accepted"] for x in v["q15"]["objects"]["impulses"])
 
 
 def _q_last_leg(mirror, **leg):
     """Built BN-shape q with the running leg turned into a finished, last trend leg and a counter-move running (leg_now None)."""
     from tests.test_decision3_abc_fix import _bn_points
-    v = DS.build(F.ohlc(_bn_points()[:-3], mirror), window=10 ** 6, with_elliott=False)
+    v = DS.build(F.ohlc(_bn_points()[:-3], mirror), window=10 ** 6, with_elliott=False, elliott_debug=True)
     q = v["q15"]
     last = {**q["leg_last"], "state": "done", **leg}
     return {**q, "rule5": False, "leg_now": None, "leg_last": last, "retrace": 0.4}, ("UP" if mirror else "DOWN")
@@ -915,7 +915,7 @@ def test_banknifty_accepted_leg_real_data():
     if not recs:
         pytest.skip("no accepted BANKNIFTY record")
     d = HI.load_daily([BN_DAILY], prepare=DS.prepare)
-    v = DS.build(d, window=500, with_elliott=False, symbol="BANKNIFTY")
+    v = DS.build(d, window=500, with_elliott=False, elliott_debug=True, symbol="BANKNIFTY")
     acc = [x for x in v["q15"]["objects"]["impulses"] if x["accepted"]]
     assert len(acc) == len([r for r in recs if r["to"] <= d["timestamp"].iloc[-1]]) >= 1
     for lg in acc:
