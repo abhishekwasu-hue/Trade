@@ -107,7 +107,7 @@ def test_origin_risk_when_the_correction_reaches_the_parent_zone():
 
 def test_trend_line_wording_and_state_labels():
     d, st = _fold(HEAD + WAVE4 + WAVE5)
-    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False)
+    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False, elliott_debug=True)
     line = DS.trend_line(v["q15"])
     assert line.startswith("Trend DOWN") and "protected 1,252" in line and "larger reversal possible" in line   # (4) sharp-fall zone
     assert "correction completed at sharp-fall supply" in line and "target 1,078" in line                          # मध्ये संपली (rule 5)
@@ -174,7 +174,7 @@ def test_default_chart_spec_trend_degree_only_and_renders():
     """C1: default chart वर फक्त degree labels; ≤ 6 पट्टे; प्रत्येक trend-degree correction ला box (§5.1: लहान window ⇒ जुने फिके,
     text फक्त चालू + आधीच्या correction ला; "pullback" एकदाच); debug PNG वेगळा."""
     from decision3 import charts as CH
-    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False)
+    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False, elliott_debug=True)
     sp = DS.view_spec(v)
     allowed = ("correction", "pullback")
     assert sp["tags"] and all(t.startswith(allowed) for t in sp["tags"])
@@ -203,7 +203,7 @@ def test_default_chart_spec_trend_degree_only_and_renders():
 
 def test_default_chart_spec_snapshot_on_fixture():
     """C1 snapshot (structure, PNG pixels नाहीत): fixture वर default chart काय काढतो ते स्थिर."""
-    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False)
+    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False, elliott_debug=True)
     sp = DS.view_spec(v)
     snap = {"tags": sp["tags"], "bands": [(b["label"], b["price"], b["state"], b["off_window"]) for b in sp["bands"]],
             "names": [b["name"] for b in sp["bands"]], "protected": sp["protected"]["price"], "legs": len(sp["legs"])}

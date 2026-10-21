@@ -122,7 +122,7 @@ def test_acceptance_banknifty_abc_ends_at_sharp_fall_supply(mirror):
     c_v = (F.MIRROR - info["c"] - F.WICK) if mirror else (info["c"] + F.WICK)
     cb = lb + int(np.argmin(np.abs((L[lb:] if mirror else H[lb:]) - c_v)))  # c टोक impulse low नंतरच
     assert st[-1].protected.bar == cb
-    v = DS.build(d, window=len(d), with_elliott=False)
+    v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True)
     assert any(c["end_bar"] == cb and c["shape"] == "zigzag" for c in v["q15"]["objects"]["corrections"])
     assert any("sharp-fall" in b["label"] or "sharp-rise" in b["label"] for b in v["q15"]["levels"])
 
