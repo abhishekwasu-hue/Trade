@@ -67,7 +67,8 @@ Candidates are listed separately (`candidates`), never as evidence.
 
 ## E4(b) hook
 
-`retest_levels(V, t, d, tf)` = every pattern boundary accepted at t (only the decisive break, only while it is still a boundary):
+`retest_levels(V, t, d, tf)` = every boundary of a NAMED pattern accepted at t (only the decisive break, only while it is still a
+boundary; a candidate's line is not a pattern boundary, K11.0):
 `{src: "pattern", pattern, tf, boundary, p0, p1, slope, value_t, role (support after an up-break / resistance after a down-break),
 break_dir, accepted_bar, swing_beyond, retests, state}`. `entry_models.py` is not touched.
 
