@@ -25,17 +25,20 @@ Owner decision (Abhi): Trade will be archived only on Abhi's own word; ATP ports
 
 | Layer | Tag | Date | Covers | Tests | KB / Method Pack version | Parity fixtures |
 |---|---|---|---|---|---|---|
-| — | — | — | (no stable layer yet) | — | — | — |
+| 1 | `reader-layer1-stable-v1` | 2026-10-21 | Swings / structure: the approved swings2 D1 / D2 are the swing definition (Abhi's calibration, L1-a); the Daily structure by C-13 logic (L1-b); Daily pivot size N = 2 provisional (L1-c). Tag: the merge commit of PR "Reader layers 1–4 stable v1" — the tag is created on it right after the PR merges. | `test_swings2`, `test_decision3_daily_swings`, `test_decision3_daily_q15`, `test_decision3_daily_review`, `test_engine3_1m` (swing scale), `test_method_no_numbers` (layer 1), golden `test_decision3_flip` | KB (`docs/knowledge/KNOWLEDGE_BASE.md`) + Method Pack `4e65a0880257` (`build_method_pack.py --check`), both copied into the fixtures' `kb/` | trade-data `parity/layer1/reader-layer1-stable-v1/` |
+| 2 | `reader-layer2-stable-v1` | 2026-10-21 | Areas + lifecycle: one base (wick to body), area kinds, break / sweep / flip / dead by structure, liquidity equal by comparison, every valid area ahead armed. Tag: the merge commit of PR "Reader layers 1–4 stable v1" — the tag is created on it right after the PR merges. | `test_decision3`, `test_decision3_flip`, `test_decision3_level_death_side`, `test_decision3_q22_q34`, `test_decision3_zone_answers`, `test_method_no_numbers` (layer 2) | KB (`docs/knowledge/KNOWLEDGE_BASE.md`) + Method Pack `4e65a0880257` (`build_method_pack.py --check`), both copied into the fixtures' `kb/` | trade-data `parity/layer2/reader-layer2-stable-v1/` |
+| 3 | `reader-layer3-stable-v1` | 2026-10-21 | Visit, zone study (fast / slow handover, absorption), commitment form + volume (L3-c), LTF CHoCH, raw FUT volume / data problem. Tag: the merge commit of PR "Reader layers 1–4 stable v1" — the tag is created on it right after the PR merges. | `test_decision3_method`, `test_decision3_zone_answers`, `test_decision3_entry_first_bar`, `test_decision3_oct12`, `test_volume_pane`, `test_method_no_numbers` (layer 3), golden `test_decision3_flip` | KB (`docs/knowledge/KNOWLEDGE_BASE.md`) + Method Pack `4e65a0880257` (`build_method_pack.py --check`), both copied into the fixtures' `kb/` | trade-data `parity/layer3/reader-layer3-stable-v1/` |
+| 4 | `reader-layer4-stable-v1` | 2026-10-21 | Lines + confluence: a line from two separate reactions, touches counted by reactions (L4-g: `touch_groups`; the touch is the reaction's own turn), correction-line trigger, "confluence: line" label. Tag: the merge commit of PR "Reader layers 1–4 stable v1" — the tag is created on it right after the PR merges. | `test_decision3_trendline`, `test_decision3_method`, `test_decision3_oct12`, `test_method_no_numbers` (layer 4), golden `test_decision3_flip` (12 Oct 09:15 line) | KB (`docs/knowledge/KNOWLEDGE_BASE.md`) + Method Pack `4e65a0880257` (`build_method_pack.py --check`), both copied into the fixtures' `kb/` | trade-data `parity/layer4/reader-layer4-stable-v1/` |
 
 ## Where each layer stands (stable = a row in the register above: ✅ + tag + parity fixtures)
 
 | Layer | Spec (CHART_READER_METHOD.md) | State |
 |---|---|---|
-| 1 | Swings / structure | **Abhi ✅** (his approved swing charts are the acceptance): the approved swings2 D1 / D2 are the definition — his calibration setting (OPEN_QUESTIONS L1-a). Tag after the calibration PR merges. |
-| 2 | Areas + lifecycle | **Abhi ✅** (#332). Tag + parity fixtures next. |
-| 3 | Visit, zone study, commitment, LTF | **Abhi ✅** (#331, #333, #334, #335, #338). Tag + parity fixtures next. |
-| 4 | Lines + confluence | **Abhi ✅** (#336, #339). His L4-g answers (touches by reactions; the touch is the reaction's own turn) are implemented in #343 and recorded in OPEN_QUESTIONS L4-g there; they land before the tag. |
-| 5 | RSI | Merged (#341). Abhi's L5-a answer (the degree one below the zone's structure) is implemented in #344 (OPEN_QUESTIONS L5-a updated there), with one reading question back to him. Not stable. |
-| 6 | Output (charts, dossier, display finder) | 6a (the verdict: required set ⇒ enter; A / B by confirming evidence; no scores) in review. Not stable. |
+| 1 | Swings / structure | **Stable v1** (Abhi ✅; L1-a, L1-b merged in #345). L1-c: `daily_pivot_n` N = 2 is Abhi's PROVISIONAL value (recorded; guard class calibration / provisional; he may change it later from the dashboard — the setting comes from the live-switches track). |
+| 2 | Areas + lifecycle | **Stable v1** (Abhi ✅, #332). |
+| 3 | Visit, zone study, commitment, LTF | **Stable v1** (Abhi ✅, #331, #333, #334, #335, #338). |
+| 4 | Lines + confluence | **Stable v1** (Abhi ✅, #336, #339; his L4-g answers merged in #343). |
+| 5 | RSI | Merged (#341); Abhi's L5-a final answer merged (#344). **Not stable** until Abhi answers ✅. |
+| 6 | Output (charts, dossier, display finder) | 6a (the verdict: required set ⇒ enter; A / B by confirming evidence; no scores) merged (#342) — **not stable** until Abhi answers ✅. 6b (output: charts, dossier, display finder) not merged — in progress on another track. |
 
 The level bots are **not** rebuilt here (Abhi): they are rebuilt in ATP on the ported reader, and stay off in one-bot mode meanwhile.
