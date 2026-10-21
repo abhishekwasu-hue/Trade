@@ -313,6 +313,8 @@ def line(st):
     """Caption / ticket ची एकच volume ओळ."""
     if not st or not st.get("ok"):
         return na_line(st)
+    if words_of(st) == "method" and st.get("engine"):                     # layer 6b: the method's own comparison, nothing else
+        return f"volume: commitment {_x(st['commit_mult'])} {_engine_what(st)}"
     head = "volume" if st.get("engine") else "volume (chart est.)"
     what = _engine_what(st) if st.get("engine") else "avg"                 # the engine's own comparison set (Abhi L3-c) / legacy
     return (f"{head}: counter-side candles {_x(st['counter_mult'])} → trend-side {_x(st['trend_mult'])} · "

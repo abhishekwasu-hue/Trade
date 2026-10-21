@@ -430,7 +430,7 @@ def m15_panel(D, ax, axv, r, st, setup_ts, w, vst, debug=False):
     ax.axhspan(lv["lo"], lv["hi"], color=C["level"], alpha=0.14, zorder=2)
     stars = f", {lv['sweeps']} sweeps" if lv.get("sweeps") else ""
     ax.text(0.5, lv["hi"], f"{LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} ({str(lv.get('state') or 'ACTIVE').lower()}{stars}, "
-            f"{'fresh' if lv['fresh'] else 'tested'}{LV.level_tags(lv)})", fontsize=8, color=C["level"], va="bottom", zorder=7,
+            f"tests {lv.get('tests') or 0}{LV.level_tags(lv)})", fontsize=8, color=C["level"], va="bottom", zorder=7,
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1))
     if vst["arm"] is not None:                                             # study window (volume pane सारखाच) — वर पातळ पट्टी
         ax.axvspan(vst["arm"] - 0.5, vst["commit"] + 0.5, ymin=0.985, ymax=1.0, color=VP.MPL["trend"], alpha=0.6, zorder=8)
@@ -540,13 +540,21 @@ def rsi_words(r):
             + (f" (D{rs['degree']}, pushes {rs.get('pushes')})" if rs.get("degree") is not None else "") + zt)
 
 
+def context_note(n, r):
+    """Method §5 (6a): the older label caps are context notes — under the method verdict a note never says "cap"."""
+    if r.get("verdict_rule", "method") == "score":
+        return n
+    import re
+    return re.sub(r"\s*=>\s*cap (B|weak)", " (context only)", n)
+
+
 def footer_lines(r, st, status, vline):
     """Layer 6b: the story in the method's order (§5) — trend, the area, how price arrived, inside the area, the commitment and its
     volume comparison, the LTF change, the RSI view, the correction line — then the verdict label with the evidence list (✓ / ✗ / NA)."""
     lv, K, cm = r["level"], r.get("K") or {}, r.get("commit") or {}
     tl = r.get("trendline")
     why_open = WHY_OPEN.get(K.get("why_open"), K.get("why_open"))
-    notes = [note_en(n) for n in r.get("trend_notes") or []]
+    notes = [context_note(note_en(n), r) for n in r.get("trend_notes") or []]
     hs = cm.get("handover_state") or {}
     ch = cm.get("choch") or {}
     t16 = (lambda x: str(x)[:16] if x else "-")                           # noqa: E731

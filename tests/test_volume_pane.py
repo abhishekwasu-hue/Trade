@@ -355,7 +355,8 @@ def test_volume_words_legacy_default_and_method():
     info = {"commit": {"vol_mult": 1.8, "vol_vs": "the average of the approach leg and the visit's opposite side"}}
     e1 = VP.study(bars, vol=vol, info=info, area=(5.5, 6.5), d=1, commit=5, words="method")
     e0 = VP.study(bars, vol=vol, info=info, area=(5.5, 6.5), d=1, commit=5)
-    assert e1["ok"] and e1["line"] == e0["line"] and "the average of the approach leg" in e1["line"]
+    assert e1["ok"] and e1["line"] == "volume: commitment 1.8× the average of the approach leg and the visit's opposite side"
+    assert e0["line"].startswith("volume: counter-side candles") and "the average of the approach leg" in e0["line"]   # legacy text
     noopp = {"commit": {"vol_mult": None, "vol_na": False}}
     assert VP.study(bars, vol=vol, info=noopp, d=1, commit=5)["line"] == VP.NO_OPP_LINE
     assert VP.study(bars, vol=vol, info=noopp, d=1, commit=5, words="method")["line"] == VP.METHOD_NO_OPP_LINE
