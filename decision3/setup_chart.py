@@ -408,7 +408,7 @@ def k_line_facts_validity(D, r, t):
     return {"facts": f, "drawable": not quality, "label": lab}
 
 
-def m15_panel(D, ax, axv, r, st, setup_ts, w, vst, debug=False):
+def m15_panel(D, ax, axv, r, st, setup_ts, w, vst, debug=False, objects=None):
     idx = list(w.index)
     n = len(w)
     x = np.arange(n)
@@ -473,6 +473,12 @@ def m15_panel(D, ax, axv, r, st, setup_ts, w, vst, debug=False):
     for s0 in starts[1:]:
         ax.axvline(s0 - 0.5, color="#999999", lw=0.8, ls="--", zorder=1)
         axv.axvline(s0 - 0.5, color="#999999", lw=0.8, ls="--", zorder=1)
+    if objects:                                                            # PA §4 (chart_objects on): the one object list, minus what this
+        from . import draw_render as DR                                    # panel already draws (the traded area, the Daily protected line)
+        lvk = (round(float(lv["lo"]), 2), round(float(lv["hi"]), 2))
+        objs = [o for o in objects if not ((o["kind"] == "area" and (o["p0"], o["p1"]) == lvk) or o["style_key"] == "level.protected")]
+        xm = DR.XMap(D.m15["timestamp"].iloc[:idx[-1] + 1], idx[0], n=n)
+        DR.draw_mpl(ax, [p for p in DR.geometry(objs, xm, ylim=(ylo, yhi)) if not p.get("margin")])   # margin = the label column above
     ax.set_xlim(-1, right)
     ax.set_ylim(ylo, yhi)
     ax.grid(alpha=0.25)
@@ -622,8 +628,10 @@ def caption(D, r, st, short, longst, head="V22 setup", tail="Reading review only
     return reading, cap
 
 
-def render(D, r, header="", status=None, path=None, dpi=110, debug=False):
-    """एका setup row चा chart (debug=True: shared check fail होणारी K रेघ सुद्धा, ठिपक्यांत + कारण). रिटर्न dict (fig = path नसेल तर; नाहीतर बंद), st, short, longst, vol (15M study), ltf_vol, vline."""
+def render(D, r, header="", status=None, path=None, dpi=110, debug=False, chart_objects="off", objects=None):
+    """एका setup row चा chart (debug=True: shared check fail होणारी K रेघ सुद्धा, ठिपक्यांत + कारण). chart_objects "on" (PA §4, display
+    setting, default "off" = today's chart byte for byte) ⇒ `objects` (decision3.draw_objects list, e.g. collect(V, t, r=r)) drawn on
+    the 15M panel too. रिटर्न dict (fig = path नसेल तर; नाहीतर बंद), st, short, longst, vol (15M study), ltf_vol, vline."""
     setup_ts, setup_end = pd.Timestamp(r["ts"]), pd.Timestamp(r["bar_end"])
     assert not D.sealed(setup_ts), "sealed (holdout) setup"
     st = D.state_at(setup_end)
@@ -645,7 +653,13 @@ def render(D, r, header="", status=None, path=None, dpi=110, debug=False):
     ax_m = fig.add_subplot(gr[0])
     ax_mv = fig.add_subplot(gr[1], sharex=ax_m)
     daily_panel(D, ax_d, ax_dv, ax_s, r, st, setup_ts, setup_end)
-    m15_panel(D, ax_m, ax_mv, r, st, setup_ts, w, vst, debug)
+    if chart_objects not in ("off", "on"):
+        raise ValueError(f"setup_chart.render: chart_objects {chart_objects!r} — off / on")
+    objs = None
+    if chart_objects == "on" and objects:
+        from . import draw_objects as DO
+        objs = DO.clean(objects)[0]
+    m15_panel(D, ax_m, ax_mv, r, st, setup_ts, w, vst, debug, objects=objs)
     lst, what = None, None
     if has_ltf:
         lst, what = ltf_study(D, r, g, arm_ts, setup_end)

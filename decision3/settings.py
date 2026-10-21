@@ -293,6 +293,9 @@ OUTPUT = {
                             "decision3.volume_pane.study ⇐ vision.chart (Vision card volume pane + volume line); vision/config.py"),
     "approval_card_layout": ("classic", ("classic", "summary"),
                              "vision.worker.caption / v1_caption + vision.approval.ticket_text (Telegram card text); vision/config.py"),
+    "chart_objects": ("off", ("off", "on"),
+                      "PA standard §4 (track T8): vision.chart.render (Telegram / Vision chart: the signal's object list) + "
+                      "decision3.charts.h1_png / m15_png + decision3.setup_chart.render (verification charts); vision/config.py"),
 }
 REGISTER.update({
     "approval_band_warn_rule": ("points", "points / method", "setting",
@@ -311,6 +314,11 @@ REGISTER.update({
                              "(side + label, area + last price, the reader's required set ✓ / ✗ + confirming pieces from the engine's "
                              "layer 6a evidence list, Vision in one line, what you do + deadline), today's text below the details line; "
                              "display only, no new rule / score"),
+    "chart_objects": ("off", "off / on", "setting",
+                      "PA standard §4 OUTPUT (track T8): off = today's charts byte for byte; on = the ONE object list "
+                      "(decision3.draw_objects: swings, areas + state, lines, channels, levels, patterns, liquidity, sweeps, divergence, "
+                      "FVG / Fib confluence, E1–E4 marks) drawn by decision3.draw_render on the Telegram chart and the verification charts; "
+                      "display only, never a reading / entry"),
     "display_finder": ("method", "method / validity (legacy R1a)", "setting",
                                        "facts/dossier.py DEFAULTS (dossier config, not a V22 setting) — layer 6b: the Vision facts dossier reads the "
                                        "decision's own areas / lines / visits; validity = the R1a facts.validity finder (golden only); not live"),
