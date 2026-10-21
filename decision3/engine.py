@@ -126,10 +126,19 @@ class V22:
         self.pb = M.Pullbacks(self)
         self._confirm_inputs(ltf, futures)
 
+    def range_structure(self, t):
+        """`range_edges.range_state` for the row — evidence only: a reading error is logged and reported, never raised into decide()."""
+        try:
+            return RE.range_state(self, t)
+        except Exception as e:                                             # noqa: BLE001 — display / evidence path, never a block
+            import logging
+            logging.getLogger(__name__).warning("decision3 range_state (structure) failed at bar %s: %s", t, e)
+            return {"rule": "structure", "error": f"{type(e).__name__}: {e}"[:200]}
+
     def range_rule(self):
         """Abhi 21 Oct (`range_state_rule`): "structure" = the row's range_state from structure per timeframe (decision3/range_edges);
         "overlap" = today's §5.3 overlap + doji measure (legacy, only under verdict_rule = score)."""
-        r = self.s.get("range_state_rule", "overlap")
+        r = self.s.get("range_state_rule", "structure")
         if r not in ("overlap", "structure"):
             raise ValueError(f"range_state_rule {r!r} — overlap / structure पैकी")
         return r
@@ -666,7 +675,7 @@ class V22:
                      "flip_retest": g4, "zone_read": zr, "verdict_rule": "method", "confirming": confirm,
                      "missing": [x for x, v in confirm.items() if v is not True],
                      "evidence_list": M.evidence_list(ev, confirm, read_ok, in_hours=self.entry_window(t)),
-                     "range_state": RE.range_state(self, t) if self.range_rule() == "structure" else None,
+                     "range_state": self.range_structure(t) if self.range_rule() == "structure" else None,
                      "wave_context": {"legs": k["legs"], "note": "context only (method §6: no wave-count gates)"},
                      "context_notes": list(notes or [])}             # older caps (weekly / origin / mature) = context, never the label
             if not ok6:                                                    # a label belongs to an entry (method §5) — none on a wait
@@ -682,7 +691,7 @@ class V22:
         extra = {"K": k, "evidence": ev, "trendline": tl, "conviction": conv, "conv_score": score, "missing": missing, "commit": cm,
                  "liquidity": liq, "flip_retest": g4, "zone_read": zr, "verdict_rule": "score"}
         if self.range_rule() == "structure":                               # Abhi 21 Oct: the range state from structure, per timeframe;
-            extra["range_state"] = RE.range_state(self, t)                 # the §5.3 overlap measure = admin diagnostics only (legacy)
+            extra["range_state"] = self.range_structure(t)                 # the §5.3 overlap measure = admin diagnostics only (legacy)
             extra["range_state_legacy_overlap"] = bool(rng)
         else:
             extra["range_state"] = bool(rng)                              # Abhi Z-1j: context fact (sideways = the handover study)
@@ -773,7 +782,7 @@ class V22:
                 "level": best.get("level"), "liquidity": best.get("liquidity"), "trendline": best.get("trendline"),
                 "commit": best.get("commit"), "commitment_form": (best.get("commit") or {}).get("form"),
                 "flip_retest": best.get("flip_retest"), "zone_read": best.get("zone_read"),
-                "range_state": RE.range_state(self, t) if self.range_rule() == "structure" else best.get("range_state"),   # per bar
+                "range_state": self.range_structure(t) if self.range_rule() == "structure" else best.get("range_state"),   # per bar
                 "volume_measure": (best.get("commit") or {}).get("volume_measure") or (best.get("zone_read") or {}).get("volume_measure"),
                 "flip": None if not best.get("level") else {k: best["level"].get(k) for k in ("state", "broken_ts", "far_swing",
                                                                                               "flipped_ts", "break_dir")},

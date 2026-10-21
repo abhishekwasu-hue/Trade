@@ -1,10 +1,13 @@
 """decision3/range_edges.py — PA standard §2L: the range market's two EDGES as areas (evidence / areas only).
 
 Abhi's method: when a timeframe's state is range, the range edges ARE the areas — a bull put at the lower edge, a bear call at the upper
-edge. The range itself is NOT read here: the Daily (and Weekly) RANGE state is `decision3.daily` (Q27 + the C-13 equal edges), unchanged;
-this module only turns the swings that made that range into two areas and follows their lifecycle.
+edge. The range (Abhi 21 Oct, `daily_range_rule = structure`): after a swing high H and a swing low L (the two edges), the later swings
+fail to make a new extreme on both sides (no close beyond the edge; a wick = a sweep, inside); it ends at a close beyond an edge + a swing
+beyond (`daily.range_walk`). Daily / Weekly = the RANGE state of `decision3.daily` (DState.range_pair = the edges); 1H / 15M = the same
+rule on that timeframe's swings here. This module turns the edges into two areas and follows their lifecycle.
 
-An edge = the swing candles that made it, never a numeric band:
+Structure: each edge = the edge swing's own candle, wick to body (`levels._band_swing`, width 0); later swings that reached it are
+`members` (evidence), never widening it. The c13 what-if (two C-13 equal highs + lows) builds the edge as below:
   • the upper edge = the two (or more) "equal" swing HIGHs of the range (C-13 equal: the later extreme reaches the earlier swing candle's
     area and does not go beyond it) ⇒ a RESISTANCE area; the lower edge = the equal swing LOWs ⇒ a SUPPORT area;
   • the area = the extreme (anchor) swing candle's own area, wick to body (`levels._band_swing`, width 0) — the same construction as the
@@ -101,11 +104,11 @@ def _candle_area(kind, o, h, l, c, price):
 
 
 # ------------------------------------------------------------------------------------------------ edge area from its swing candles
-def edge_area(members, kind, candle):
+def edge_area(members, kind, candle, anchor=None):
     """The edge area from its swing candles. members = swings (kind, price, bar, …) of one kind; candle(p) ⇒ (o, h, l, c) of p's own
     candle. Anchor = the extreme swing (the earlier one under C-13 equal); area = its wick-to-body (`_band_swing`). Returns
     (lo, hi, anchor, rows) — rows = each member's own area and its relation to the edge area (anchor / inside / overlaps / apart)."""
-    anchor = _extreme(members, kind)
+    anchor = _extreme(members, kind) if anchor is None else anchor        # structure: the edge swing itself (a later sweep never anchors)
     areas = {id(p): _candle_area(kind, *candle(p), p.price) for p in members}
     lo, hi = areas[id(anchor)]
     if hi <= lo:                                                            # exactly-equal extremes with no area ("d"): the members' areas
@@ -117,6 +120,14 @@ def edge_area(members, kind, candle):
         rows.append({"kind": p.kind, "price": round(float(p.price), 2), "bar": int(p.bar), "area": (round(plo, 2), round(phi, 2)),
                      "relation": rel})
     return float(lo), float(hi), anchor, rows
+
+
+def _touching(pivots, anchor, candle, upto_bar=None):
+    """Structure: later swings of the edge's kind that reached the edge swing candle's area (or swept beyond it) — the edge's reactions
+    (evidence; they never move or widen the area)."""
+    lo, hi = _candle_area(anchor.kind, *candle(anchor), anchor.price)
+    return [p for p in pivots if p.kind == anchor.kind and p.bar > anchor.bar and (upto_bar is None or p.bar <= upto_bar)
+            and (p.price >= lo if p.kind == "H" else p.price <= hi)]
 
 
 def _later_equal(pivots, anchor, members, O, C, upto_bar=None):
@@ -225,18 +236,23 @@ def _episode_edges(V, t, tf, ep, states, df, snap, current):
            "since": str(first.day.date()) if first.day is not None else None, "known_bar": int(born),
            "why": first.why, "current": current}
     out = []
+    rp = getattr(first, "range_pair", None)                               # structure (daily_range_rule): the two edge swings
+
+    def candle(p):
+        return O[p.bar], Hh[p.bar], Ll[p.bar], C[p.bar]
     for edge, edge_px in ((LOWER, band[0]), (UPPER, band[1])):
         kind = KIND[edge]
-        pair = _pair(first.pivots, kind, float(edge_px))
-        if pair is None:
-            continue
         end_bar = ep["after"].bar if ep["after"] is not None else None
-        extra = _later_equal(pivots_now, _extreme(pair, kind), pair, O, C, upto_bar=end_bar)
-        mem = pair + extra
-
-        def candle(p):
-            return O[p.bar], Hh[p.bar], Ll[p.bar], C[p.bar]
-        lo, hi, anchor, rows = edge_area(mem, kind, candle)
+        if rp is not None:
+            anchor0 = rp[0] if kind == "H" else rp[1]
+            mem = [anchor0] + _touching(pivots_now, anchor0, candle, end_bar)
+        else:                                                              # c13 (what-if): the two equal swings (+ a third touch)
+            pair = _pair(first.pivots, kind, float(edge_px))
+            if pair is None:
+                continue
+            anchor0 = None
+            mem = pair + _later_equal(pivots_now, _extreme(pair, kind), pair, O, C, upto_bar=end_bar)
+        lo, hi, anchor, rows = edge_area(mem, kind, candle, anchor0)
         for r, p in zip(rows, sorted(mem, key=lambda q: q.bar)):
             r["ts"] = str(tsx.iloc[p.bar].date())
             r["known_at"] = str(p.known_at)
@@ -255,9 +271,11 @@ def _breakout(V, ep, df):
         return None
     c = float(df.reset_index(drop=True)["close"].iloc[after.bar])
     lo, hi = ep["band"]
-    d = "up" if c > hi else ("down" if c < lo else None)
-    how = (f"Daily close {c:,.2f} {'above' if d == 'up' else 'below'} the range" if d else
-           f"structure: {after.trend} ({after.why})")
+    w = str(after.why or "")
+    d = "up" if (w.startswith("range broken up") or (not w.startswith("range broken") and c > hi)) else \
+        ("down" if (w.startswith("range broken down") or (not w.startswith("range broken") and c < lo)) else None)
+    how = (w if w.startswith("range broken") else f"Daily close {c:,.2f} {'above' if d == 'up' else 'below'} the range") if d else \
+        f"structure: {after.trend} ({after.why})"
     return {"dir": d, "day": str(after.day.date()) if after.day is not None else None, "known_at": str(after.known_at),
             "close": round(c, 2), "state_after": after.trend, "why": how, "context_only": True, "note": NO_BREAKOUT}
 
@@ -350,12 +368,11 @@ def edges_from_rectangle(V, t, rect, snap=None, current=True):
 
 
 # ------------------------------------------------------------------------------------------------ range state from structure (per TF)
-# Abhi (21 Oct): the row's `range_state` is read FROM STRUCTURE per timeframe (setting `range_state_rule` = "structure"): a timeframe is
-# in range when its last two swing highs are C-13 equal and its last two swing lows are C-13 equal — Daily / Weekly = the RANGE state of
-# `decision3.daily` (unchanged); 1H = the level-degree (D2) swings on their 1H candles (as the levels' (a) birth); 15M = the finest
-# structure-degree swings (D1) on their 15M candles. The range lasts until a close beyond its band (the Daily RANGE's own end rule); the
-# breakout is context only. No overlap ratio, no candle count, no σ (the legacy §5.3 overlap + doji measure stays only under
-# `range_state_rule` = "overlap"). Not swings2's Rhea range.
+# Abhi (21 Oct): the row's `range_state` is read FROM STRUCTURE per timeframe (setting `range_state_rule` = "structure", default):
+# `daily_range_rule`'s definition — Daily / Weekly = the RANGE state of `decision3.daily`; 1H = the level-degree (D2) swings on their 1H
+# candles / closes; 15M = the finest structure-degree swings (D1) on 15M candles / closes. The breakout is context only. No overlap
+# ratio, no candle count, no σ (the legacy §5.3 overlap + doji measure stays only under `range_state_rule` = "overlap"). Not swings2's
+# Rhea range.
 STATE_TFS = ("D", "1H", "15M")                       # trade-side timeframes, highest first; Weekly = context only
 COMPACT = ("id", "range_edge", "tf", "role", "lo", "hi", "lifecycle", "tests", "sweeps", "trade_side", "trade_location",
            "not_location_why")
@@ -372,8 +389,86 @@ def _degree_pivots(V, tf):
     return list(res["pivots"].get(fin, [])) if fin is not None else []
 
 
+def _tf_closes(V, tf):
+    """The timeframe's closes on the 15M bar index: 15M = every bar; 1H = only the bar that closes its hour (NaN elsewhere — a 15M close
+    beyond an edge that is back inside by the hour's close is a sweep on 1H)."""
+    C = np.asarray(V.levels.A["close"], float)
+    if tf != "1H":
+        return C
+    h = np.asarray(V.levels.h1_of)
+    last = np.r_[h[1:] != h[:-1], True]
+    return np.where(last, C, np.nan)
+
+
+def _pairs(V, tf):
+    """Every adjacent swing pair of the timeframe walked as range edges (structure; cached per V)."""
+    cache = V.__dict__.setdefault("_range_pairs_cache", {})
+    if tf not in cache:
+        cache[tf] = DD.range_pairs(_degree_pivots(V, tf), _tf_closes(V, tf))
+    return cache[tf]
+
+
+def _intraday_candle(V, tf):
+    LVS = V.levels
+    if tf == "1H":
+        return lambda p: LVS._h1_upto(LVS.h1_of[p.bar], p.confirm_bar)   # the 1H candle as known at its confirmation (levels (a))
+    return lambda p: tuple(float(LVS.A[k][p.bar]) for k in ("open", "high", "low", "close"))
+
+
+def _pair_edges(V, t, tf, r, snap, current):
+    """The two edge areas of a structural range r (range_walk) at bar t."""
+    LVS = V.levels
+    candle = _intraday_candle(V, tf)
+    known = [p for p in _degree_pivots(V, tf) if p.confirm_bar <= t]
+    end_bar = r["broken"].bar if (r["broken"] is not None and r["broken_known"] <= t) else None
+    rng = {"tf": tf, "band_from": round(float(r["L"].price), 2), "band_to": round(float(r["H"].price), 2),
+           "since": str(LVS.ts.iloc[int(r["known"])]), "known_bar": int(r["known"]),
+           "why": "range from structure: after the swing high and the swing low, later swings failed to make a new extreme on both sides",
+           "current": bool(current)}
+    out = []
+    for edge, anchor0 in ((LOWER, r["L"]), (UPPER, r["H"])):
+        mem = [anchor0] + _touching(known, anchor0, candle, end_bar)
+        lo, hi, anchor, rows = edge_area(mem, KIND[edge], candle, anchor0)
+        for row, p in zip(rows, sorted(mem, key=lambda q: q.bar)):
+            row["ts"] = str(LVS.ts.iloc[int(p.bar)])
+        L = lifecycle(LVS, edge, lo, hi, int(r["known"]), t, float(anchor.price), tf, f"range:{tf}:{edge}:{int(anchor.bar)}")
+        e = _entry(V, L, t, snap, edge, rows, rng, bool(current))
+        e["anchor_ts"] = str(LVS.ts.iloc[int(anchor.bar)])
+        out.append(e)
+    return out
+
+
 def read_intraday(V, t, tf, snap=None):
-    """1H / 15M range from that timeframe's own swings at bar t (same output shape as `read_tf`)."""
+    """1H / 15M range from that timeframe's own swings at bar t (same output shape as `read_tf`). `daily_range_rule` (shared with the
+    Daily / Weekly fold): "structure" (default, Abhi 21 Oct — `daily.range_walk`) / "c13" (two equal highs + two equal lows, what-if)."""
+    if V.levels.s.get("daily_range_rule", "structure") == "c13":
+        return _read_intraday_c13(V, t, tf, snap)
+    out = {"tf": tf, "state": "no_range", "edges": [], "range": None, "last_range": None, "breakout": None, "evidence": []}
+    pairs = _pairs(V, tf)
+    cur = DD.range_at(pairs, t)
+    snap = V.levels.snapshot(t) if snap is None else snap
+    if cur is not None:
+        edges = _pair_edges(V, t, tf, cur, snap, True)
+        out.update(state="range", edges=edges, range=edges[0]["range"])
+        out["evidence"].append(f"{tf} RANGE {cur['L'].price:,.2f}–{cur['H'].price:,.2f} (later swings failed to make a new extreme on "
+                               f"both sides): edges are the areas — bull put at the lower edge, bear call at the upper edge")
+        return out
+    last = DD.range_last_broken(pairs, t)
+    if last is None:
+        return out
+    edges = _pair_edges(V, t, tf, last, snap, False)
+    b = last["broken"]
+    out["last_range"] = {"range": edges[0]["range"], "edges": edges}
+    out["breakout"] = {"dir": last["dir"], "day": str(V.levels.ts.iloc[int(last["broken_known"])]), "bar": int(last["broken_known"]),
+                       "close": round(float(V.levels.A["close"][int(last["broken_known"])]), 2),
+                       "why": f"{tf} range broken {last['dir']}: a close beyond the {'upper' if last['dir'] == 'up' else 'lower'} edge and "
+                              f"a swing beyond it ({b.price:,.2f})", "context_only": True, "note": NO_BREAKOUT}
+    out["evidence"].append(f"last {tf} range ended: {out['breakout']['why']} — {NO_BREAKOUT}")
+    return out
+
+
+def _read_intraday_c13(V, t, tf, snap=None):
+    """c13 what-if: the last two swing highs and lows C-13 equal; ends at a close beyond the band."""
     out = {"tf": tf, "state": "no_range", "edges": [], "range": None, "last_range": None, "breakout": None, "evidence": []}
     known = sorted([p for p in _degree_pivots(V, tf) if p.confirm_bar <= t], key=lambda p: (p.confirm_bar, p.bar))
     hs = [p for p in known if p.kind == "H"][-2:]
@@ -417,6 +512,8 @@ def range_state(V, t):
     """The row's `range_state` from structure (setting `range_state_rule` = "structure"), per timeframe — plain dict:
     {rule, in_range, tf (the highest trade-side timeframe in range: D > 1H > 15M, or None), tfs_in_range, edges (that timeframe's edge
     areas, compact), by_tf {W, D, 1H, 15M: {state, band, since, edges, breakout}}, note}. Weekly = context only. Cached per bar on V."""
+    if getattr(V, "levels", None) is None:                                 # no area engine (a stub / partial V) ⇒ not read
+        return None
     cache = V.__dict__.setdefault("_range_state_cache", {})
     if t in cache:
         return cache[t]
@@ -429,8 +526,8 @@ def range_state(V, t):
     out = {"rule": "structure", "in_range": bool(in_r), "tf": tf, "tfs_in_range": in_r,
            "edges": [{k: e.get(k) for k in COMPACT} for e in by[tf]["edges"]] if tf else [],
            "by_tf": {k: _compact(by[k]) for k in ("W", "D", "1H", "15M")},
-           "note": "range from structure: two equal swing highs + two equal swing lows of the timeframe (C-13); edges = areas "
-                   "(range_edges); a breakout is context only"}
+           "note": "range from structure: after a swing high and a swing low, later swings fail to make a new extreme on both "
+                   "sides; edges = areas (range_edges); a breakout is context only"}
     cache[t] = out
     return out
 

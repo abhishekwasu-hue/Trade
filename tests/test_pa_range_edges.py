@@ -264,6 +264,9 @@ def test_no_dates_or_tuned_numbers_in_module():
 
 
 # ------------------------------------------------------------------------------------------------ range state from structure (Abhi 21 Oct)
+C13 = {"daily_range_rule": "c13"}
+
+
 def _intraday_case(after_break=False):
     """15M D1 swings at the Daily range's own swing days: the 15M bar that made each Daily swing extreme (given a wick there) ⇒ two equal
     highs and two equal lows on 15M candles. after_break ⇒ the same swings on the breakout path, read after the rally."""
@@ -279,11 +282,11 @@ def _intraday_case(after_break=False):
         return next(j for j in js if (H[j] if p.kind == "H" else L[j]) == p.price)
     bars = {(p.kind, p.bar): bar_of(p) for p in hs + ls}
     piv1 = sorted([P(k, H[j] if k == "H" else L[j], j, j + 2) for (k, _), j in bars.items()], key=lambda q: q.bar)
-    V, m, d = build(path, piv1=piv1, wicks=[(j, k) for (k, _), j in bars.items()])
+    V, m, d = build(path, piv1=piv1, wicks=[(j, k) for (k, _), j in bars.items()], s=C13)   # the c13 what-if reading
     return V, m, max(q.confirm_bar for q in piv1)
 
 
-def test_intraday_range_from_equal_swings_and_breakout_is_context():
+def test_c13_whatif_intraday_range_from_equal_swings_and_breakout_is_context():
     V, m, born = _intraday_case()
     r = RE.read_intraday(V, born, "15M")
     assert r["state"] == "range" and {e["range_edge"] for e in r["edges"]} == {"lower", "upper"}
@@ -307,21 +310,21 @@ def test_range_state_has_no_overlap_ratio_or_candle_count():
         assert key not in src
 
 
-def test_engine_range_state_rule_default_is_today_and_structure_wires_the_row():
+def test_engine_range_state_rule_structure_is_the_default_and_wires_the_row():
     import warnings
     from decision3 import engine as E3
     from decision3 import settings as S3
-    assert S3.DEFAULTS["range_state_rule"] == "overlap" and "range_state_rule" in S3.REGISTER
+    assert S3.DEFAULTS["range_state_rule"] == "structure" and "range_state_rule" in S3.REGISTER   # Abhi 21 Oct: decided
     assert S3.REGISTER["range_state_rule"][2] == "Abhi नियम"
     d = daily_from_path(RANGE_PATH)
     m, d = expand(d)
     t = len(m) - 1
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        V0 = E3.V22(m, daily_df=d, s=S)
-        V1 = E3.V22(m, daily_df=d, s={**S, "range_state_rule": "structure"})
+        V0 = E3.V22(m, daily_df=d, s={**S, "range_state_rule": "overlap"})
+        V1 = E3.V22(m, daily_df=d, s=S)
     r0, r1 = V0.decide(t), V1.decide(t)
-    assert r0["range_state"] is None                                           # today (verdict_rule = method): not read
+    assert r0["range_state"] is None                                           # legacy overlap (verdict_rule = method): not read
     rs = r1["range_state"]
     assert rs["rule"] == "structure" and rs["tf"] == "D" and {e["range_edge"] for e in rs["edges"]} == {"lower", "upper"}
     assert {k: r0[k] for k in ("decision", "checklist")} == {k: r1[k] for k in ("decision", "checklist")}   # evidence only
@@ -332,7 +335,7 @@ def test_engine_range_state_rule_default_is_today_and_structure_wires_the_row():
         pass
 
 
-def test_intraday_range_needs_the_close_inside_the_band_when_it_is_known():
+def test_c13_whatif_intraday_range_needs_the_close_inside_the_band_when_it_is_known():
     """As the Daily RANGE (read only with the close inside its band): a close already beyond the band at the bar the fourth swing is
     confirmed ⇒ never a range (reported as context: last_range + breakout)."""
     V, m, born = _intraday_case()
@@ -341,3 +344,124 @@ def test_intraday_range_needs_the_close_inside_the_band_when_it_is_known():
     V.levels.A["close"][born] = hi + 1.0
     r = RE.read_intraday(V, born, "15M")
     assert r["state"] == "no_range" and r["breakout"]["bar"] == born and r["breakout"]["dir"] == "up"
+
+
+# ------------------------------------------------------------------------------------------------ the structural range rule (Abhi 21 Oct)
+def _closes(n, base, pokes=None):
+    import numpy as np
+    c = np.full(n, float(base))
+    for b, v in (pokes or {}).items():
+        c[b] = v
+    return c
+
+
+SWINGS = [P("H", 110, 10, 12), P("L", 100, 20, 22), P("H", 108, 30, 32), P("L", 102, 40, 42), P("H", 109, 50, 52)]
+
+
+def mirror(ps, c=None):
+    """Price mirror (p ⇒ 210 − p): highs become lows."""
+    out = [P("L" if p.kind == "H" else "H", 210 - p.price, p.bar, p.confirm_bar) for p in ps]
+    return out if c is None else (out, 210 - c)
+
+
+def test_structural_range_both_sides_fail_and_its_mirror():
+    C = _closes(60, 105)
+    for ps, cc in ((SWINGS, C), mirror(SWINGS, C)):
+        pairs = DD.range_pairs(ps, cc)
+        r = DD.range_at(pairs, 59)
+        assert r is not None
+        assert ((r["H"].bar, r["L"].bar) if ps is SWINGS else (r["L"].bar, r["H"].bar)) == (10, 20)
+        assert r["known"] == 42                                            # both sides failed once the later low is confirmed
+        assert DD.range_at(pairs, 41) is None                              # only the high side has failed by then
+        assert r["broken"] is None
+
+
+def test_structural_range_needs_a_failure_on_both_sides():
+    C = _closes(60, 105)
+    ps = SWINGS[:3]                                                        # H, L, a lower high — no later low yet
+    assert DD.range_at(DD.range_pairs(ps, C), 59) is None
+
+
+def test_sweep_wick_beyond_stays_inside_but_a_close_beyond_plus_swing_breaks_it():
+    sweep = [P("H", 110, 10, 12), P("L", 100, 20, 22), P("H", 111, 30, 32), P("L", 102, 40, 42)]   # 111 = a wick beyond 110
+    C = _closes(60, 105)                                                   # every close inside
+    r = DD.range_at(DD.range_pairs(sweep, C), 59)
+    assert r is not None and r["fail_h"].price == 111                       # the sweep counts as a failure (still inside)
+    brk = sweep + [P("H", 113, 50, 52)]                                    # later: a close beyond 110 in the leg, then a swing beyond
+    C2 = _closes(60, 105, {48: 111.5})
+    pairs = DD.range_pairs(brk, C2)
+    assert DD.range_at(pairs, 51) is not None                              # the swing beyond is not confirmed yet ⇒ still a range
+    assert DD.range_at(pairs, 52) is None
+    last = DD.range_last_broken(pairs, 52)
+    assert last["dir"] == "up" and last["broken_known"] == 52
+    m_ps, m_c = mirror(brk, C2)                                            # mirror: a close below the low edge + a swing below
+    assert DD.range_last_broken(DD.range_pairs(m_ps, m_c), 52)["dir"] == "down"
+
+
+def test_break_before_both_sides_fail_is_never_a_range():
+    ps = [P("H", 110, 10, 12), P("L", 100, 20, 22), P("H", 115, 30, 32), P("L", 104, 40, 42)]
+    C = _closes(60, 105, {28: 112})
+    pairs = DD.range_pairs(ps, C)
+    first = pairs[0]
+    assert first["known"] is None and first["dir"] == "up"
+
+
+def test_structural_range_no_look_ahead():
+    C = _closes(60, 105, {48: 111.5})
+    ps = SWINGS[:4] + [P("H", 113, 50, 52)]
+    full = DD.range_pairs(ps, C)
+    for t in range(0, 60):
+        cut = DD.range_pairs(ps, C[:t + 1], upto=t)
+        a, b = DD.range_at(full, t), DD.range_at(cut, t)
+        assert (a is None) == (b is None) and (a is None or (a["H"].bar, a["L"].bar, a["known"]) == (b["H"].bar, b["L"].bar, b["known"]))
+
+
+def test_daily_fold_structure_vs_c13():
+    """A Daily range whose highs / lows are NOT C-13 equal (lower highs, higher lows inside the first swing pair): structure ⇒ RANGE
+    with the pair as edges; c13 (what-if) ⇒ no RANGE."""
+    path = [100, 120, 110, 117, 112, 118, 111, 115]
+    d = daily_from_path(path)
+    st = DD.fold(d, S)
+    rng = [x for x in st if x.trend == "RANGE"]
+    assert rng and rng[0].range_pair is not None
+    h, lo_ = rng[0].range_pair
+    assert h.kind == "H" and lo_.kind == "L" and rng[0].band == (lo_.price, h.price)
+    assert not any(x.trend == "RANGE" for x in DD.fold(d, {**S, "daily_range_rule": "c13"}))
+
+
+def test_daily_fold_structure_range_ends_on_a_close_and_swing_beyond():
+    d = daily_from_path([100, 120, 110, 117, 112, 118, 111, 115, 130, 124, 135])
+    st = DD.fold(d, S)
+    trends = [x.trend for x in st]
+    assert "RANGE" in trends and trends[-1] != "RANGE"
+    end = next(x for x in st[trends.index("RANGE"):] if x.trend != "RANGE")
+    assert end.why.startswith("range broken up") or end.trend == "UP"
+
+
+def test_daily_fold_structure_truncation_invariant():
+    d = daily_from_path([100, 120, 110, 117, 112, 118, 111, 115, 130, 124, 135])
+    full = DD.fold(d, S)
+    for k in range(6, len(d)):
+        part = DD.fold(d.iloc[:k], S)
+        assert [(x.trend, x.band) for x in part] == [(x.trend, x.band) for x in full[:k]]
+
+
+def test_intraday_structure_range_edges_from_the_pair():
+    V0, m, d = build(RANGE_PATH)
+    H, L = m["high"].to_numpy(), m["low"].to_numpy()
+    st = first_range(V0)
+    hs = [p for p in st.pivots if p.kind == "H"]
+    ls = [p for p in st.pivots if p.kind == "L"]
+    piv = sorted(hs + ls, key=lambda p: p.bar)
+
+    def bar_of(p):
+        return next(j for j in range(p.bar * PER_DAY, (p.bar + 1) * PER_DAY) if (H[j] if p.kind == "H" else L[j]) == p.price)
+    piv1 = [P(p.kind, p.price, bar_of(p), bar_of(p) + 2) for p in piv]
+    V, m, d = build(RANGE_PATH, piv1=piv1)
+    t = len(m) - 1
+    r = RE.read_intraday(V, t, "15M")
+    assert r["state"] == "range"
+    e = edges_by(r)
+    assert e["upper"]["members"][0]["relation"] == "anchor" and e["upper"]["hi"] == r["range"]["band_to"]
+    assert e["lower"]["lo"] == r["range"]["band_from"]
+    assert RE.range_state(V, t)["by_tf"]["15M"]["state"] == "range"

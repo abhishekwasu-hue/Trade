@@ -70,7 +70,7 @@ class DState:
     rev: tuple = None          # trend first (setups audit): (HL, मधला H) DOWN trend मध्ये (UP ⇒ (LH, मधला L)) — impulse टोकानंतर उलट
                                # रचना + impulse-स्वभावाचा पाय (flip चा (अ) नियम, Q29 / Q36) पूर्ण, फक्त origin पलीकडचा close बाकी ⇒ Daily
                                # रचना trend विरुद्ध; trend-बाजूचे नवे entries नाहीत (trend / protected तसेच — Q15)
-
+    range_pair: tuple = None   # Abhi 21 Oct (`daily_range_rule = structure`): RANGE ची दोन कडा (H swing, L swing) — range_edges areas
 
 def _arr(d):
     return {k: d[k].to_numpy(float) for k in ("open", "high", "low", "close")}
@@ -182,6 +182,69 @@ def c13_short_of(O, C, later_price, earlier_kind, earlier_bar):
     return (later_price - c13_body_edge(O, C, earlier_bar, dn)) * dn < 0
 
 
+# ------------------------------------------------------------------------------------------------ structural range (Abhi 21 Oct)
+# One definition for every timeframe (Daily / Weekly fold, decision3/range_edges 1H / 15M): after a swing high H and a swing low L (an
+# adjacent pair of the timeframe's swings — the two edges), the market is in RANGE while the following confirmed swings fail to make a
+# new extreme on BOTH sides: at least one later swing high that does not break H and at least one later swing low that does not break
+# L. Failure = no close beyond the edge in that swing's own leg (a wick beyond and the closes back inside = a sweep, still inside). The
+# range ends (BROKEN, the method's break) when a swing forms beyond an edge with a close beyond the edge in its leg. No equality, no
+# counts, no ratios. Closes `C` are indexed like the pivots' bars (NaN = no close of that timeframe at that bar).
+def _beyond_close(C, a, b, edge_px, up):
+    """Any close beyond `edge_px` (up ⇒ above, else below) on bars a+1 … b (NaN closes ignored)."""
+    seg = np.asarray(C[max(int(a) + 1, 0):int(b) + 1], float)
+    seg = seg[np.isfinite(seg)]
+    return bool(seg.size) and bool((seg > edge_px).any() if up else (seg < edge_px).any())
+
+
+def range_walk(seq, k, C):
+    """The pair seq[k], seq[k + 1] (one H, one L; seq sorted by bar) as range edges: walk the later swings in bar order. Returns
+    {H, L, fail_h, fail_l, known, broken, broken_known, dir} — fail_* = the first later swing of that side that failed (None = not yet),
+    known = the bar both failures (and the edges) are confirmed (None = never qualified before a break), broken = the first swing that
+    broke an edge (with a close beyond in its leg), broken_known = its confirmation, dir = "up" / "down"."""
+    a, b = seq[k], seq[k + 1]
+    Hp, Lp = (a, b) if a.kind == "H" else (b, a)
+    out = {"H": Hp, "L": Lp, "fail_h": None, "fail_l": None, "known": None, "broken": None, "broken_known": None, "dir": None}
+    prev = b
+    for p in seq[k + 2:]:
+        up = p.kind == "H"
+        edge = Hp.price if up else Lp.price
+        beyond = p.price > edge if up else p.price < edge
+        if beyond and _beyond_close(C, prev.bar, p.bar, edge, up):
+            out.update(broken=p, broken_known=int(p.confirm_bar), dir="up" if up else "down")
+            break
+        if up and out["fail_h"] is None:
+            out["fail_h"] = p
+        elif not up and out["fail_l"] is None:
+            out["fail_l"] = p
+        prev = p
+    if out["fail_h"] is not None and out["fail_l"] is not None:
+        out["known"] = int(max(Hp.confirm_bar, Lp.confirm_bar, out["fail_h"].confirm_bar, out["fail_l"].confirm_bar))
+        if out["broken_known"] is not None and out["broken_known"] < out["known"]:
+            out["known"] = None
+    return out
+
+
+def range_pairs(piv, C, upto=None):
+    """Every adjacent (H, L) pair of the swings (confirmed by `upto` when given) walked as range edges, oldest first."""
+    seq = sorted([p for p in piv if upto is None or p.confirm_bar <= upto], key=lambda p: (p.bar, p.confirm_bar))
+    return [range_walk(seq, k, C) for k in range(len(seq) - 1) if seq[k].kind != seq[k + 1].kind]
+
+
+def range_at(pairs, t):
+    """The range in force at bar t: the OLDEST pair qualified by t (both sides failed, confirmed ≤ t) and not broken by t (the outer
+    range; a narrower pair inside it is the same range). None ⇒ no range."""
+    for r in pairs:
+        if r["known"] is not None and r["known"] <= t and (r["broken_known"] is None or r["broken_known"] > t):
+            return r
+    return None
+
+
+def range_last_broken(pairs, t):
+    """The most recent qualified range broken by t (context: its breakout) — None if none."""
+    xs = [r for r in pairs if r["known"] is not None and r["broken_known"] is not None and r["broken_known"] <= t]
+    return max(xs, key=lambda r: (r["broken_known"], r["H"].bar)) if xs else None
+
+
 def _raw_pivots(d, s, kat, sig):
     if s["daily_swing_method"] == "dc":
         return pivots_dc(d, float(s["daily_dc_k"]), sig, kat)
@@ -261,6 +324,10 @@ def fold_impulse(d, s=None):
     if rule not in ("internal_pullback", "ratio"):
         raise ValueError(f"corr_degree_rule {rule!r} — internal_pullback / ratio पैकी")
     gate, range_after = bool(s["daily_start_nature_gate"]), bool(s["range_after_trend"])
+    rrule = s.get("daily_range_rule", "structure")
+    if rrule not in ("structure", "c13"):
+        raise ValueError(f"daily_range_rule {rrule!r} — structure / c13 पैकी")
+    rpair = None                                                           # structure: चालू RANGE ची कडा (H, L)
     pgate = bool(s["daily_parent_gate"])
     lread = DL.leg_read(s)                                                 # Abhi 21 Oct: "compare" (legs_compare) / "elliott" (what-if)
     A2, mcache = DL.arrays(d), {}
@@ -726,7 +793,13 @@ def fold_impulse(d, s=None):
                     why = f"protected origin {origin.price:,.2f} Daily close ने तुटला — उलट impulse ची वाट (trend संपलेला नाही)"
                     w = flip(i)                                            # त्याच दिवशी उलट रचना (impulse पायासह) पूर्ण ⇒ लगेच flip
                     why = w if phase == "impulse" else (why + (f" · {w}" if w else ""))
-        if range_after and dirn != 0 and phase == "origin_broken":           # Q27: origin तुटला + उलट impulse नाही + दोन समान H / L
+        if range_after and dirn != 0 and phase == "origin_broken" and rrule == "structure":   # Q27 + Abhi 21 Oct: origin तुटला + उलट
+            r = range_at(range_pairs([p for p in seq if p.bar >= imp_end.bar], C, i), i)   # impulse नाही + दोन कडांमध्ये दोन्ही बाजूंनी
+            if r is not None and r["L"].price <= C[i] <= r["H"].price:     # नवा टोक नाही (structure) — close पट्ट्यात असेल तेव्हाच
+                trend, dirn, phase, brk, band = "RANGE", 0, None, broken_at, (r["L"].price, r["H"].price)
+                rpair = (r["H"], r["L"])
+                why = "origin तुटला + कडांपलीकडे दोन्ही बाजूंनी नवा टोक नाही ⇒ RANGE (कडांवर; Q27, structure)"
+        if range_after and dirn != 0 and phase == "origin_broken" and rrule == "c13":   # Q27: origin तुटला + उलट impulse नाही + दोन समान H / L
             hs = [p for p in seq if p.kind == "H" and p.bar > imp_end.bar and p.confirm_bar <= i]
             ls = [p for p in seq if p.kind == "L" and p.bar > imp_end.bar and p.confirm_bar <= i]
             if len(hs) >= 2 and len(ls) >= 2 and equal(hs[-1], hs[-2]) and equal(ls[-1], ls[-2]):   # C-13 equal edges
@@ -759,11 +832,25 @@ def fold_impulse(d, s=None):
                                     "HL + close मागच्या high वर ⇒ UP impulse" + why_n, hm.bar)
                     else:
                         why = why_n
-            if trend == "NEUTRAL":
+            if trend == "NEUTRAL" and rrule == "structure":                # Abhi 21 Oct: कडांपलीकडे दोन्ही बाजूंनी नवा टोक नाही ⇒ RANGE
+                r = range_at(range_pairs([p for p in seq if p.bar > brk], C, i), i)
+                if r is not None and r["L"].price <= C[i] <= r["H"].price:
+                    trend, band, rpair = "RANGE", (r["L"].price, r["H"].price), (r["H"], r["L"])
+                    why = "कडांपलीकडे दोन्ही बाजूंनी नवा टोक नाही (structure) ⇒ RANGE"
+            elif trend == "NEUTRAL":
                 h1, h2 = _last2(seq, "H")
                 l1, l2 = _last2(seq, "L")
                 if h1 and l1 and h2.bar > brk and l2.bar > brk and equal(h2, h1) and equal(l2, l1):   # C-13 equal edges
                     trend, band, why = "RANGE", (min(l1.price, l2.price), max(h1.price, h2.price)), "दोन H आणि दोन L जवळपास समान"
+            elif trend == "RANGE" and rrule == "structure" and rpair is not None:   # the method's break: a swing beyond an edge with a
+                srt = sorted([p for p in seq if p.confirm_bar <= i], key=lambda p: (p.bar, p.confirm_bar))   # close beyond in its leg
+                k = next((j for j in range(len(srt) - 1) if {srt[j].bar, srt[j + 1].bar} == {rpair[0].bar, rpair[1].bar}
+                          and srt[j].kind != srt[j + 1].kind), None)
+                w = range_walk(srt, k, C) if k is not None else None
+                if w is not None and w["broken_known"] is not None and w["broken_known"] <= i:
+                    bdir = w["dir"]
+                    trend, why, brk, band, rpair = "NEUTRAL", f"range broken {bdir or ''}: close beyond an edge + a swing beyond it " \
+                                                              f"(breakout = context only)", i, None, None
             elif trend == "RANGE" and band and (C[i] > band[1] or C[i] < band[0]):
                 trend, why, brk, band = "NEUTRAL", "close range पट्ट्याबाहेर", i, None
         # wave / correction पाय / maturity
@@ -817,7 +904,7 @@ def fold_impulse(d, s=None):
                           bool(risk and tr), sharp if tr else None, evid if tr else (), czone if tr else None,
                           leg_cm if tr else None, bool(passed and tr),
                           wave_a if (tr and pcorr) else None, "1" if (tr and pcorr and wave_a) else None,
-                          rev=rev if tr else None))
+                          rev=rev if tr else None, range_pair=rpair if trend == "RANGE" else None))
     return out
 
 

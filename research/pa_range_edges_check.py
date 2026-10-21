@@ -2,7 +2,7 @@
 no API, no order). Dates / paths come from the CLI; charts and JSON go to the PRIVATE trade-data repo only.
 
   1. per 15M bar of the chosen days: the range state FROM STRUCTURE (`range_edges.range_state`: W / D from decision3.daily RANGE,
-     1H / 15M from that timeframe's swings, C-13 equal highs + lows) vs the legacy §5.3 overlap + doji measure (`method.range_state`,
+     1H / 15M from that timeframe's swings — `daily_range_rule`) vs the legacy §5.3 overlap + doji measure (`method.range_state`,
      what `range_state_rule` = "overlap" reports under verdict_rule = score) — bars where they differ are listed;
   2. charts (15M + 1H) of the decision bar and of sample bars: the range edge areas (lifecycle, trade side), the bars where each measure
      says "range" marked under the candles.
@@ -69,10 +69,11 @@ def chart(V, t, edges, title, path, tf, bars, struct=None, overlap=None):
     fig, ax = plt.subplots(figsize=(14, 6.5))
     CH._candles(ax, fr)
     CH._xticks(ax, fr["timestamp"].to_numpy(), max(1, len(fr) // 14))
-    lo_y = float(fr["low"].min())
-    span = float(fr["high"].max()) - lo_y
+    lo_y = min([float(fr["low"].min())] + [e["lo"] for e in edges])
+    span = max([float(fr["high"].max())] + [e["hi"] for e in edges]) - lo_y
     for e in edges:
-        x0 = max(0, pos(e["born_bar"]))
+        ab = next((m["bar"] for m in e["members"] if m["relation"] == "anchor"), None) if e["tf"] in ("1H", "15M") else None
+        x0 = max(0, min(pos(e["born_bar"]), pos(ab) if ab is not None else pos(e["born_bar"])))   # from the edge swing when visible
         c = COL.get(e["lifecycle"], "#1971c2")
         ax.add_patch(plt.Rectangle((x0, e["lo"]), len(fr) - x0, max(e["hi"] - e["lo"], span * 0.002), color=c, alpha=0.25))
         side = (e["trade_side"] or "no side").replace("_", " ")
@@ -100,7 +101,10 @@ def chart(V, t, edges, title, path, tf, bars, struct=None, overlap=None):
 
 
 def all_edges(rs_full):
-    return [e for x in rs_full.values() for e in (x["edges"] or (x.get("last_range") or {}).get("edges") or [])]
+    """Current range edges of every tf; an ended range's edges only for 1H / 15M (a Daily / Weekly range that ended long ago would
+    only squash the intraday chart — it stays in the JSON)."""
+    return [e for tf, x in rs_full.items() for e in (x["edges"] or ((x.get("last_range") or {}).get("edges") or []
+                                                                     if tf in ("1H", "15M") else []))]
 
 
 def main(argv=None):
@@ -111,6 +115,7 @@ def main(argv=None):
     ap.add_argument("--days", nargs="+", required=True, help="sessions to scan (YYYY-MM-DD)")
     ap.add_argument("--charts", type=int, default=4, help="sample charts of differing bars (besides each day's last bar)")
     ap.add_argument("--at", nargs="*", default=[], help="extra bars to chart (15M bar start timestamps)")
+    ap.add_argument("--settings", default="{}", help="decision3 settings overrides as JSON (e.g. {\"daily_leg_read\": \"compare\"})")
     ap.add_argument("--out-dir", required=True)
     a = ap.parse_args(argv)
     warnings.filterwarnings("ignore")
@@ -119,7 +124,7 @@ def main(argv=None):
     from decision3 import method as M
     from decision3 import range_edges as RE
     m15, d = load(a.m15, a.daily, upto=max(a.days))
-    V = E3.V22(m15, daily_df=d, sealed=HI.sealed_fn(a.symbol))           # Abhi Z-1t: no 15M bar on a sealed (holdout) date
+    V = E3.V22(m15, daily_df=d, s=json.loads(a.settings), sealed=HI.sealed_fn(a.symbol))   # Abhi Z-1t: no 15M bar on a sealed date
     os.makedirs(a.out_dir, exist_ok=True)
     ts = pd.to_datetime(V.m15["timestamp"]).reset_index(drop=True)
     days = {pd.Timestamp(x) for x in a.days}
@@ -137,8 +142,10 @@ def main(argv=None):
     diff = [r for r in rows if r["differ"]]
     rep = {"symbol": a.symbol, "days": a.days, "bars": len(rows), "structure_range_bars": sum(r["structure"] for r in rows),
            "overlap_range_bars": sum(r["overlap"] for r in rows), "differ_bars": len(diff),
-           "daily_range_episodes_known": len(RE.episodes(V.daily, V.bar_end[bars[-1]])) if bars else 0,
-           "weekly_range_episodes_known": len(RE.episodes(V.weekly, V.bar_end[bars[-1]])) if bars else 0,
+           "daily_range_episodes_known": len([e for e in RE.episodes(V.daily, V.bar_end[bars[-1]])
+                                              if not (V.sealed and V.sealed(e["first"].day))]) if bars else 0,   # never a holdout reading
+           "weekly_range_episodes_known": len([e for e in RE.episodes(V.weekly, V.bar_end[bars[-1]])
+                                               if not (V.sealed and V.sealed(e["first"].day))]) if bars else 0,
            "rows": rows, "charts": []}
     picks = []
     for day in sorted(days):
