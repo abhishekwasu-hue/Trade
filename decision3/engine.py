@@ -384,6 +384,7 @@ class V22:
         cm.update(study_from=str(pd.Timestamp(self._ts[arm])), confirm_wait=cf["wait"], confirm_lines=cf["lines"],
                   ltf_line=ch.get("line"), handover=(cf["study"] or {}).get("handover"),
                   absorption=cf["absorption"], arm_bar=int(arm), choch=cf["choch"], volume_measure=vlabel, handover_present=cf.get("handover"),
+                  commit_present=bool(cf["c0"]), commit_why=cf.get("commit_why"),   # layer 6b: the commitment's own read (facts / display)
                   handover_state={k: v for k, v in ho.items() if k != "events"} | {
                       "seen_ts": None if ho["seen_at"] is None else str(pd.Timestamp(self._ts[ho["seen_at"]])),
                       "cancelled_ts": None if ho["cancelled_at"] is None else str(pd.Timestamp(self._ts[ho["cancelled_at"]]))},

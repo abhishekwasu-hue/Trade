@@ -252,6 +252,26 @@ REGISTER = {
     "max_attempts": (3, "—", "Abhi नियम", "spec §5.1 H4 / L4 ⇒ trade नाही"),
 }
 
+# Layer 6b — OUTPUT (display) settings: what the live Vision card / Telegram / pre-open TEXT shows, never a reading or an entry. Each
+# default = today's output byte-for-byte; the live-switch track wires them to the dashboard (bot settings, the same key) and Abhi flips
+# them. {key: (default, options, where it is read)}. The facts dossier's own `display_finder` (facts/dossier.py, not wired live) is listed
+# in REGISTER for completeness.
+OUTPUT = {
+    "approval_band_warn_rule": ("points", ("points", "method"),
+                                "bots_common.plain_text.band_flag / band_wide_words ⇐ vision.approval (ticket), vision.worker (caption), "
+                                "paper.engine_entry (gate tags), scripts.level_gate_preopen (pre-open)"),
+}
+REGISTER.update({
+    "approval_band_warn_rule": ("points", "points / method", "setting",
+                                "layer 6b display (C-18): points = today's '⚠️ merged band — check' over approval_band_warn_pts; method = an "
+                                "engine area is one base, never merged (#329, Z-1u) ⇒ width as a fact, no line; other sources keep points"),
+    "approval_band_warn_pts": (150, "pts (display only)", "setting",
+                               "C-18 display alert (cloud_db default 150); read only under approval_band_warn_rule = points / non-engine bands"),
+    "display_finder (facts dossier)": ("method", "method / validity (legacy R1a)", "setting",
+                                       "layer 6b: the Vision facts dossier reads the decision's own areas / lines / visits; validity = the "
+                                       "R1a facts.validity finder (golden comparison only); not wired live"),
+})
+
 TRENDS = ("UP", "DOWN", "RANGE", "NEUTRAL", "UNKNOWN")
 
 

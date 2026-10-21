@@ -178,3 +178,33 @@ def test_modify_ticket_shows_band_width_and_flag_after_decision_line():
     assert "merged band" not in AP.ticket_text(row_w, {**base, "area": [22300.0, 22750.0]}, "2026-10-09T12:40:00", 10)
     none = AP.ticket_text(row, {**base, "area": None}, "2026-10-09T12:40:00", 10)
     assert "merged band" not in none and "pts)" not in none
+
+
+# ------------------------------------------------------------------------------------------------ layer 6b: the method statement (setting)
+def test_band_warn_rule_setting_default_is_todays_output():
+    """Layer 6b (C-18): `approval_band_warn_rule` — default "points" = today's line byte-for-byte; "method" = an engine area is one base,
+    never merged (#329, Abhi Z-1u) ⇒ the width stays as a fact, no "merged band" line; any other source keeps the points line."""
+    from decision3 import settings as S3
+    assert S3.OUTPUT["approval_band_warn_rule"][0] == PT.band_warn_rule(None) == PT.band_warn_rule({}) == "points"
+    assert S3.REGISTER["approval_band_warn_rule"][2] == "setting" and PT.band_warn_rule("junk") == "points"
+    assert PT.band_warn_rule({"approval_band_warn_rule": " Method "}) == "method"
+    wide = (22300.0, 22750.0)
+    assert PT.band_flag(*wide, None, "points", engine_area=True) == PT.band_flag(*wide) != ""
+    assert PT.band_flag(*wide, None, "method", engine_area=True) == ""
+    assert PT.band_flag(*wide, None, "method", engine_area=False) == PT.band_flag(*wide)        # not an engine area ⇒ points
+    assert PT.band_wide_words(*wide, None, "method", engine_area=True) == "450 pts wide"
+    r = {"level_lo": 22300.0, "level_hi": 22750.0, "grade": "B"}
+    assert EE.engine_gate_tags(r, "BEARISH")["band_warn_rule"] == "points"
+    assert EE.engine_gate_tags(r, "BEARISH", {"approval_band_warn_rule": "method"})["band_warn_rule"] == "method"
+
+
+def test_band_warn_rule_method_in_captions_and_preopen(monkeypatch):
+    from vision import worker as VW
+    row = _row(22300.0, 22750.0, {"approval_band_warn_rule": "method"}, direction="BEARISH")
+    cap = _v1(row, monkeypatch)
+    assert FLAG not in cap and "(450 pts)" in cap and VW.band_flag_line(row) == ""
+    assert FLAG not in VW.caption(row, {"verdict": "agree", "audits": []}, "notify")
+    P = _load("level_gate_preopen")
+    msg = _preopen_msg(P, {"approval_band_warn_rule": "method"})
+    assert FLAG not in msg and "350 pts wide" in msg and "22,600–22,950 (350 pts)" in msg
+    assert FLAG in _preopen_msg(P)                                                              # default unchanged

@@ -157,6 +157,31 @@ def fold(d, s=None):
     return fold_minor(d, s)
 
 
+# ------------------------------------------------------------------------------------------------ C-13 comparisons (Abhi L1-b)
+# One definition for the Daily reading (fold_impulse) and every display that shows "equal" / a swing's area (layer 6b): no σ tolerance.
+def c13_body_edge(O, C, bar, dn):
+    """The far edge of a swing candle's body: a low's area (dn < 0) runs from its wick up to its body bottom; a high's: mirror."""
+    return float(min(O[bar], C[bar]) if dn < 0 else max(O[bar], C[bar]))
+
+
+def c13_area(O, H, L, C, bar, kind):
+    """C-13: a swing candle's own area, wick to body — a low ("L"): [low, body bottom]; a high ("H"): [body top, high]."""
+    return (float(L[bar]), c13_body_edge(O, C, bar, -1)) if kind == "L" else (c13_body_edge(O, C, bar, 1), float(H[bar]))
+
+
+def c13_equal(O, C, later_price, earlier_kind, earlier_bar, earlier_price):
+    """Method "equal" (double / triple top or bottom): the later extreme reaches the earlier swing candle's area (wick to body) and
+    does not go beyond the earlier extreme."""
+    dn = -1 if earlier_kind == "L" else 1
+    return (later_price - earlier_price) * dn <= 0 and (later_price - c13_body_edge(O, C, earlier_bar, dn)) * dn >= 0
+
+
+def c13_short_of(O, C, later_price, earlier_kind, earlier_bar):
+    """A lower high / higher low: the later extreme stays short of the earlier swing candle's area."""
+    dn = -1 if earlier_kind == "L" else 1
+    return (later_price - c13_body_edge(O, C, earlier_bar, dn)) * dn < 0
+
+
 def _raw_pivots(d, s, kat, sig):
     if s["daily_swing_method"] == "dc":
         return pivots_dc(d, float(s["daily_dc_k"]), sig, kat)
@@ -223,16 +248,14 @@ def fold_impulse(d, s=None):
     # maturity is context only and "near" = price reached the projection's area (its swing candle, wick to body)
     O_ = d["open"].to_numpy(float)
 
-    def body_edge(bar, dn):                                                # the far edge of a swing candle's body: a low's area runs
-        return float(min(O_[bar], C[bar]) if dn < 0 else max(O_[bar], C[bar]))   # from its wick up to its body (a high's: mirror)
+    def body_edge(bar, dn):                                                # the far edge of a swing candle's body (c13_body_edge)
+        return c13_body_edge(O_, C, bar, dn)
 
-    def equal(later, earlier):                                             # method "equal": the later extreme reaches the earlier swing
-        dn = -1 if earlier.kind == "L" else 1                              # candle's area (wick to body) and does not go beyond it
-        return (later.price - earlier.price) * dn <= 0 and (later.price - body_edge(earlier.bar, dn)) * dn >= 0
+    def equal(later, earlier):                                             # method "equal" (c13_equal)
+        return c13_equal(O_, C, later.price, earlier.kind, earlier.bar, earlier.price)
 
-    def short_of(later, earlier):                                          # a lower high / higher low: stays short of the earlier area
-        dn = -1 if earlier.kind == "L" else 1
-        return (later.price - body_edge(earlier.bar, dn)) * dn < 0
+    def short_of(later, earlier):                                          # a lower high / higher low (c13_short_of)
+        return c13_short_of(O_, C, later.price, earlier.kind, earlier.bar)
     cfrac = float(s["corr_degree_frac"])
     rule = s["corr_degree_rule"]
     if rule not in ("internal_pullback", "ratio"):

@@ -135,7 +135,25 @@ def test_elliott_vs_dow_logs_agreement():
 def test_range_check_reports_trend_degree_pairs():
     d, st = _fold(HEAD + WAVE4 + WAVE5)
     rc = DS.range_check(d, DS.structure_objects(d, st))
-    assert len(rc["lows"]) == 2 and len(rc["highs"]) == 2 and rc["tol"] > 0 and rc["range"] is False
+    assert len(rc["lows"]) == 2 and len(rc["highs"]) == 2 and rc["rule"].startswith("C-13") and rc["range"] is False
+
+
+def test_daily_display_equal_and_bands_are_c13_not_sigma():
+    """Layer 6b (Abhi L1-b ⇒ C-13 for the display): "equal" = the later extreme reaches the earlier swing candle's area (wick to body)
+    and not beyond; a Daily level band = its swing candle's own area; a target (no candle) = its price; mirror holds."""
+    import numpy as np
+    from decision3 import daily as DD
+    O, H, L, C = (np.array(x, float) for x in ([105.0, 100.0], [110.0, 104.0], [100.0, 99.0], [108.0, 103.0]))
+    # low of bar 0 = 100, body bottom = 105 ⇒ its area is 100–105
+    assert DD.c13_area(O, H, L, C, 0, "L") == (100.0, 105.0) and DD.c13_area(O, H, L, C, 0, "H") == (108.0, 110.0)
+    assert DD.c13_equal(O, C, 103.0, "L", 0, 100.0) and DD.c13_equal(O, C, 100.0, "L", 0, 100.0)
+    assert not DD.c13_equal(O, C, 99.0, "L", 0, 100.0) and not DD.c13_equal(O, C, 106.0, "L", 0, 100.0)
+    assert DD.c13_short_of(O, C, 106.0, "L", 0) and not DD.c13_short_of(O, C, 104.0, "L", 0)
+    assert DD.c13_equal(O, C, 109.0, "H", 0, 110.0) and not DD.c13_equal(O, C, 111.0, "H", 0, 110.0)   # mirror
+    assert DS._band_of("window low", 100.0, 0, None, O, H, L, C) == (100.0, 105.0)
+    assert DS._band_of("window high", 110.0, 0, None, O, H, L, C) == (108.0, 110.0)
+    assert DS._band_of("target", 95.0, None, None, O, H, L, C) == (95.0, 95.0)
+    assert DS._band_of("sharp-fall supply", 109.0, 0, (107.0, 110.0, 0), O, H, L, C) == (107.0, 110.0)
 
 
 def test_view_script_logs_elliott_vs_dow(tmp_path):

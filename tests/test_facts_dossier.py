@@ -110,11 +110,13 @@ def test_sections_carry_evidence(world):
     assert {f"D{k}" for k in range(5)} == set(st) and "state" in st["D1"] and "state" in st["D2"]
     for p in st["D1"]["pivots"]:
         assert pd.Timestamp(p["known_at"]) <= as_of and {"price", "ts", "kind"} <= set(p)
+    A = S["areas"]                                                           # layer 6b: the decision's own areas + K4 state
+    assert A["areas"] and all(a["hi"] >= a["lo"] and a["state"] and a["tf"] in ("1H", "D", "W") and a["born_ts"] for a in A["areas"])
+    assert A["trend"]["used"] in ("UP", "DOWN", "RANGE", "NEUTRAL", "UNKNOWN") and set(A["armed"]) <= {a["id"] for a in A["areas"]}
+    assert S["lines"]["lines"] and S["lines"]["rule"] == "logic"
+    for ln in S["lines"]["lines"]:                                           # two separate reactions; touches counted by reactions
+        assert ln["p1"]["bar"] < ln["p2"]["bar"] and ln["touches"] == len(ln["touch_points"]) >= 2
     for tf in ("15M", "1H"):
-        for b in S["areas"]["by_tf"][tf]["bands"]:
-            assert b["hi"] > b["lo"] and "touches" in b and "reasons" in b
-        for ln in S["lines"]["by_tf"][tf]["lines"]:
-            assert ln["valid"] and ln["projected_zone"]["next"] is not None
         assert S["legs"]["by_tf"][tf]["legs"]
     assert S["volume"]["last_bar"]["volume"] > 0
     assert S["context"]["prev_day"]["high"] >= S["context"]["prev_day"]["low"]
@@ -196,10 +198,11 @@ def test_shared_engine_failure_marks_every_dependent_section_na(world, monkeypat
         raise ValueError("engine down")
     monkeypatch.setattr(SE, "build", boom)
     S = _dossier(m15, fut, ltf, one, as_of)["sections"]
-    for name in ("structure", "liquidity", "patterns", "divergence"):
+    for name in ("structure", "liquidity", "patterns", "divergence", "areas", "lines", "confluence", "ltf_choch"):
         assert S[name]["status"] == D.NA and "swings2.engine.build failed" in S[name]["reason"], name
-    for name in ("areas", "lines", "confluence", "legs", "volume", "candles", "gaps", "context"):
+    for name in ("legs", "volume", "candles", "gaps", "context"):
         assert S[name]["status"] == D.OK, (name, S[name].get("reason"))
+    assert S["candles"]["area_studies"] is None and "swings2.engine.build failed" in S["candles"]["area_studies_reason"]
 
 
 def test_short_history_structure_is_na_not_empty_ok(world):
@@ -334,25 +337,82 @@ def test_context_missing_parts_carry_a_reason(world):
     assert "opening" not in c["missing"]
 
 
-def test_area_visit_with_ltf_context_fallback_is_noted(world, monkeypatch):
-    m15, fut, ltf, one, as_of, _ = world
-    from swings2 import engine as SE
-    row = _cut(m15, as_of, 15).iloc[-1]
-    band = {"lo": float(row["low"]), "hi": float(row["high"]), "role": V.RES, "valid": True}
+@pytest.fixture(scope="module")
+def visit_world():
+    """The 12-Oct reference shape at the 09:30 bar's close (k = 1): the bear-call visit to the supply area, and its price mirror."""
+    out = {}
+    for mirror in (False, True):
+        m15, fut, ltf, one = _inputs(mirror=mirror)
+        as_of = _asof(m15, 1)
+        out[mirror] = (m15, fut, ltf, one, as_of, _dossier(m15, fut, ltf, one, as_of))
+    return out
 
-    def visits(c, s3):
-        return [{"tf": "15M", "band": band, "arrival_bar": c.t - 1, "d": -1}]
 
-    def boom(*a, **k):
-        raise ValueError("engine down")
-    monkeypatch.setattr(D, "_visits", visits)
-    monkeypatch.setattr(SE, "build", boom)
-    S = _dossier(m15, fut, ltf, one, as_of)["sections"]
-    v = S["ltf_choch"]["visits"]
-    assert len(v) == 1 and "falls back to the arrival bar" in v[0]["context_note"] and "swings2" in v[0]["context_note"]
-    assert v[0]["context_from"] == v[0]["study_from"]
+def test_visit_study_is_the_decisions_own_read(visit_world):
+    """Layer 6b: the Vision facts read the SAME method as the decision — the visit by structure (V22.visit), its approach leg, the
+    handover episode, the commitment (approach leg + opposite side, push excluded) and the LTF change of character (V22._confirm)."""
+    from decision3 import engine as E3
+    m15, fut, ltf, one, as_of, d = visit_world[False]
+    S = d["sections"]
     st = S["candles"]["area_studies"]
-    assert len(st) == 1 and "present" in st[0]["commitment"] and "grade" not in st[0]["commitment"]["reason"]
+    assert len(st) == 1
+    x = st[0]
+    assert x["role"] == V.RES and x["reaction_side"] == "down" and x["armed"] and x["approach_from"] is not None
+    assert x["commitment"]["present"] and x["handover"]["present"] and "grade" not in x["commitment"]["reason"]
+    lt = S["ltf_choch"]["visits"]
+    assert len(lt) == 1 and lt[0]["done"] and lt[0]["area_id"] == x["area_id"] and lt[0]["study_from"] == x["arrival"]["ts"]
+    cut = _cut(m15, as_of, 15)                                                 # the engine itself on the same bars
+    Ve = E3.V22(cut[["timestamp", "bar_end", "open", "high", "low", "close"]], None, None, ltf=_cut(ltf, as_of, 5),
+                futures=_cut(fut, as_of, 5))
+    r = Ve.decide(len(Ve.m15) - 1)
+    assert r["decision"] == "setup" and r["level"]["id"] == x["area_id"]
+    assert r["commit"]["visit_start"] == x["arrival"]["ts"] and r["commit"]["approach_from"] == x["approach_from"]
+    assert r["commit"]["commit_present"] and r["commit"]["choch"]["done"]
+
+
+def test_visit_mirror_holds(visit_world):
+    a, b = visit_world[False][-1]["sections"], visit_world[True][-1]["sections"]
+    sa, sb = a["candles"]["area_studies"], b["candles"]["area_studies"]
+    assert len(sa) == len(sb) == 1 and sb[0]["role"] == V.SUP and sb[0]["reaction_side"] == "up"
+    for k in ("arrival", "approach_from", "bars_in_study"):
+        assert sa[0][k] == sb[0][k], k
+    assert sa[0]["commitment"]["present"] == sb[0]["commitment"]["present"] and \
+        sa[0]["handover"]["present"] == sb[0]["handover"]["present"]
+    assert a["ltf_choch"]["visits"][0]["done"] == b["ltf_choch"]["visits"][0]["done"]
+
+
+def test_visit_is_by_structure_never_a_bar_count(visit_world):
+    """The old `touch_window_bars` count is gone from the facts: changing it changes nothing (the visit ends only by structure)."""
+    m15, fut, ltf, one, as_of, d = visit_world[False]
+    x = _dossier(m15, fut, ltf, one, as_of, cfg={"decision3": {"touch_window_bars": 1}})
+    assert x["sections"]["candles"]["area_studies"] == d["sections"]["candles"]["area_studies"]
+    src = open(os.path.join(ROOT, "facts", "dossier.py"), encoding="utf-8").read()
+    assert "touch_window_bars" not in src and "RE.RSI(" not in src                # layer 6b: no bar window, no old Cardwell RSI
+
+
+def test_divergence_is_the_method_read_at_the_visit(visit_world):
+    """Layer 5 at the visit: the pushes inside the move into the zone (highest degree with two pushes), the zone's own degree too."""
+    *_, d = visit_world[False]
+    dv = d["sections"]["divergence"]
+    assert dv["status"] == D.OK and len(dv["at_visits"]) == 1
+    v = dv["at_visits"][0]
+    assert v["zone_side"] == "bear" and "pushes" in v and "zone_degree" in v and v["found"] in (True, False)
+    assert dv["latest"] and all(isinstance(x, str) for x in dv["latest"])
+
+
+def test_validity_display_finder_kept_as_the_legacy_switch(world):
+    m15, fut, ltf, one, as_of, d = world
+    x = _dossier(m15, fut, ltf, one, as_of, cfg={"display_finder": "validity"})
+    S = x["sections"]
+    for tf in ("15M", "1H"):
+        for b in S["areas"]["by_tf"][tf]["bands"]:
+            assert b["hi"] > b["lo"] and "touches" in b and "reasons" in b
+        for ln in S["lines"]["by_tf"][tf]["lines"]:
+            assert ln["valid"] and ln["projected_zone"]["next"] is not None
+    assert {k: v for k, v in S.items() if k not in ("areas", "lines", "confluence")} == \
+        {k: v for k, v in d["sections"].items() if k not in ("areas", "lines", "confluence")}
+    with pytest.raises(ValueError, match="display_finder"):
+        _dossier(m15, fut, ltf, one, as_of, cfg={"display_finder": "sigma"})
 
 
 def test_json_helper_maps_nat_and_na_to_none():
@@ -465,7 +525,7 @@ def test_golden_dossier_nifty_fut_9oct_close_carries_the_r1a_line_band_and_confl
     fut15 = G.load_fut15()
     t, cut, ref, _ = G._golden(fut15, "2026-10-09")
     as_of = pd.Timestamp(cut["timestamp"].iloc[-1]) + pd.Timedelta(minutes=15)
-    d = D.build_dossier("NIFTY", {"15M": fut15}, None, as_of=as_of, cfg={"legs_reader": RR.read})
+    d = D.build_dossier("NIFTY", {"15M": fut15}, None, as_of=as_of, cfg={"legs_reader": RR.read, "display_finder": "validity"})   # R1a finder
     S = d["sections"]
     lines = [x for x in S["lines"]["by_tf"]["15M"]["lines"] if V.same_line(x, ref, ref["mr"], V.DEFAULTS["touch_mr"])]
     assert lines and lines[0]["projected_zone"]["next"] == ref["projected_zone"]["next"]
