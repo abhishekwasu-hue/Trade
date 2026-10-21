@@ -75,6 +75,8 @@ BOT_DEFAULTS = {
                                            # decision's own areas (engine gate tags: one base, wick to body, K4 state, confluence label)
     "vision_volume_words": "legacy",       # volume pane text: "legacy" = today ("volume: NA (grade cap B)", chart window average);
                                            # "method" = FUT missing = data problem, no chart-side average (the method's comparison only)
+    "approval_card_layout": "classic",     # Abhi (simple card): "classic" = today's card byte-for-byte; "summary" = 5 short lines on top
+                                           # (what / where · reader ✓✗ · Vision in one line · what you do) + the same details below
 }
 BOT_OVERRIDES = {"manual": {"vision_wait_for_bar_close": False,      # manual signal ला bar बंद होण्याची वाट नाही
                             "shadow_cooldown_min": 0}}               # नाकारल्यानंतर नवी /paper आज्ञा लगेच चालते
@@ -103,6 +105,7 @@ ENUMS = {
     "vision_fail_action": ("ignore", "skip"), "timeout_action": ("auto_veto", "skip"), "level_gate": ("off", "skip_mid_range"),
     "manual_profile": MANUAL_PROFILES, "vision_v4_audit": ("off", "v4"),
     "vision_chart_band_finder": ("validity", "method"), "vision_volume_words": ("legacy", "method"),   # layer 6b (display)
+    "approval_card_layout": ("classic", "summary"),                                                 # card text (display)
 }
 RANGES = {"approve_window_min": (1, 60), "max_drift_mr": (0.05, 5.0), "vision_timeout_sec": (5, 120), "second_audit_below_conf": (0.0, 1.0),
           "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240),

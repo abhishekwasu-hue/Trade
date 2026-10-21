@@ -2954,3 +2954,18 @@ legs owner वि. reader2 gate).
 - **Live text / card — display settings, defaults = today (decision3/settings.py OUTPUT, for the live-switch track):**
   `approval_band_warn_rule` (points / method), `vision_chart_band_finder` (validity / method), `vision_volume_words` (legacy / method).
 - Golden expectations unchanged; charts before / after: trade-data `review/layer6b/<commit>/`. Open questions in the PR body.
+
+## 2026-10-21 · Simple approval card (Abhi: "hard to understand; simplify it") — setting `approval_card_layout` (branch `claude/simple-approval-card`)
+
+- **Setting** `approval_card_layout` (vision bot settings + decision3/settings.py OUTPUT / REGISTER): `classic` (default) = today's
+  card byte-for-byte (tested against main's text for the approval / auto-skip / TEST / own-bot / manual / V0 / changed-entry cards);
+  `summary` = five short lines on top, today's details below "── details ──" (trimmed only for the 1024 caption limit; Vision's full
+  reason is the last detail line to go). Abhi flips it: `python3 -m vision.config set srv2_momentum_reversal approval_card_layout summary --by abhi`.
+- **Summary lines** (`vision/card_summary.py`): side + label A / B + what is asked · area (its own TF) + last price + distance · reader
+  ✓ / ✗ = the engine's layer 6a evidence list (required set spelled out: handover (fast = two-candle form) + commitment+volume + LTF
+  CHoCH; "+" = confirming pieces marked present) — bot's own / manual / TEST signals say so · Vision in one line (first sentence ≤ 90)
+  · the buttons the card really has + the deadline. A missing value is left out; no rule, no score.
+- **Data:** the engine row payload carries `reader` (engine3_live.reader_facts — the evidence list, ① / ③, handover form, LTF label,
+  copied from the V22 row; dropped first by the payload size cap) ⇒ `engine_gate_tags["reader"]`. Display only.
+- Samples (12 Oct golden bear call from the real V22 row + the TEST card, classic and summary, + the Vision chart): trade-data
+  `review/approval_card/<commit>/`.

@@ -265,6 +265,8 @@ OUTPUT = {
                                  "vision.chart.render (only with vision_chart_bands ON) + vision.signal_audit chart note; vision/config.py"),
     "vision_volume_words": ("legacy", ("legacy", "method"),
                             "decision3.volume_pane.study ⇐ vision.chart (Vision card volume pane + volume line); vision/config.py"),
+    "approval_card_layout": ("classic", ("classic", "summary"),
+                             "vision.worker.caption / v1_caption + vision.approval.ticket_text (Telegram card text); vision/config.py"),
 }
 REGISTER.update({
     "approval_band_warn_rule": ("points", "points / method", "setting",
@@ -278,6 +280,11 @@ REGISTER.update({
     "vision_volume_words": ("legacy", "legacy / method", "setting",
                             "layer 6b display: legacy = 'volume: NA (grade cap B)' + chart window average (today); method = FUT missing "
                             "= data problem (no entry), nothing to compare = no commitment, no chart-side average"),
+    "approval_card_layout": ("classic", "classic / summary", "setting",
+                             "Abhi (simple card): classic = today's Vision / approval card byte-for-byte; summary = 5 short lines on top "
+                             "(side + label, area + last price, the reader's required set ✓ / ✗ + confirming pieces from the engine's "
+                             "layer 6a evidence list, Vision in one line, what you do + deadline), today's text below the details line; "
+                             "display only, no new rule / score"),
     "display_finder": ("method", "method / validity (legacy R1a)", "setting",
                                        "facts/dossier.py DEFAULTS (dossier config, not a V22 setting) — layer 6b: the Vision facts dossier reads the "
                                        "decision's own areas / lines / visits; validity = the R1a facts.validity finder (golden only); not live"),

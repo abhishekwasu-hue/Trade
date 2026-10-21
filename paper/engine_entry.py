@@ -100,7 +100,18 @@ def engine_gate_tags(r, direction, settings=None):
     return {"mode": "engine", "side": direction, "area": area, "grade": r.get("grade"), "tf": "15M",
             "trend": pay.get("trend_used") or pay.get("daily_trend"), "form": pay.get("commitment_form"),
             "band_warn_pts": PT.band_warn_pts(settings), "band_warn_rule": PT.band_warn_rule(settings),   # layer 6b (default points)
-            "areas": engine_areas(pay)}
+            "areas": engine_areas(pay), "reader": engine_reader(pay)}
+
+
+def engine_reader(pay):
+    """Approval card summary (`approval_card_layout = summary`, default classic = today's card): the engine row's own reader facts
+    (engine3_live.reader_facts: layer 6a evidence list, ① trend / ③ area, handover form, LTF label) passed through as they are. Not a
+    dict (older row, dropped by the payload size cap) ⇒ None ⇒ the card omits those pieces. Never raises."""
+    try:
+        x = pay.get("reader")
+        return dict(x) if isinstance(x, dict) else None
+    except Exception:                                                     # noqa: BLE001 — display only
+        return None
 
 
 def engine_areas(pay):

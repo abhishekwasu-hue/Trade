@@ -221,14 +221,29 @@ def band_flag_line(row):
         return ""
 
 
-def caption(row, res, mode, reused=False):
-    """V0 (फक्त माहिती): साधी ओळ + "Decision needed: none" (+ merged band ओळ) + ── details ── + जुना तपशील (≤ 1024)."""
+def summary_top(row, res, status, flag, **kw):
+    """`approval_card_layout = summary` ⇒ the five summary lines + band line + SEP (vision/card_summary.py). Any error ⇒ None ⇒ the
+    caller keeps today's classic top (display never breaks a card)."""
+    try:
+        from . import card_summary as CS
+        return CS.top(row, res, status, flag, **kw)
+    except Exception as exc:                                             # noqa: BLE001 — display only
+        print(f"⚠️ summary card (classic used): {type(exc).__name__}: {str(exc)[:120]}")
+        return None
+
+
+def caption(row, res, mode, reused=False, layout=None):
+    """V0 (फक्त माहिती): साधी ओळ + "Decision needed: none" (+ merged band ओळ) + ── details ── + जुना तपशील (≤ 1024).
+    layout (setting `approval_card_layout`) "summary" ⇒ the summary lines replace the two plain lines; details unchanged."""
     from bots_common import plain_text as PT
+    from . import card_summary as CS
     flag = band_flag_line(row)
-    top = (f"{html.escape(plain_head(row))}\n{PT.DECISION_NONE} (Vision opinion only; the bot decided as usual)\n"
-           + (f"{html.escape(flag)}\n" if flag else "") + PT.SEP)
+    top = summary_top(row, res, "INFO", flag) if CS.layout(layout) == "summary" else None
+    top = top or (f"{html.escape(plain_head(row))}\n{PT.DECISION_NONE} (Vision opinion only; the bot decided as usual)\n"
+                  + (f"{html.escape(flag)}\n" if flag else "") + PT.SEP)
     body = [x for x in _body(row, res, mode, reused).split("\n") if x]
-    return top + "\n" + _fit(body, 1024 - PT.MARGIN - PT.tg_len(top) - 1, keep=1)   # ओळी-निहाय (HTML tag अर्धवट नाही)
+    return top + "\n" + _fit(body, 1024 - PT.MARGIN - PT.tg_len(top) - 1, keep=1,   # ओळी-निहाय (HTML tag अर्धवट नाही)
+                              protect=_reason_line if CS.layout(layout) == "summary" else None)
 
 
 def _budget_ok(g, model, path=None):
@@ -280,8 +295,12 @@ def v1_status(row, verdict, s, meta):
     return d.status, extra, d
 
 
-def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
+def v1_caption(row, res, d, deadline=None, buttons=True, why="", layout=None, window_min=None, modify=True):
+    """V1 card. layout (setting `approval_card_layout`): "classic" (default) = today's card; "summary" = the five summary lines on top
+    (window_min = the approve window the deadline came from; modify = the ✏️ button is on the card) — the details below the SEP are
+    the same lines, trimmed only when the 1024 caption limit needs it (the summary itself is never cut)."""
     from bots_common import plain_text as PT
+    from . import card_summary as CS
     s = _body(row, res, row["mode"]).replace("👁 <b>Vision V0 — फक्त माहिती</b>", f"👁 <b>Vision V1 — {row['mode']}</b>")
     try:
         tags = json.loads(row.get("setup_json") or "{}").get("tags") or {}
@@ -297,7 +316,9 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
     else:
         dline = PT.DECISION_NONE + (" (entry approved automatically)" if d.status == "APPROVED" else " (entry rejected automatically)")
     flag = band_flag_line(row)                                           # Abhi: रुंद (merged) पट्टा ⇒ निर्णय ओळीनंतर स्पष्ट इशारा
-    top = f"{head}\n{dline}\n" + (f"{html.escape(flag)}\n" if flag else "") + PT.SEP
+    top = summary_top(row, res, d.status, flag, deadline=deadline, window_min=window_min, modify=modify, buttons=buttons) \
+        if CS.layout(layout) == "summary" else None
+    top = top or f"{head}\n{dline}\n" + (f"{html.escape(flag)}\n" if flag else "") + PT.SEP
     manual = str(tags.get("manual_text") or "") if tags.get("manual") else ""
     s = s.replace("Bot ने नेहमीप्रमाणे निर्णय घेतला — vision चा trade वर परिणाम नाही (V0).", "")
     lines = [x for x in s.split("\n") if x]
@@ -329,7 +350,13 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
     dec = [x for x in s.split("\n") if x]                               # ⏱ / ⚠️ बटणं नाहीत / ✅ ❌ — header नंतर लगेच, कधीच गाळत नाही
     lines = lines[:1] + dec + extra + lines[1:2] + [engine_line(row)] + lines[2:] + [tail]
     # वरचा साधा भाग कधीच कापत नाही; details मधून आधी शेवटच्या ओळी, मग extra गाळतो (UTF-16 units, MARGIN सकट)
-    return top + "\n" + _fit(lines, 1024 - PT.MARGIN - PT.tg_len(top) - 1, keep=1 + len(dec))
+    return top + "\n" + _fit(lines, 1024 - PT.MARGIN - PT.tg_len(top) - 1, keep=1 + len(dec),
+                              protect=_reason_line if CS.layout(layout) == "summary" else None)
+
+
+def _reason_line(x):
+    """Vision's full reason in the details (the summary shows only its first sentence) — kept while other detail lines go."""
+    return x.startswith("<b>कारण:</b> ")
 
 
 def engine_line(row):
@@ -341,13 +368,19 @@ def engine_line(row):
         return f"engine: NA ({html.escape(type(exc).__name__)})"
 
 
-def _fit(lines, limit=1024, keep=2):
+def _fit(lines, limit=1024, keep=2, protect=None):
     """Telegram caption मर्यादा (UTF-16 units): पहिल्या `keep` ओळी (header + निर्णय) आणि शेवटची ओळ टिकवून, शेवटून आधीच्या ओळी पूर्ण गाळतो
-    (HTML tag मध्येच कापला जाऊ नये). तरीही मोठं ⇒ शेवटची ओळ, मग tags काढून कापतो."""
+    (HTML tag मध्येच कापला जाऊ नये). तरीही मोठं ⇒ शेवटची ओळ, मग tags काढून कापतो. protect (summary card only) = a line test: those
+    lines are dropped last (Vision's full reason stays in the details); None ⇒ today's order exactly."""
     from bots_common import plain_text as PT
     lines = list(lines)
     while len(lines) > keep + 1 and PT.tg_len("\n".join(lines)) > limit:
-        lines.pop(-2)
+        i = len(lines) - 2
+        while protect is not None and i >= keep and protect(lines[i]):
+            i -= 1
+        if i < keep:
+            break
+        lines.pop(i)
     if len(lines) > keep and PT.tg_len("\n".join(lines)) > limit:
         lines.pop(-1)
     s = "\n".join(lines)
@@ -360,12 +393,25 @@ def v1_notify(row, res, d, png, path, reused=False):
     r = VS.get_signal(sid, path) or {}
     can, why = TG.can_ask()
     btn = None
+    modify = False
     if d.ask_human and can:                                              # Abhi §10: ✅ · ❌ · ✏️ (engine SL / target असतील तर) · 📝
         from . import approval as AP
-        btn = AP.buttons(sid, AP.base_levels({**row, **r}) is not None)
-    mid = TG.send_photo(png, v1_caption({**row, **r}, res, d, r.get("deadline"), buttons=bool(btn) or not d.ask_human, why=why), btn)
+        modify = AP.base_levels({**row, **r}) is not None
+        btn = AP.buttons(sid, modify)
+    lay, win = card_settings(row.get("bot"), path)
+    mid = TG.send_photo(png, v1_caption({**row, **r}, res, d, r.get("deadline"), buttons=bool(btn) or not d.ask_human, why=why,
+                                        layout=lay, window_min=win, modify=modify), btn)
     VS.update(sid, path, tg_message_id=mid, notified=1 if mid else 0)
     return mid
+
+
+def card_settings(bot, path=None):
+    """(approval_card_layout, approve_window_min) of the bot's Vision settings; unreadable ⇒ ("classic", None) = today's card."""
+    try:
+        s = VC.load(bot, path)
+        return s.get("approval_card_layout", "classic"), s.get("approve_window_min")
+    except Exception:                                                    # noqa: BLE001 — display only
+        return "classic", None
 
 
 def _safe_notify(row, res, d, png, path, reused=False):
@@ -646,7 +692,7 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
             if d is not None:
                 _safe_notify(row, res, d, png, path, reused=True)
             elif row["mode"] == "notify":
-                VS.set_notified(sid, send_photo(png, caption(row, res, row["mode"], reused=True)), path)
+                VS.set_notified(sid, send_photo(png, caption(row, res, row["mode"], reused=True, layout=s.get("approval_card_layout"))), path)
             return res
 
         # 4–5. render / model / key / budget
@@ -683,7 +729,7 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
         if d is not None:
             _safe_notify(row, res, d, png, path)
         elif row["mode"] == "notify":
-            VS.set_notified(sid, send_photo(png, caption(row, res, row["mode"])), path)
+            VS.set_notified(sid, send_photo(png, caption(row, res, row["mode"], layout=s.get("approval_card_layout"))), path)
         if g.get("vision_v4_audit", "off") == "v4":                       # R0 V4 (audit-only): V2 निर्णयानंतर
             job = {"row": row, "png": png, "meta": meta, "g": g, "model": model, "path": path, "send_text": send_text,
                    "client_factory": client_factory, "timeout_sec": int(s["vision_timeout_sec"])}

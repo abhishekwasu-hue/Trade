@@ -13,7 +13,8 @@ from paper import engine_entry as EE
 def test_output_settings_registered_with_todays_default():
     from bots_common import plain_text as PT
     from vision import config as VCF
-    assert set(S3.OUTPUT) == {"approval_band_warn_rule", "vision_chart_band_finder", "vision_volume_words"}
+    assert set(S3.OUTPUT) == {"approval_band_warn_rule", "vision_chart_band_finder", "vision_volume_words",
+                              "approval_card_layout"}                            # + the simple approval card (default classic)
     for k, (default, options, where) in S3.OUTPUT.items():
         assert S3.REGISTER[k][0] == default and S3.REGISTER[k][2] == "setting" and default == options[0] and where, k
         assert S3.REGISTER[k][1] == " / ".join(options), k
