@@ -376,3 +376,11 @@ def test_neckline_fakeout_stays_cancelled_after_a_later_sweep(mir):
     p = [x for x in PP.find_patterns(A, piv, piv, 35) if x["family"] == ("double_bottom" if mir else "double_top")][0]
     assert p["boundaries"]["neckline"]["state"] == "sweep" and p["state"] == "failed" and p["named"]
     assert not PP._retest([p], 35)
+
+
+def test_sloped_broken_line_is_a_retest_level_only_during_the_pullback():
+    pts = HS + [(34, "", 93), (37, "L", 88), (41, "H", 94), (45, "L", 86)]   # H&S neckline (sloped 95 → 96) broken, pullback H at 41
+    V = _V(pts, n=48)
+    during = PP.read_patterns(V, 40)["retest_levels"]
+    after = PP.read_patterns(V, 44)["retest_levels"]                       # H 94 at 41 confirmed at 43 ⇒ the pullback is over
+    assert [x["pattern"] for x in during] == ["hs_top"] and not [x for x in after if x["pattern"] == "hs_top"]

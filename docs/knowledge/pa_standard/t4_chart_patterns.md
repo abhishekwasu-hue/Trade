@@ -68,7 +68,9 @@ Candidates are listed separately (`candidates`), never as evidence.
 ## E4(b) hook
 
 `retest_levels(V, t, d, tf)` = every boundary of a NAMED pattern accepted at t (only the decisive break, only while it is still a
-boundary; a candidate's line is not a pattern boundary, K11.0):
+boundary; a candidate's line is not a pattern boundary, K11.0). A SLOPED broken line is a retest location only during the pullback
+right after the break — until a swing of the pattern's degree against the break (an H after a down-break) is confirmed; a horizontal
+neckline / edge stays a level, like an area:
 `{src: "pattern", pattern, tf, boundary, p0, p1, slope, value_t, role (support after an up-break / resistance after a down-break),
 break_dir, accepted_bar, swing_beyond, retests, state}`. `entry_models.py` is not touched.
 

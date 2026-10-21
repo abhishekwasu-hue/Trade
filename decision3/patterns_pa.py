@@ -523,6 +523,8 @@ def _state(A, fine, pat, t):
                                  if nk["state"] == "fakeout" else "neckline broken, then reclaimed (close + swing back inside)")
         else:
             st, why = "forming", "neckline not closed through yet (candidate)"
+        if st in ("complete", "broken", "retested") and (nk["fakeouts"] or nk["failed_bar"] is not None):
+            why += " (again, after an earlier " + ("break that was reclaimed" if nk["failed_bar"] is not None else "false break") + ")"
         pat.update(state=st, why=why, break_side=nk["side"] if nk["first_close"] is not None else None,
                    named=nk["first_close"] is not None and not far_first)   # K11.0: named once it closed beyond the neckline
         return pat
@@ -709,10 +711,18 @@ def read_patterns(V, t, d=None, tf="1H"):
     return {"tf": tf, "degree": deg, "patterns": pats,
             "evidence": [p["evidence"] for p in pats if p["named"]],
             "candidates": [f"{tf} {p['name']} (candidate)" for p in pats if not p["named"]],
-            "retest_levels": _retest(pats, t)}
+            "retest_levels": _retest(pats, t, S)}
 
 
-def _retest(pats, t):
+def _pullback_over(S, b, t):
+    """A sloped broken line is a retest location only during the pullback right after the break: over once a swing of the pattern's
+    degree against the break (an H after a down-break, an L after an up-break) formed after the swing beyond and is confirmed by t."""
+    sb = b.get("swing_beyond") or {}
+    kind = "L" if b["side"] > 0 else "H"
+    return any(p.kind == kind and p.bar > sb.get("bar", -1) and p.confirm_bar <= t for p in S)
+
+
+def _retest(pats, t, S=None):
     out = []
     for p in pats:
         if p["state"] not in ("broken", "retested") or not p["named"]:     # K11.0: a candidate's line is not a pattern boundary
@@ -721,6 +731,8 @@ def _retest(pats, t):
             b = p["boundaries"].get(ln["name"])
             if not b or b["state"] not in ("accepted", "retested") or b["side"] != p["break_side"] or ln["until_bar"] < t:
                 continue                                                   # only the decisive break, while it is still a boundary
+            if ln["slope"] != 0 and S is not None and _pullback_over(S, b, t):
+                continue                                                   # the pullback after the break is over (sloped line)
             out.append({"src": "pattern", "pattern": p["family"], "tf": p["tf"], "boundary": ln["name"], "p0": ln["p0"],
                         "p1": ln["p1"], "slope": ln["slope"], "value_t": ln["value_t"],
                         "role": "support" if b["side"] > 0 else "resistance", "break_dir": b["side"],

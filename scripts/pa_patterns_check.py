@@ -93,6 +93,7 @@ def draw(V, t, tf, read, title, path, sessions):
         ax.annotate(lab, (xs[-1], ys[-1]), fontsize=7, color=col, xytext=(4, 6 if p["bias"] >= 0 else -10), textcoords="offset points")
         shown += 1
     ax.set_ylim(lo - pad, hi + pad)
+    ax.set_xlim(-1, len(fr) + 6)
     step = max(1, len(fr) // 12)
     ax.set_xticks(range(0, len(fr), step))
     ax.set_xticklabels([pd.Timestamp(fr["timestamp"].iloc[i]).strftime("%d %b %H:%M") for i in range(0, len(fr), step)], rotation=45,
