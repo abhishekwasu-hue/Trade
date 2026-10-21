@@ -889,7 +889,8 @@ def test_range_state_is_context_only_never_an_entry_gate(abc, monkeypatch):
     """Abhi Z-1j: overlapping / sideways candles inside the zone are the handover study, not a blocker — §5.3 range state is reported as
     a context fact and never changes the decision (the old gate only with `range_state_gate` = True, legacy)."""
     m15, s, V, _ = abc
-    s = {**s, "verdict_rule": "score"}                                     # §5.3 range state exists only in the legacy score rule (layer 6)
+    s = {**s, "verdict_rule": "score", "range_state_rule": "overlap"}      # §5.3 range state exists only in the legacy score rule (layer 6)
+    # (Abhi 21 Oct: the row's range_state is read from structure by default; the overlap measure + its gate = the legacy "overlap" rule)
     bars = range(735, 746)
     V = E3.V22(m15, s={**s, "c0_volume_required": False})
     base = {t: V.decide(t) for t in bars}

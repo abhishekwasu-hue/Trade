@@ -160,8 +160,10 @@ FLAT_B_INNER = FLAT[:2] + [75, 68] + FLAT[2:]
 
 @pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_b_with_inner_swings_same_behaviour_and_no_target_without_a1_correction():
+    # Abhi 21 Oct (daily_range_rule = structure): this fixture's (B) inner swings fail on both sides inside (A)–(B) ⇒ a structural RANGE
+    # before the DOWN flip; the Q15 / Q28 / Q44 mechanics this test pins are read under the c13 range what-if (expectations unchanged).
     d = daily_from_path(FLAT_B_INNER)
-    st = DD.fold(d, OB)
+    st = DD.fold(d, {**OB, "daily_range_rule": "c13"})
     b3 = _idx_first(st, lambda x: x.trend == "DOWN")
     assert st[b3 - 1].trend == "UP"                    # Q28: data (A) पासून ⇒ (B) zigzag = UP impulse; (B) चा HL close ने तुटेपर्यंत UP
     assert all(x.trend == "DOWN" for x in st[b3:]) and abs(st[b3].protected.price - 93.5) < 1e-9   # flip ⇒ सर्वात उंच LH = (2) high
