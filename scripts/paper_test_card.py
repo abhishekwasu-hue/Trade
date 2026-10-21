@@ -4,7 +4,8 @@ verdict + ✅ Approve / ✏️ change the entry only / ❌ Reject with a reason)
 "🧪 TEST — not a trade". It NEVER creates a position: this script never calls an order function, the card is tagged `test_only` +
 `dry_run` (the ✅ path skips it; summaries skip it), and it checks the real trades DB and journal are unchanged at the end (any change
 ⇒ ❌ and exit 1). The level is the last closed day's high (a bear call at resistance, as the dry-run replay). Market closed only:
-it refuses on a trading day from 08:30 to 15:35 IST (`market_window`).
+it refuses when the start or the end of the wait falls on a trading day from 08:30 to 15:35 IST (`in_window`; the wait
+is capped at 30 minutes).
 
   cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/paper_test_card.py [--symbol NIFTY] [--wait-min 10]
 """
@@ -23,6 +24,7 @@ sys.path.insert(0, ROOT)
 TAG = "🧪 TEST — not a trade · "
 BOT = "srv2_momentum_reversal"
 FINAL = ("APPROVED", "REJECTED", "EXPIRED", "FAILED")
+MAX_WAIT_MIN = 30
 
 
 def market_window(now=None):
@@ -30,6 +32,14 @@ def market_window(now=None):
     card only when the market is closed, never in market hours."""
     import config
     return config.is_market_open(now, open_time=datetime.time(8, 30), close_time=datetime.time(15, 35))
+
+
+def in_window(wait_min, now=None):
+    """The card stays answerable for the whole wait ⇒ refuse if its start OR its end falls in the market window (the wait is capped,
+    so it can never span the window)."""
+    import config
+    now = now or config.get_ist_now()
+    return market_window(now) or market_window(now + datetime.timedelta(minutes=wait_min))
 
 
 def count_rows(db, table):
@@ -92,16 +102,19 @@ def main(argv=None):
     ap.add_argument("--symbol", default="NIFTY")
     ap.add_argument("--wait-min", type=float, default=10)
     a = ap.parse_args(argv)
+    if not 0 < a.wait_min <= MAX_WAIT_MIN:
+        print(f"❌ --wait-min must be 1–{MAX_WAIT_MIN} minutes")
+        return 4
+    if in_window(a.wait_min):
+        print("❌ market hours — the TEST card runs only when the market is closed: start after 15:35 IST, or finish the whole wait "
+              "before 08:30 IST, or a holiday (during the session it could share a ✅ with a real card)")
+        return 3
     import cloud_db
     from notifications import send_telegram_message as send
     token = cloud_db.get_effective_upstox_token(None)
     if not token:
         print("❌ Upstox token missing — the chart needs data; log in first")
         return 2
-    if market_window():
-        print("❌ market hours — the TEST card runs only when the market is closed (after 15:35 IST, or before 08:30 IST, or a "
-              "holiday): during the session it could share a ✅ with a real card")
-        return 3
     before = snapshot()
     stt = run(token, a.symbol.upper(), a.wait_min, send)
     after = snapshot()

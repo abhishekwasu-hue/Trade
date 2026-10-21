@@ -236,6 +236,17 @@ def test_test_card_main_stops_before_any_card_in_market_hours(monkeypatch, capsy
     import cloud_db
     from scripts import paper_test_card as TC
     monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda acc=None: "tok")
-    monkeypatch.setattr(TC, "market_window", lambda now=None: True)
+    monkeypatch.setattr(TC, "in_window", lambda wait_min, now=None: True)
     monkeypatch.setattr(TC, "run", lambda *a, **k: pytest.fail("no TEST card in market hours"))
     assert TC.main([]) == 3 and "market hours" in capsys.readouterr().out
+    monkeypatch.setattr(TC, "in_window", lambda wait_min, now=None: False)
+    assert TC.main(["--wait-min", "90"]) == 4                           # a long wait could span the window ⇒ refused
+
+
+@pytest.mark.parametrize("hhmm,wait,blocked", [((8, 15), 10, False), ((8, 25), 10, True), ((15, 30), 10, True), ((15, 36), 30, False)])
+def test_test_card_wait_must_end_outside_the_window(hhmm, wait, blocked, monkeypatch):
+    import datetime as dt
+    import config
+    from scripts import paper_test_card as TC
+    monkeypatch.setattr(config, "is_trading_day", lambda now: True)
+    assert TC.in_window(wait, dt.datetime(2026, 1, 7, *hhmm)) is blocked
