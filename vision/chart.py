@@ -9,6 +9,9 @@
   • v2 (signal_check_v2) overlays — `vision/context.py` (causal): major levels (M1↑ / M1↓, flip ⇒ F), PDH / PDL / PDC, PWH / PWL (dotted),
     आजचा open + opening range (फिकट पट्टा), swing H / L खुणा, session separators. 0.1 × median range पेक्षा जवळचे overlays ⇒ एक label
     (उदा. PDH+M1↑); y-range बाहेरचे ⇒ कडेला ▲ / ▼ खुणा. Labels इंग्रजीत; अचूक किंमती फक्त signal text मध्ये.
+  • PA standard §4 (track T8) — **setting `chart_objects`, default "off"** (off ⇒ byte-for-byte today): "on" ⇒ the signal's object list
+    (decision3.draw_objects: swings, areas + state, lines, channels, levels, patterns, liquidity, sweeps, divergence, E1–E4 marks —
+    `sig["objects"]` or the gate tags' `objects`) drawn by decision3.draw_render, the same drawing as the verification charts.
   • TA4 (Abhi, design §10) — **setting `vision_chart_bands`, default OFF** (OFF ⇒ image main सारखीच, byte-for-byte): ON ⇒ major levels
     (एकच किंमत, M1↑ / M1↓) chart वर रेषा नाहीत; त्याऐवजी 15m वरचे shared band check pass होणारे पट्टे (`chart_bands`:
     decision3.levels.display_bands — ≤ 3 वर, ≤ 3 खाली, शेवटचा तुटलेला dashed). रंग L (हिरवा / लाल) पासून वेगळे: supply नारिंगी, demand
@@ -312,8 +315,11 @@ def _line_panel(fig, line, ctx, sig, row=3, hide_majors=False):
                      showgrid=False, color="#b0bec5", row=row, col=1)
 
 
-def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None, bands=None):
-    """vols = (setup volume array, higher volume array) — `panel_volumes`; None ⇒ volume pane मध्ये "volume: NA (grade cap B)".
+def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None, bands=None, objects=None, xmaps=None):
+    """objects (PA standard §4, setting `chart_objects` = on) = the signal's object list (decision3.draw_objects, already validated),
+    drawn by decision3.draw_render — the same geometry and labels as the verification charts; xmaps = (setup XMap, higher XMap) over
+    the full signal-time bars (lines anchored before the window keep their slope). None (default) ⇒ the image exactly as today.
+    vols = (setup volume array, higher volume array) — `panel_volumes`; None ⇒ volume pane मध्ये "volume: NA (grade cap B)".
     Volume pane (row 2) प्रत्येक price panel खाली — image size तोच (price panel ची उंची कमी).
     bands (TA4) = `chart_bands` चे पट्टे; दिले ⇒ ते पट्टे काढतो आणि single-price major levels लपवतो; None ⇒ जुनं drawing."""
     import plotly.graph_objects as go
@@ -373,7 +379,7 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None, bands=
                 if idx:
                     fig.add_shape(type="rect", x0=idx[0] - 0.5, x1=n - 0.5, y0=max(lo, op["or_low"]), y1=min(hi, op["or_high"]),
                                   fillcolor="rgba(176,190,197,0.06)", line=dict(width=0), layer="below", row=1, col=c)
-            if bands is not None:
+            if bands is not None and not (objects and any(o["kind"] == "area" for o in objects)):   # PA §4: object areas win
                 _bands(fig, bands, lo, hi, c, n, n - 1)
             _overlays(fig, df, ctx, lo, hi, c, n, n - 1, hide_majors=bands is not None)
             if c == 1:
@@ -387,6 +393,8 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None, bands=
                     seg = df.iloc[comp[0]:comp[1] + 1]
                     fig.add_shape(type="rect", x0=comp[0] - 0.45, x1=comp[1] + 0.45, y0=float(seg["low"].min()), y1=float(seg["high"].max()),
                                   line=dict(color="#ffd54f", width=1, dash="dot"), fillcolor="rgba(255,213,79,0.05)", row=1, col=c)
+        if objects:
+            _objects(fig, objects, df, lo, hi, c, (xmaps or (None, None))[c - 1])
         if level is not None:
             fig.add_shape(type="line", x0=-0.5, x1=n - 0.5, y0=level, y1=level, line=dict(color=col, width=2), row=1, col=c)
             lo_ = next((o for o in (ctx or {}).get("overlays") or [] if "L" in o["kinds"]), None)
@@ -431,6 +439,37 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None, bands=
     fig.update_layout(template="plotly_dark", width=WIDTH, height=HEIGHT_V21 if with_line else HEIGHT, margin=dict(l=10, r=60, t=60, b=30),
                       paper_bgcolor="#0e1117", plot_bgcolor="#0e1117", title=dict(text=title, font=dict(size=14)), showlegend=False)
     return fig
+
+
+def _objects(fig, objects, df, lo, hi, c, xm=None):
+    """PA §4: the object list on one price panel (decision3.draw_render primitives). Setup panel: shapes + labels; higher panel:
+    shapes only (it is narrow). The panel's price range is kept — an object outside it becomes an ▲ / ▼ note."""
+    from decision3 import draw_render as DR
+    xm = xm or DR.XMap(df["start"], 0)
+    DR.draw_plotly(fig, DR.geometry(objects, xm, ylim=(lo, hi)), row=1, col=c, label=c == 1)
+
+
+def chart_objects_of(sig):
+    """The signal's object list (PA §4): `sig["objects"]`, else the engine gate tags' `objects` (written by the engine adapter —
+    track T9). Returns (valid objects, dropped reasons); never raises."""
+    from decision3 import draw_objects as DO
+    g = ((sig.get("tags") or {}).get("gate") or {}) if isinstance(sig.get("tags"), dict) else {}
+    raw = sig.get("objects") if sig.get("objects") is not None else g.get("objects")
+    return DO.clean(raw if isinstance(raw, list) else [])
+
+
+def _xmaps(cut, setup, higher, tfs):
+    """XMaps over the full signal-time bars of each panel (setup = resample of cut; higher Daily panel = its own rows)."""
+    from decision3 import draw_render as DR
+    out = []
+    for df, tf in ((setup, tfs[0]), (higher, tfs[1])):
+        if df is None or not len(df):
+            out.append(None)
+            continue
+        full = resample(cut, tf) if tf != "D" else df
+        j0 = max(0, len(full) - len(df)) if tf != "D" else 0
+        out.append(DR.XMap(full["start"], j0, n=len(df)))
+    return tuple(out)
 
 
 def _area_of(sig):
@@ -513,7 +552,17 @@ def render(df1m, sig, daily=None, fut=None):
                     ctx["bands_finder"] = "method"
             except Exception as exc:                                     # पट्टे अपयशी ⇒ जुनं drawing (majors सह), नोंद
                 bands, meta["bands_error"] = None, f"{type(exc).__name__}: {str(exc)[:120]}"
-        fig = build_figure(setup, higher, sig, tfs, ctx, line, vols, bands)
+        objs, xmaps = None, None                                         # PA §4 (`chart_objects`, default off ⇒ image as today)
+        if (sig.get("ctx_settings") or {}).get("chart_objects") == "on":
+            try:
+                objs, dropped = chart_objects_of(sig)
+                xmaps = _xmaps(cut, setup, higher, tfs)
+                meta["objects"] = len(objs)
+                if dropped:
+                    meta["objects_dropped"] = dropped[:10]
+            except Exception as exc:                                     # objects are display only ⇒ the chart without them, noted
+                objs, xmaps, meta["objects_error"] = None, None, f"{type(exc).__name__}: {str(exc)[:120]}"
+        fig = build_figure(setup, higher, sig, tfs, ctx, line, vols, bands, objs or None, xmaps)
         meta["volume_line"] = _volume_line(setup, sig, vols)
         png = fig.to_image(format="png", width=WIDTH, height=int(fig.layout.height or HEIGHT), scale=1)
         return png, meta

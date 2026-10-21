@@ -50,8 +50,8 @@ KIND_SPEC = {
               ("confirmed",)),
     "area": ("supply / demand area: t0 = its base (birth), t1 = now (or when it died), p0 = low, p1 = high; base_type; tf = 1H / D / W",
              ("active", "tested", "broken", "flipped", "dead")),
-    "line": ("a straight line through two reactions: (t0, p0) the first anchor, (t1, p1) the line's value at the last bar it is drawn to; "
-             "points = the touches", ("respected", "broken", "retest")),
+    "line": (("a straight line through two reactions: (t0, p0) the first anchor, (t1, p1) the line's value at the last bar it is drawn "
+              "to; points = the touches"), ("respected", "broken", "retest")),
     "channel": ("two lines of one move: (t0, p0)-(t1, p1) the main line, lines = [the parallel through the opposite extreme]",
                 ("inside", "broken", "retest")),
     "level": ("a horizontal higher-timeframe level (earlier swing extreme, protected swing): p0 = p1; t0 = where it comes from", None),
@@ -262,7 +262,7 @@ def swings(V, t, since=0):
             if p.bar < since:
                 continue
             tag = lab.get(id(p), p.kind)
-            out.append(obj("swing", "15M", p.ts, p.price, label=tag, state="confirmed", style_key=f"swing.D{deg}", degree=deg,
+            out.append(obj("swing", "15M", p.ts, p.price, label=tag, state="confirmed", style_key=f"swing.D{deg}", degree=deg, src=p.kind,
                            evidence=[f"{tag} (D{deg}) {p.price:,.0f}"]))
     return out
 
@@ -274,7 +274,9 @@ def _area_state(x):
 
 def area_objects(V, t, trend, r=None, mode="view"):
     """The decision's own areas (`Levels.snapshot`: one base, K4 state, confluence label) — for the trade side labelled with the line
-    confluence exactly as engine.step2 does (`trendline.confluence_areas`). mode "view" = the 1H chart's selection."""
+    confluence exactly as engine.step2 does (`trendline.confluence_areas`). mode "view" = the 1H chart's selection
+    (charts.method_band_view) on the areas inside the view distance plus the decision's next armed area (the engine arms every area
+    ahead — drawing all of them would hide the candles)."""
     from . import charts as CH
     from . import method as M
     from . import trendline as TL
@@ -294,8 +296,10 @@ def area_objects(V, t, trend, r=None, mode="view"):
     else:
         sg = lv.sig1h[t]
         lim = float(s["show_distance_sigma"]) * (sg if math.isfinite(sg) else math.inf)
-        shown = [x for x in snap if x["dist"] <= lim or x["id"] in by_id]
-        view = CH.method_band_view(lv, t, shown, set(by_id))
+        near = [x for x in snap if x["dist"] <= lim]                       # the view distance (`show_distance_sigma`, display)
+        nxt = sorted((x for x in snap if x["id"] in by_id), key=lambda x: x["dist"])[:1]   # + the decision's next area, always
+        shown = near + [x for x in nxt if x["id"] not in {y["id"] for y in near}]
+        view = CH.method_band_view(lv, t, shown, {x["id"] for x in shown if x["id"] in by_id})
     out = []
     for x, style in view:
         b = x.get("born_bar")
@@ -309,11 +313,29 @@ def area_objects(V, t, trend, r=None, mode="view"):
         if style == "armed":
             ev.append("armed (on the decision's watch list)")
         out.append(obj("area", {"1H": "1H", "D": "D", "W": "W"}.get(x.get("tf", "1H"), "1H"), t0, x["lo"], t1=lv.ts[t], p1=x["hi"],
-                       label=CH.area_label(x, style == "armed"), state=_area_state(x),
+                       label=area_label(x, style == "armed"), state=_area_state(x),
                        style_key=f"area.{role}" + (".armed" if style == "armed" else ".broken" if style == "broken" else ""),
                        evidence=ev, id=x.get("id"), base_type=x.get("base_type") if x.get("base_type") in BASE_TYPES else None,
                        src="+".join(x.get("births") or ())))
     return out
+
+
+def area_label(x, armed=False):
+    """Short chart label of an area (the full confluence wording stays in its evidence): "> 1H supply 23,016-23,121 (active, 2 tests,
+    swept, conf. Daily + Weekly, line)"."""
+    from . import levels as LV
+    role = {"resistance": "supply", "support": "demand"}.get(x.get("role"), "area")
+    bits = [_area_state(x)]
+    if x.get("tests"):
+        bits.append(f"{x['tests']} test" + ("s" if x["tests"] > 1 else ""))
+    if x.get("sweeps"):
+        bits.append("swept")
+    conf = sorted({LV.TF_WORD.get(c.get("tf"), c.get("tf")) for c in x.get("confluence") or ()}, key=lambda w: (w != "Daily", w))
+    if conf:
+        bits.append("conf. " + " + ".join(conf))
+    if x.get("confluence_line") or "line" in str(x.get("confluence_label") or ""):
+        bits.append("line" + (f" touch {x['line_touch']['touch_no']}" if (x.get("line_touch") or {}).get("touch_no") else ""))
+    return f"{'> ' if armed else ''}{LV.tf_word(x)} {role} {x['lo']:,.0f}-{x['hi']:,.0f} ({', '.join(bits)})"
 
 
 def trade_line(V, t, trend):
@@ -370,30 +392,34 @@ def equal_pools(V, t, since=0):
 
 def sweeps(V, t, since=0):
     """Sweeps ⚡ / trapped (failed breakout) in since … t (liquidity.sweeps_and_traps, the decision's own reader) — the pools known at
-    the start of each session of the window, so a pool born inside the window is watched from the next session on."""
+    the start of each session of the window, so a pool born inside the window is watched from the next session on. One poke = one
+    sweep: the outermost pool it took."""
     from . import liquidity as LQ
     lv = _lv(V)
     days = lv.ts.dt.normalize().to_numpy()
     starts = [since] + [i for i in range(since + 1, t + 1) if days[i] != days[i - 1]]
-    seen, out = set(), []
+    best, trapped = {}, set()
     for s0 in starts:
         sw, tr = LQ.sweeps_and_traps(_ns(V), t, start=s0)
-        trapped = {(x["side"], int(x["bar"])) for x in tr}
+        trapped |= {(x["side"], int(x["bar"])) for x in tr}
         for x in sw:
-            key = (x["side"], round(float(x["price"]), 2), int(x["bar"]))
-            if key in seen:
-                continue
-            seen.add(key)
-            hi = x["side"] == "buy"
-            back = x.get("back_at")
-            st = "trapped" if (x["side"], int(x["bar"])) in trapped else "swept"
-            src = {"swing": "swing high" if hi else "swing low", "equal": "EQH" if hi else "EQL"}.get(x["src"], x["src"])
-            out.append(obj("sweep", "15M", lv.ts[int(x["bar"])], x["price"], t1=lv.ts[int(back)] if back is not None else lv.ts[int(x["bar"])],
-                           p1=x["extreme"], label=("failed breakout " if st == "trapped" else "sweep ") + src, state=st,
-                           style_key=f"sweep.{'buy' if hi else 'sell'}",
-                           evidence=[f"{'buy' if hi else 'sell'}-side sweep of the {src} {float(x['price']):,.0f} (to {float(x['extreme']):,.0f}, "
-                                     "closed back inside)" + ("; closes beyond first = trapped traders" if st == "trapped" else "")],
-                           src=x["src"]))
+            key = (x["side"], int(x["bar"]))
+            old = best.get(key)
+            if old is None or ((float(x["price"]) > float(old["price"])) if x["side"] == "buy" else (float(x["price"]) < float(old["price"]))):
+                best[key] = x
+    out = []
+    for key in sorted(best, key=lambda k: k[1]):
+        x = best[key]
+        hi = x["side"] == "buy"
+        back = x.get("back_at")
+        st = "trapped" if key in trapped else "swept"
+        src = {"swing": "swing high" if hi else "swing low", "equal": "EQH" if hi else "EQL"}.get(x["src"], x["src"])
+        out.append(obj("sweep", "15M", lv.ts[int(x["bar"])], x["price"], t1=lv.ts[int(back)] if back is not None else lv.ts[int(x["bar"])],
+                       p1=x["extreme"], label=("failed breakout " if st == "trapped" else "sweep ") + src, state=st,
+                       style_key=f"sweep.{'buy' if hi else 'sell'}",
+                       evidence=[f"{'buy' if hi else 'sell'}-side sweep of the {src} {float(x['price']):,.0f} (to {float(x['extreme']):,.0f}, "
+                                 "closed back inside)" + ("; closes beyond first = trapped traders" if st == "trapped" else "")],
+                       src=x["src"]))
     return out
 
 
@@ -515,27 +541,52 @@ def tf_story(V, t, objects=None, r=None, states=None):
     cm = (r or {}).get("commit") or {}
     ch = (cm.get("choch") or {}).get("line")
     out["5M"] = "5M: " + states.get("5M", ch or "read only inside an area visit (no visit at this bar)")
-    for o in objects:                                                      # the objects of each timeframe, briefly
-        tf = o["tf"] if o["kind"] != "swing" else ("1H" if o.get("degree") == int(s.get("level_degree", 2)) else "15M")
-        if o["kind"] == "area" and o["tf"] == "1H":
-            tf = "1H"
-        bit = _brief(o)
-        if bit and tf in out:
-            out[tf] += (" · " + bit) if bit not in out[tf] else ""
+    c = float(lv.A["close"][t])
+    for tf, objs in _story_objects(objects, c, int(s.get("level_degree", 2))).items():
+        if tf in out:
+            out[tf] += "".join(" · " + _brief(o) for o in objs)
+    return out
+
+
+def _story_objects(objects, close, area_degree):
+    """The objects a timeframe's story names (display only, so the line stays short): areas / levels / resting liquidity — the nearest
+    above and below price (and the one price is in); sweeps / divergences / FVGs — the latest; lines, channels, patterns, fib, entry
+    marks — all. Swings are the state itself (not repeated)."""
+    by_tf = {}
+    for o in objects:
+        if o["kind"] == "swing":
+            continue
+        by_tf.setdefault(o["tf"], []).append(o)
+    out = {}
+    for tf, objs in by_tf.items():
+        pick = []
+        for k in ("area", "level", "liquidity"):
+            xs = [o for o in objs if o["kind"] == k and (k != "liquidity" or o["state"] == "resting")]
+            lo_, hi_ = (lambda o: min(o["p0"], o["p1"])), (lambda o: max(o["p0"], o["p1"]))
+            pick += [o for o in xs if lo_(o) <= close <= hi_(o)][:1]
+            pick += sorted((o for o in xs if lo_(o) > close), key=lo_)[:1]
+            pick += sorted((o for o in xs if hi_(o) < close), key=hi_, reverse=True)[:1]
+        for k in ("sweep", "divergence", "fvg"):
+            xs = [o for o in objs if o["kind"] == k]
+            pick += sorted(xs, key=lambda o: o["t1"])[-1:]
+        pick += [o for o in objs if o["kind"] in ("line", "channel", "pattern", "fib", "entry")]
+        out[tf] = pick
     return out
 
 
 def _brief(o):
     k = o["kind"]
-    if k == "swing":
-        return None                                                        # swings are the state itself (above)
     if k == "area":
-        return o["label"].lstrip("> ").replace("Daily ", "").replace("Weekly ", "").replace("1H ", "") + (" [armed]" if o["style_key"].endswith("armed") else "")
-    if k in ("line", "channel", "pattern", "divergence", "level", "fvg", "fib", "entry"):
-        return f"{o['label']}" + (f" ({o['state']})" if o["state"] and o["state"] not in o["label"] else "")
+        lab = o["label"].lstrip("> ")
+        for w in ("Daily ", "Weekly ", "1H "):
+            lab = lab.replace(w, "", 1) if lab.startswith(w) else lab
+        lab = lab.split(" (")[0] + f" ({o['state']}" + (", fresh" if "fresh" in o["evidence"] else "") + ")"
+        return lab + (" [armed]" if o["style_key"].endswith("armed") else "")
     if k in ("sweep", "liquidity"):
-        return f"{o['label']} ({o['state']})"
-    return o["label"]
+        return f"{o['label']} ({o['state']}, {o['t0'][5:16]})" if k == "sweep" else f"{o['label']} ({o['state']})"
+    if k == "divergence":
+        return f"{o['label']} ({o['state']}, {o['t1'][5:16]})"
+    return f"{o['label']}" + (f" ({o['state']})" if o["state"] and o["state"] not in o["label"] else "")
 
 
 def story_text(story):
