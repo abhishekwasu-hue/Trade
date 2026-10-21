@@ -504,10 +504,11 @@ def fold_impulse(d, s=None):
         if lread == "compare":                                             # Abhi 21 Oct: (1) / (3) vs their neighbouring legs
             c1 = DL.compare_classify(A2, seq, w1s.bar, w1s.price, w1e.bar, w1e.price, i)
             c3 = DL.compare_classify(A2, seq, org.bar, org.price, e, float(H[e] if nd > 0 else L[e]), i)
-            if "impulse" in (c1["kind"], c3["kind"]):
-                return True, f" ((1) {DL.tag(c1)}, (3) {DL.tag(c3)})"
-            if c1["c_cls"] == "NA" and c3["c_cls"] == "NA":                # nothing to compare yet (no neighbouring leg) ⇒ structure only
-                return True, " (nothing to compare; structure only)"
+            kinds = (c1["kind"], c3["kind"])                               # mirror of the elliott semantics: only a CORRECTION verdict
+            if "impulse" in kinds:                                         # (by comparison) is corrective; mixed / nothing to compare =
+                return True, f" ((1) {DL.tag(c1)}, (3) {DL.tag(c3)})"      # unclear, not corrective ⇒ passes (as "C नाही; रचना
+            if "corrective" not in kinds:                                  # corrective नाही")
+                return True, f" (not corrective: (1) {DL.tag(c1)}, (3) {DL.tag(c3)})"
             return False, (f"{'UP' if nd > 0 else 'DOWN'} रचना पण impulse-स्वभावाचा पाय नाही ((1) {DL.tag(c1)}, (3) {DL.tag(c3)}) "
                            f"⇒ {tag}")
         c1 = DL.classify(A2, seq, w1s.bar, w1s.price, w1e.bar, w1e.price, i, cache=mcache, inner_seq=low)

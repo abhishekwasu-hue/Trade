@@ -111,3 +111,19 @@ def test_daily_swings_build_elliott_is_debug_only():
     objs = v["q15"]["objects"]
     assert all(c["shape"] is None and c["marks"] == [] for c in objs["corrections"])
     assert all(lg["family"] is None and not lg["verified"] for lg in objs["impulses"])
+
+
+def test_compare_mixed_or_unclear_is_not_corrective_for_the_nature_gate(monkeypatch):
+    """Mirror of the elliott semantics (nature_ok: "C नाही; रचना corrective नाही ⇒ pass"): under compare only a CORRECTION verdict is
+    corrective — a mixed / nothing-to-compare leg never blocks the Q28 / Q36 gate. With every leg read "unclear", the gate on = gate off."""
+    unclear = {"kind": "unclear", "structure": "unclear", "form": "compare", "n": 1, "C": None, "c_cls": "mixed", "why": "mixed"}
+    monkeypatch.setattr(DL, "compare_classify", lambda *a, **k: dict(unclear))
+    d = daily_from_path(PATH * 2, legs=5)
+    on = DD.fold(d, {**S, "daily_leg_read": "compare", "daily_start_nature_gate": True})
+    off = DD.fold(d, {**S, "daily_leg_read": "compare", "daily_start_nature_gate": False})
+    assert [(x.trend, x.phase) for x in on] == [(x.trend, x.phase) for x in off]
+    assert any(x.trend in ("UP", "DOWN") for x in on)
+    corr = {**unclear, "kind": "corrective", "structure": "corrective", "c_cls": "correction"}
+    monkeypatch.setattr(DL, "compare_classify", lambda *a, **k: dict(corr))
+    blocked = DD.fold(d, {**S, "daily_leg_read": "compare", "daily_start_nature_gate": True})
+    assert not any(x.trend in ("UP", "DOWN") for x in blocked)          # a correction verdict on both legs ⇒ no trend start
