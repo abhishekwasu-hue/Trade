@@ -25,7 +25,8 @@ t. "Left by an impulse" facts: `middle_largest` (the middle body is larger than 
 
 **Definition.** The last impulse that broke structure: the newest D2 BOS, from its origin swing to the extreme confirmed swing after
 it (both confirmed pivots). Its retracement levels (`pa_fib_ratios` = 38.2 / 50 / 61.8 / 78.6 %, the declared exception — the ratios
-are the tool's definition) are reported **only** where a level lands inside an alive area's band (not BROKEN / DEAD) or inside a resting
+are the tool's definition) are reported **only** where a level lands inside an alive area's band (a trade location of `levels.snapshot`: not BROKEN /
+DEAD, not a Weekly context band, not a Daily band under a 1H zone) or inside a resting
 liquidity extreme's own swing-candle band (wick-to-body, `levels._band_swing`).
 **No Fib at all** when nothing is there ("Fib is never read alone"), when the impulse's end swing is not confirmed yet, when price has
 made a new extreme beyond it since, or when price has gone back beyond its origin (retracement beyond 100 %).

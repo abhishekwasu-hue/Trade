@@ -120,9 +120,11 @@ def render(V, t, tf, title, path, layers=("areas", "liquidity", "confluence"), s
     c = float(V.levels.A["close"][t])
     if "confluence" in layers:
         for x in rd["conf"]["htf_levels"]:
-            if x["kind"] == "band" and vis(x["lo"], x["hi"]):
-                ax.axhspan(x["lo"], x["hi"], color="#868e96", alpha=0.10, hatch="//", lw=0)
-                texts.append((x["hi"], f"{LV.TF_WORD[x['tf']]} {'supply' if x['role'] == LV.RES else 'demand'}", "#495057"))
+            if x["kind"] == "band" and vis(x["lo"], x["hi"]):                # HTF band: a strip at the right edge (no full-width clutter)
+                ax.add_patch(plt.Rectangle((right - 1.2, x["lo"]), 1.0, max(x["hi"] - x["lo"], (yhi - ylo) / 400),
+                                           color="#495057" if x["tf"] == "W" else "#868e96", alpha=0.6, lw=0))
+                texts.append(((x["lo"] + x["hi"]) / 2, f"{LV.TF_WORD[x['tf']]} {'supply' if x['role'] == LV.RES else 'demand'} "
+                              f"{x['lo']:,.0f}–{x['hi']:,.0f}", "#495057"))
         for g in rd["conf"]["fvg"]:
             if g["tf"] != tf:
                 continue
@@ -180,15 +182,17 @@ def render(V, t, tf, title, path, layers=("areas", "liquidity", "confluence"), s
             ax.plot([x0, x1], [m["price"], m["price"]], color="#d6336c", lw=1.6)
             ax.text(x0, m["price"], f" IDM {x['state']}" + (" → area reached" if x.get("taken_first") else ""), fontsize=7,
                     color="#c2255c", va="bottom")
-    texts.sort(key=lambda z: z[0])
-    last_y = None
-    step = (yhi - ylo) / 45
-    for y, s, col in texts:
-        yy = y if last_y is None or y - last_y > step else last_y + step
-        ax.text(right + 0.3, yy, s, fontsize=6.5, color=col, va="center")
-        last_y = yy
+    texts = sorted((z for z in texts if ylo <= z[0] <= yhi), key=lambda z: z[0])
+    step = (yhi - ylo) / 48
+    placed = []
+    for y, s, col in texts:                                                # stack upward, never past the top (then dropped)
+        yy = y if not placed or y - placed[-1] > step else placed[-1] + step
+        if yy > yhi:
+            continue
+        ax.text(right + 0.3, yy, s, fontsize=6.3, color=col, va="center")
+        placed.append(yy)
     ax.axhline(c, color="#212529", lw=0.6)
-    ax.set_xlim(-1, right + 14)
+    ax.set_xlim(-1, right + max(14, n * 0.22))
     ax.set_ylim(ylo, yhi)
     every = max(1, n // 12)
     ax.set_xticks(range(0, n, every))
@@ -268,7 +272,7 @@ def run_banknifty(a):
         rc = CP.read_confluence(V, i)
         stats["looks"] += 1
         fresh = [x for x in rl["inducement"] if x["tf"] == "1H" and x.get("taken_first") and x.get("reached_at")
-                 and pd.Timestamp(x["reached_at"]) >= ts.iloc[max(i - 3, 0)]]
+                 and pd.Timestamp(x["reached_at"]).normalize() == day]          # the area visit began this session
         stats["inducement_taken_first"] += bool(fresh)
         stats["fib_on_area"] += bool(rc["fib"]["levels"])
         if fresh and day not in seen["inducement"] and len(picks["inducement"]) < a.n:
@@ -277,6 +281,16 @@ def run_banknifty(a):
         if rc["fib"]["levels"] and day not in seen["confluence"] and len(picks["confluence"]) < a.n:
             picks["confluence"].append(i)
             seen["confluence"].add(day)
+    spare = [i for i in cand[::25] if ts.iloc[i].normalize() not in seen["inducement"]]
+    for i in spare:                                                        # fill up with taken-not-reached / resting looks
+        if len(picks["inducement"]) >= a.n:
+            break
+        rl = LP.read_liquidity(V, i)
+        near = [x for x in rl["inducement"] if x["tf"] == "1H" and x["state"] in ("taken", "resting")]
+        if near:
+            picks["inducement"].append(i)
+            seen["inducement"].add(ts.iloc[i].normalize())
+    picks["inducement"].sort()
     days = sorted(set(ts.iloc[cand].dt.normalize()))
     for k in range(a.n):                                                   # base types / departure: evenly spread looks
         day = days[min(len(days) - 1, k * len(days) // a.n)]

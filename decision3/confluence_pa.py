@@ -11,8 +11,8 @@ F.2 Imbalance (fair value gap) — three candles where the third does not trade 
     beyond the last confirmed D2 swing.
 F.3 Fibonacci retracement — ONLY as a confluence label (Abhi's rule, KB K7): the last impulse that broke structure (the newest D2 BOS:
     from its origin swing to the extreme confirmed swing after it, both confirmed pivots). Its retracement levels (`pa_fib_ratios`, the
-    declared exception — the ratios ARE the definition) are reported only where a level lands INSIDE an alive area's band (not BROKEN /
-    DEAD) or inside a resting liquidity extreme's own swing-candle band. A level landing on nothing is never output; no Fib when the
+    declared exception — the ratios ARE the definition) are reported only where a level lands INSIDE an alive area's band (a trade
+    location of `levels.snapshot`: not BROKEN / DEAD, not a Weekly context band, not a Daily band under a 1H zone) or inside a resting liquidity extreme's own swing-candle band. A level landing on nothing is never output; no Fib when the
     impulse's end is not confirmed yet, when price has made a new extreme beyond it since, or when price has gone back beyond its origin.
 F.4 Confluence — per area one list of the pieces at the same place (HTF band overlap from `levels.snapshot`, imbalance, Fib level,
     resting liquidity) and the label "confluence: …" (no score, no count gate). The existing `levels.confluence_label` is unchanged.
@@ -130,7 +130,8 @@ def fib_on_areas(V, t, snap=None, obvious=None):
                       "to_price": round(float(end.price), 2), "to_ts": str(lv.ts.iloc[int(end.bar)]), "bos_ts": str(lv.ts.iloc[int(bbar)])}
     snap = lv.snapshot(t) if snap is None else snap
     obvious = LP.obvious_extremes(V, t) if obvious is None else obvious
-    areas = [x for x in snap if x["state"] not in (FL.BROKEN, FL.DEAD)]
+    areas = [x for x in snap if x["state"] not in (FL.BROKEN, FL.DEAD) and x.get("trade_location", True)]   # an AREA = a location
+    # (Abhi Z-1u: a Weekly band is context only, a Daily band under a 1H zone is that zone's label — a wide context band is no landing)
     pools = []
     for x in obvious:
         if x["state"] == "resting":
