@@ -1401,6 +1401,8 @@ def render():
     engine3_daily_pivot_n = settings.get("engine3_daily_pivot_n")         # रिकामं ⇒ provisional N = 2 (L1-c); parsing = _L3.pivot_n_choice
     from bots_common import plain_text as _PT
     approval_band_warn_pts = _PT.band_warn_pts(settings)
+    from bots_common import preopen_crux as _PC
+    preopen_charts = _PC.charts_on(settings.get(_PC.SETTING_KEY))           # stored "false" ⇒ unchecked; रिकामं ⇒ default ON
     if strategy_key in ("1m_instant", "15m_dynamic_sr"):
         # 🎓 Abhi (Monday PAPER): signal कुठून — own (bot चा स्वतःचा, default) / engine (common analysis engine चा setup) / both (दोन्ही एकाच
         # दिशेला तरच). कुठलाही असो: Vision + ✅ approval शिवाय PAPER entry नाही; engine चं मत caption मध्ये नेहमी (shadow).
@@ -1424,6 +1426,11 @@ def render():
                                                          value=float(approval_band_warn_pts), step=10.0,
                                                          key=_widget_key(strategy_key, symbol, "approval_band_warn_pts"),
                                                          help="फक्त Telegram संदेशात इशारा — निर्णय / gate / order बदलत नाही. Default 150.")
+                # 🎓 Abhi: pre-open संदेशाच्या वर crux + प्रत्येक symbol चे Daily / 1H / 15M charts (फक्त दाखवणं)
+                preopen_charts = st.checkbox("Pre-open: crux + charts (Daily / 1H / 15M)", value=preopen_charts,
+                                             key=_widget_key(strategy_key, symbol, "preopen_charts"),
+                                             help="ON (default) = सकाळच्या संदेशाच्या वर मुख्य मुद्दे + charts · OFF = जुनाच text संदेश. "
+                                                  "Chart अयशस्वी ⇒ संदेश तसाच जातो.")
                 # 🎓 Abhi (layer 1 ✅): swing scale = त्यांचं visual calibration (swings2 D1 / D2, his approved charts). Advanced —
                 # default बदलायचा नाही; बदल फक्त engine च्या swings साठी (charts / replay approved scale वरच).
                 from swings2 import settings as _SW
@@ -1541,6 +1548,7 @@ def render():
             new_settings["engine3_daily_pivot_n"] = _L3.pivot_n_to_save(engine3_daily_pivot_n)   # रिकामं ("") ⇒ provisional N = 2
             new_settings.update(_L3.switches_to_save(engine3_switches)[0])    # रिकामं ("") ⇒ method; incoherent ⇒ visit / volume method
             new_settings["approval_band_warn_pts"] = float(approval_band_warn_pts)
+            new_settings["preopen_charts"] = bool(preopen_charts)
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_support_max"] = int(rsi_support_max)
