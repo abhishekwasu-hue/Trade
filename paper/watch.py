@@ -69,13 +69,23 @@ def _orders(db_path, trade_id):
         c.close()
 
 
-def vision_link(bot, symbol, entry_time, vpath=None, window_min=15):
-    """त्या trade च्या आधीचा EXECUTED vision row (verdict, कारण, approver). नाही ⇒ {}."""
+def trade_model(t):
+    """Engine entry model of a PAPER trade (live_trades.entry_reason_tag "ENGINE_E1" ⇒ "E1"), else None."""
+    tag = str((t or {}).get("entry_reason_tag") or "")
+    return tag[len("ENGINE_"):] if tag.startswith("ENGINE_E") else None
+
+
+def vision_link(bot, symbol, entry_time, vpath=None, window_min=15, model=None):
+    """त्या trade च्या आधीचा EXECUTED vision row (verdict, कारण, approver). नाही ⇒ {}. model (engine entry model) ⇒ फक्त त्याच model चा
+    row (एकाच area वर चार cards ⇒ प्रत्येक position ला स्वतःचा)."""
     try:
+        from vision import gate as VG
         from vision import store as VS
         t1 = pd.Timestamp(entry_time)
         best = None
         for r in VS.rows_with_status(("EXECUTED",), vpath, 5, bot=bot, symbol=str(symbol).upper()):
+            if model is not None and VG._row_tags(r).get("entry_model") != model:
+                continue
             ex = pd.Timestamp(r.get("executed_at") or r.get("decided_at") or r["created_at"])
             if t1 - pd.Timedelta(minutes=window_min) <= ex <= t1 + pd.Timedelta(minutes=1) and (best is None or ex > best[0]):
                 best = (ex, r)
@@ -131,7 +141,8 @@ def _legs_text(t, entry_px):
 
 def on_entry(t, orders, send=None, jpath=None, tag="", ss_settings=None, engine_opinion=None):
     bot = BOT_OF_SOURCE[t["source"]]
-    link = vision_link(bot, t["symbol"], t["entry_time"])
+    model = trade_model(t)
+    link = vision_link(bot, t["symbol"], t["entry_time"], model=model) if model else vision_link(bot, t["symbol"], t["entry_time"])
     if engine_opinion is None:
         try:
             import engine_signal as ES
@@ -164,7 +175,8 @@ def on_entry(t, orders, send=None, jpath=None, tag="", ss_settings=None, engine_
            "entry_charges": ech, "last_update_at": t["entry_time"], "near_alerts": "[]", "dry_run": 1 if tag else 0, **link}
     PJ.upsert(row, jpath)
     v = link.get("vision_verdict") or "—"
-    _say(send, f"🟢 <b>PAPER entry</b> · {BOT_LABEL.get(bot, bot)} · {t['symbol']} {t.get('strategy') or ''}\n"
+    ml = f" · {_model_label(model)}" if model else ""                 # engine entry model ("E1 — Aggressive")
+    _say(send, f"🟢 <b>PAPER entry</b> · {BOT_LABEL.get(bot, bot)}{ml} · {t['symbol']} {t.get('strategy') or ''}\n"
                f"legs: {_legs_text(t, epx)}\n"
                f"net credit ₹{net_credit_total:,.0f} · max loss ₹{max_loss_total:,.0f} · SL ₹{t.get('sl_pnl_level') or 0:,.0f} · "
                f"target ₹{t.get('target_pnl_level') or 0:,.0f} · R:R {row['rr'] if row['rr'] is not None else 'NA'}\n"
@@ -173,12 +185,30 @@ def on_entry(t, orders, send=None, jpath=None, tag="", ss_settings=None, engine_
     return row
 
 
-def exit_head(reason):
-    """Abhi: SL hit and target hit each read as such on Telegram (any other exit: "PAPER exit")."""
+def _model_label(model):
+    try:
+        import engine_signal as ES
+        return ES.model_label({"model": model})
+    except Exception:                                                    # noqa: BLE001
+        return str(model)
+
+
+def exit_kind(reason):
+    """exit_reason ⇒ "target" / "stopped" / "other" (exit_head and the per-model day summary read it the same way)."""
     r = str(reason or "").upper()
     if "TARGET" in r:
-        return "🎯 <b>PAPER target hit</b>"
+        return "target"
     if r in ("SL", "TSL_SL", "PCT_TRAILING_SL", "MANUAL_SL_OVERRIDE") or r.endswith("_SL"):
+        return "stopped"
+    return "other"
+
+
+def exit_head(reason):
+    """Abhi: SL hit and target hit each read as such on Telegram (any other exit: "PAPER exit")."""
+    k = exit_kind(reason)
+    if k == "target":
+        return "🎯 <b>PAPER target hit</b>"
+    if k == "stopped":
         return "🛑 <b>PAPER SL hit</b>"
     return "🔴 <b>PAPER exit</b>"
 
@@ -193,7 +223,9 @@ def on_exit(t, orders, j, send=None, jpath=None, tag=""):
     net = round(gross - float(j.get("entry_charges") or 0.0) - xch, 2)
     PJ.upsert({"trade_id": t["trade_id"], "exit_time": t.get("exit_time"), "exit_reason": t.get("exit_reason"), "gross_pnl": gross,
                "exit_charges": xch, "net_pnl": net}, jpath)
-    _say(send, f"{exit_head(t.get('exit_reason'))} · {BOT_LABEL.get(j['bot'], j['bot'])} · {t['symbol']} · कारण: {t.get('exit_reason')}\n"
+    model = trade_model(t)
+    ml = f" · {_model_label(model)}" if model else ""                    # engine entry model ("E1 — Aggressive")
+    _say(send, f"{exit_head(t.get('exit_reason'))} · {BOT_LABEL.get(j['bot'], j['bot'])}{ml} · {t['symbol']} · कारण: {t.get('exit_reason')}\n"
                f"gross ₹{gross:,.0f} − charges ₹{float(j.get('entry_charges') or 0) + xch:,.0f} ⇒ <b>net ₹{net:,.0f}</b>", tag)
     return net
 

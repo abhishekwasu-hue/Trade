@@ -257,14 +257,18 @@ def get_signal(signal_id, path=None):
 
 
 REUSE_TAGS = ("breakout_entry", "directional")
+MODEL_TAG = "entry_model"                                                 # engine entry models E1–E4 (paper/engine_entry): part of the key
 
 
 def _reuse_tags(setup_json):
+    """(breakout, directional, entry model) — a different entry model on the same area is a different signal (its own Vision audit);
+    no model (every other signal) ⇒ None, so today's key is unchanged."""
     try:
         t = (json.loads(setup_json or "{}").get("tags") or {})
-    except ValueError:
+    except (ValueError, TypeError, AttributeError):
         t = {}
-    return tuple(bool(t.get(k)) for k in REUSE_TAGS)
+    t = t if isinstance(t, dict) else {}
+    return tuple(bool(t.get(k)) for k in REUSE_TAGS) + (t.get(MODEL_TAG),)
 
 
 def find_reusable(row, window_min, tol_pct=0.05, path=None, prompt_version=None):
@@ -370,16 +374,17 @@ def transition(signal_id, frm, to, path=None, timeout=10, **fields):
     return ok
 
 
-def find_open_decision(bot, symbol, setup_tf, level, day, tol_pct=0.05, path=None, timeout=10):
+def find_open_decision(bot, symbol, setup_tf, level, day, tol_pct=0.05, path=None, timeout=10, match=None):
     """आजची त्याच bot / symbol / TF / level (±tol) ची उघडी V1 row (सर्वात नवीन) किंवा None. Role / दिशा मुद्दाम filter नाही:
-    level ची बाजू बदलली तर drift guard ने पकडायचं (नवा signal म्हणून नाही)."""
+    level ची बाजू बदलली तर drift guard ने पकडायचं (नवा signal म्हणून नाही). match (row ⇒ bool, gate: same entry model) ⇒ फक्त त्या rows."""
     with connect(path, timeout) as c:
         rows = c.execute("SELECT * FROM vision_signals WHERE bot=? AND symbol=? AND setup_tf IS ? AND substr(signal_ts,1,10)=? "
                          "AND status IN (%s) ORDER BY created_at DESC" % ",".join("?" * len(OPEN_V1)),
                          (bot, symbol, setup_tf, str(day), *OPEN_V1)).fetchall()
     for r in rows:
         if r["level"] is not None and level is not None and abs(float(r["level"]) - float(level)) <= abs(float(level)) * tol_pct / 100.0:
-            return dict(r)
+            if match is None or match(dict(r)):
+                return dict(r)
     return None
 
 

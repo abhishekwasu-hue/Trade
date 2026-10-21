@@ -289,6 +289,13 @@ def main(argv=None, send=None, level=None, plain=None):
     from vision import approval as AP
     day = a.day or AP.VS.now_ist().strftime("%Y-%m-%d")                     # daily_summary सारखाच दिवस (IST)
     appr = AP.daily_summary_text(a.day)
+    try:                                                                   # entry models E1–E4: per model (cards, positions, open / SL / target)
+        from paper import engine_entry as EE
+        mline = EE.models_summary_text(day)
+    except Exception:                                                      # noqa: BLE001 — display only
+        mline = ""
+    if mline:
+        appr = f"{appr}\n{mline}"
     try:
         sym = (plain or symbols_section)(day)
     except Exception as exc:                                               # noqa: BLE001 — निर्णय / P&L भाग तरी जावा
