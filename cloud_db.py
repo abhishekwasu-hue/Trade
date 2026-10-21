@@ -474,6 +474,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # lines logic / sigma, RSI divergence zone / all, verdict method / score). रिकामं ⇒ method = आजचं वर्तन.
         "engine3_zone_visit_rule": "", "engine3_commit_volume_rule": "", "engine3_line_rule": "", "engine3_div_degree_rule": "",
         "engine3_verdict_rule": "",
+        # 🎓 Abhi (entry models E1–E4, decision3 `entries`): प्रत्येक model चा on/off + lots (PAPER; paper/engine_entry.model_on /
+        # model_lots — चुकीचं / रिकामं ⇒ default). प्रत्येक entry स्वतंत्र: स्वतःचं Vision card, ✅, PAPER position; visit मध्ये model एकदाच.
+        # OFF ⇒ त्या model चे entries skip (card नाही). Engine rows मध्ये `entries` नसतील ⇒ जुनाच एक-setup मार्ग (हे settings वापरत नाही).
+        "engine3_model_e1_on": True, "engine3_model_e2_on": True, "engine3_model_e3_on": True, "engine3_model_e4_on": True,
+        "engine3_model_e1_lots": 1, "engine3_model_e2_lots": 1, "engine3_model_e3_lots": 1, "engine3_model_e4_lots": 1,
         # 🎓 Abhi (merged band — check): approval संदेश / pre-open / 15:45 सारांशात पट्ट्याची रुंदी (pts) दाखवतो; रुंदी यापेक्षा जास्त ⇒
         # "⚠️ merged band — check" ओळ. फक्त दाखवणं — निर्णय / gate / order बदलत नाही (bots_common/plain_text.band_warn_pts). Default 150.
         "approval_band_warn_pts": 150,

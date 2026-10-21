@@ -730,6 +730,11 @@ def row_from_v22(symbol, r, now_fn):
                "risk": rk or None, "flip_context": _flip_ctx(r.get("flip_retest")), "zone_read": _zone_sum(r.get("zone_read")),
                "data_problem": (r.get("commit") or {}).get("data_problem"), "volume_measure": r.get("volume_measure"),
                "range_state": r.get("range_state"), "watch_list": r.get("watch_list"), "reader": reader_facts(r)}
+    if "entries" in r:                                                   # entry models E1–E4 (decision data — fit_payload never drops them)
+        payload["entries"] = compact_entries(r.get("entries"))
+        payload["armed"] = compact_armed(r.get("armed"))
+        if r.get("legacy_k_gate") is not None:                           # old step ③: a logged diagnostic only (first to go when too long)
+            payload["legacy_k_gate"] = r.get("legacy_k_gate")
     return {"symbol": str(symbol).upper(), "bar_ts": str(pd.Timestamp(r["bar_end"])), "computed_at": str(now_fn()),
             "decision": r.get("decision"), "gate": gate, "direction": d, "level_lo": lv.get("lo"), "level_hi": lv.get("hi"),
             "entry": rk.get("entry"), "invalidation": rk.get("sl"), "target": rk.get("target"), "grade": r.get("conviction"),
@@ -754,13 +759,65 @@ def reader_facts(r):
         return None
 
 
+ENTRY_KEYS = ("model", "name", "direction", "side", "visit_id", "trigger_ts", "entry_ref", "evidence", "label")
+AREA_KEYS = ("id", "tf", "lo", "hi", "state")
+
+
+def _area_of(a):
+    return {k: a.get(k) for k in AREA_KEYS} if isinstance(a, dict) else None
+
+
+def compact_entries(entries):
+    """decision3 `entries` (fired entry models of this bar) ⇒ the contract fields only (model, name, direction, side, area {id, tf, lo, hi,
+    state}, visit_id, trigger_ts, entry_ref, invalidation {price, rule}, evidence, label); timestamps as text. Not a list ⇒ []. A
+    non-dict item is skipped. Nothing is re-read or scored."""
+    out = []
+    for e in entries if isinstance(entries, (list, tuple)) else []:
+        if not isinstance(e, dict):
+            continue
+        x = {k: e.get(k) for k in ENTRY_KEYS}
+        x["area"] = _area_of(e.get("area"))
+        inv = e.get("invalidation")
+        x["invalidation"] = {"price": inv.get("price"), "rule": inv.get("rule")} if isinstance(inv, dict) else inv
+        for k in ("trigger_ts", "visit_id"):
+            if x.get(k) is not None:
+                x[k] = str(x[k])
+        out.append(x)
+    return out
+
+
+def compact_armed(armed):
+    """decision3 `armed` (per armed area: models still armed / already fired) ⇒ compact: scalars and lists of scalars kept, a nested
+    area reduced to {id, tf, lo, hi, state}, anything else dropped. Not a list ⇒ []."""
+    def scalar(v):
+        return v is None or isinstance(v, (str, int, float, bool))
+    out = []
+    for a in armed if isinstance(armed, (list, tuple)) else []:
+        if not isinstance(a, dict):
+            continue
+        x = {}
+        for k, v in a.items():
+            if k == "area":
+                x[k] = _area_of(v)
+            elif scalar(v):
+                x[k] = v
+            elif isinstance(v, (list, tuple)) and all(scalar(i) for i in v):
+                x[k] = list(v)
+            elif hasattr(v, "isoformat"):
+                x[k] = str(v)
+        out.append(x)
+    return out
+
+
 PAYLOAD_MAX = 20000
-_PAYLOAD_DROP = ("checklist", "zone_read", "watch_list", "flip_context", "trend_notes", "level", "risk")   # bulky first; never data_problem
+_PAYLOAD_DROP = ("legacy_k_gate", "checklist", "zone_read", "watch_list", "flip_context", "trend_notes", "level", "risk")   # bulky first;
+_PAYLOAD_KEEP = ("entries", "armed")                                     # never data_problem / entries / armed (decision data)
 
 
 def fit_payload(payload, limit=PAYLOAD_MAX):
     """Payload JSON ≤ limit chars WITHOUT a blind cut (a cut string is invalid JSON ⇒ the data_problem flag would be lost): drop the
-    bulky context keys one by one (noted in "dropped"); still too long ⇒ only the flags (engine, data_problem, volume_measure)."""
+    bulky context keys one by one (noted in "dropped"); still too long ⇒ only the flags (engine, data_problem, volume_measure) + the
+    entry models (`entries`, `armed` — decision data, never dropped; the limit is a size target, not a hard cut)."""
     dump = lambda d: json.dumps(d, ensure_ascii=False, default=str)  # noqa: E731
     out = dump(payload)
     if len(out) <= limit:
@@ -780,6 +837,7 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
                 return out
     keep = {k: payload.get(k) for k in ("engine", "ts", "bar_end", "data_problem")}
     keep["volume_measure"] = str(payload.get("volume_measure") or "")[:500]
+    keep.update({k: payload[k] for k in _PAYLOAD_KEEP if k in payload})  # entry models: decision data, never trimmed away
     return dump({**keep, "dropped": "all context (payload too large)"})
 
 

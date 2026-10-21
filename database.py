@@ -723,6 +723,19 @@ def has_open_trade_from_source(symbol, source):
     return count > 0
 
 
+def has_open_trade_from_source_tag(symbol, source, entry_reason_tag):
+    """Engine entry models (paper/engine_entry): त्याच source + entry_reason_tag (उदा. "ENGINE_E1") चा OPEN trade आहे का — एका model ची
+    position दुसऱ्या model ला अडवत नाही. फक्त वाचन."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM live_trades WHERE symbol=? AND source=? AND status='OPEN' AND entry_reason_tag=?",
+                    (symbol, source, entry_reason_tag))
+        return cur.fetchone()[0] > 0
+    finally:
+        conn.close()
+
+
 def get_open_trades_brief(symbol, sources):
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (5M+15M "एका वेळी एकच position") — दिलेल्या symbol चे,
     दिलेल्या sources चे सध्या OPEN असलेले trades -> [(trade_id, source, mode), ...]."""

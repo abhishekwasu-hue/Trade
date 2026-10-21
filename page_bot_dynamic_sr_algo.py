@@ -1399,6 +1399,8 @@ def render():
     engine3_swing_k = {d: settings.get(f"engine3_swing_k_d{d}") for d in (1, 2)}   # रिकामं ⇒ approved scale (D1 = 4, D2 = 6)
     engine3_switches = {k: settings.get(k) for k in _L3.METHOD_SWITCHES}   # रिकामं ⇒ method (default); parsing = _L3.switch_choice
     engine3_daily_pivot_n = settings.get("engine3_daily_pivot_n")         # रिकामं ⇒ provisional N = 2 (L1-c); parsing = _L3.pivot_n_choice
+    from paper import engine_entry as _EE                              # entry models E1–E4: same safe parsing as the live path
+    engine3_models = {m: (_EE.model_on(settings, m), _EE.model_lots(settings, m)) for m in ("E1", "E2", "E3", "E4")}
     from bots_common import plain_text as _PT
     approval_band_warn_pts = _PT.band_warn_pts(settings)
     from bots_common import preopen_crux as _PC
@@ -1431,6 +1433,21 @@ def render():
                                              key=_widget_key(strategy_key, symbol, "preopen_charts"),
                                              help="ON (default) = सकाळच्या संदेशाच्या वर मुख्य मुद्दे + charts · OFF = जुनाच text संदेश. "
                                                   "Chart अयशस्वी ⇒ संदेश तसाच जातो.")
+                # 🎓 Abhi (entry models E1–E4): प्रत्येक model on/off + lots (PAPER). Default सगळे ON, 1 lot.
+                st.markdown("**Entry models (E1–E4)** — प्रत्येक model चा स्वतंत्र PAPER entry")
+                import engine_signal as _ES
+                for _m in ("E1", "E2", "E3", "E4"):
+                    _c1, _c2 = st.columns([2, 1])
+                    _on = _c1.checkbox(f"{_m} — {_ES.MODEL_NAMES[_m]}", value=engine3_models[_m][0],
+                                       key=_widget_key(strategy_key, symbol, _EE.model_key(_m, "on")))
+                    with _c2:
+                        _lots = safe_number_input(f"{_m} lots", min_value=0, max_value=50, value=int(engine3_models[_m][1]), step=1,
+                                                  key=_widget_key(strategy_key, symbol, _EE.model_key(_m, "lots")))
+                    engine3_models[_m] = (bool(_on), int(_lots))
+                st.caption("प्रत्येक model चा entry स्वतंत्र: स्वतःचं Telegram card (\"E1 — Aggressive\" …), Vision मत, ✅ / ✏️ / ❌ आणि ✅ नंतर "
+                           "स्वतःची PAPER position (त्या model चे lots; SL / target / TSL याच पानाचे). एका area च्या visit मध्ये एक model "
+                           "एकदाच; एका model ची position (SL hit सुद्धा) दुसऱ्या model ला अडवत नाही. OFF ⇒ त्या model चे entries skip "
+                           "(card नाही). Lots 0 ⇒ skip. फक्त PAPER — LIVE ला हात नाही.")
                 # 🎓 Abhi (layer 1 ✅): swing scale = त्यांचं visual calibration (swings2 D1 / D2, his approved charts). Advanced —
                 # default बदलायचा नाही; बदल फक्त engine च्या swings साठी (charts / replay approved scale वरच).
                 from swings2 import settings as _SW
@@ -1549,6 +1566,9 @@ def render():
             new_settings.update(_L3.switches_to_save(engine3_switches)[0])    # रिकामं ("") ⇒ method; incoherent ⇒ visit / volume method
             new_settings["approval_band_warn_pts"] = float(approval_band_warn_pts)
             new_settings["preopen_charts"] = bool(preopen_charts)
+            for _m, (_on, _lots) in engine3_models.items():               # entry models E1–E4 (on/off + lots)
+                new_settings[_EE.model_key(_m, "on")] = bool(_on)
+                new_settings[_EE.model_key(_m, "lots")] = int(_lots)
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_support_max"] = int(rsi_support_max)

@@ -170,7 +170,9 @@ def plain_head(row):
         where = "the marked level"
     who = "your manual" if tags.get("manual") else "a"
     tf = str(row.get("setup_tf") or "").strip()
-    return (f"{row.get('symbol')}: {who} {trade} trade at {where}" + (f" ({tf} chart)" if tf else "") + ". Look at the area and the last "
+    from . import card_summary as CS
+    ml = CS.model_label(tags)                                            # engine entry model ⇒ "E1 — Aggressive · " first (title line)
+    return (f"{ml + ' · ' if ml else ''}{row.get('symbol')}: {who} {trade} trade at {where}" + (f" ({tf} chart)" if tf else "") + ". Look at the area and the last "
             f"candle: did {'buyers' if bull else 'sellers'} really take over there?")
 
 
@@ -336,6 +338,10 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why="", layout=None, wi
     extra = []
     if manual:                                                          # ✋ /paper: तुमचे strikes / SL / T / R:R (HTML आधीच escape केलेलं)
         extra.append(manual)
+    try:                                                                # engine entry model: invalidation (info) + evidence
+        extra += CS.model_lines(tags)
+    except Exception:                                                   # noqa: BLE001 — display only
+        pass
     if (res or {}).get("verdict") in (None, "unavailable"):             # Vision status पहिली (लहान, निर्णयासाठी महत्त्वाची) — लांब reading
         extra.append("Vision: NA" + (f" ({html.escape(str(res.get('error'))[:80])})" if (res or {}).get("error") else "") +   # ओळींमुळे
                      " — बटणं तरीही चालतात")                            # 1024 मर्यादेत कधीच गळत नाही

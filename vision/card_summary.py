@@ -204,11 +204,98 @@ def line_you(status, deadline=None, window_min=None, modify=True, buttons=True, 
     return "👉 " + " · ".join(b) + (f"   {t}" if t else "")
 
 
+MARK = {True: "✓", False: "✗", None: "NA", "present": "✓", "absent": "✗", "na": "NA", "✓": "✓", "✗": "✗", "NA": "NA", "yes": "✓",
+        "no": "✗"}
+
+
+def model_label(tags):
+    """Engine entry model of the signal ("E1 — Aggressive"), or "" for every other signal (the card stays today's)."""
+    try:
+        m = str((tags or {}).get("entry_model") or "").strip().upper()
+        if not m:
+            return ""
+        lab = str(tags.get("entry_label") or "").strip()
+        if lab:
+            return lab
+        name = str(tags.get("entry_name") or "").strip()
+        return f"{m} — {name}" if name else m
+    except Exception:                                                    # noqa: BLE001 — display only
+        return ""
+
+
+def _mark(v):
+    k = v.strip().lower() if isinstance(v, str) else v
+    if isinstance(v, str) and v.strip() in MARK:
+        return MARK[v.strip()]
+    try:
+        return MARK.get(k, str(v))
+    except TypeError:                                                     # unhashable ⇒ as text
+        return str(v)
+
+
+def evidence_text(ev, limit=300):
+    """The entry's 6a evidence list as one plain line ("✓ handover · ✗ volume growing · NA confluence"), copied as given: a dict (nested
+    dicts flattened), a list of {name / label / key, mark / state / value / present} items, (name, mark) pairs or plain strings. Empty /
+    unreadable ⇒ "". Never raises."""
+    try:
+        parts = []
+
+        def walk(x, pre=""):
+            if isinstance(x, dict):
+                for k, v in x.items():
+                    if isinstance(v, (dict, list, tuple)):
+                        walk(v, f"{pre}{k}: " if k not in ("confirming", "items") else pre)
+                    else:
+                        parts.append(f"{_mark(v)} {pre}{str(k).replace('_', ' ')}")
+            elif isinstance(x, (list, tuple)):
+                for it in x:
+                    if isinstance(it, dict):
+                        nm = next((it[k] for k in ("name", "label", "key", "piece") if it.get(k) is not None), None)
+                        mk = next((it[k] for k in ("mark", "state", "status", "value", "present") if k in it), None)
+                        parts.append(f"{_mark(mk)} {pre}{str(nm).replace('_', ' ')}" if nm is not None else str(it))
+                    elif isinstance(it, (list, tuple)) and len(it) == 2:
+                        parts.append(f"{_mark(it[1])} {pre}{str(it[0]).replace('_', ' ')}")
+                    else:
+                        parts.append(str(it))
+            elif x not in (None, ""):
+                parts.append(str(x))
+        walk(ev)
+        t = " · ".join(p for p in parts if p.strip())
+        return t if len(t) <= limit else t[:limit - 1].rstrip() + "…"
+    except Exception:                                                    # noqa: BLE001 — display only
+        return ""
+
+
+def model_lines(tags):
+    """Card details for an engine entry model: its invalidation (info — the trade's SL / target are the dashboard's) and its evidence.
+    Not an entry-model signal ⇒ [] (today's card). HTML-safe."""
+    lab = model_label(tags)
+    if not lab:
+        return []
+    out = []
+    inv = tags.get("entry_invalidation")
+    if isinstance(inv, dict):
+        px = _num(inv.get("price"))
+        rule = " ".join(str(inv.get("rule") or "").split())
+        if px is not None or rule:
+            out.append(f"🧷 {html.escape(lab)} invalidation (info): " + (_px(px) if px is not None else "NA")
+                       + (f" — {html.escape(rule[:160])}" if rule else "") + " · trade SL / target = dashboard")
+    elif _num(inv) is not None:
+        out.append(f"🧷 {html.escape(lab)} invalidation (info): {_px(_num(inv))} · trade SL / target = dashboard")
+    ev = evidence_text(tags.get("entry_evidence"))
+    if ev:
+        out.append(f"📋 {html.escape(lab)} evidence: {html.escape(ev)}")
+    return out
+
+
 def line_head(row, status, res=None, ticket=None):
     tags = _tags(row)
     g = _gate(tags)
     bull = str(row.get("direction") or "").upper() == "BULLISH"
     trade = "bull put" if bull else "bear call"
+    ml = model_label(tags)
+    if ml:                                                               # engine entry model: "E1 — Aggressive · bear call"
+        trade = f"{html.escape(ml)} · {trade}"
     lab = f" · Label {g['grade']}" if (tags.get("engine") or g.get("mode") == "engine") and g.get("grade") in ("A", "B") else ""
     sym = html.escape(str(row.get("symbol") or "?"))
     mr = VERDICT.get((res or {}).get("verdict") or "unavailable", ("⚪", str((res or {}).get("verdict"))))[1]

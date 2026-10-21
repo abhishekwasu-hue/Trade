@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS engine_signals (
   PRIMARY KEY (symbol, bar_ts));
 CREATE TABLE IF NOT EXISTS engine_consumed (
   bot TEXT NOT NULL, symbol TEXT NOT NULL, bar_ts TEXT NOT NULL, status TEXT, at TEXT, PRIMARY KEY (bot, symbol, bar_ts));
+CREATE TABLE IF NOT EXISTS engine_entry_consumed (
+  bot TEXT NOT NULL, symbol TEXT NOT NULL, visit_id TEXT NOT NULL, model TEXT NOT NULL, status TEXT, bar_ts TEXT, at TEXT,
+  PRIMARY KEY (bot, symbol, visit_id, model));
 """
 
 
@@ -314,6 +317,10 @@ def opinion(symbol, now=None, path=None, max_age_min=None):
     if r is None:
         return "engine: NA (ताजा engine निर्णय नाही)"
     hm = pd.Timestamp(r["bar_ts"]).strftime("%H:%M")
+    ents = [e for e in (row_payload(r).get("entries") or []) if entry_ok(e)] if r["decision"] == "setup" else []
+    if ents:                                                             # entry models (H1 rows): each fired model, its side
+        return f"engine ({hm}): setup · " + ", ".join(f"{str(e['model']).upper()} {'↑' if int(e['direction']) > 0 else '↓'} "
+                                                       f"{SIDE_TXT[int(e['direction'])]}" for e in ents)
     if r["decision"] == "setup" and r["direction"] in (1, -1):
         arrow = "↑" if r["direction"] > 0 else "↓"
         lv = f" · area {r['level_lo']:,.0f}–{r['level_hi']:,.0f}" if r.get("level_lo") is not None else ""
@@ -332,6 +339,10 @@ def own_allowed(symbol, direction, settings, now=None, path=None, key="signal_so
     want = 1 if str(direction).upper() == "BULLISH" else -1
     if r is None or r["decision"] != "setup":
         return False, f"signal_source = both ⇒ engine setup नाही ({'NA' if r is None else (r.get('gate') or r.get('decision'))})"
+    ents = [int(e["direction"]) for e in (row_payload(r).get("entries") or []) if entry_ok(e)]
+    if ents:                                                             # entry models (H1 rows): any fired model on that side agrees
+        return (True, "signal_source = both ⇒ engine सहमत") if want in ents else \
+            (False, f"signal_source = both ⇒ engine entries {'/'.join(DIR_TXT[x] for x in sorted(set(ents)))} ≠ {direction}")
     if r["direction"] != want:
         return False, f"signal_source = both ⇒ engine दिशा {DIR_TXT.get(r['direction'], '?')} ≠ {direction}"
     return True, "signal_source = both ⇒ engine सहमत"
@@ -367,3 +378,111 @@ def mark_consumed(bot, symbol, bar_ts, status, path=None):
                       (bot, str(symbol).upper(), str(bar_ts), str(status), str(now_ist())))
     except Exception as exc:
         print(f"⚠️ engine_signal.mark_consumed: {exc}")
+
+
+# ---------------------------------------------------------------------------------------------------------------- entry models (E1–E4)
+# decision3 (H1) rows carry payload `entries`: the entry models that fired on that bar, each {model "E1".."E4", name, direction, side, area,
+# visit_id, trigger_ts, entry_ref, invalidation, evidence, label}. Each one is its own signal: Vision gate + ✅ ⇒ its own PAPER position.
+# Idempotency: (bot, symbol, visit_id, model) in `engine_entry_consumed` (this SQLite, survives restarts) ⇒ at most once per visit per model.
+# A window without any `entries` key (older engine rows) ⇒ None ⇒ the caller keeps today's single-setup path (`pending_entry`).
+MODELS = ("E1", "E2", "E3", "E4")
+MODEL_NAMES = {"E1": "Aggressive", "E2": "Confirmation", "E3": "Structure", "E4": "Sweep-retest"}
+
+
+def row_payload(r):
+    """Engine row ⇒ payload dict ({} when unreadable). Never raises."""
+    try:
+        p = json.loads((r or {}).get("payload") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return p if isinstance(p, dict) else {}
+
+
+def entry_ok(e):
+    """A usable entry: model E1–E4, direction ±1, a visit_id. Anything else is ignored (never guessed)."""
+    try:
+        return (isinstance(e, dict) and str(e.get("model") or "").upper() in MODELS and int(e.get("direction")) in (1, -1)
+                and str(e.get("visit_id") or "").strip() != "")
+    except (TypeError, ValueError):
+        return False
+
+
+def model_label(e):
+    """{"model": "E1", "name": "Aggressive"} ⇒ "E1 — Aggressive" (no name ⇒ the model's own name)."""
+    m = str((e or {}).get("model") or "").upper()
+    name = str((e or {}).get("name") or "").strip() or MODEL_NAMES.get(m, "")
+    return f"{m} — {name}" if name else m
+
+
+def pending_entries(bot, symbol, settings, now=None, path=None):
+    """signal_source = engine: fresh entry-model entries (bar_ts ≥ now − engine_max_age_min) this bot has not consumed for their
+    (visit_id, model) ⇒ [(row, entry)], freshest bar first. A later "wait" / "error" bar does not cancel an entry (the Vision gate / ✅
+    is the final check — same as `pending_entry`). None ⇒ no row in the window carries `entries` (older engine) ⇒ legacy path. Store
+    error ⇒ [] (fail closed: no entry, never the legacy path)."""
+    if source_of(settings) != "engine":
+        return None
+    sym = str(symbol).upper()
+    try:
+        now = _naive(now or now_ist())
+        age = int((settings or {}).get("engine_max_age_min") or DEFAULTS["engine_max_age_min"])
+        out, seen, models = [], set(), False
+        with connect(path) as c:
+            rows = [dict(x) for x in c.execute("SELECT * FROM engine_signals WHERE symbol=? AND bar_ts<=? AND bar_ts>=? ORDER BY bar_ts DESC",
+                                                (sym, str(now), str(now - pd.Timedelta(minutes=age)))).fetchall()]
+            for x in rows:
+                if x["decision"] == ERROR:
+                    continue
+                pay = row_payload(x)
+                if "entries" not in pay:
+                    continue
+                models = True
+                for e in pay.get("entries") or []:
+                    if not entry_ok(e):
+                        continue
+                    k = (str(e["visit_id"]), str(e["model"]).upper())
+                    if k in seen:
+                        continue
+                    seen.add(k)
+                    if c.execute("SELECT 1 FROM engine_entry_consumed WHERE bot=? AND symbol=? AND visit_id=? AND model=?",
+                                 (bot, sym, k[0], k[1])).fetchone() is None:
+                        out.append((x, {**e, "visit_id": k[0], "model": k[1], "direction": int(e["direction"])}))
+    except Exception as exc:                                             # noqa: BLE001 — fail closed
+        print(f"⚠️ engine_signal.pending_entries: {type(exc).__name__}: {exc}")
+        return []
+    return out if models else None
+
+
+def entry_status(bot, symbol, visit_id, model, path=None):
+    """(bot, symbol, visit_id, model) ची नोंद (status) किंवा None. त्रुटी ⇒ "ERROR" (fail closed: consumed मानतो)."""
+    try:
+        with connect(path) as c:
+            r = c.execute("SELECT status FROM engine_entry_consumed WHERE bot=? AND symbol=? AND visit_id=? AND model=?",
+                          (bot, str(symbol).upper(), str(visit_id), str(model).upper())).fetchone()
+        return r["status"] if r else None
+    except Exception as exc:                                             # noqa: BLE001
+        print(f"⚠️ engine_signal.entry_status: {exc}")
+        return "ERROR"
+
+
+def claim_entry(bot, symbol, visit_id, model, status, bar_ts=None, path=None):
+    """Idempotency: the first claim of (bot, symbol, visit_id, model) wins (INSERT OR IGNORE, persisted) ⇒ True; already there ⇒ False.
+    Store error ⇒ False (fail closed: no position). Never raises."""
+    try:
+        with connect(path) as c:
+            cur = c.execute("INSERT OR IGNORE INTO engine_entry_consumed (bot, symbol, visit_id, model, status, bar_ts, at) VALUES (?,?,?,?,?,?,?)",
+                            (bot, str(symbol).upper(), str(visit_id), str(model).upper(), str(status), None if bar_ts is None else str(bar_ts),
+                             str(now_ist())))
+            return cur.rowcount == 1
+    except Exception as exc:                                             # noqa: BLE001
+        print(f"⚠️ engine_signal.claim_entry: {exc}")
+        return False
+
+
+def set_entry_status(bot, symbol, visit_id, model, status, path=None):
+    """Claimed entry ⇒ its final status (EXECUTED / OPEN_FAILED …). Never raises."""
+    try:
+        with connect(path) as c:
+            c.execute("UPDATE engine_entry_consumed SET status=?, at=? WHERE bot=? AND symbol=? AND visit_id=? AND model=?",
+                      (str(status)[:200], str(now_ist()), bot, str(symbol).upper(), str(visit_id), str(model).upper()))
+    except Exception as exc:                                             # noqa: BLE001
+        print(f"⚠️ engine_signal.set_entry_status: {exc}")
