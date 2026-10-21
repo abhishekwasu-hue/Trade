@@ -207,12 +207,18 @@ def _trend_line(lv, t, trend):
     return (ln, TL.reaction_touch(V, t, d, ln)) if ln is not None else (None, None)
 
 
-def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None, debug=False, finder="method"):
+def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None, debug=False, finder="method", chart_objects="off",
+           objects=None, story=None):
     """1H: candles of the last `sessions` sessions (up to t), the areas and the highlighted trigger candle. finder "method" (default,
     layer 6b): the decision's own areas with their K4 state (`method_band_view`) and the trend-side line with its touch number — nothing
     the method does not read. finder "validity" (legacy, R1a): the level bands that pass the shared band check (TA1 / TA4: ≤ 3 above
     and ≤ 3 below price, the most recent broken one dashed, the active level always; label: role, price, touch count). debug=True: all
-    nearby levels (births, sweeps, tests, band-check reasons), D2 swings and liquidity marks."""
+    nearby levels (births, sweeps, tests, band-check reasons), D2 swings and liquidity marks.
+    chart_objects "on" (PA standard §4, display setting, default "off" = today's chart byte for byte): the ONE object list
+    (decision3.draw_objects — `objects`, else collected at t) is drawn instead of the method areas / line, the same list the Telegram
+    chart draws; story = the per-timeframe reader story lines (draw_objects.tf_story) printed under the chart."""
+    if chart_objects not in ("off", "on"):
+        raise ValueError(f"h1_png: chart_objects {chart_objects!r} — off / on")
     h1, h1_of = lv.h1, lv.h1_of
     j_end = int(h1_of[t])
     days = pd.to_datetime(h1["timestamp"]).dt.normalize()
@@ -227,7 +233,11 @@ def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None,
     lim = (max_sigma or float(lv.s["show_distance_sigma"])) * (sg if np.isfinite(sg) else np.inf)
     act = {x["id"] for x in lv.active(t, trend, band)}                    # Q27: engine ② सारखाच पट्टा
     shown = [x for x in lv.snapshot(t) if x["dist"] <= lim or x["id"] in act]   # दूरची levels chart वर लपवा (snapshot मध्ये आहेत)
-    if finder == "method":
+    if chart_objects == "on":
+        _objects_panel(ax, lv.h1["timestamp"].iloc[:j_end + 1], j0, frame, _objects_at(lv, t, trend, objects, sessions),
+                       min_degree=int(lv.s.get("level_degree", 2)))
+        view = []
+    elif finder == "method":
         _h1_method(ax, lv, t, trend, frame, j0, shown, act, debug)
         view = []
     elif finder == "validity":
@@ -261,7 +271,39 @@ def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None,
                 ax.plot(j, p.price, marker="v" if p.kind == "H" else "^", color="#1c7ed6" if p.kind == "H" else "#e8590c", ms=6)
     ax.set_title(f"{title} · 1H · Daily {trend} · {str(pd.Timestamp(lv.m15['timestamp'].iloc[t]))[:16]}", fontsize=10)
     _xticks(ax, frame["timestamp"].to_numpy(), max(1, len(frame) // 12))
+    if story:
+        _story_box(fig, story)
     return _png(fig)
+
+
+def _objects_at(V, t, trend, objects, sessions=8):
+    """PA §4: the given object list, else the one collected at t (decision3.draw_objects.collect, the same window as the chart)."""
+    from . import draw_objects as DO
+    if objects is not None:
+        return DO.clean(objects)[0]
+    return DO.collect(V, t, trend=trend, since=DO.window_start(V, t, sessions))
+
+
+def _objects_panel(ax, starts, j0, frame, objects, min_degree=None, ylim=None, exclude=None):
+    """PA §4: draw the object list on one matplotlib price panel (decision3.draw_render: the same geometry as the Telegram chart).
+    starts = the bar start times of this panel's timeframe up to its last bar; j0 = index of the first bar shown."""
+    from . import draw_render as DR
+    objs = [o for o in objects if not (exclude and exclude(o))]
+    if ylim is None:
+        ylim = DR.y_range(frame["low"].min(), frame["high"].max(), objs)
+        ax.set_ylim(*ylim)
+    xm = DR.XMap(starts, j0, n=len(frame))
+    DR.draw_mpl(ax, DR.geometry(objs, xm, ylim=ylim, min_degree=min_degree))
+    ax.set_xlim(-1, len(frame))
+    return objs
+
+
+def _story_box(fig, story):
+    """The per-timeframe reader story (draw_objects.tf_story lines) under the chart — display only."""
+    import textwrap
+    raw = story.splitlines() if isinstance(story, str) else list(story)
+    lines = "\n".join("\n".join(textwrap.wrap(x, 170, subsequent_indent="     ")) for x in raw)
+    fig.text(0.01, -0.01, lines, ha="left", va="top", fontsize=8, family="DejaVu Sans Mono", color="#212529")
 
 
 def _h1_method(ax, lv, t, trend, frame, j0, shown, act, debug):
@@ -329,15 +371,24 @@ def story(r):
     return "\n".join(lines[:6])
 
 
-def m15_png(V, t, title, bars=60, r=None, debug=False, vol=None, symbol=None):
+def m15_png(V, t, title, bars=60, r=None, debug=False, vol=None, symbol=None, chart_objects="off", objects=None, story=None):
     """15M (C1 default): level band, highlighted trigger candle, entry / SL / target and the setup mark - nothing else. debug=True
     adds the B2 trigger, trapped zones, sweeps and the K line (old dense view). Volume pane below (vol = array aligned with V.m15,
-    else V.m15["volume"], else "volume: NA (grade cap B)")."""
+    else V.m15["volume"], else "volume: NA (grade cap B)").
+    chart_objects "on" (PA standard §4, display setting, default "off" = today's chart byte for byte): the ONE object list
+    (decision3.draw_objects — `objects`, else collected at t with the decision row r) replaces the level band; entry / SL / target and
+    the setup mark stay. story = per-timeframe reader story lines under the chart."""
+    if chart_objects not in ("off", "on"):
+        raise ValueError(f"m15_png: chart_objects {chart_objects!r} — off / on")
     i0 = max(0, t - bars + 1)
     m = V.m15.iloc[i0:t + 1].reset_index(drop=True)
     fig, ax, axv = _vol_axes((13, 7.0))
     _candles(ax, m)
-    if r and r.get("level"):
+    if chart_objects == "on":
+        from . import draw_objects as DO
+        objs = DO.clean(objects)[0] if objects is not None else DO.collect(V, t, r=r, since=i0)
+        _objects_panel(ax, V.m15["timestamp"].iloc[:t + 1], i0, m, objs)
+    elif r and r.get("level"):
         lv = r["level"]
         ax.axhspan(lv["lo"], lv["hi"], color="#2f9e44" if lv["role"] == LV.SUP else "#e03131", alpha=0.18)
     if r and r.get("risk"):
@@ -385,6 +436,8 @@ def m15_png(V, t, title, bars=60, r=None, debug=False, vol=None, symbol=None):
                               area=(lv["lo"], lv["hi"]) if lv.get("lo") is not None else None, d=lv.get("role"),
                               words="method"))                            # layer 6b: review chart = the method's words
     _xticks(axv, m["timestamp"].to_numpy(), max(1, len(m) // 12))
+    if story:
+        _story_box(fig, story)
     return _png(fig)
 
 

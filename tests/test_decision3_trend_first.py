@@ -78,6 +78,7 @@ def test_close_back_under_the_swing_with_the_hl_intact_keeps_the_gate_on(mirror)
     assert not c["ok"] and c["sides"] == set()
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("mirror", MIRRORS)
 def test_new_extreme_undoes_the_counter_structure_and_the_trend_side_returns(mirror):
     """Same staircase, then the DOWN continuation to a new low: once price closes beyond the impulse end the counter structure is gone
@@ -97,6 +98,7 @@ def test_new_extreme_undoes_the_counter_structure_and_the_trend_side_returns(mir
     assert ok and ctx["trend"] == old
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("mirror", MIRRORS)
 def test_truncated_zigzag_c_top_keeps_the_trend_side(mirror):
     """Negative control: a zigzag whose c stays below a (no higher high) never turns the structure — the c-top bear call stays."""

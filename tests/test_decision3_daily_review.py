@@ -42,6 +42,7 @@ def _top_bar(d, a, b):
     return a + int(np.argmax(d["high"].to_numpy()[a:b]))
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_c_wave_fixture_down_throughout_with_wave4_correction_and_wave5_origin():
     d, st = _fold(HEAD + WAVE4 + WAVE5)
     start = next(i for i, x in enumerate(st) if x.trend == "DOWN")
@@ -105,9 +106,10 @@ def test_origin_risk_when_the_correction_reaches_the_parent_zone():
     assert hit and all(x.trend == "DOWN" for x in hit)
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_trend_line_wording_and_state_labels():
     d, st = _fold(HEAD + WAVE4 + WAVE5)
-    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False)
+    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False, elliott_debug=True)
     line = DS.trend_line(v["q15"])
     assert line.startswith("Trend DOWN") and "protected 1,252" in line and "larger reversal possible" in line   # (4) sharp-fall zone
     assert "correction completed at sharp-fall supply" in line and "target 1,078" in line                          # मध्ये संपली (rule 5)
@@ -170,11 +172,12 @@ def test_view_script_logs_elliott_vs_dow(tmp_path):
     assert rows == ["| 2030-01-02 | NIFTY | Trend DOWN (impulse) | D3 wxy wave Y | yes | yes |"]
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_default_chart_spec_trend_degree_only_and_renders():
     """C1: default chart वर फक्त degree labels; ≤ 6 पट्टे; प्रत्येक trend-degree correction ला box (§5.1: लहान window ⇒ जुने फिके,
     text फक्त चालू + आधीच्या correction ला; "pullback" एकदाच); debug PNG वेगळा."""
     from decision3 import charts as CH
-    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False)
+    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False, elliott_debug=True)
     sp = DS.view_spec(v)
     allowed = ("correction", "pullback")
     assert sp["tags"] and all(t.startswith(allowed) for t in sp["tags"])
@@ -201,9 +204,10 @@ def test_default_chart_spec_trend_degree_only_and_renders():
     assert js["bands"] and js["objects"]["corrections"] and js["trend_line"].startswith("Trend DOWN")
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_default_chart_spec_snapshot_on_fixture():
     """C1 snapshot (structure, PNG pixels नाहीत): fixture वर default chart काय काढतो ते स्थिर."""
-    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False)
+    v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False, elliott_debug=True)
     sp = DS.view_spec(v)
     snap = {"tags": sp["tags"], "bands": [(b["label"], b["price"], b["state"], b["off_window"]) for b in sp["bands"]],
             "names": [b["name"] for b in sp["bands"]], "protected": sp["protected"]["price"], "legs": len(sp["legs"])}

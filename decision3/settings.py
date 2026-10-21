@@ -11,10 +11,16 @@ DEFAULTS = {
     "corr_degree_rule": "internal_pullback", # Q22 (Abhi): correction त्याच degree ची ⇔ impulse च्या सर्वात मोठ्या आतल्या pullback पलीकडे
     "corr_degree_frac": 0.5,                 # फक्त corr_degree_rule = "ratio" (जुना, what-if): मागच्या same-degree correction चा भाग
     "daily_start_nature_gate": True,         # Q28 (Abhi): 3-wave / corrective रचना trend लावत नाही — impulse-स्वभावाचा पाय लागतो
+    "daily_leg_read": "compare",             # Abhi 21 Oct (✅ deploy): a Daily leg's nature — "compare" (legs_compare: bodies / overlap vs
+                                             # the neighbouring legs of the same degree; Elliott ratios leave the reading) or "elliott"
+                                             # (5-wave / zigzag / flat rules + legs2 C percentiles; the old reading, kept as the what-if)
     "daily_parent_gate": True,               # A1 (Abhi review): counter impulse trend उलटवत नाही जोपर्यंत trend च्या सुरुवातीचा origin close ने तुटत नाही
     "q49_impulse_origin": "complete_impulse",  # Q49 (a) origin: "complete_impulse" = चालू leg पूर्ण 5-wave चा wave 5 असेल तर त्या
                                              # impulse ची सुरुवात (Abhi मंजुरी बाकी); "leg" = साधं वाचन (चालू impulse leg चा origin)
     "range_after_trend": True,               # Q27 (Abhi): origin तुटला + दोन समान H आणि दोन समान L ⇒ RANGE (कडांवर trade)
+    "daily_range_rule": "structure",         # Abhi 21 Oct: RANGE = दोन कडांपलीकडे (एक swing H + एक swing L) नंतरचे swings दोन्ही बाजूंनी
+                                             # नवा टोक करू शकत नाहीत (कडेपलीकडे close नाही; wick = sweep, आत); संपते = कडेपलीकडे close +
+                                             # पलीकडे swing (breakout = context). "c13" = जुनं (दोन समान H + दोन समान L) — what-if
     "weekly_min_bars": 10,                   # weekly पालक: यापेक्षा कमी weekly candles ⇒ weekly UNKNOWN
     "daily_swing_method": "pivot",           # pivot (N bars दोन्ही बाजूला) / dc (k_D × σ_D) — Q15: pivot; dc फक्त what-if
     "daily_pivot_n": 2,                      # Abhi L1-c: N = 2 provisional (recorded); तो नंतर dashboard वरून बदलू शकतो
@@ -44,7 +50,8 @@ DEFAULTS = {
     "prior_level_atr_n": 14,                 # Q40: ATR_D = window आधीच्या इतक्या Daily candles चा सरासरी true range
     "level_merge": False,                    # Abhi Z-1u: पट्टे फक्त बांधायचे, merge ने रुंद नाहीत (प्रत्येक timeframe वेगळा). True = जुनं
                                              # merge + widen — फक्त जुने synthetic tests / what-if (dashboard वर नाही)
-    "zone_visit_rule": "structure",          # method §3 Visit: संपते फक्त रचनेने — area पासून दूर swing, किंवा अपयशी commitment बाहेर close.
+    "zone_visit_rule": "structure",          # method §3 Visit: संपते फक्त रचनेने — area पासून दूर swing (Abhi 21 Oct: एका candle चा बाहेर close /
+                                             # "अपयशी commitment बाहेर" visit संपवत नाही — तो जुना शेवट फक्त entry_gate = legacy_k मध्ये).
                                              # "close_away" (Z-1v: बाहेर एक close) / "touch_window" = जुनं — फक्त जुने tests / what-if
     "trade_band_max_sigma": None,            # Abhi Z-1x (final): zone रुंदीला आकड्याची मर्यादा नाही — रुंद दिसणारा zone = दोन bases एकत्र ⇒ रचना
                                              # दुरुस्त (Z-1u). फक्त what-if (× σ_1H) — dashboard वर नाही
@@ -97,12 +104,21 @@ DEFAULTS = {
     "line_rule": "logic",                    # method §3 Lines: touch = wick reaches the line, body on its side; two reactions = a line;
                                              # confluence = the line passes through the area, or a reaction out of it turns at the line
                                              # (Abhi 4 B) ⇒ labelled "confluence: line", never a new band; "sigma" = जुनं
+    "entry_gate": "models",                  # Abhi 21 Oct: entry = चार entry models (E1 aggressive / E2 confirmation / E3 structure / E4
+                                             # sweep-retest), फक्त आधीच्या थरांच्या outputs वरून (engine.entry_models). "legacy_k" = जुना ③
+                                             # (BOS impulse + K pullback) gate + जुना visit शेवट — exact जुनं वर्तन (golden reproduce)
+    "entry_models_on": ("E1", "E2", "E3", "E4"),   # replays / what-if: कोणते models चालू (live on/off live थरात, इथे नाही)
+    "entry_cluster_rule": "cluster",         # lead (provisional, Abhi may override): एकाच visit मधले, एकाच role / बाजूचे overlapping areas = एक
+                                             # location ⇒ प्रत्येक model चा एकच signal प्रति cluster प्रति visit. "area" = प्रत्येक area वेगळा (what-if)
     "sharp_reversal_handover": True,         # Abhi Z-1z: zone मध्ये push नाकारला + dominant उलट candle ने गिळला = handover (तुलना, आकडा नाही)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
     "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.
                                              # False = जुनं (a2 फक्त absorption ⇒ वाट) — जुने tests / what-if
     "range_state_gate": False,               # Abhi Z-1j: §5.3 range अवस्था (overlap + doji) = context fact, gate नाही (sideways = handover study;
                                              # range trades चालतात). True = जुना gate (फक्त जुने tests)
+    "range_state_rule": "structure",         # Abhi 21 Oct (decided): row चा `range_state` = रचनेतून, प्रत्येक TF (W / D / 1H / 15M;
+                                             # daily_range_rule ची व्याख्या; कडा = range_edges areas). "overlap" = जुनं (§5.3 overlap + doji,
+                                             # फक्त verdict_rule = score) — admin diagnostics / what-if
     "ltf_choch": True,                       # ⑥ c1 (Abhi, REQUIRED): lower-timeframe CHoCH by close (15M setup ⇒ 5M; method.LTF_OF). False = फक्त what-if
     "power_overlap": 0.5,                    # (b) bodies overlap
     # ⑤ Trendline (grade फक्त)
@@ -156,8 +172,16 @@ REGISTER = {
     "corr_degree_frac": (0.5, "0.382/0.5/0.618", "व्याख्या", "फक्त ratio what-if (Q22 आधीचा नियम)"),
     "daily_start_nature_gate": (True, "True / False", "Abhi नियम", "Q28: trend सुरुवात फक्त impulse-स्वभावाच्या पायाने (decision3/daily_legs, Q32 adapter)"),
     "q49_impulse_origin": ("complete_impulse", "complete_impulse / leg", "व्याख्या", "Q49 (a): counter-move correct करत असलेल्या impulse चा origin — विस्तार Abhi मंजूर (OPEN_QUESTIONS Q49)"),
+    "daily_leg_read": ("compare", "compare / elliott", "Abhi नियम",
+                       "Abhi 21 Oct: Daily leg nature (Q28 / Q36 nature gate, A1 counter-move, Q49 origin, continuation start, G4 approach) "
+                       "by comparison with the neighbouring legs (decision3/legs_compare) instead of Elliott counts + legs2 percentiles; "
+                       "elliott = the old reading (what-if; tests on crafted Elliott fixtures pin it). Default compare (Abhi ✅ deploy)"),
     "daily_parent_gate": (True, "True / False", "Abhi नियम", "A1: impulse origin तुटला पण parent (trend सुरुवातीचा origin) टिकला ⇒ same-degree correction, flip नाही"),
     "range_after_trend": (True, "True / False", "Abhi नियम", "Q27: origin_broken + दोन समान H / L ⇒ RANGE; पट्टा ② / ③ ला"),
+    "daily_range_rule": ("structure", "structure / c13", "Abhi नियम", "Abhi 21 Oct: a range from structure — after a swing high H and a "
+                         "swing low L the later swings fail to make a new extreme on both sides (no close beyond the edge; a wick = a sweep, "
+                         "inside); it ends at a close beyond an edge + a swing beyond (breakout = context). Daily / Weekly fold (where C-13 "
+                         "equal declared RANGE) and decision3/range_edges (1H / 15M). c13 = two equal highs + two equal lows (what-if)"),
     "weekly_min_bars": (10, "—", "Abhi नियम", "daily_min_sessions सारखाच — weekly data अपुरा ⇒ UNKNOWN"),
     "daily_swing_method": ("pivot", "pivot / dc", "setting", "spec ① — pivot default; Q15: N = 1 / DC primary नाहीत (फक्त what-if)"),
     "daily_pivot_n": (2, "1/2/3", "Abhi नियम",
@@ -180,13 +204,27 @@ REGISTER = {
     "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
     "level_merge": (False, "False / True (legacy)", "Abhi नियम", "Abhi Z-1u: bands built, never widened; True फक्त जुने tests / what-if"),
     "zone_visit_rule": ("structure", "structure / close_away / touch_window (legacy)", "Abhi नियम", "Abhi's method §3 Visit: ends only by "
-                        "structure — a swing built away from the area, or a failed commitment closing outside; time never ends it"),
+                        "structure — a swing built away from the area; time never ends it. Abhi 21 Oct: one candle (a commitment) "
+                        "closing outside never ends it (that old end stays only under entry_gate = legacy_k, logged as a note otherwise)"),
+    "entry_gate": ("models", "models / legacy_k", "Abhi नियम", "Abhi 21 Oct: the four entry models E1–E4 (built only from layers "
+                   "1–5 outputs: trend side, areas + K4, visits, commitment c0 with volume, LTF CHoCH c1, lines, RSI) decide; the old ③ "
+                   "(BOS impulse + K pullback) is logged as legacy_k_gate, never decides. legacy_k = the old ③ gate + old visit end "
+                   "(exact old behaviour, golden reproduce)"),
+    "entry_models_on": (("E1", "E2", "E3", "E4"), "subset of E1 / E2 / E3 / E4", "Abhi नियम", "Abhi 21 Oct: replays / what-if only — "
+                        "per-model on / off for live sits in the live layer"),
+    "entry_cluster_rule": ("cluster", "cluster / area", "अंदाज", "Lead's provisional choice (Abhi may override): overlapping areas of "
+                           "the same role on the same side visited together = ONE location — at most one signal per model per overlapping "
+                           "cluster per visit (the card lists every member area; E1 invalidation = beyond the cluster's far edge); "
+                           "area = each area on its own (the 6852bfc reading, what-if)"),
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
     "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
     "a2_handover_required": (True, "True / False", "Abhi नियम", "Abhi Z-1m: handover (a2) अनिवार्य, क्रम a2 → c1 → c0; False फक्त जुने tests"),
     "range_state_gate": (False, "False / True", "Abhi नियम", "Abhi Z-1j: §5.3 range अवस्था context fact फक्त; True फक्त जुने tests"),
+    "range_state_rule": ("structure", "structure / overlap", "Abhi नियम", "Abhi 21 Oct (decided): the row's range_state from structure "
+                         "per timeframe (daily_range_rule's definition on that TF's swings; edges = decision3/range_edges areas; breakout = "
+                         "context only). overlap = legacy §5.3 overlap + doji (admin diagnostics; range_state_gate only with it)"),
     "watch_levels_max": (3, "—", "Abhi नियम", "Abhi B2 watch-list (final) + KB K4 chart display (≤ 3 bands above / below price)"),
     "wave_gates": (False, "False / True", "Abhi नियम", "Abhi B1: no wave prediction — wave / maturity / C = a context only; True फक्त जुने tests"),
     "level_flip_rule": ("far_swing", "far_swing / acceptance", "Abhi नियम", "KB K4 / G4 (Abhi final, Z-1): flip = पलीकडे + पलीकडचा swing पार (swing नसेल ⇒ break नंतरचा पहिला swing confirm होताच — Z-1s, तोडायची गरज नाही); नाहीतर BROKEN; flipped zone दुसऱ्यांदा ⇒ DEAD"),
@@ -267,6 +305,9 @@ OUTPUT = {
                             "decision3.volume_pane.study ⇐ vision.chart (Vision card volume pane + volume line); vision/config.py"),
     "approval_card_layout": ("classic", ("classic", "summary"),
                              "vision.worker.caption / v1_caption + vision.approval.ticket_text (Telegram card text); vision/config.py"),
+    "chart_objects": ("off", ("off", "on"),
+                      "PA standard §4 (track T8): vision.chart.render (Telegram / Vision chart: the signal's object list) + "
+                      "decision3.charts.h1_png / m15_png + decision3.setup_chart.render (verification charts); vision/config.py"),
 }
 REGISTER.update({
     "approval_band_warn_rule": ("points", "points / method", "setting",
@@ -285,10 +326,23 @@ REGISTER.update({
                              "(side + label, area + last price, the reader's required set ✓ / ✗ + confirming pieces from the engine's "
                              "layer 6a evidence list, Vision in one line, what you do + deadline), today's text below the details line; "
                              "display only, no new rule / score"),
+    "chart_objects": ("off", "off / on", "setting",
+                      "PA standard §4 OUTPUT (track T8): off = today's charts byte for byte; on = the ONE object list "
+                      "(decision3.draw_objects: swings, areas + state, lines, channels, levels, patterns, liquidity, sweeps, divergence, "
+                      "FVG / Fib confluence, E1–E4 marks) drawn by decision3.draw_render on the Telegram chart and the verification charts; "
+                      "display only, never a reading / entry"),
     "display_finder": ("method", "method / validity (legacy R1a)", "setting",
                                        "facts/dossier.py DEFAULTS (dossier config, not a V22 setting) — layer 6b: the Vision facts dossier reads the "
                                        "decision's own areas / lines / visits; validity = the R1a facts.validity finder (golden only); not live"),
 })
+
+# PA standard §2F.3 (track T2, decision3/confluence_pa.py) — Fibonacci retracement as a CONFLUENCE LABEL only (Abhi's rule, KB K7). The
+# ratios are the tool's definition (a declared exception to "no fixed numbers in the reading"): a level is reported only where it lands
+# on an area / resting liquidity, never alone, never a gate or a score. Evidence only — no decision reads it.
+DEFAULTS["pa_fib_ratios"] = (0.382, 0.5, 0.618, 0.786)
+REGISTER["pa_fib_ratios"] = ((0.382, 0.5, 0.618, 0.786), "KB K7 set", "व्याख्या",
+                             "Abhi rule K7 (declared exception): Fibonacci retracement only as a confluence label where a level lands on "
+                             "an area / resting liquidity; never alone, never a gate (decision3/confluence_pa.fib_on_areas)")
 
 TRENDS = ("UP", "DOWN", "RANGE", "NEUTRAL", "UNKNOWN")
 

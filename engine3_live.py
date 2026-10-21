@@ -24,6 +24,7 @@ import os
 import pickle
 import urllib.parse
 
+import numpy as np
 import pandas as pd
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -515,6 +516,16 @@ METHOD_SWITCHES = {
     "engine3_line_rule": ("line_rule", ("logic", "sigma"), "layer 4 lines"),
     "engine3_div_degree_rule": ("div_degree_rule", ("zone", "all"), "layer 5 RSI divergence"),
     "engine3_verdict_rule": ("verdict_rule", ("method", "score"), "layer 6a verdict"),
+    # Abhi 21 Oct (PA standard §3): the entry models E1–E4 decide (decision3 default); legacy_k = the old ③ BOS + K pullback gate + the
+    # old visit end, exactly as before the models — the no-deploy fallback for the live PAPER engine.
+    "engine3_entry_gate": ("entry_gate", ("models", "legacy_k"), "layer 3 entry gate (entry models E1–E4)"),
+    # Abhi 21 Oct (PA standard T1, ✅ deploy): the Daily leg's nature by comparison with its neighbouring legs; elliott = the old reading.
+    "engine3_daily_leg_read": ("daily_leg_read", ("compare", "elliott"), "layer 1 Daily leg nature"),
+    # Lead (provisional): overlapping same-role areas in one visit = one location (one signal per model per cluster); area = per area.
+    "engine3_entry_cluster_rule": ("entry_cluster_rule", ("cluster", "area"), "layer 3 entry models: one location per overlapping cluster"),
+    # Abhi 21 Oct (PA standard T7): the range from structure (Daily / Weekly fold + 1H / 15M); c13 = two equal highs + two equal lows.
+    "engine3_daily_range_rule": ("daily_range_rule", ("structure", "c13"), "layer 1 range (Daily / Weekly / 1H / 15M)"),
+    "engine3_range_state_rule": ("range_state_rule", ("structure", "overlap"), "row range state (context)"),
 }
 
 
@@ -806,6 +817,11 @@ def row_from_v22(symbol, r, now_fn):
                "risk": rk or None, "flip_context": _flip_ctx(r.get("flip_retest")), "zone_read": _zone_sum(r.get("zone_read")),
                "data_problem": (r.get("commit") or {}).get("data_problem"), "volume_measure": r.get("volume_measure"),
                "range_state": r.get("range_state"), "watch_list": r.get("watch_list"), "reader": reader_facts(r)}
+    if "entries" in r:                                                   # entry models E1–E4 (decision data — fit_payload never drops them)
+        payload["entries"] = compact_entries(r.get("entries"))
+        payload["armed"] = compact_armed(r.get("armed"))
+        if r.get("legacy_k_gate") is not None:                           # old step ③: a logged diagnostic only (first to go when too long)
+            payload["legacy_k_gate"] = r.get("legacy_k_gate")
     return {"symbol": str(symbol).upper(), "bar_ts": str(pd.Timestamp(r["bar_end"])), "computed_at": str(now_fn()),
             "decision": r.get("decision"), "gate": gate, "direction": d, "level_lo": lv.get("lo"), "level_hi": lv.get("hi"),
             "entry": rk.get("entry"), "invalidation": rk.get("sl"), "target": rk.get("target"), "grade": r.get("conviction"),
@@ -830,13 +846,109 @@ def reader_facts(r):
         return None
 
 
+ENTRY_KEYS = ("model", "name", "direction", "side", "object", "visit_id", "visit_start", "key", "trigger_ts", "trigger_bar_end",
+              "entry_ref", "evidence", "evidence_list", "label")
+AREA_KEYS = ("id", "tf", "role", "lo", "hi", "state", "object")
+ARMED_MODEL_KEYS = ("status", "at", "waiting", "note")
+
+
+def _area_of(a):
+    return {k: a.get(k) for k in AREA_KEYS if k in a or k in ("id", "tf", "lo", "hi", "state")} if isinstance(a, dict) else None
+
+
+def _invalidation_of(e):
+    """decision3 (H1) gives `invalidation` = the price and `invalidation_rule` = its text (separate keys); a dict {price, rule} is read
+    the same way. ⇒ {"price": float | None, "rule": str | None} (card: information only — the trade's SL / target are the dashboard's)."""
+    inv = e.get("invalidation")
+    if isinstance(inv, dict):
+        px, rule = inv.get("price"), inv.get("rule")
+    else:
+        px, rule = inv, None
+    rule = e.get("invalidation_rule") if rule is None else rule
+    try:
+        px = None if px is None else float(px)
+    except (TypeError, ValueError):
+        px = None
+    return {"price": px if px == px else None, "rule": None if rule is None else str(rule)}
+
+
+def _cluster_of(c):
+    """decision3 `entry_cluster_rule = cluster`: the overlapping cluster an entry stands for ⇒ {id, anchor, lo, hi, visit_id, n,
+    members [{area_id, tf, lo, hi, state}]} (ids as text). Not a dict ⇒ None."""
+    if not isinstance(c, dict):
+        return None
+    txt = lambda v: None if v is None else (v if isinstance(v, (str, int, float)) and not isinstance(v, bool) else str(v))  # noqa: E731
+    num = lambda v: None if v is None else float(v)  # noqa: E731
+    try:
+        return {"id": txt(c.get("id")), "anchor": txt(c.get("anchor")), "lo": num(c.get("lo")), "hi": num(c.get("hi")),
+                "visit_id": None if c.get("visit_id") is None else str(c["visit_id"]), "n": int(c.get("n") or 0),
+                "members": [{"area_id": txt(m.get("area_id")), "tf": m.get("tf"), "lo": num(m.get("lo")), "hi": num(m.get("hi")),
+                             "state": m.get("state")} for m in (c.get("members") or []) if isinstance(m, dict)]}
+    except (TypeError, ValueError):
+        return None
+
+
+def compact_entries(entries):
+    """decision3 `entries` (fired entry models of this bar) ⇒ the contract fields only (model, name, direction, side, object, area {id,
+    tf, role, lo, hi, state, object}, visit_id, visit_start, key, trigger_ts, trigger_bar_end, entry_ref, invalidation {price, rule},
+    evidence ([name, mark] pairs), evidence_list (the 6a dict), label); timestamps as text. Not a list ⇒ []. A non-dict item is skipped.
+    Nothing is re-read or scored."""
+    out = []
+    for e in entries if isinstance(entries, (list, tuple)) else []:
+        if not isinstance(e, dict):
+            continue
+        x = {k: e.get(k) for k in ENTRY_KEYS}
+        x["area"] = _area_of(e.get("area"))
+        x["invalidation"] = _invalidation_of(e)
+        if e.get("cluster") is not None:                                 # one location = the overlapping cluster (its member areas)
+            x["cluster"] = _cluster_of(e.get("cluster"))
+        for k in ("trigger_ts", "visit_id", "visit_start", "trigger_bar_end", "key"):
+            if x.get(k) is not None:
+                x[k] = str(x[k])
+        if x["area"] is not None and x["area"].get("id") is not None and not isinstance(x["area"]["id"], (str, int, float)):
+            x["area"]["id"] = str(x["area"]["id"])                       # numpy ints ⇒ text, never a JSON error
+        out.append(x)
+    return out
+
+
+def compact_armed(armed):
+    """decision3 `armed` (per armed area: each model's status — fired / fired_earlier / waiting / passed / off / disarmed …) ⇒ compact:
+    scalars and lists of scalars kept, a nested area reduced to {id, tf, lo, hi, state}, the per-model status dict `models` kept as
+    {model: {status, at, waiting (≤ 160 chars), note}}, anything else dropped. Not a list ⇒ []."""
+    def scalar(v):
+        return v is None or isinstance(v, (str, int, float, bool))
+    out = []
+    for a in armed if isinstance(armed, (list, tuple)) else []:
+        if not isinstance(a, dict):
+            continue
+        x = {}
+        for k, v in a.items():
+            if k == "area":
+                x[k] = _area_of(v)
+            elif k == "models" and isinstance(v, dict):
+                x[k] = {str(m): {kk: (str(st.get(kk))[:160] if kk in ("waiting", "note") and st.get(kk) is not None else st.get(kk))
+                                 for kk in ARMED_MODEL_KEYS if kk in st} for m, st in v.items() if isinstance(st, dict)}
+            elif scalar(v):
+                x[k] = v
+            elif isinstance(v, (list, tuple)) and all(scalar(i) for i in v):
+                x[k] = list(v)
+            elif hasattr(v, "isoformat"):
+                x[k] = str(v)
+            elif isinstance(v, (np.integer, np.floating)):
+                x[k] = v.item()
+        out.append(x)
+    return out
+
+
 PAYLOAD_MAX = 20000
-_PAYLOAD_DROP = ("checklist", "zone_read", "watch_list", "flip_context", "trend_notes", "level", "risk")   # bulky first; never data_problem
+_PAYLOAD_DROP = ("legacy_k_gate", "checklist", "zone_read", "watch_list", "flip_context", "trend_notes", "level", "risk")   # bulky first;
+_PAYLOAD_KEEP = ("entries", "armed")                                     # never data_problem / entries / armed (decision data)
 
 
 def fit_payload(payload, limit=PAYLOAD_MAX):
     """Payload JSON ≤ limit chars WITHOUT a blind cut (a cut string is invalid JSON ⇒ the data_problem flag would be lost): drop the
-    bulky context keys one by one (noted in "dropped"); still too long ⇒ only the flags (engine, data_problem, volume_measure)."""
+    bulky context keys one by one (noted in "dropped"); still too long ⇒ only the flags (engine, data_problem, volume_measure) + the
+    entry models (`entries`, `armed` — decision data, never dropped; the limit is a size target, not a hard cut)."""
     dump = lambda d: json.dumps(d, ensure_ascii=False, default=str)  # noqa: E731
     out = dump(payload)
     if len(out) <= limit:
@@ -856,6 +968,7 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
                 return out
     keep = {k: payload.get(k) for k in ("engine", "ts", "bar_end", "data_problem")}
     keep["volume_measure"] = str(payload.get("volume_measure") or "")[:500]
+    keep.update({k: payload[k] for k in _PAYLOAD_KEEP if k in payload})  # entry models: decision data, never trimmed away
     return dump({**keep, "dropped": "all context (payload too large)"})
 
 

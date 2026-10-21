@@ -106,6 +106,26 @@ only), MCX confirmation (LB12–LB17).
 | Q54 | तात्पुरत्या completion चा stack (`prov`) फक्त confirm (corr_end) किंवा अपयशी restore वर रिकामा होतो; confirm कधीच न झाल्यास जुन्या अवस्था राहतात (restore फक्त snapshot चा origin / parent आज close ने टिकला तरच) | default: तसेच — expiry चा प्रयत्न correction box ची सुरुवात (leg_from) बिघडवत होता | expiry नियम (उदा. confirm-equivalent bookkeeping सह) |
 | Q55 | **निकाली — खालचा "PR A अंमल" विभाग (B: पहिला तोडलेला swing low).** जुना प्रश्न: ABC_FIX rule 2 "sharp-fall point": engine = impulse मधला wide-range धाव सुरू होण्याआधीचा शेवटचा उलट swing (DOWN ⇒ swing **high**). Real BANKNIFTY: Feb–Mar घसरणीसाठी हा 12 Feb चा high (60,598–60,864) येतो; तुम्ही chart वर late-January चा swing **low** (तुटलेला support ⇒ supply) दाखवला, जिथे c (58,706) संपला. त्यामुळे real chart वर rule 3 पुरावा / rule 5 caption येत नाही (trend, protected 58,706, next demand बरोबर) | default: तसेच (निकाल पाहून व्याख्या बदलली नाही) | sharp-fall point = wide-range धावेने तोडलेला शेवटचा swing low (DOWN; UP आरसा) |
 
+## PA standard — decisions (Abhi) and provisional choices
+
+**Abhi decided:**
+1. E1–E4 go live in PAPER (entry gate = the four entry models); the old ③ (BOS impulse + K pullback) stays a logged diagnostic only.
+2. No 6a required set for model entries — the models are independent; per-model PAPER stats decide later. The 13 Oct golden is
+   principle-level: E2 / E3 never fire while the zone study reads absorption without a handover (E1 / E4 not forced to "no entry").
+3. Vision mode = human_confirm (Vision audits and shows its verdict, never skips a card, never enters without ✅; no reply ⇒ the card
+   expires, no entry).
+5. The range comes from structure (not the C-13 equal-highs / equal-lows reading).
+6. `daily_leg_read` = compare (Elliott ratios leave the reading; `elliott` stays as the what-if).
+
+**Provisional (lead, from the method + research defaults; Abhi may override):**
+- Overlapping areas of the same role visited together = one location: at most one signal per model per overlapping cluster per visit
+  (`entry_cluster_rule = cluster`; the card lists every member area; E1 invalidation = beyond the cluster's far edge).
+- Engine entries respect the existing dashboard setting `max_hits_per_zone`, as every other entry path does (per area / cluster, per
+  role, per day).
+- E4a kept as is, observed in the PAPER stats.
+- Hidden divergence = the classic reading (the pullback low vs the trend's previous higher low across the impulse; mirror for highs);
+  the inside-the-move read is kept as a second, labelled read.
+
 ## Abhi उत्तरं Q22–Q34 (batch) — अंमल
 
 > **closed (2026-10-21):** answered (implementation record). Later method rows replace some of them (Q22 / Q27 / Q28 → layer 1 ✅ L1-b; Q24 / Q30 → L3-f / L3-m; Q26 → L6-a).

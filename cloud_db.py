@@ -474,6 +474,16 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # lines logic / sigma, RSI divergence zone / all, verdict method / score). रिकामं ⇒ method = आजचं वर्तन.
         "engine3_zone_visit_rule": "", "engine3_commit_volume_rule": "", "engine3_line_rule": "", "engine3_div_degree_rule": "",
         "engine3_verdict_rule": "",
+        "engine3_entry_gate": "",            # engine3_live.METHOD_SWITCHES: "" / models = entry models E1–E4 (decision3 default) ·
+                                             # legacy_k = जुना ③ BOS + K pullback gate (deploy शिवाय fallback)
+        "engine3_daily_leg_read": "",        # "" / compare = Daily leg स्वभाव शेजारच्या legs शी तुलनेने (Abhi 21 Oct) · elliott = जुनं वाचन
+        "engine3_entry_cluster_rule": "",    # "" / cluster = एकाच visit मधले overlapping areas = एक location (lead, provisional) · area = वेगळे
+        "engine3_daily_range_rule": "",      # "" / structure = range रचनेतून (T7, Abhi 21 Oct) · c13 = जुनं दोन समान H + दोन समान L
+        "engine3_range_state_rule": "",      # "" / structure = row चा range_state रचनेतून · overlap = जुनं §5.3 overlap + doji
+        # 🎓 Abhi (entry models E1–E4, decision3 `entries`): कोणते models signal देतात (signal switch फक्त — execution ला हात नाही;
+        # paper/engine_entry.model_on, चुकीचं / रिकामं ⇒ default ON). OFF ⇒ त्या model चे signals / cards नाहीत. Execution (lots, legs,
+        # strikes, SL / target / TSL, एका वेळी एकच position) = याच पानाचे आजचे settings. `entries` नसलेले engine rows ⇒ जुनाच मार्ग.
+        "engine3_model_e1_on": True, "engine3_model_e2_on": True, "engine3_model_e3_on": True, "engine3_model_e4_on": True,
         # 🎓 Abhi (merged band — check): approval संदेश / pre-open / 15:45 सारांशात पट्ट्याची रुंदी (pts) दाखवतो; रुंदी यापेक्षा जास्त ⇒
         # "⚠️ merged band — check" ओळ. फक्त दाखवणं — निर्णय / gate / order बदलत नाही (bots_common/plain_text.band_warn_pts). Default 150.
         "approval_band_warn_pts": 150,

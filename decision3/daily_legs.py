@@ -391,8 +391,50 @@ def classify(A, seq, a_bar, a_price, b_bar, b_price, upto_confirm, s=None, cache
     return {"kind": kind, "structure": st["structure"], "form": st["form"], "n": st["n"], "C": C, "c_cls": cls}
 
 
+LEG_READS = ("elliott", "compare")
+
+
+def leg_read(s):
+    """`daily_leg_read` (Abhi 21 Oct): "compare" (legs_compare, default) / "elliott" (the old reading, what-if). Unknown ⇒ ValueError."""
+    r = (s or {}).get("daily_leg_read", "compare")
+    if r not in LEG_READS:
+        raise ValueError(f"daily_leg_read {r!r} — compare / elliott पैकी")
+    return r
+
+
+def compare_classify(A, seq, a_bar, a_price, b_bar, b_price, upto, neighbours=None, vol=None):
+    """`daily_leg_read = compare` (Abhi 21 Oct): the leg a ⇒ b judged by COMPARISON with its neighbouring legs of the same degree
+    (decision3.legs_compare: average body, overlap and — where it exists — volume per bar; no percentile, no Elliott count).
+    neighbours = [(bar0, bar1), ...] legs to compare with; None ⇒ the leg into a (from the previous confirmed opposite swing of seq)
+    and the leg out of b (to the next confirmed swing, or the move after b so far, bars ≤ upto). Only swings with confirm_bar ≤ upto.
+    Returns classify's shape: kind impulse / corrective / unclear (mixed or nothing to compare), structure = kind, form "compare",
+    n = neighbours read, C None, c_cls = the verdict, why."""
+    from . import legs_compare as LC
+    F = {"o": A["o"], "h": A["h"], "l": A["l"], "c": A["c"], "v": vol}
+    dirn = 1 if b_price > a_price else -1
+    a_bar, b_bar, upto = int(a_bar), int(b_bar), int(upto)
+    if neighbours is None:
+        conf = sorted((p for p in seq if p.confirm_bar <= upto), key=lambda p: p.bar)
+        start_kind = "H" if dirn > 0 else "L"                              # the leg into a runs from the opposite swing before a
+        prev = [p for p in conf if p.bar < a_bar and p.kind == start_kind]
+        neighbours = [(prev[-1].bar, a_bar)] if prev else []
+        nxt = [p for p in conf if p.bar > b_bar and p.kind == start_kind]
+        if nxt:
+            neighbours.append((b_bar, nxt[0].bar))
+        elif b_bar < upto:
+            neighbours.append((b_bar, upto))                               # the move after b, so far
+    leg = LC.leg_facts(F, a_bar, b_bar, dirn)
+    ns = [LC.leg_facts(F, int(x), int(y), -dirn) for x, y in neighbours if int(y) <= upto]
+    r = LC.compare(leg, ns)
+    kind = {LC.IMPULSE: "impulse", LC.CORRECTION: "corrective"}.get(r["verdict"], "unclear")
+    return {"kind": kind, "structure": kind, "form": "compare", "n": len([x for x in ns if x is not None]), "C": None,
+            "c_cls": r["verdict"], "why": r["why"]}
+
+
 def tag(c):
-    """छोटी English नोंद (caption / why): उदा. "impulse (5-wave, C IMP)"."""
+    """छोटी English नोंद (caption / why): उदा. "impulse (5-wave, C IMP)"; compare ⇒ "impulse (vs neighbours: larger bodies, …)"."""
     if not c:
         return "—"
+    if c.get("form") == "compare":
+        return f"{c['kind']} (vs neighbours: {c.get('why') or c['c_cls']})"
     return f"{c['kind']} ({c['form'] or c['structure']}, C {c['c_cls']})"

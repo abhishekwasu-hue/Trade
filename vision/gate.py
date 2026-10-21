@@ -110,10 +110,24 @@ def _row_tags(row):
         return {}
 
 
-def _same_setup(row, direction, tags):
-    """दिशा आणि breakout प्रकार तेच? (वेगळे ⇒ वेगळा setup — जुना निर्णय लागू नाही.)"""
+def _model(t):
+    """Engine entry model of a signal's tags ("E1" …) or None (every other signal)."""
+    return (t or {}).get(VS.MODEL_TAG) if isinstance(t, dict) else None
+
+
+def _same_model(row, tags):
+    """Same engine entry model (None = not an entry-model signal) ⇒ the same signal key. E1 and E2 on one area are two signals."""
+    return _model(_row_tags(row)) == _model(tags)
+
+
+def _same_setup(row, direction, tags, visit=True):
+    """दिशा आणि breakout प्रकार तेच? (वेगळे ⇒ वेगळा setup — जुना निर्णय लागू नाही.) Entry models: the model too, and (visit = True) the
+    area visit — a new visit of the same model is a new signal; the cooldown compares the model only (visit = False)."""
+    rt = _row_tags(row)
     return (str(row.get("direction") or "").upper() == str(direction or "").upper()
-            and bool(_row_tags(row).get("breakout_entry")) == bool((tags or {}).get("breakout_entry")))
+            and bool(rt.get("breakout_entry")) == bool((tags or {}).get("breakout_entry"))
+            and _same_model(row, tags)
+            and (not visit or rt.get("entry_visit") == (tags or {}).get("entry_visit")))
 
 
 def stale_base(row, s):
@@ -198,7 +212,9 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
         return full
     now = pd.Timestamp(VS.now_ist())
     day = VS._iso(signal_ts)[:10]
-    row = VS.find_open_decision(bot, sym, setup_tf, level, day, path=path, timeout=DB_TIMEOUT)
+    row = VS.find_open_decision(bot, sym, setup_tf, level, day, path=path, timeout=DB_TIMEOUT,
+                                match=lambda r: _same_model(r, tags)     # E1 / E2 … on one area ⇒ separate rows; and one row per visit:
+                                and _row_tags(r).get("entry_visit") == (tags or {}).get("entry_visit"))   # two visits never expire each other's card
     if row is not None:
         row, _ = resolve_due(row, s, now, path)
         if row["status"] in ("APPROVED", "REJECTED") and _exec_expired(row, s, now):
@@ -220,7 +236,7 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
         cool = int(s.get("shadow_cooldown_min") or 0)
         if cool > 0:
             prev = VS.recent_closed(bot, sym, setup_tf, level, now - pd.Timedelta(minutes=cool), path=path, timeout=DB_TIMEOUT,
-                                    match=lambda r: _same_setup(r, direction, tags))      # वेगळी दिशा / breakout ⇒ नवा setup, cooldown नाही
+                                    match=lambda r: _same_setup(r, direction, tags, visit=False))   # वेगळी दिशा / breakout / model ⇒ नवा setup, cooldown नाही
             if prev is not None:
                 return Gate("HOLD", status="SKIPPED_VISION_COOLDOWN", signal_id=prev["signal_id"],
                             note=f"हा level {str(prev['executed_at'])[11:16]} ला नाकारला ({prev['status']}) — {cool} मिनिटं पुन्हा नाही")
