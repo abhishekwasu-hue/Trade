@@ -726,15 +726,33 @@ def row_from_v22(symbol, r, now_fn):
                                                 "flipped_ts", "confluence_label")} if lv else None,   # Abhi Z-1u: confluence = label
                "risk": rk or None, "flip_context": _flip_ctx(r.get("flip_retest")), "zone_read": _zone_sum(r.get("zone_read")),
                "data_problem": (r.get("commit") or {}).get("data_problem"), "volume_measure": r.get("volume_measure"),
-               "range_state": r.get("range_state"), "watch_list": r.get("watch_list")}
+               "range_state": r.get("range_state"), "watch_list": r.get("watch_list"), "reader": reader_facts(r)}
     return {"symbol": str(symbol).upper(), "bar_ts": str(pd.Timestamp(r["bar_end"])), "computed_at": str(now_fn()),
             "decision": r.get("decision"), "gate": gate, "direction": d, "level_lo": lv.get("lo"), "level_hi": lv.get("hi"),
             "entry": rk.get("entry"), "invalidation": rk.get("sl"), "target": rk.get("target"), "grade": r.get("conviction"),
             "reason": str(reason)[:300], "payload": fit_payload(payload)}
 
 
+def reader_facts(r):
+    """Approval card summary (setting `approval_card_layout`, display only): the reading's own facts COPIED from the V22 row — the
+    layer 6a evidence list (required set present / absent, confirming pieces present / absent / NA), ① trend and ③ area as the
+    checklist read them, the handover's form (sharp_reversal = the fast two-candle form) and the LTF label of the CHoCH. Nothing is
+    re-read or scored; a missing fact stays None. Never raises (a display field never blocks a row)."""
+    try:
+        chk = r.get("checklist") or {}
+        cm = r.get("commit") or {}
+
+        def first(k):
+            v = chk.get(k)
+            return None if not isinstance(v, (list, tuple)) or not v or v[0] is None else bool(v[0])
+        return {"evidence_list": r.get("evidence_list"), "trend": first("①"), "area": first("③"),
+                "handover_form": (cm.get("handover_state") or {}).get("form"), "ltf": (cm.get("choch") or {}).get("label")}
+    except Exception:                                                    # noqa: BLE001 — display only
+        return None
+
+
 PAYLOAD_MAX = 20000
-_PAYLOAD_DROP = ("checklist", "zone_read", "watch_list", "flip_context", "trend_notes", "level", "risk")   # bulky first; never data_problem
+_PAYLOAD_DROP = ("reader", "checklist", "zone_read", "watch_list", "flip_context", "trend_notes", "level", "risk")   # bulky first; never data_problem
 
 
 def fit_payload(payload, limit=PAYLOAD_MAX):

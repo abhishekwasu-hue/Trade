@@ -144,8 +144,20 @@ def modify_ticket(row, entry):
             "src": b["src"], "warnings": warn, "show_rr": show_rr}, None
 
 
-def ticket_text(row, t, deadline, exec_min):
+def _row_res(row):
+    """The signal row's own Vision result (verdict + audits) for the summary card; unreadable ⇒ just the verdict."""
+    try:
+        vj = json.loads(row.get("vision_json") or "{}")
+    except (ValueError, TypeError):
+        vj = {}
+    return {"verdict": row.get("verdict"), "audits": (vj.get("audits") if isinstance(vj, dict) else None) or []}
+
+
+def ticket_text(row, t, deadline, exec_min, layout=None, window_min=None):
+    """The changed-entry ticket. layout (setting `approval_card_layout`) "summary" ⇒ the summary lines replace the two plain lines on
+    top (vision/card_summary.py); the details below the SEP stay today's text."""
     from bots_common import plain_text as PT
+    from . import card_summary as CS
     eng = f" (engine: {t['engine_entry']:g})" if t.get("engine_entry") is not None else ""
     area = f" · area {PT.band_range(min(t['area']), max(t['area']))}" if t.get("area") else ""   # Abhi: पट्ट्याची रुंदी प्रत्येक approval मध्ये
     try:
@@ -171,6 +183,14 @@ def ticket_text(row, t, deadline, exec_min):
     head = (f"{html.escape(str(row.get('symbol')))}: your changed entry {t['entry']:g} ({'engine reference ' if ref else ''}stop {t['sl']:g}, "
             f"target {tgt}){rr_txt}. "
             "Check the new numbers, then approve again.")
+    top = None
+    if CS.layout(layout) == "summary":
+        try:
+            top = CS.top(row, _row_res(row), "PENDING_HUMAN", flag, deadline=deadline, window_min=window_min, ticket=t)
+        except Exception as exc:                                         # noqa: BLE001 — display only ⇒ today's top
+            print(f"⚠️ summary ticket (classic used): {type(exc).__name__}: {str(exc)[:120]}")
+    if top:
+        return top + "\n" + "\n".join(lines)
     return (f"{head}\n<b>{PT.DECISION_APPROVE}</b> by {pd.Timestamp(deadline):%H:%M}\n" + (f"{html.escape(flag)}\n" if flag else "")
             + f"{PT.SEP}\n" + "\n".join(lines))
 
@@ -220,7 +240,8 @@ def apply_entry(uid, sid, text, send=None, path=None, now=None, edit=None, send_
         return False, "race"
     state_clear(uid, path)
     edit(row.get("tg_message_id"), f"✏️ entry बदलली ({entry:g}) — सुधारित ticket खाली; ही बटणं बंद · {row['symbol']} {row['direction']}")
-    mid = send_buttons(None, ticket_text(row, t, dl, int(s["exec_window_min"])), buttons(sid, True))
+    mid = send_buttons(None, ticket_text(row, t, dl, int(s["exec_window_min"]), layout=s.get("approval_card_layout"),
+                                         window_min=s.get("approve_window_min")), buttons(sid, True))
     if mid:
         VS.update(sid, path, tg_message_id=mid)
     return True, "modified"
