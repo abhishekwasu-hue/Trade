@@ -62,12 +62,14 @@ def snapshot():
 
 
 def run(token, symbol, wait_min, send, gate_fn=None, status_fn=None, levels_fn=None, settings_fn=None, sleep=time.sleep,
-        clock=time.time):
+        clock=time.time, expire_fn=None):
     """Submit the TEST signal to the bot's real Vision gate, wait for Abhi's button, report. Never an order. Returns the final status."""
     from vision import store as VS
     if gate_fn is None:
         from vision.gate import entry_gate as gate_fn
     status_fn = status_fn or (lambda sid: (VS.get_signal(sid) or {}).get("status"))
+    expire_fn = expire_fn or (lambda sid: VS.transition(sid, ("QUEUED", "RUNNING", "PENDING_HUMAN"), "EXPIRED",
+                                                        decided_at=VS._iso(VS.now_ist()), decided_by="test_card_timeout"))
     if settings_fn is None:
         import cloud_db
         settings_fn = cloud_db.get_strategy_settings
@@ -93,7 +95,10 @@ def run(token, symbol, wait_min, send, gate_fn=None, status_fn=None, levels_fn=N
         if stt in FINAL:
             break
         sleep(5)
-    send(f"{TAG}{symbol}: your button ⇒ {stt or 'no answer'} — recorded; NO position (TEST).")
+    if stt not in FINAL:                                                  # unanswered ⇒ closed now, so its buttons never act later
+        expire_fn(g.signal_id)
+        stt = "EXPIRED"
+    send(f"{TAG}{symbol}: your button ⇒ {stt} — recorded; NO position (TEST).")
     return stt
 
 
@@ -102,7 +107,7 @@ def main(argv=None):
     ap.add_argument("--symbol", default="NIFTY")
     ap.add_argument("--wait-min", type=float, default=10)
     a = ap.parse_args(argv)
-    if not 0 < a.wait_min <= MAX_WAIT_MIN:
+    if not 1 <= a.wait_min <= MAX_WAIT_MIN:
         print(f"❌ --wait-min must be 1–{MAX_WAIT_MIN} minutes")
         return 4
     if in_window(a.wait_min):

@@ -241,6 +241,17 @@ def test_test_card_main_stops_before_any_card_in_market_hours(monkeypatch, capsy
     assert TC.main([]) == 3 and "market hours" in capsys.readouterr().out
     monkeypatch.setattr(TC, "in_window", lambda wait_min, now=None: False)
     assert TC.main(["--wait-min", "90"]) == 4                           # a long wait could span the window ⇒ refused
+    assert TC.main(["--wait-min", "0.5"]) == 4
+
+
+def test_test_card_unanswered_is_expired_at_the_end_of_the_wait():
+    from scripts import paper_test_card as TC
+    from types import SimpleNamespace as NS
+    sent, expired, t = [], [], iter(range(0, 10**6, 30))
+    out = TC.run("tok", "NIFTY", 1, sent.append, gate_fn=lambda *a, **k: NS(action="HOLD", signal_id="s9", note=""),
+                 status_fn=lambda sid: "PENDING_HUMAN", sleep=lambda s: None, clock=lambda: next(t),
+                 levels_fn=lambda tok, sym: ("2026-10-19", 1.0, 2.0, 1.5, None), settings_fn=lambda k, s: {}, expire_fn=expired.append)
+    assert out == "EXPIRED" and expired == ["s9"] and "EXPIRED" in sent[-1]
 
 
 @pytest.mark.parametrize("hhmm,wait,blocked", [((8, 15), 10, False), ((8, 25), 10, True), ((15, 30), 10, True), ((15, 36), 30, False)])
