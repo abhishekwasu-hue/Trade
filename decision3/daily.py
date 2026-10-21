@@ -694,16 +694,24 @@ def fold_impulse(d, s=None):
                             new_a = piv("H" if dirn < 0 else "L", _tb)
                             if wave_a is not None and wave_a.bar == new_a.bar:
                                 pass
+                            elif cmk == "wave_1a" and lread == "compare":
+                                why = (f"counter-move impulse-natured vs the trend leg it corrects (compare), same degree, पण तो correct "
+                                       f"करत असलेल्या impulse चा origin {ao.price:,.2f} close ने टिकला ⇒ correction (A {new_a.price:,.2f}) — "
+                                       f"trend उलटत नाही (Q49 (a))")
                             elif cmk == "wave_1a":                         # same degree: (a) impulse origin टिकला (नाहीतर वर flip)
                                 why = (f"counter-move 5-wave, पण wave 1 ची अट नाही ((b) same-degree 5-wave रचना नाही; (a) तो "
                                        f"correct करत असलेल्या impulse चा origin {ao.price:,.2f} close ने टिकला) ⇒ wave A "
                                        f"{new_a.price:,.2f} (alt: 1), correction — trend उलटत नाही (Q49)")
+                            elif lread == "compare":
+                                why = (f"counter-move impulse-natured vs the trend leg (compare) पण खालच्या degree चा (Q22) ⇒ "
+                                       f"correction (A {new_a.price:,.2f}); trend उलटतो फक्त parent {par.price:,.2f} पलीकडे close ने")
                             else:                                          # Q22 खालचा degree: impulse origin तुटला असू शकतो
                                 why = (f"counter-move 5-wave पण खालच्या degree चा (Q22) ⇒ wave A {new_a.price:,.2f} (alt: 1); "
                                        f"wave 1 फक्त parent {par.price:,.2f} पलीकडे close ने — correction, trend उलटत नाही (Q49)")
                             wave_a = new_a
                         elif not pcorr:
-                            why = (f"impulse origin {origin.price:,.2f} Daily close ने तुटला, पण counter-move {cmk} (3-wave / impulse नाही) आणि "
+                            why = (f"impulse origin {origin.price:,.2f} Daily close ने तुटला, पण counter-move {cmk} "
+                                   f"{'(not impulse-natured vs the trend leg — compare)' if lread == 'compare' else '(3-wave / impulse नाही)'} आणि "
                                    f"impulse ची सुरुवात {par.price:,.2f} टिकली ⇒ correction, trend उलटत नाही (ABC_FIX 1)")
                         porg, pcorr, phase = par, True, "correction"
                         if t_first is None or t_first_par is None or t_first_par.bar != par.bar:
