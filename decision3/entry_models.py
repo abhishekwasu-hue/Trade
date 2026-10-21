@@ -464,8 +464,7 @@ class Reader:
         confirm = M.confirming_evidence(zr, rsi, lvl, tl)
         label = M.method_label(confirm)
         last3 = range(max(0, t - 2), t + 1)
-        sw, tr = LQ.sweeps_and_traps(V, t, start=arm) if V.s.get("liquidity_rule", "equal") == "equal" else \
-            LQ.sweeps_and_traps(V, t, int(V.s["liquidity_lookback"]))
+        sw, tr = LQ.sweeps_and_traps(V, t, start=arm)                    # method §7: the visit's own window
         sd = "buy" if d == M.DOWN else "sell"
         ev = {"level_star": int(lvl.get("sweeps") or 0) >= 1 or any(b in (lvl.get("births") or []) for b in ("b", "c", "d", "a:D"))
               or bool(lvl.get("confluence")), "fresh": lvl.get("fresh"),
