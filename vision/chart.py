@@ -139,8 +139,33 @@ BAND_COLOR = {"resistance": ("#ffa726", "rgba(255,167,38,0.10)"), "support": ("#
               "broken": ("#bcaaa4", "rgba(0,0,0,0)")}                  # L = हिरवा / लाल ⇒ पट्टे नारिंगी / फिकट निळे (टक्कर नाही)
 
 
+def method_bands(sig):
+    """Layer 6b (`vision_chart_band_finder = method`): the decision's own areas from the engine gate tags (`gate.areas`, written by
+    paper.engine_entry.engine_gate_tags from the engine row: the traded area + the watch list) — one base, wick to body, with the K4 state
+    and the confluence label; nothing re-found from the chart. None when the signal carries no engine areas (then nothing is drawn)."""
+    g = ((sig.get("tags") or {}).get("gate") or {}) if isinstance(sig.get("tags"), dict) else {}
+    areas = g.get("areas")
+    if not isinstance(areas, list):
+        return None
+    out = []
+    for a in areas:
+        try:
+            lo, hi = sorted((float(a["lo"]), float(a["hi"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+        st = str(a.get("state") or "ACTIVE").upper()
+        out.append({"role": a.get("role"), "lo": lo, "hi": hi, "method": True, "state": st, "valid": st != "BROKEN",
+                    "broken": st == "BROKEN", "flipped": st == "FLIPPED", "confluence_label": a.get("confluence_label"),
+                    "touch_count": None})
+    return out
+
+
 def band_rows(bands):
-    """ctx["bands"] (signal text साठी): role, low, high, reaction touches, state."""
+    """ctx["bands"] (signal text साठी): role, low, high, reaction touches, state. Method bands (layer 6b): touches None, the K4 state,
+    `finder` = "method"."""
+    if any(b.get("method") for b in bands or ()):
+        return [{"role": b.get("role"), "lo": float(b["lo"]), "hi": float(b["hi"]), "touches": None, "finder": "method",
+                 "state": b["state"].lower() + (f" ({b['confluence_label']})" if b.get("confluence_label") else "")} for b in bands]
     return [{"role": b.get("role"), "lo": float(b["lo"]), "hi": float(b["hi"]), "touches": int(b.get("touch_count") or 0),
              "state": "broken (most recent)" if (b.get("broken") and not b.get("valid")) else
              ("flipped" if b.get("flipped") else ("established" if b.get("established") else "valid"))} for b in bands]
@@ -157,7 +182,9 @@ def _bands(fig, bands, lo, hi, c, n, label_x):
                       line=dict(color=colr, width=1, dash="dash" if broken else None), row=1, col=c)
         if c == 1:
             role = "supply" if b.get("role") == "resistance" else "demand"
-            txt = f"{role} {b['lo']:,.0f}-{b['hi']:,.0f} · " + ("broken" if broken else f"{b['touch_count']} touches")
+            txt = f"{role} {b['lo']:,.0f}-{b['hi']:,.0f} · " + (
+                b["state"].lower() + (f" · {b['confluence_label']}" if b.get("confluence_label") else "") if b.get("method")
+                else "broken" if broken else f"{b['touch_count']} touches")
             fig.add_annotation(x=label_x, y=min(hi, b["hi"]), text=txt, showarrow=False, xanchor="right", yshift=-7,
                                font=dict(size=8, color=colr), row=1, col=c)
 
@@ -328,7 +355,8 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None, bands=
                          rangeslider_visible=False, showgrid=False, color="#b0bec5", range=[-0.5, len(df) - 0.5], row=1, col=c)
         vol = (vols or (None, None))[c - 1]
         vst = VP.study(df, vol=np.full(len(df), np.nan) if vol is None else vol, info=sig, symbol=sig.get("symbol"),
-                       d=sig.get("direction"), area=_area_of(sig), engine_numbers=c == 1)   # engine आकडे फक्त setup (confirmation) TF चे
+                       d=sig.get("direction"), area=_area_of(sig), engine_numbers=c == 1,   # engine आकडे फक्त setup (confirmation) TF चे
+                       words=volume_words(sig))                         # layer 6b setting (default legacy = today's text)
         if c == 2 and (vst["arm"] is None or vst["arm"] >= vst["commit"]):
             vst = VP.plain(vst)                                         # मोठा TF: arrival आणि commitment एकाच bar मध्ये ⇒ साधे bars, label नाही
         VP.add_plotly(fig, vst, row=2, col=c, title=f"vol {VP.source_label(sig.get('symbol'))}")
@@ -434,10 +462,17 @@ def line_frame(cut, sessions=5):
     return m15[pd.to_datetime(m15["start"]).dt.normalize().isin(days)].reset_index(drop=True)
 
 
+def volume_words(sig):
+    """Layer 6b: `vision_volume_words` (ctx_settings) — "legacy" (default, today's text) / "method"."""
+    from decision3 import volume_pane as VP
+    return VP.words_of((sig.get("ctx_settings") or {}).get("vision_volume_words"))
+
+
 def _volume_line(setup, sig, vols):
     from decision3 import volume_pane as VP
     v = (vols or (None,))[0]
-    return VP.study(setup, vol=np.full(len(setup), np.nan) if v is None else v, info=sig, d=sig.get("direction"), area=_area_of(sig))["line"]
+    return VP.study(setup, vol=np.full(len(setup), np.nan) if v is None else v, info=sig, d=sig.get("direction"), area=_area_of(sig),
+                    words=volume_words(sig))["line"]
 
 
 def render(df1m, sig, daily=None, fut=None):
@@ -470,8 +505,12 @@ def render(df1m, sig, daily=None, fut=None):
         bands = None                                                     # default (setting OFF) ⇒ जुनं drawing, ctx तसाच
         if ctx is not None and (sig.get("ctx_settings") or {}).get("vision_chart_bands"):
             try:
-                bands = chart_bands(cut)
+                finder = (sig.get("ctx_settings") or {}).get("vision_chart_band_finder") or "validity"   # layer 6b setting
+                bands = method_bands(sig) if finder == "method" else chart_bands(cut)
+                bands = [] if bands is None else bands
                 ctx["bands"] = band_rows(bands)                          # signal text: legend + अचूक किंमती
+                if finder == "method":
+                    ctx["bands_finder"] = "method"
             except Exception as exc:                                     # पट्टे अपयशी ⇒ जुनं drawing (majors सह), नोंद
                 bands, meta["bands_error"] = None, f"{type(exc).__name__}: {str(exc)[:120]}"
         fig = build_figure(setup, higher, sig, tfs, ctx, line, vols, bands)

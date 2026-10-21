@@ -238,20 +238,38 @@ def test_vision_chart_hides_single_price_majors():
 
 
 def test_setup_chart_k_line_label_and_validity():
+    """The R1a legacy label (`k_line_facts_validity`); layer 6b draws the decision's own K line (next test)."""
     from types import SimpleNamespace
     from decision3 import setup_chart as SC
     df = _line_df()
     D = SimpleNamespace(m15=df)
     r = {"level": {"role": "support"}, "trendline": {"p1": [10, float(df["high"].iloc[10])], "p2": [30, float(df["high"].iloc[30])]}}
-    k = SC.k_line_facts(D, r, len(df) - 1)                                         # UP trade ⇒ K counter-move highs
+    k = SC.k_line_facts_validity(D, r, len(df) - 1)                                         # UP trade ⇒ K counter-move highs
     assert k["drawable"] and "2 touches" in k["label"] and "touch 3 zone" in k["label"]
     r["trendline"]["broken"], r["trendline"]["break_bar"] = True, 44                # V22's own break state is what the chart shows
-    k = SC.k_line_facts(D, r, len(df) - 1)
+    k = SC.k_line_facts_validity(D, r, len(df) - 1)
     assert k["drawable"] and ", broken " in k["label"] and "; no K5 real break" in k["label"] and "zone" not in k["label"]
     r["trendline"]["broken"] = False
     r["trendline"]["p2"] = [12, float(df["high"].iloc[12])]
-    k = SC.k_line_facts(D, r, len(df) - 1)
+    k = SC.k_line_facts_validity(D, r, len(df) - 1)
     assert not k["drawable"] and "fails K6" in k["label"]
+
+
+def test_setup_chart_k_line_is_the_decisions_own_layer_6b():
+    """Layer 6b: the setup chart shows the K line exactly as the decision read it (layer 4: touches by the candle; closed through by the
+    commitment / gone before / intact) — no MR / K5 / K6 display check."""
+    from types import SimpleNamespace
+    from decision3 import setup_chart as SC
+    df = _line_df()
+    D = SimpleNamespace(m15=df)
+    tl = {"p1": [10, float(df["high"].iloc[10])], "p2": [12, float(df["high"].iloc[12])], "touches": 2, "broken": False,
+          "broken_before": None, "break_bar": None}
+    k = SC.k_line_facts(D, {"level": {"role": "support"}, "trendline": tl}, len(df) - 1)
+    assert k["drawable"] and k["label"] == "K line (2 touches, intact)" and "K6" not in k["label"]
+    k = SC.k_line_facts(D, {"level": {"role": "support"}, "trendline": {**tl, "broken": True, "break_bar": 44}}, len(df) - 1)
+    assert "closed through by the commitment" in k["label"]
+    k = SC.k_line_facts(D, {"level": {"role": "support"}, "trendline": {**tl, "broken_before": 40, "break_bar": 40}}, len(df) - 1)
+    assert "gone" in k["label"] and "no trigger" in k["label"]
 
 
 def test_vision_default_image_unchanged_and_bands_only_with_setting(monkeypatch):

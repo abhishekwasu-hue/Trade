@@ -125,6 +125,27 @@ BAND_WARN_KEY = "approval_band_warn_pts"
 BAND_WARN_PTS_DEFAULT = 150
 
 
+# Layer 6b (Abhi's method, C-18): setting `approval_band_warn_rule` (display only, registered in decision3/settings.py OUTPUT):
+#   "points" (default = today's output): width > `approval_band_warn_pts` ⇒ the line;
+#   "method": an ENGINE area is one base, wick to body, never merged or widened (#329, Abhi Z-1u) — a "merged band" cannot be one of them
+#   (Z-1x: a zone that looks too wide is fixed in its construction, never flagged by a width) ⇒ its width is shown as a fact, no line;
+#   a band from any other source (a bot's own zones) keeps the points line (display only; the method has no width definition — question).
+BAND_WARN_RULE_KEY = "approval_band_warn_rule"
+BAND_WARN_RULES = ("points", "method")
+
+
+def band_warn_rule(value=None):
+    """Setting ⇒ "points" / "method"; settings dict ⇒ its BAND_WARN_RULE_KEY. Empty / unknown ⇒ "points" (today's output)."""
+    if isinstance(value, dict):
+        value = value.get(BAND_WARN_RULE_KEY)
+    v = str(value or "").strip().lower()
+    return v if v in BAND_WARN_RULES else BAND_WARN_RULES[0]
+
+
+def _no_flag(rule, engine_area):
+    return band_warn_rule(rule) == "method" and bool(engine_area)
+
+
 def band_warn_pts(value=None):
     """Setting ची किंमत ⇒ float (> 0). नाही / चुकीची ⇒ BAND_WARN_PTS_DEFAULT. settings dict दिली ⇒ त्यातली BAND_WARN_KEY."""
     if isinstance(value, dict):
@@ -155,16 +176,21 @@ def band_range(lo, hi):
     return f"{lo:,.0f}–{hi:,.0f} ({w:,.0f} pts)"
 
 
-def band_flag(lo, hi, warn_pts=None):
-    """पट्टा setting पेक्षा रुंद ⇒ "⚠️ merged band — check (width 312 pts > 150)"; नाहीतर / पट्टा नाही ⇒ ""."""
+def band_flag(lo, hi, warn_pts=None, rule=None, engine_area=False):
+    """पट्टा setting पेक्षा रुंद ⇒ "⚠️ merged band — check (width 312 pts > 150)"; नाहीतर / पट्टा नाही ⇒ "".
+    rule "method" + an engine area ⇒ "" (one base by construction — `approval_band_warn_rule`)."""
+    if _no_flag(rule, engine_area):
+        return ""
     w, lim = band_width(lo, hi), band_warn_pts(warn_pts)
     return f"⚠️ merged band — check (width {w:,.0f} pts > {lim:,.0f})" if w is not None and w > lim else ""
 
 
-def band_wide_words(lo, hi, warn_pts=None):
+def band_wide_words(lo, hi, warn_pts=None, rule=None, engine_area=False):
     """pre-open / सारांशाच्या ओळींसाठी: "61 pts wide" किंवा "312 pts wide ⚠️ merged band — check (over 150 pts)"; पट्टा नाही ⇒ "".
-    ">" नाही ⇒ HTML संदेशात escape लागत नाही."""
+    ">" नाही ⇒ HTML संदेशात escape लागत नाही. rule "method" + an engine area ⇒ the width only (a fact, no line)."""
     w, lim = band_width(lo, hi), band_warn_pts(warn_pts)
     if w is None:
         return ""
+    if _no_flag(rule, engine_area):
+        return f"{w:,.0f} pts wide"
     return f"{w:,.0f} pts wide" + (f" ⚠️ merged band — check (over {lim:,.0f} pts)" if w > lim else "")

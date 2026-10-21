@@ -8,6 +8,24 @@ No AI calls, no broker, no network.
 - `dossier.py` (R1b) — `build_dossier(symbol, bars_by_tf, fut_bars_by_tf=None, as_of=None, cfg=None)`: calls each owner below once
   and returns one JSON-safe dict `{"schema", "symbol", "as_of", "asof_bar", "inputs", "sections"}`.
 
+## Layer 6b — the facts read the SAME method as the decision
+
+Abhi's method (`docs/knowledge/CHART_READER_METHOD.md` §5): the areas, lines, visits, zone study, commitment, LTF change of character
+and RSI divergence in the dossier are the decision engine's own reads — `decision3.engine.V22` on the same cut bars (closed Daily bars
+when given, the 5M spot as the LTF, the FUT 5M bars as volume, the shared swings2 result when the swing scale is the same):
+
+- areas = `decision3.levels` (one base per area, wick to body, K4 state; the armed ones = the decision's watch list, with the line label);
+- lines = `decision3.trendline.swing_line` (two separate reactions; touches by reactions, `touch_groups`) + `reaction_touch` (touch N);
+- the visit = `V22.visit` by structure (`zone_visit_rule = structure`) — never `touch_window_bars`;
+- the confirmation = `V22._confirm` (handover episode, commitment vs the approach leg + the visit's opposite side with the rejected push
+  excluded — L3-c3 closed, LTF CHoCH);
+- RSI = `V22.rsi_divergence` (pushes inside the move into the zone, the highest degree with two pushes, the zone's own degree) and the
+  layer-5 `rsi2.engine.Divergence` read / history — the old `rsi2.engine.RSI` class (Cardwell zones, gaps) is not read.
+
+`cfg["display_finder"] = "validity"` keeps the R1a display finder (`facts.validity` via `decision3.levels.display_bands` /
+`trendlines2.two_touch.display_lines`) for the `areas` / `lines` / `confluence` sections only — the legacy what-if the R1a golden test
+pins. The dossier is not wired into the live Vision card yet.
+
 ## Inputs and the no-look-ahead rule
 
 `bars_by_tf` = spot bars `{"15M": required, "5M": LTF CHoCH, "1m": context / gaps, "1H": optional (default: complete NSE hours
@@ -33,24 +51,25 @@ into NA (it raises).
 |---|---|---|---|---|
 | `structure` | Swings / structure, degree-aware: trend, protected swing, BOS / CHoCH (K1) | `swings2.engine.build` (pivots DC engine) → `swings2.structure.all_structure`; per degree `swings2.engine.known` / `labels` / `pivot_json`, `swings2.structure.trend_of` | `degrees.D0…D4.{pivots, confirmed_pivots, warmup_done, pivot_trend}`; D1 / D2 also `state` (trend, range, lastH / lastL, strict, protected, weak, reversal stage) and `events` (BOS, CHoCH, sweep, range_start / range_break, LH, reversal, always_in_flip, failed_gap_break) since the 15M lookback start; `events_from` | engine fails; no confirmed pivot at any degree (σ needs 20 complete sessions) |
 | `legs` | Legs: impulse vs correction (K2, K3) | `reader2.reader.read` on 15M (low = 5M) and on 1H (low = 15M) — **injected** as `cfg["legs_reader"]` (reader2 is research-only; facts never imports it) | `by_tf.<tf>.legs[]` (degree, dir, start / end bar-ts-price, bars, label impulse / correction / uncertain, structure_family, reason, provisional, known_at), `selfcheck_passes`, `selfcheck_log`, `reader2_trend` (evidence only) | no reader injected (default; reason names the reader2 gate); no frame |
-| `areas` | Areas: demand / supply bands, flips, broken (K4, TA3b / TA4) | `decision3.levels.display_bands` (→ `facts.validity.check_band`), lookback per TF (`facts.validity.lookback`), 1H magnet count on 15M | `by_tf.<15M / 1H>.{asof_bar, close, mr, lookback_sessions, bands[]}` — each band: lo, hi, role, touches, touch_count, earlier_side_touches, established, breaks, flipped, broken, price_side, crossings_session, valid, reasons, defined_by | no frame |
-| `lines` | Trendlines (K6, TA3) | `trendlines2.two_touch.display_lines` (→ `facts.validity.check_line`) | `by_tf.<15M / 1H>.{asof_bar, mr, lines[]}` — each line: side, anchor1 / anchor2, slope, touches, touch_count, established, valid_from, value_at_t, projected_zone (next 3rd-touch zone + path) | no frame |
-| `confluence` | Band + line meeting (K4 + K6.4) | `facts.validity.confluence` over the shown bands × lines (all TF pairs) | `items[]` (band_tf, line_tf, role, offset, line_value, band, distance_mr, zone, line_anchors, band_touches) | no frame at all |
+| `areas` | Areas: demand / supply, flipped, origin of a sharp move (method §3 Areas, layer 2) | `decision3.engine.V22` → `levels.snapshot` (all alive areas + K4 state) and `step1` / `step2` (trend side, armed areas with the line label) | `asof_bar`, `close`, `trend.{daily, used, weekly, resolution, trade_side, why}`, `armed[]` (area ids, nearest first), `areas[]` — each: id, tf, role, lo, hi, births, state (+ broken / far swing / flipped facts), tests, sweeps, flips, fresh, dist, confluence (+ `confluence_label`, "line (touch N)" when armed), trade_location, lineage, width, born_ts, armed, line_touch | the engine fails (reason) |
+| `lines` | Lines (method §3 Lines, layer 4) | `decision3.trendline.swing_line` (both trade sides) + `reaction_touch` + `confluence_areas` | `lines[]` — side, p1 / p2 (bar, ts, price), slope_per_bar, touches (by reactions), touch_points (ts per reaction), value_at_asof, reaction_touch (bar, ts, price, touch_no, trade_location), areas_met; `rule` | the engine fails |
+| `confluence` | A line or a Daily / Weekly area meeting the area (labels the area itself) | `levels.snapshot` (HTF label) + `trendline.confluence_areas` (line label) | `items[]` (id, tf, role, lo, hi, state, confluence_label) | the engine fails |
 | `patterns` | Chart / correction patterns (K11) | `patterns2.fold2.Fold` D2 and D1 (parent D2) on `legs2.measure2.build` + `legs2.ik2.Tracker` | `D2` / `D1`: phase, state, impulse (dir, origin, end), valid_hypotheses, pref / alt (family, kind, sub, waves, points, state, flags, c_eq_a, lines_geom, range_like), final_flag_risk, position_in_parent | swings2 / legs2 build fails |
-| `candles` | K9: reversal form, commitment, zone study (handover / absorption) | `decision3.method.candle_read`, `reversal_form` (both sides, last bar), and per touched valid band `zone_study` + `commitment` | `last_bar` (OHLC + read), `reversal_form_at_last_bar.{up, down}`, `area_studies[]` (band, role, reaction_side, arrival, bars_in_study, zone_study, commitment.present / reason / form / merged / beyond_extreme / body_pct / body_mult / vol_mult), `volume_source` ("FUT volume missing" vs "FUT attach failed: <error>"), `stale_*` | owner fails |
+| `candles` | Reversal form at the last bar; the zone study / commitment at every visit in progress (method §3, layer 3) | `decision3.method.candle_read`, `reversal_form` (both sides, last bar); per visit: `V22.visit` (structure) + `V22._confirm` + `method.zone_study` | `last_bar` (OHLC + read), `reversal_form_at_last_bar.{up, down}`, `area_studies[]` (band_tf, band, area_id, role, state, reaction_side, armed, confluence_label, arrival, approach_from, visit_prev_end, bars_in_study, zone_study, handover.{present, form, seen_ts, cancelled}, absorption, commitment.{present, reason, read, form, …, volume_measure, vol_gaps, data_problem}) — `area_studies` None + `area_studies_reason` when the engine fails; `volume_source`, `stale_*` | owner fails |
 | `volume` | FUT volume, trend side vs counter side (K10) | `opportunity_engine.volume.attach_futures_volume` (FUT 5M ⇒ 09:15-anchored 15M sums) | `coverage`, `last_bar.volume` (+ `reason` when None), `session.{up_bars, down_bars}` (bars / mean / sum) + per-bar list (+ `reason` when None), `lookback.{up_bars, down_bars}`, `incomplete_bars[]` (15M bars with fewer FUT 5M children than 5M slots ⇒ volume NA), `multi_contract_bars[]` | **FUT 5M missing, or no FUT row matches a spot bar** |
-| `ltf_choch` | LTF structure / CHoCH (K1 at 5M) | `decision3.method.ltf_frame` + `decision3.method.ltf_choch` per touched valid band | `visits[]` (band, role, reaction_side, context_from, `context_note` when the context falls back to the arrival bar, study_from / study_to, done, code, low / lh / hl, sweep, at, close, line) | 5M spot missing |
+| `ltf_choch` | LTF change of character (method §3, c1 at 5M) | `decision3.method.ltf_choch` as read by `V22._confirm` at every visit in progress | `visits[]` (band_tf, band, area_id, role, reaction_side, context_from — the pullback's impulse end as the engine reads it, else the arrival — study_from / study_to, done, code, low / lh / hl, sweep, at, close, line) | 5M spot missing; the engine fails |
 | `liquidity` | Liquidity pools / sweeps / traps (K5) | `decision3.liquidity.pools`, `sweeps_and_traps` (adapter: `decision3.levels.Levels` on the swings2 result) | `pools[]` (price, side, src swing / equal / PDH / PDL / PWH / PWL), `sweeps[]`, `traps[]`, `lookback_bars` | swings2 build fails |
 | `gaps` | Opening gap (K13) | `vision.gap_context.build` | the owner's dict: pdc / pdh / pdl, open, gap, gap_atr, class G0–G5, location, trend, fill_pct, pdc_acceptance, behaviour, old_gaps … | 1m missing; no complete previous session |
 | `context` | PDH / PDL / PDC, week H-L, opening range (K8, K14) | `vision.context.prev_day`, `prev_week`, `opening` | `prev_day`, `prev_week`, `opening`, `minutes_since_open`, `missing` (a reason per missing sub-part prev_day / prev_week / opening; VIX, FII / DII, global cues: no owner function yet) | 1m missing, or all of prev_day / prev_week / opening missing (one missing part ⇒ OK + `missing.<part>`) |
-| `divergence` | RSI divergence only (K10) | `rsi2.engine.RSI(...).known` | `rsi15_at_asof`, `rsi_warmup`, `known_count`, `last[]` (type, degree, L1 / L2 pivots, rsi1 / rsi2, gap, known_bar, line_clear, price_clear) | swings2 / legs2 build fails |
+| `divergence` | RSI divergence (method §3, layer 5) | `rsi2.engine.Divergence` (the engine's own object) via `V22.rsi_divergence` | `rsi15_at_asof`, `rsi_warmup`, `known_count`, `last[]` (degree, side, type, status, bars, price_rel, L1 / L2 time-price-rsi, known_ts), `latest[]` (statements per degree and side), `at_visits[]` (per visit: found, degree, pushes, zone_degree, divergences, statements / na) | the engine fails; rsi2 fails |
 
 Dropped everywhere (not facts): `grade`, `score(s)`, `vote(s)`, `conviction`, `decision`, `confidence`, `verdict`, `ratio`,
 `strength`, `completion`, `momentum` (`facts.dossier.NOT_FACTS`), and the "· grade X" tail of the decision3 commitment text.
 
-"Touched valid band" (candles / ltf_choch) = a valid band from the `areas` section whose price range a 15M bar touched within decision3
-`touch_window_bars` of `as_of`; arrival = the first bar of that touch group (decision3's own "in / at the area" rule). The reaction side
-is the band's role (support ⇒ up, resistance ⇒ down) — a fact about the band, not a trade direction.
+"Visit in progress" (candles / ltf_choch / divergence) = an alive trade-location area of the engine (not BROKEN / DEAD, not a
+context-only Weekly band) whose visit by structure (`V22.visit`, method §3: begins when price enters, ends only by a swing built away,
+a break / flip or a failed commitment closing outside — never by time or a bar count) is in progress at `as_of`; arrival = the visit's
+start. The reaction side is the area's role (support ⇒ up, resistance ⇒ down) — a fact about the area, not a trade direction.
 
 ## Open questions (R1b; for Abhi — not decided here)
 

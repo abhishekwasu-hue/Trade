@@ -508,9 +508,9 @@ def _wave_a(st):
 
 
 def range_check(d, objs, s=None):
-    """B1 (Abhi): Q27 RANGE चाचणी trend-degree रचनेवर — शेवटचे दोन trend-degree lows (UP leg origin / DOWN leg टोक) आणि दोन highs;
-    tol = range_eq_sigma_d × σ_D (शेवटचा). फक्त अहवाल (engine चा RANGE नियम बदलत नाही; tune नाही)."""
-    s = S3.load(s)
+    """B1 (Abhi): Q27 RANGE चाचणी trend-degree रचनेवर — शेवटचे दोन trend-degree lows (UP leg origin / DOWN leg टोक) आणि दोन highs.
+    "Equal" = C-13 (Abhi L1-b, the reading's own definition — `daily.c13_equal`): the later extreme reaches the earlier swing candle's
+    area (wick to body) and does not go beyond it — no σ tolerance (layer 6b). फक्त अहवाल (engine चा RANGE नियम बदलत नाही)."""
     lows, highs = [], []
     for lg in objs["legs"]:
         a = (lg["from"], lg["p0"]) if lg["dir"] > 0 else (lg["to"], lg["p1"])
@@ -519,12 +519,13 @@ def range_check(d, objs, s=None):
         highs.append(b)
     lows = sorted(set(lows))[-2:]
     highs = sorted(set(highs))[-2:]
-    sig = DD.sigma_d(d.reset_index(drop=True), int(s["daily_sigma_sessions"]))
-    tol = float(s["range_eq_sigma_d"]) * float(sig[-1]) if len(sig) and np.isfinite(sig[-1]) else 0.0
-    eq = lambda xs: len(xs) == 2 and abs(xs[0][1] - xs[1][1]) <= tol   # noqa: E731
-    return {"tol": round(tol, 2), "lows": [{"bar": int(b), "price": float(p)} for b, p in lows],
-            "highs": [{"bar": int(b), "price": float(p)} for b, p in highs],
-            "lows_equal": bool(eq(lows)), "highs_equal": bool(eq(highs)), "range": bool(eq(lows) and eq(highs))}
+    O, C = d["open"].to_numpy(float), d["close"].to_numpy(float)
+
+    def eq(xs, kind):
+        return len(xs) == 2 and DD.c13_equal(O, C, xs[1][1], kind, int(xs[0][0]), xs[0][1])
+    return {"rule": "C-13: the later extreme reaches the earlier swing candle's area (wick to body), not beyond",
+            "lows": [{"bar": int(b), "price": float(p)} for b, p in lows], "highs": [{"bar": int(b), "price": float(p)} for b, p in highs],
+            "lows_equal": bool(eq(lows, "L")), "highs_equal": bool(eq(highs, "H")), "range": bool(eq(lows, "L") and eq(highs, "H"))}
 
 
 MAX_BANDS = 6                                                              # C1 (Abhi): Daily chart वर कमाल 6 level पट्टे
@@ -556,7 +557,7 @@ def level_bands(v, s=None, limit=MAX_BANDS, max_broken=1):
     उमेदवार (rank = degree): 0 मोठ्या degree चा origin (parent, window बाहेर असला तरी — कडेला बाण), 1 protected origin + sharp-fall
     supply / sharp-rise demand, 2 रचना ज्या major टोकावर उभी (शेवटच्या पूर्ण same-degree correction ची सुरुवात = आधीच्या impulse चं
     टोक; उदा. BANKNIFTY चा March low) + b टोक (पुढची demand / supply), 3 window चे high / low, 4 structural target (Q44), 5 correction
-    टोकं. पट्टा = किंमत ± range_eq_sigma_d × σ_D. State: fresh / tested / broken (birth नंतरचे closes / ranges); target ⇒ "target".
+    टोकं. पट्टा = swing candle चा स्वतःचा area, wick ते body (C-13, layer 6b; target = फक्त किंमत). State: fresh / tested / broken (birth नंतरचे closes / ranges); target ⇒ "target".
     तुटलेले पट्टे: कमाल `max_broken` (सर्वात अलीकडे तुटलेला). नाव (trader): "demand / supply <price> (state)" — बाजू आजच्या close
     वरून (तुटलेला ⇒ तुटण्याआधीची भूमिका), "protected", "sharp-fall supply" / "sharp-rise demand", "target"."""
     s = S3.load(s)
@@ -564,8 +565,7 @@ def level_bands(v, s=None, limit=MAX_BANDS, max_broken=1):
     C, Hh, Ll = d["close"].to_numpy(float), d["high"].to_numpy(float), d["low"].to_numpy(float)
     n, i0 = v["n"], v["i0"]
     q = v["q15"]
-    sig = DD.sigma_d(d, int(s["daily_sigma_sessions"]))
-    half = max(float(s["range_eq_sigma_d"]) * (float(sig[-1]) if np.isfinite(sig[-1]) else 0.0), 1e-9)
+    O = d["open"].to_numpy(float)
     cand = []
     if q.get("parent") and (not q.get("protected_now") or abs(q["parent"]["price"] - q["protected_now"]["price"]) > 1e-9):
         cand.append((0, "larger-degree origin", q["parent"]["price"], q["parent"]["bar"]))
@@ -592,8 +592,7 @@ def level_bands(v, s=None, limit=MAX_BANDS, max_broken=1):
     wlo, whi = float(Ll[i0:].min()), float(Hh[i0:].max())
     rows = []                                                              # 1) प्रत्येक उमेदवार स्वतंत्र: पट्टा + state
     for rank, label, px, bar in sorted(cand, key=lambda x: (x[0], x[1].startswith("sharp-"), abs(x[2] - C[-1]))):
-        lo, hi = (min(zone[0], px - half), max(zone[1], px + half)) if label.startswith("sharp-") else (px - half, px + half)   # zone ची
-                                                                           # खरी कडा (किमान ± half)
+        lo, hi = _band_of(label, px, bar, zone, O, Hh, Ll, C)               # layer 6b (C-13): the swing candle's own area, wick to body
         brk = None
         if bar is None:
             state = "target"
@@ -626,7 +625,7 @@ def level_bands(v, s=None, limit=MAX_BANDS, max_broken=1):
                 prot["label"] += f" · {b['label']}"
                 prot.update(sharp=b["label"], lo=b["lo"], hi=b["hi"])
                 continue
-        hit = [o for o in out if o["lo"] - half <= b["price"] <= o["hi"] + half]
+        hit = [o for o in out if o["lo"] <= b["price"] <= o["hi"]]           # C-13: the same place = inside that swing's own area
         if b["label"] == "target":
             live = [o for o in hit if o["state"] != "broken"]
             if live:                                                       # target: कोणत्याही न तुटलेल्या hit मध्ये जोडतो
@@ -644,6 +643,25 @@ def level_bands(v, s=None, limit=MAX_BANDS, max_broken=1):
     for b in out:
         b["name"] = band_name(b)
     return out
+
+
+def _band_of(label, px, bar, zone, O, H, L, C):
+    """Layer 6b (Abhi L1-b ⇒ C-13): a Daily level's band = its swing candle's own area, wick to body (`daily.c13_area`) — a low:
+    [low, body bottom]; a high: [body top, high] — never a price ± a σ fraction. The sharp-fall / sharp-rise zone = the area itself.
+    A target has no candle (a projection) ⇒ its own price (drawn as a line). A price that is neither the candle's high nor its low (never
+    seen; defensive) ⇒ the candle's side by that price's half of the candle."""
+    if label.startswith("sharp-") and zone is not None:
+        return float(zone[0]), float(zone[1])
+    if bar is None:
+        return float(px), float(px)
+    b = int(bar)
+    if np.isclose(px, L[b]) and not np.isclose(px, H[b]):
+        kind = "L"
+    elif np.isclose(px, H[b]) and not np.isclose(px, L[b]):
+        kind = "H"
+    else:
+        kind = "L" if px <= (H[b] + L[b]) / 2.0 else "H"
+    return DD.c13_area(O, H, L, C, b, kind)
 
 
 def _structure_base(q):

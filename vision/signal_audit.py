@@ -271,7 +271,16 @@ def signal_text(sig):
                 tr += (f" until {r.get('held_until')}; the current OPEN (unfinished) bar is breaking it {r['open_bar_breaking']}")
             lines.append(f"  {r['name']} | {r['price']:,.2f} | {pos} {'n/a' if d is None else f'{d:+.2f}'} x | {tr}")
     bands = ctx.get("bands")
-    if bands is not None:                                               # setting vision_chart_bands ON (R1, TA4): chart legend + prices
+    if bands is not None and (ctx.get("bands_finder") == "method" or any(b.get("finder") == "method" for b in bands)):   # layer 6b
+        lines.append("Chart note: on this chart the major levels M1 / M2 are NOT drawn as lines (their exact prices stay in the levels "
+                     "table above). Shaded horizontal zones = the engine's own areas (each built from one base, wick to body), with "
+                     "their state: orange = supply (resistance), light blue = demand (support), dashed brown-grey outline = a broken "
+                     "area. They are not the traded level L (thick green / red line).")
+        lines.append("Areas (exact prices from OHLC data): role | low - high | state" if bands else
+                     "Areas: the engine row carries no areas, so none are drawn.")
+        for b in sorted(bands, key=lambda z: -z["hi"]):
+            lines.append(f"  {'supply' if b['role'] == 'resistance' else 'demand'} | {b['lo']:,.2f} - {b['hi']:,.2f} | {b['state']}")
+    elif bands is not None:                                             # setting vision_chart_bands ON (R1, TA4): chart legend + prices
         lines.append("Chart note: on this chart the major levels M1 / M2 are NOT drawn as lines (their exact prices stay in the levels "
                      "table above). Shaded horizontal zones = S/R bands (2+ real reaction touches, low-high from the reaction candles): "
                      "orange = supply (resistance), light blue = demand (support), dashed brown-grey outline = the most recently broken "

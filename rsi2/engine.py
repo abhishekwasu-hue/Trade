@@ -1,7 +1,8 @@
 """rsi2/engine.py — the reader's RSI divergence is `Divergence` (bottom of this file; method §3, layer 5: consecutive swings of one degree,
 a new price extreme vs an RSI that does not exceed its previous extreme, equal counts; no bar windows or numeric thresholds). The `RSI`
-class and helpers above are the OLD numeric detector (gaps, σ / RSI differences, Cardwell zones) — used only by the facts dossier and the
-MTF display; rebuilt with the output (layer 6). Old description:
+class and helpers above are the OLD numeric detector (gaps, σ / RSI differences, Cardwell zones) — since layer 6b the facts dossier reads
+`Divergence` through decision3 (`V22.rsi_divergence`); the `RSI` class is read only by the MTF display (`mtf/adapter.py`, which feeds the
+frozen decision2 layer chain — not rebuilt here). Old description:
 
 थर 6: RSI divergence (pivot-based; थर 1 pivots, RSI त्याच candle च्या close ला) आणि Cardwell rsi_range.
 

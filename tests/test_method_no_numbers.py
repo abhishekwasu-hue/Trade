@@ -14,9 +14,9 @@ from decision3 import settings as S3
 D3 = pathlib.Path(S3.__file__).parent
 
 LEGACY = {                       # used only by a non-default rule / gate (what-if): {setting: (switch, the only decision3 files that read it)}
-    # Daily RANGE "equal" σ tolerance: the reading (fold_impulse) uses C-13 logic; read only by the legacy minor fold and the Daily
-    # chart's display bands / range_check report
-    "range_eq_sigma_d": ("daily_trend_mode = minor; Daily chart display bands", {"daily.py", "daily_swings.py"}),
+    # Daily RANGE "equal" σ tolerance: the reading (fold_impulse) and, since layer 6b, the Daily chart's display bands / range_check
+    # report use C-13 logic (daily.c13_*); read only by the legacy minor fold (the old reading reproduced as a what-if)
+    "range_eq_sigma_d": ("daily_trend_mode = minor", {"daily.py"}),
     "corr_degree_frac": ("corr_degree_rule = ratio", {"daily.py"}),
     "daily_dc_k": ("daily_swing_method = dc", {"daily.py"}),
     "level_min_width_sigma": ("0 by default; > 0 = the old minimum width", {"levels.py", "trendline.py"}),
@@ -53,6 +53,8 @@ LEGACY = {                       # used only by a non-default rule / gate (what-
     "commit_merge_max": ("registered only (≤ 2 merged is the form list itself); read nowhere", set()),
     "vol_slot_sessions": ("volume_baseline = slot", {"engine.py"}),
     "vol_slot_min_sessions": ("volume_baseline = slot", {"engine.py"}),
+    # layer 6b: the visit is by structure everywhere (decision + the facts dossier); the bar count is read only by the legacy visit rule
+    "touch_window_bars": ("zone_visit_rule = touch_window (legacy visit / at_level_or_confirm)", {"engine.py", "method.py"}),
     "active_levels_max": ("no longer caps the watch list (method §4); kept for old callers", set()),
     "watch_levels_max": ("no longer caps the watch list (method §4); kept for old callers", set()),
 }
@@ -74,8 +76,6 @@ CALIBRATION = {                  # Abhi (layer 1 ✅): a swing's significance is
     "daily_pivot_n": "Abhi L1-c: provisional N = 2; dashboard setting via the live-switches track",
 }
 PENDING = {                      # still a number in the reading path ⇒ removed in the named layer
-    # decision3 reads touch_window_bars only behind the legacy visit rules, but facts/dossier `_visits` still counts it (layer 6)
-    "touch_window_bars": 6,
 }
 
 
@@ -214,3 +214,16 @@ def test_layer_six_evidence_list_and_label_text():
     assert SC.label_text({"conviction": "A", "confirming": conf, "verdict_rule": "method"}) == "Label A (confirming: confluence)"
     assert SC.label_text({"conviction": "B", "conv_score": 0.5, "verdict_rule": "score"}) == "Conviction B (score 0.5)"
 
+
+def test_layer_six_b_output_reads_the_method():
+    """Layer 6b (output): nothing of layer 6 stays PENDING; the facts dossier (the Vision facts input) reads the decision's own visit,
+    commitment, LTF, RSI (layer 5 `rsi_divergence`) and lines (layer 4) — no bar window, no old Cardwell RSI class; the Daily display
+    bands / RANGE report use C-13 comparisons, never a σ fraction."""
+    import inspect
+    from decision3 import daily_swings as DSW
+    from facts import dossier as FD
+    assert PENDING == {}                                                  # end of layer 6: nothing pending (method §7)
+    src = inspect.getsource(FD)
+    assert "touch_window_bars" not in src and "RE.RSI(" not in src and FD.DEFAULTS["display_finder"] == "method"
+    for fn in (DSW.range_check, DSW.level_bands, DSW._band_of):
+        assert "range_eq_sigma_d" not in inspect.getsource(fn) and "sigma_d" not in inspect.getsource(fn)

@@ -18,6 +18,26 @@ import pandas as pd
 
 NA_LINE = "volume: NA (grade cap B)"
 NO_OPP_LINE = "volume: no opposite-side candle in the visit (grade cap B)"   # engine c0 compared nothing (OPEN_QUESTIONS Z-1z-d)
+# Layer 6b (Abhi's method §3 Volume / Commitment): the words the method reads. `words = "method"`: FUT volume missing = a data problem
+# (no entry, never "grade cap B"); nothing to compare = no commitment (Abhi L3-c); a chart-side window average is not the method's
+# comparison (approach leg + the visit's opposite side) ⇒ without the engine's numbers the pane shows the bars only. "legacy" (default for
+# the live Vision card, setting `vision_volume_words`) = today's text byte-for-byte; the review charts use "method".
+WORDS = ("legacy", "method")
+METHOD_NA_LINE = "volume: NA - FUT volume missing (data problem: no entry)"
+METHOD_NO_OPP_LINE = "volume: nothing to compare the commitment with (no approach leg, no opposite-side candle) - no commitment"
+METHOD_BARS_LINE = "volume: bars only - the engine's commitment comparison (approach leg + opposite side) is not in this record"
+
+
+def words_of(w):
+    """"legacy" / "method"; a pane dict ⇒ its own words; empty / unknown ⇒ "legacy" (today's text)."""
+    if isinstance(w, dict):
+        w = w.get("words")
+    w = str(w or "").strip().lower()
+    return w if w in WORDS else WORDS[0]
+
+
+def na_line(w=None):
+    return METHOD_NA_LINE if words_of(w) == "method" else NA_LINE
 INDEX_FUT = {"NIFTY": "NIFTY FUT", "BANKNIFTY": "BANKNIFTY FUT", "SENSEX": "SENSEX FUT", "FINNIFTY": "FINNIFTY FUT",
              "MIDCPNIFTY": "MIDCPNIFTY FUT"}
 MAX_WINDOW_BARS = 48                    # fallback arrival शोध: commitment पासून इतके bars मागे (engine चं window नसेल तेव्हाच)
@@ -112,7 +132,7 @@ def _first(dicts, *keys):
     return None
 
 
-def normalize_info(info):
+def normalize_info(info, words=None):
     """Engine output (level_reaction.evaluate result, vision gate tags, V22 row, किंवा confirmation branch चा a2 / c0 / c1 dict) ⇒
     {arm_bar, arm_ts, commit_bar, commit_ts, d, area, vol_mult, ltf_bar, ltf_ts}. नसलेले keys ⇒ None."""
     info = info or {}
@@ -139,7 +159,9 @@ def normalize_info(info):
     if d is None and lv:
         d = direction_of(lv.get("role"))
     vm = _first(subs, "vol_mult", "commit_vol_mult")
-    return {"arm_bar": arm_bar, "arm_ts": _first(subs, "arm_ts", "study_start_ts", "window_start_ts"),
+    arm_keys = ("arm_ts", "study_start_ts", "window_start_ts") + (("visit_start",) if words_of(words) == "method" else ())   # layer 6b:
+    return {"arm_bar": arm_bar, "arm_ts": _first(subs, *arm_keys),       # V22's visit start only with the method's words (live card default)
+
             "commit_bar": commit_bar,
             "commit_ts": _first(subs, "confirm_ts", "commit_ts", "commitment_ts"),
             "d": d, "area": None if area is None else (float(min(area)), float(max(area))), "vol_mult": vm, "vol_vs": _first(subs, "vol_vs"),
@@ -187,20 +209,21 @@ def _resolve(times, ts, bar, n):
 
 
 # ------------------------------------------------------------------------------------------------ study (numbers + caption line)
-def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, symbol=None, engine_numbers=True):
+def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, symbol=None, engine_numbers=True, words=None):
     """bars: DataFrame (open, high, low, close + timestamp / start). vol: bars शी जुळणारा array (नसेल ⇒ bars["volume"]). info: engine
     output (normalize_info). area / d / commit / arm: थेट दिलेले (info पेक्षा प्राधान्य). रिटर्न dict: vol, ok (window मध्ये volume आहे),
     arm, commit, d, side (+1 trend / -1 counter / 0 doji, window बाहेर None), avg, commit_mult, trend_mult, counter_mult, line, computed,
     engine (आकडे engine चे?).
     आकडे: engine ने vol_mult / vol_na दिले (c0) आणि commitment engine चीच ⇒ तेच (caption मध्ये दोन वेगळे आकडे नाहीत); नाहीतर chart च्या
     data वरून — ओळ "volume (chart est.): …". engine_numbers=False (उदा. मोठा TF panel) ⇒ engine आकडे वापरत नाही.
-    Index ला vol न दिल्यास bars["volume"] (spot) कधीच वापरत नाही ⇒ NA."""
+    Index ला vol न दिल्यास bars["volume"] (spot) कधीच वापरत नाही ⇒ NA. words: "legacy" (default) / "method" (layer 6b, see WORDS)."""
     n = len(bars)
+    words = words_of(words)
     if vol is None:
         vol = own_volume(bars) if "volume" in bars.columns and not is_index(symbol) else np.full(n, np.nan)
     vol = np.asarray(vol, dtype=float)
     vol = np.where(vol > 0, vol, np.nan)
-    ni = normalize_info(info)
+    ni = normalize_info(info, words)
     times = bars["timestamp"] if "timestamp" in bars.columns else bars.get("start")
     computed = []
     d = direction_of(d) if d is not None else ni["d"]
@@ -219,7 +242,7 @@ def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, s
     eng = bool(engine_numbers and from_engine and (ni["vol_mult"] is not None or ni["vol_na"] is not None))
     out = {"vol": vol, "n": n, "symbol": symbol, "source": source_label(symbol) if symbol else None, "d": d, "arm": None,
            "commit": None, "side": [None] * n, "avg": None, "commit_mult": None, "trend_mult": None, "counter_mult": None,
-           "ok": False, "pane": available(vol), "computed": computed, "line": NA_LINE, "engine": eng}
+           "ok": False, "pane": available(vol), "computed": computed, "line": na_line(words), "engine": eng, "words": words}
     if n == 0 or commit is None or not (0 <= int(commit) < n):
         return out
     commit = int(commit)
@@ -248,11 +271,14 @@ def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, s
         if ni["vol_na"] is True:
             return out                                                     # engine: volume NA ⇒ NA (grade cap B)
         if ni["vol_mult"] is None:                                         # engine compared nothing: no opposite-side candle (Z-1z-d)
-            out["line"] = NO_OPP_LINE
+            out["line"] = METHOD_NO_OPP_LINE if words == "method" else NO_OPP_LINE
             return out
         out.update(ok=True, commit_mult=round(float(ni["vol_mult"]), 2), trend_mult=ni["vol_trend_mult"],
                    counter_mult=ni["vol_counter_mult"], vol_vs=ni.get("vol_vs"))
         out["line"] = line(out)
+        return out
+    if words == "method":                                                  # method: no chart-side average (not the method's comparison)
+        out["line"] = METHOD_BARS_LINE if available(vol) else METHOD_NA_LINE
         return out
     if not pre:                                                            # window = एकच bar ⇒ तुलना नाही (खोटा 1.0× नको)
         out["line"] = "volume (chart est.): study window is one bar - no comparison"
@@ -270,7 +296,7 @@ def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, s
 
 def plain(st):
     """Window / खूण नसलेला pane (मोठा TF / Daily): साधे bars."""
-    return {**st, "side": [None] * st["n"], "ok": False, "arm": None, "commit": None, "line": NA_LINE if not st["pane"] else st["line"]}
+    return {**st, "side": [None] * st["n"], "ok": False, "arm": None, "commit": None, "line": na_line(st) if not st["pane"] else st["line"]}
 
 
 def _x(v):
@@ -287,7 +313,9 @@ def _engine_what(st):
 def line(st):
     """Caption / ticket ची एकच volume ओळ."""
     if not st or not st.get("ok"):
-        return NA_LINE
+        return na_line(st)
+    if words_of(st) == "method" and st.get("engine"):                     # layer 6b: the method's own comparison, nothing else
+        return f"volume: commitment {_x(st['commit_mult'])} {_engine_what(st)}"
     head = "volume" if st.get("engine") else "volume (chart est.)"
     what = _engine_what(st) if st.get("engine") else "avg"                 # the engine's own comparison set (Abhi L3-c) / legacy
     return (f"{head}: counter-side candles {_x(st['counter_mult'])} → trend-side {_x(st['trend_mult'])} · "
@@ -296,7 +324,7 @@ def line(st):
 
 def commit_label(st, what="commitment"):
     if not st.get("ok"):
-        return NA_LINE
+        return na_line(st)
     if st.get("engine"):
         return f"{what} vol {st['commit_mult']:.1f}× {_engine_what(st)}"
     return f"{what} vol {st['commit_mult']:.1f}× window avg (chart est.)"
@@ -327,7 +355,7 @@ def draw_mpl(ax, st, x=None, title=None, label_commit=True, commit_what="commitm
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.7, pad=0.5))
     v = st["vol"]
     if not st["pane"]:
-        t = ax.text(0.5, 0.5, NA_LINE, transform=ax.transAxes, fontsize=9, color=MPL["na"], ha="center", va="center")
+        t = ax.text(0.5, 0.5, na_line(st), transform=ax.transAxes, fontsize=9, color=MPL["na"], ha="center", va="center")
         t.set_gid(GID + "_na")
         ax.set_ylim(0, 1)
         return ax
@@ -349,12 +377,12 @@ def draw_mpl(ax, st, x=None, title=None, label_commit=True, commit_what="commitm
                         arrowprops=dict(arrowstyle="-", color=MPL["commit"], lw=0.7),
                         bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=0.5))
     elif st["commit"] is not None:
-        ax.text(0.5, 0.80, (st["line"] if st["line"] != NA_LINE else NA_LINE + " (no volume in the study window)"), transform=ax.transAxes, fontsize=8, color=MPL["na"],
+        ax.text(0.5, 0.80, (st["line"] if st["line"] != na_line(st) else na_line(st) + " (no volume in the study window)"), transform=ax.transAxes, fontsize=8, color=MPL["na"],
                 ha="center", va="center").set_gid(GID + "_na")
     return ax
 
 
-def draw_daily_mpl(ax, vol, x=None, source=None, partial_last=True):
+def draw_daily_mpl(ax, vol, x=None, source=None, partial_last=True, words=None):
     """Daily volume pane: साधे bars (window नाही). शेवटचा (setup दिवस, setup bar पर्यंत) फिकट. सगळे NaN ⇒ NA मजकूर."""
     v = np.asarray(vol, dtype=float)
     v = np.where(v > 0, v, np.nan)
@@ -365,7 +393,7 @@ def draw_daily_mpl(ax, vol, x=None, source=None, partial_last=True):
             transform=ax.transAxes, fontsize=7.5, color=MPL["ink"], va="top", ha="left", zorder=9,
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.7, pad=0.5))
     if not available(v):
-        ax.text(0.5, 0.45, NA_LINE, transform=ax.transAxes, fontsize=9, color=MPL["na"], ha="center", va="center").set_gid(GID + "_na")
+        ax.text(0.5, 0.45, na_line(words), transform=ax.transAxes, fontsize=9, color=MPL["na"], ha="center", va="center").set_gid(GID + "_na")
         ax.set_ylim(0, 1)
         return ax
     cols = [MPL["outside"]] * len(v)
@@ -399,7 +427,7 @@ def add_plotly(fig, st, row, col, x=None, title=None, commit_what="commitment"):
     ttl = title or f"vol {st.get('source') or 'futures'}"
     if not st["pane"]:
         fig.update_yaxes(range=[0, 1], row=row, col=col)
-        fig.add_annotation(x=(n - 1) / 2 if n else 0, y=0.5, text=NA_LINE, showarrow=False, font=dict(size=10, color=PLOTLY["na"]),
+        fig.add_annotation(x=(n - 1) / 2 if n else 0, y=0.5, text=na_line(st), showarrow=False, font=dict(size=10, color=PLOTLY["na"]),
                            row=row, col=col)
         fig.add_annotation(x=-0.5, y=1, text=ttl, showarrow=False, xanchor="left", yanchor="top", font=dict(size=8, color=PLOTLY["ink"]),
                            row=row, col=col)
@@ -422,7 +450,7 @@ def add_plotly(fig, st, row, col, x=None, title=None, commit_what="commitment"):
         fig.add_annotation(x=x[c], y=vv[c], text=commit_label(st, commit_what), showarrow=False, xanchor="right", yanchor="bottom",
                            font=dict(size=8, color=PLOTLY["commit"]), row=row, col=col)
     elif st["commit"] is not None:
-        fig.add_annotation(x=(n - 1) / 2, y=top * 1.2, text=(st["line"] if st["line"] != NA_LINE else NA_LINE + " (no volume in the study window)"), showarrow=False,
+        fig.add_annotation(x=(n - 1) / 2, y=top * 1.2, text=(st["line"] if st["line"] != na_line(st) else na_line(st) + " (no volume in the study window)"), showarrow=False,
                            font=dict(size=9, color=PLOTLY["na"]), row=row, col=col)
     return fig
 

@@ -67,7 +67,7 @@ def trade_side_areas(zones, tfs, last, ctx, n=3, pad_pct=None):
     return res
 
 
-def area_words(side, lo, hi, zt, last, warn_pts=None):
+def area_words(side, lo, hi, zt, last, warn_pts=None, warn_rule=None):
     """"supply 22,715–22,776 (1H, ≈150 pts above), 61 pts wide" — अंतर = last close पासून area च्या जवळच्या कडेपर्यंत. रुंदी > warn_pts
     (`approval_band_warn_pts`, default 150) ⇒ "… 312 pts wide ⚠️ merged band — check (over 150 pts)" (Abhi; फक्त दाखवणं)."""
     bull = side == LR.BULL
@@ -76,14 +76,20 @@ def area_words(side, lo, hi, zt, last, warn_pts=None):
     one = round(lo) == round(hi)
     rng = f"{lo:,.0f}" if one else f"{lo:,.0f}–{hi:,.0f}"
     note = PT.zone_note(zt)
-    wide = "" if one else PT.band_wide_words(lo, hi, warn_pts)
+    wide = "" if one else PT.band_wide_words(lo, hi, warn_pts, warn_rule, engine_area=is_engine_zone(zt))   # layer 6b setting
     return (f"{'demand' if bull else 'supply'} {rng} ({(tf + ', ') if tf else ''}{PT.pts(dist)} {'below' if bull else 'above'}"
             + (f"; {note})" if note else ")") + (f", {wide}" if wide else ""))
 
 
-def band_detail(lo, hi, warn_pts=None):
-    """details ओळीसाठी (HTML-escaped): "22,715–22,776 (61 pts)" (+ " ⚠️ merged band — check (width N pts &gt; 150)")."""
-    flag = PT.band_flag(lo, hi, warn_pts)
+def is_engine_zone(zt):
+    """An engine (decision3) area row (`engine_zone_rows`: zone_type ENGINE_LEVEL_…) — one base, wick to body, never merged (#329)."""
+    return str(zt or "").startswith("ENGINE_LEVEL")
+
+
+def band_detail(lo, hi, warn_pts=None, warn_rule=None, engine_area=False):
+    """details ओळीसाठी (HTML-escaped): "22,715–22,776 (61 pts)" (+ " ⚠️ merged band — check (width N pts &gt; 150)").
+    Layer 6b: `approval_band_warn_rule` "method" + an engine area ⇒ no line (PT.band_flag)."""
+    flag = PT.band_flag(lo, hi, warn_pts, warn_rule, engine_area=engine_area)
     return PT.band_range(lo, hi) + (f" {html.escape(flag, quote=False)}" if flag else "")
 
 
@@ -93,6 +99,14 @@ def warn_pts_for(active, sym):
         if a.get("symbol") == sym and a.get("band_warn_pts") is not None:
             return PT.band_warn_pts(a["band_warn_pts"])
     return PT.band_warn_pts(None)
+
+
+def warn_rule_for(active, sym):
+    """Layer 6b: चालू bots च्या settings मधला `approval_band_warn_rule` (त्या symbol चा पहिला); नाही ⇒ "points" (आजचं)."""
+    for a in active or ():
+        if a.get("symbol") == sym and a.get("band_warn_rule") is not None:
+            return PT.band_warn_rule(a["band_warn_rule"])
+    return PT.band_warn_rule(None)
 
 
 # ------------------------------------------------------------------------------------------------ कोणते bots चालू (settings वरून)
@@ -123,7 +137,7 @@ def bot_status(symbols, get_settings, mcx_fn=None):
             if on(s, sym):
                 out.append({"label": label, "symbol": sym, "source": ES.source_of(s, src_key), "mode": str(s.get("trading_mode", "PAPER")),
                             "pad_pct": s.get("gate_area_pad_pct"), "band_warn_pts": s.get(PT.BAND_WARN_KEY),
-                            PC.SETTING_KEY: s.get(PC.SETTING_KEY)})
+                            "band_warn_rule": s.get(PT.BAND_WARN_RULE_KEY), PC.SETTING_KEY: s.get(PC.SETTING_KEY)})
     for sym in (mcx_fn() if mcx_fn else ()):
         out.append({"label": "MCX Futures", "symbol": sym, "source": "own", "mode": "PAPER/LIVE (MCX settings)"})
     return out
@@ -278,7 +292,7 @@ def nearest(areas, last, n=3):
     return res[:n]
 
 
-def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS, areas=None, na=None, warn_pts=None):
+def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS, areas=None, na=None, warn_pts=None, warn_rule=None):
     """प्रत्येक symbol ची एक साधी ओळ (engine codes नाहीत). areas (चालू bots चे पट्टे) दिले ⇒ तेच; na ⇒ "Watched areas NA"."""
     wk = f"Weekly {html.escape(str(weekly), quote=False)}" if weekly else "Weekly n/a"
     if not ctx.get("ok"):
@@ -298,7 +312,7 @@ def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS, areas=None, na=None,
         return "❌ " + head + f". Last close {last:,.0f}. Watched areas NA — {html.escape(na, quote=False)}."
     if not ar:
         return head + f". Last close {last:,.0f}. No {want} area near price yet."
-    return head + f". Last close {last:,.0f}. Watching " + "; ".join(area_words(s, lo, hi, zt, last, warn_pts) for s, lo, hi, zt in ar) + "."
+    return head + f". Last close {last:,.0f}. Watching " + "; ".join(area_words(s, lo, hi, zt, last, warn_pts, warn_rule) for s, lo, hi, zt in ar) + "."
 
 
 def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn=None, day=None, active=False, engine_fn=None,
@@ -339,14 +353,15 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
             wk = None
         per_bot = [] if legacy or not ctx.get("ok") or last is None else active_bot_areas(sym, active, ctx, last, zones, engine_areas_fn)
         warn = warn_pts_for(active if not legacy else None, sym)          # Abhi: merged band — check (setting, default 150)
+        rule = warn_rule_for(active if not legacy else None, sym)         # layer 6b: approval_band_warn_rule (default points)
         if legacy:
-            plain.append(symbol_line(sym, ctx, wk, last, zones, tfs, warn_pts=warn))
+            plain.append(symbol_line(sym, ctx, wk, last, zones, tfs, warn_pts=warn, warn_rule=rule))
         else:
             nas = [why for _, _, ar, why in per_bot if ar is None]
             na = ("bot settings could not be read" if active is None else "no active bot for this index" if not per_bot
                   else nas[0] if len(nas) == len(per_bot) else None)
             plain.append(symbol_line(sym, ctx, wk, last, zones, tfs, areas=[x for _, _, ar, _ in per_bot for x in (ar or [])], na=na,
-                                     warn_pts=warn))
+                                     warn_pts=warn, warn_rule=rule))
             if (PC.setting_for(active, sym) if crux_on is None else crux_on):
                 try:                                                       # crux कधीच संदेश थांबवत नाही: त्रुटी ⇒ log + crux नाही
                     cx = crux_block(sym, ctx, wk, last, per_bot, na, raw.get(sym), (views or {}).get(sym), chart_fn)
@@ -379,7 +394,8 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
             elif not ar:
                 det.append(f"• {name}: no trade-side area near price")
             else:
-                txt = "; ".join(f"{'demand' if s == LR.BULL else 'supply'} {band_detail(lo, hi, warn)}" for s, lo, hi, _ in ar)
+                txt = "; ".join(f"{'demand' if s == LR.BULL else 'supply'} {band_detail(lo, hi, warn, rule, is_engine_zone(zt))}"
+                                for s, lo, hi, zt in ar)
                 det.append(f"• {name}: watching {txt}")
     if legacy or any(a.get("label") == "MCX Futures" for a in (active or [])):
         det.append("MCX: PAPER = confirmation gate on 15M (trend from the current contract's Daily); entry only after CONFIRMED "

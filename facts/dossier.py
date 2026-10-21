@@ -13,6 +13,12 @@ Rules:
     open questions (README), not decided here.
   • Owner outputs that carry a grade / score / vote (decision3 commitment grade, rsi2 divergence grade, patterns2 hypothesis score,
     reader2 confidence / anatomy score) are dropped; the facts they were computed from are kept.
+  • Layer 6b (Abhi's method, CHART_READER_METHOD.md §5): the areas, lines, visits, zone study, commitment, LTF change of character and
+    RSI divergence are the DECISION's own reads — `decision3.engine.V22` on the same cut bars (layers 1–5 as merged): areas + K4 state
+    (`levels.snapshot`), lines + touch N (`trendline.swing_line` / `touch_groups` / `reaction_touch`), the visit by structure
+    (`V22.visit`, never a bar count), the confirmation (`V22._confirm`) and `V22.rsi_divergence` (pushes inside the move, degree,
+    zone degree). `cfg["display_finder"] = "validity"` keeps the R1a display finder (facts.validity) for the areas / lines /
+    confluence sections only (legacy, for the R1a golden comparison).
 """
 import math
 import re
@@ -39,7 +45,10 @@ DEFAULTS = {
     "decision3": None,               # overrides for decision3 settings (method / liquidity)
     "reader2": None,                 # overrides for reader2 settings
     "legs_reader": None,             # reader2.reader.read, injected by a research / test caller (reader2 is research-only) — None ⇒ legs NA
+    "display_finder": "method",      # layer 6b: areas / lines / confluence = the decision's own (decision3 V22); "validity" = the R1a
+                                     # display finder (facts.validity: fractal anchors, MR tolerances, session look-back) — legacy only
 }
+DISPLAY_FINDERS = ("method", "validity")
 # keys an owner may return that are a grade / score / vote, never a fact (design §3) — dropped everywhere in the dossier
 NOT_FACTS = frozenset({"grade", "score", "scores", "vote", "votes", "conviction", "decision", "confidence", "verdict", "ratio",
                        "strength", "completion", "momentum"})
@@ -241,6 +250,24 @@ class _Ctx:
     def bands_and_lines(self):
         return self.memo("areas+lines", lambda: _areas_lines(self))
 
+    def v22(self):
+        """The decision engine itself (decision3.engine.V22) on the same cut bars: closed Daily bars when given (as the live engine is
+        fed), the 5M spot as the LTF, the FUT 5M bars as volume; the shared swings2 result when the swing scale is the same (else V22
+        builds its own with its calibrated scale). Facts only — no decision is read from it here."""
+        def build():
+            from decision3 import engine as E3
+            s3 = self.s3()
+            res = self.swings()[0] if (self.cfg["swings2"] is None and E3.swing_scale(s3) is None) else None
+            cols = ["timestamp", "bar_end", "open", "high", "low", "close"]
+            d = self.f.get("D")
+            return E3.V22(self.m15[cols], self.f.get("1m"), None if d is None else d[cols], s=self.cfg["decision3"], res=res,
+                          ltf=self.f.get("5M"), futures=self.fut5)
+        return self.memo("decision3.engine.V22", build)
+
+    def method(self):
+        """The method's reads at as_of (memo): trend side, areas, armed areas (with their line labels), lines, visits in progress."""
+        return self.memo("decision3 method reads", lambda: _method_reads(self))
+
 
 class _Upstream(Exception):
     pass
@@ -355,7 +382,7 @@ def _areas_lines(c):
     return out
 
 
-def areas(c):
+def _areas_validity(c):
     owner = "decision3.levels.display_bands (facts.validity.check_band, TA3b / TA4)"
     al = c.bands_and_lines()
     by, na = {}, {}
@@ -370,7 +397,7 @@ def areas(c):
     return _ok(owner, by_tf=by, missing=na)
 
 
-def lines(c):
+def _lines_validity(c):
     owner = "trendlines2.two_touch.display_lines (facts.validity.check_line, TA3)"
     al = c.bands_and_lines()
     by, na = {}, {}
@@ -384,7 +411,7 @@ def lines(c):
     return _ok(owner, by_tf=by, missing=na)
 
 
-def confluence(c):
+def _confluence_validity(c):
     owner = "facts.validity.confluence (K4 + K6.4)"
     al = c.bands_and_lines()
     out = []
@@ -402,6 +429,125 @@ def confluence(c):
     if not any(al.values()):
         return _na(owner, "no frame for areas / lines")
     return _ok(owner, items=out)
+
+
+# ------------------------------------------------------------------------------------------------ layer 6b: the method's own reads
+def _ts(c, b):
+    return None if b is None else str(c.m15["timestamp"].iloc[int(b)])
+
+
+def _bar_pt(c, p):
+    """[bar, price] ⇒ {bar, ts, price}."""
+    return {"bar": int(p[0]), "ts": _ts(c, p[0]), "price": float(p[1])}
+
+
+def _method_reads(c):
+    """The decision engine's own reads at as_of (layers 1–5 as merged), nothing re-implemented here:
+      • trend side = V22 step ① (Daily Dow + Weekly parent) — the side the method arms;
+      • areas = every alive area of `decision3.levels` with its K4 state (`snapshot`); the armed ones (`step2`: every valid area ahead
+        in the trend direction, nearest first) carry the line label "confluence: line (touch N)" exactly as the decision reads them;
+      • lines = `trendline.swing_line` for both trade sides (two separate reactions of the structure, touches by reactions), the
+        reaction touch (`reaction_touch`, Abhi 4 B / L4-g) and the areas it meets (`confluence_areas` on that side's armed areas);
+      • visits = every alive trade-location area (not BROKEN / DEAD) whose visit by structure (`V22.visit`) is in progress at as_of;
+        for each: the confirmation as the engine reads it (`V22._confirm`: handover episode, commitment with the approach leg and the
+        rejected push excluded, LTF change of character) and `V22.rsi_divergence` (pushes inside the move, degree, zone degree).
+    The reaction side of a visit is the area's role (support ⇒ up): a fact about the area, not a trade direction."""
+    from decision3 import daily as DD
+    from decision3 import flip as FLP
+    from decision3 import trendline as TL
+    V = c.v22()
+    t = c.t
+    ok1, why1, st, ctx = V.step1(t)
+    tr = ctx["trend"]
+    armed = V.step2(t, tr, ctx.get("band"))[2] if ok1 else []
+    lab = {x["id"]: x for x in armed}
+    areas = [lab.get(x["id"], x) for x in V.levels.snapshot(t)]
+    lines = []
+    for d in (TL.DOWN, TL.UP):
+        ln = TL.swing_line(V, t, d)
+        if ln is None:
+            continue
+        rt = TL.reaction_touch(V, t, d, ln)
+        met = TL.confluence_areas(V, t, d, V.levels.active(t, "DOWN" if d < 0 else "UP"))
+        lines.append({"d": d, "line": ln, "reaction_touch": rt, "areas_met": met})
+    visits = []
+    for x in areas:
+        if x.get("state") in (FLP.BROKEN, FLP.DEAD) or not x.get("trade_location", True):
+            continue
+        d = 1 if x["role"] == "support" else -1
+        vi = V.visit(t, x, d)
+        if vi["start"] is None:
+            continue
+        k = V.pb.at(t, d) or {}
+        _ok, _why, cm = V._confirm(t, d, x, k)
+        arm = int(cm.get("arm_bar", vi["start"]))
+        rsi = V.rsi_divergence(t, d, arm, x.get("tf", "1H"), cm.get("move_from_bar"))
+        k0 = k.get("k_open_bar") if k.get("k_open_bar") is not None else t
+        c0 = k.get("i_end_bar") if k.get("i_end_bar") is not None else k0     # the LTF context start, as V22._confirm reads it
+        visits.append({"area": x, "d": d, "visit": vi, "arm": arm, "commit": cm, "rsi": rsi, "ltf_from": min(int(c0), arm),
+                       "armed": x["id"] in lab})
+    trend = {"daily": st.trend, "used": tr, "weekly": ctx["weekly"], "resolution": ctx["resolution"],
+             "trade_side": list(DD.trade_side(tr)), "why": why1}
+    return {"V": V, "t": t, "trend": trend, "areas": areas, "armed": [x["id"] for x in armed], "lines": lines, "visits": visits}
+
+
+def _area_fact(c, x, armed=()):
+    out = {k: v for k, v in x.items() if k not in ("tl", "line_touch")}
+    out["born_ts"] = _ts(c, x.get("born_bar"))
+    out["armed"] = x["id"] in armed
+    if x.get("line_touch"):
+        rt = x["line_touch"]
+        out["line_touch"] = {**rt, "ts": _ts(c, rt["bar"]), "leg_from_ts": _ts(c, rt["leg_from"])}
+    return out
+
+
+def _line_fact(c, L):
+    ln, rt, d = L["line"], L["reaction_touch"], L["d"]
+    out = {"side": "falling line of swing highs (bear call side)" if d < 0 else "rising line of swing lows (bull put side)",
+           "p1": _bar_pt(c, ln["p1"]), "p2": _bar_pt(c, ln["p2"]), "slope_per_bar": ln["slope"], "touches": ln["touches"],
+           "touch_points": [[_ts(c, b) for b in g] for g in ln["touch_groups"]] if ln.get("touch_groups") else None,
+           "value_at_asof": ln["value_t"],
+           "reaction_touch": None if rt is None else {**rt, "ts": _ts(c, rt["bar"]), "leg_from_ts": _ts(c, rt["leg_from"])},
+           "areas_met": [{k: a.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "confluence_label")} for a in L["areas_met"]]}
+    return out
+
+
+def _areas_method(c):
+    owner = "decision3.levels (the decision's areas + K4 state) via decision3.engine.V22 — method layer 2"
+    m = c.method()
+    t = m["t"]
+    return _ok(owner, asof_bar=_ts(c, t), close=float(c.m15["close"].iloc[t]), trend=m["trend"], armed=m["armed"],
+               areas=[_area_fact(c, x, m["armed"]) for x in sorted(m["areas"], key=lambda x: x["dist"])],
+               note="one base per area, wick to body, never merged or widened; state = K4 (ACTIVE / TESTED / BROKEN / FLIPPED / DEAD); "
+                    "armed = the decision's watch list on the trend side, nearest first (method §4)")
+
+
+def _lines_method(c):
+    owner = "decision3.trendline.swing_line / touch_groups / reaction_touch via decision3.engine.V22 — method layer 4"
+    m = c.method()
+    return _ok(owner, lines=[_line_fact(c, L) for L in m["lines"]], rule=m["V"].s.get("line_rule", "logic"),
+               note="a line = two separate reactions of the structure (D2), no close through it between them; touches counted by "
+                    "reactions (the touch number is information; from the third touch on a trade location while unbroken)")
+
+
+def _confluence_method(c):
+    owner = "decision3.levels.snapshot (Daily / Weekly label) + decision3.trendline.confluence_areas (line label) via V22 — layer 4"
+    m = c.method()
+    items = [{k: x.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "confluence_label")} for x in m["areas"]
+             if x.get("confluence_label")]
+    return _ok(owner, items=items, note="confluence labels the area itself (same band, never a new or narrowed band)")
+
+
+def areas(c):
+    return _areas_validity(c) if c.cfg["display_finder"] == "validity" else _areas_method(c)
+
+
+def lines(c):
+    return _lines_validity(c) if c.cfg["display_finder"] == "validity" else _lines_method(c)
+
+
+def confluence(c):
+    return _confluence_validity(c) if c.cfg["display_finder"] == "validity" else _confluence_method(c)
 
 
 # ------------------------------------------------------------------------------------------------ K11 patterns — patterns2
@@ -457,79 +603,57 @@ def _arrays(c):
     return A, "FUT 15M (volume owner); bars with incomplete FUT 5M children are NA"
 
 
-def _visits(c, s3):
-    """Valid bands (areas section) whose band the 15M bars touch now: the last touch is within decision3 `touch_window_bars` of as_of.
-    arrival = first bar of that touch group (touches ≤ touch_window_bars apart — decision3 engine's own "in / at the area" rule).
-    Reaction side = the band's role (support ⇒ +1, resistance ⇒ −1): a fact about the band, not a trade direction."""
-    al = c.bands_and_lines()
-    H, L = c.m15["high"].to_numpy(float), c.m15["low"].to_numpy(float)
-    w = int(s3["touch_window_bars"])
-    B = FV.bars_of(c.m15)
-    out = []
-    for tf, x in al.items():
-        if x is None:
-            continue
-        start = FV.session_start(B, c.t, int(x["settings"]["lookback_sessions"]))
-        for b in x["bands"]:
-            if not b.get("valid"):
-                continue
-            hits = [i for i in range(start, c.t + 1) if L[i] <= b["hi"] and H[i] >= b["lo"]]
-            if not hits or c.t - hits[-1] > w:
-                continue
-            arm = hits[-1]
-            for i in reversed(hits[:-1]):
-                if arm - i > w:
-                    break
-                arm = i
-            out.append({"tf": tf, "band": b, "arrival_bar": arm, "d": 1 if b["role"] == FV.SUP else -1})
-    return out
+COMMIT_OUT = ("choch", "handover_state", "handover", "handover_present", "absorption", "confirm_lines", "confirm_wait", "commit_present",
+              "commit_why", "study_from", "arm_bar", "visit_start", "visit_start_bar", "visit_prev_end", "choch_vs_arm", "ltf_line",
+              "approach_from", "move_from_bar", "visit_end")
 
 
-def _structure_swings(c, t):
-    """The finest structure degree's swings (swings2, Abhi's approved D1 / D2) confirmed by bar t — the decision engine's own source.
-    Returns (swings, error); an error ⇒ no approach leg (never invented), and the reason is kept."""
-    from swings2 import settings as S2
-    try:
-        res, _, _ = c.swings()
-    except Exception as exc:                                               # noqa: BLE001
-        return [], str(exc)
-    low = min((res.get("settings") or S2.DEFAULTS).get("structure_degrees", S2.DEFAULTS["structure_degrees"]))
-    deg = next((d for d in sorted(res["pivots"]) if d >= low and res["pivots"].get(d)), None)
-    return [p for p in (res["pivots"].get(deg, []) if deg is not None else []) if p.confirm_bar <= t], None
+def _side(d):
+    return "up" if d > 0 else "down"
+
+
+def _study(c, v):
+    """One visit in progress (method §3 Visit by structure) as facts: the area, the arrival, the approach leg, the zone study of the
+    visit's own candles, the handover episode, absorption and the commitment with its volume comparison — the engine's own read."""
+    from decision3 import method as M
+    V, t, x, d, a, cm = c.method()["V"], c.t, v["area"], v["d"], v["arm"], v["commit"]
+    Av = V.vol_view(a, t)[0]
+    hs = cm.get("handover_state") or {}
+    commit = {k: val for k, val in cm.items() if k not in COMMIT_OUT}
+    return {"band_tf": x.get("tf"), "band": [x["lo"], x["hi"]], "area_id": x["id"], "role": x["role"], "state": x.get("state"),
+            "reaction_side": _side(d), "armed": v["armed"], "confluence_label": x.get("confluence_label"),
+            "arrival": {"bar": a, "ts": _ts(c, a)}, "approach_from": cm.get("approach_from"), "visit_prev_end": cm.get("visit_prev_end"),
+            "bars_in_study": t - a + 1, "zone_study": M.zone_study(Av, a, t, d, V.s),
+            "handover": {"present": cm.get("handover_present"), "form": hs.get("form"), "seen_ts": hs.get("seen_ts"),
+                         "cancelled": hs.get("cancelled"), "cancelled_ts": hs.get("cancelled_ts")},
+            "absorption": cm.get("absorption"),
+            "commitment": {"present": bool(cm.get("commit_present")), "reason": GRADE_TXT.sub("", str(cm.get("commit_why") or "")),
+                           "read": M.candle_read(Av, t, V.s, a), **commit}}
 
 
 def candles(c):
-    owner = "decision3.method.candle_read / reversal_form / zone_study / commitment"
+    owner = "decision3.method.candle_read / reversal_form + the visit's zone study / commitment via decision3.engine.V22"
     from decision3 import method as M
     s3 = c.s3()
     A, vsrc = _arrays(c)
     tss = c.m15["timestamp"].to_numpy()
     t = c.t
-    mr = FV.mr_at(FV.bars_of(c.m15), t)
     last = {"ts": str(c.m15["timestamp"].iloc[t]), "open": A["open"][t], "high": A["high"][t], "low": A["low"][t], "close": A["close"][t],
             "read": M.candle_read(A, t, s3)}                                # no visit context ⇒ "big" is None (see each study's own read)
     forms = {}
     for d, name in ((1, "up"), (-1, "down")):
         f = M.reversal_form(A, t, d, s3, tss)
         forms[name] = None if f is None else {"form": f[0], "candles": f[1]}
-    studies = []
-    known, known_err = _structure_swings(c, t)
-    for v in _visits(c, s3):
-        b, d, a = v["band"], v["d"], v["arrival_bar"]
-        lvl = {"lo": b["lo"], "hi": b["hi"]}
-        zs = M.zone_study(A, a, t, d, s3, mr)
-        away = [p.bar for p in known if p.bar < a and ((p.kind == "L" and p.price < b["lo"]) if d < 0 else (p.kind == "H" and p.price > b["hi"]))]
-        appr = range(max(away) + 1, a) if away else None                  # method §3 / Abhi (P2): the leg from the last swing built away
-        present, why, cm = M.commitment(A, t, d, lvl, s3, tss, win=a, approach=appr)   # from the area, across gaps and sessions
-        cm["approach_from"] = None if appr is None else str(c.m15["timestamp"].iloc[appr.start]) if appr.start < a else None
-        if known_err:
-            cm["approach_error"] = f"swings2 unavailable ({known_err})"
-        cm["read"] = M.candle_read(A, t, s3, a)                            # "big" = vs this visit's own candles (method §3)
-        studies.append({"band_tf": v["tf"], "band": [b["lo"], b["hi"]], "role": b["role"], "reaction_side": "up" if d > 0 else "down",
-                        "arrival": {"bar": a, "ts": str(c.m15["timestamp"].iloc[a])}, "bars_in_study": t - a + 1,
-                        "zone_study": zs, "commitment": {"present": bool(present), "reason": GRADE_TXT.sub("", why), **cm}})
-    return _ok(owner, last_bar=last, reversal_form_at_last_bar=forms, area_studies=studies, volume_source=vsrc, **c.stale_facts(),
-               note="area_studies only for valid bands touched within decision3 touch_window_bars of as_of")
+    try:
+        studies, why = [_study(c, v) for v in c.method()["visits"]], None
+    except _Upstream as exc:                                               # the engine failed ⇒ no study, the reason kept (never silent)
+        studies, why = None, str(exc)
+    extra = {} if why is None else {"area_studies_reason": why}
+    return _ok(owner, last_bar=last, reversal_form_at_last_bar=forms, area_studies=studies, volume_source=vsrc, **extra,
+               **c.stale_facts(),
+               note="area_studies = every alive area whose visit (by structure, method §3) is in progress at as_of — the engine's own "
+                    "visit, approach leg, handover episode and commitment (FUT volume as the engine joins it); last_bar reads have no "
+                    "visit context")
 
 
 # ------------------------------------------------------------------------------------------------ K10 volume — opportunity_engine.volume
@@ -607,35 +731,20 @@ def volume(c):
 
 # ------------------------------------------------------------------------------------------------ K1 at LTF — decision3.method.ltf_choch
 def ltf_choch(c):
-    owner = "decision3.method.ltf_choch (c1, close-only CHoCH on 5M)"
-    from decision3 import method as M
-    from swings2 import engine as SE
+    owner = "decision3.method.ltf_choch (c1, close-only CHoCH on 5M) via decision3.engine.V22._confirm"
     if c.f.get("5M") is None:
         return _na(owner, "5M spot bars missing")
-    L = M.ltf_frame(c.f["5M"], 5, "5M")
-    s3 = c.s3()
-    vis = _visits(c, s3)
-    d1_err = None
-    try:
-        res, _, _ = c.swings()
-        d1 = SE.known(res, 1, c.as_of)
-    except _Upstream as exc:
-        d1, d1_err = [], str(exc)
+    m = c.method()
+    t_end = str(c.m15["bar_end"].iloc[c.t])
     out = []
-    t_end = c.m15["bar_end"].iloc[c.t]
-    for v in vis:
-        b, d, a = v["band"], v["d"], v["arrival_bar"]
-        t_start = c.m15["timestamp"].iloc[a]
-        kind = "H" if d > 0 else "L"                                       # the swing the move into the band came from (pullback start)
-        prev = [p for p in d1 if p.kind == kind and p.bar < a]
-        t_ctx = pd.Timestamp(prev[-1].ts) if prev else t_start
-        x = M.ltf_choch(L, d, t_ctx, t_start, t_end, {"lo": b["lo"], "hi": b["hi"]})
-        note = {} if prev else {"context_note": "context falls back to the arrival bar: " + (
-            f"swings2 unavailable ({d1_err})" if d1_err else "no confirmed swings2 D1 swing before the arrival")}
-        out.append({"band_tf": v["tf"], "band": [b["lo"], b["hi"]], "role": b["role"], "reaction_side": "up" if d > 0 else "down",
-                    "context_from": str(t_ctx), "study_from": str(t_start), "study_to": str(t_end), **note, **x})
-    return _ok(owner, visits=out, note="studied only at valid bands touched within decision3 touch_window_bars of as_of; context starts "
-                                       "at the last confirmed swings2 D1 swing before the arrival (else at the arrival)")
+    for v in m["visits"]:
+        x, ch = v["area"], v["commit"].get("choch")
+        body = dict(ch) if ch else {"done": None, "line": "not read: the visit's study stopped earlier (absorption)"}
+        out.append({"band_tf": x.get("tf"), "band": [x["lo"], x["hi"]], "area_id": x["id"], "role": x["role"],
+                    "reaction_side": _side(v["d"]), "context_from": _ts(c, v["ltf_from"]), "study_from": _ts(c, v["arm"]),
+                    "study_to": t_end, **body})
+    return _ok(owner, visits=out, note="read at every visit in progress (method §3, by structure); context from the pullback's impulse "
+                                       "end as the engine reads it (else the arrival)")
 
 
 # ------------------------------------------------------------------------------------------------ K5 liquidity — decision3.liquidity
@@ -702,27 +811,44 @@ def context(c):
 
 
 # ------------------------------------------------------------------------------------------------ K10 RSI divergence — rsi2
+DIV_KEEP = ("degree", "side", "type", "status", "bars", "price_rel", "count", "known_bar")
+
+
+def _div_brief(c, x):
+    out = {k: x.get(k) for k in DIV_KEEP}
+    for p in ("L1", "L2"):
+        out[p] = {k: x[p].get(k) for k in ("time", "price", "rsi")}
+    out["known_ts"] = _ts(c, x.get("known_bar"))
+    return out
+
+
 def divergence(c):
-    owner = "rsi2.engine.RSI.known (pivot-based divergence on swings2 pivots)"
-    from rsi2 import engine as RE
-    lg, _ = c.legs2()
-    _, struct, _ = c.swings()
-    R = RE.RSI(lg, struct)
-    t = c.t
-    known = R.known(t)
-    r15 = R.r15[t]
-    return _ok(owner, rsi15_at_asof=None if not np.isfinite(r15) else float(r15), rsi_warmup=bool(R.warm[t]),
-               known_count=len(known), last=known[-int(c.cfg["divergences_max"]):],
-               note="divergence facts only (pivots, RSI values, known bar); the owner's grade / strength are dropped")
+    owner = "rsi2.engine.Divergence via decision3.engine.V22.rsi_divergence (method layer 5: pushes inside the move into the zone)"
+    m = c.method()
+    V, t = m["V"], m["t"]
+    if getattr(V, "_rsi", None) is None:
+        V.rsi_divergence(t, -1, t)                                          # the engine's own lazy owner (same object the decision reads)
+    if isinstance(V._rsi, str):
+        return _na(owner, "rsi2 Divergence failed — " + V._rsi)
+    r = V._rsi.read(t)
+    hist = [x for x in V._rsi.history(t) if x["type"] == "regular"]
+    at = [{"band_tf": v["area"].get("tf"), "band": [v["area"]["lo"], v["area"]["hi"]], "area_id": v["area"]["id"],
+           "reaction_side": _side(v["d"]), "zone_side": "bear" if v["d"] < 0 else "bull", **v["rsi"]} for v in m["visits"]]
+    return _ok(owner, rsi15_at_asof=r["rsi"], rsi_warmup=r["rsi_warmup"], known_count=len(hist),
+               last=[_div_brief(c, x) for x in hist[-int(c.cfg["divergences_max"]):]],
+               latest=[y["statement"] for y in r["latest"]], at_visits=at,
+               note="method §3: consecutive swings of one degree, a new price extreme vs an RSI that does not exceed its previous extreme "
+                    "(equal counts); at a visit only the pushes inside the move into the zone (the highest degree with two pushes), the "
+                    "zone's own degree reported too — evidence, never a trigger")
 
 
 OWNERS = {"structure": structure, "legs": legs, "areas": areas, "lines": lines, "confluence": confluence, "patterns": patterns,
           "candles": candles, "volume": volume, "ltf_choch": ltf_choch, "liquidity": liquidity, "gaps": gaps, "context": context,
           "divergence": divergence}
-OWNER_NAMES = {"structure": "swings2 (+ pivots)", "legs": "reader2", "areas": "decision3.levels", "lines": "trendlines2.two_touch",
-               "confluence": "facts.validity", "patterns": "patterns2", "candles": "decision3.method", "volume": "opportunity_engine.volume",
-               "ltf_choch": "decision3.method.ltf_choch", "liquidity": "decision3.liquidity", "gaps": "vision.gap_context",
-               "context": "vision.context", "divergence": "rsi2"}
+OWNER_NAMES = {"structure": "swings2 (+ pivots)", "legs": "reader2", "areas": "decision3.levels", "lines": "decision3.trendline",
+               "confluence": "decision3.levels + decision3.trendline", "patterns": "patterns2", "candles": "decision3.method",
+               "volume": "opportunity_engine.volume", "ltf_choch": "decision3.method.ltf_choch", "liquidity": "decision3.liquidity",
+               "gaps": "vision.gap_context", "context": "vision.context", "divergence": "rsi2.engine.Divergence"}
 
 
 # ------------------------------------------------------------------------------------------------ the dossier
@@ -735,6 +861,8 @@ def build_dossier(symbol, bars_by_tf, fut_bars_by_tf=None, as_of=None, cfg=None)
     Returns {"schema", "symbol", "as_of", "inputs", "sections": {name: {"status": OK | NA, "owner", ...facts | "reason"}}}.
     Every input frame (spot all TFs + FUT) is checked against the sealed holdout for `symbol` first (HoldoutError, never NA)."""
     cfg = {**DEFAULTS, **(cfg or {})}
+    if cfg["display_finder"] not in DISPLAY_FINDERS:                       # a typo never silently picks a finder
+        raise ValueError(f"build_dossier: display_finder {cfg['display_finder']!r} — allowed: {', '.join(DISPLAY_FINDERS)}")
     bars_by_tf = bars_by_tf or {}
     fut_bars_by_tf = fut_bars_by_tf or {}
     guard_inputs(symbol, bars_by_tf, fut_bars_by_tf)
