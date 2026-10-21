@@ -193,9 +193,10 @@ def test_setup_chart_panes_no_future_and_one_caption_line(with_volume):
     assert vs["n"] == vs["commit"] + 1                                     # pane setup bar वर संपतो
     if with_volume:
         assert np.nanmax(vs["vol"]) < 1e6 and np.nanmax(res["ltf_vol"]["vol"]) < 1e6   # setup bar नंतरचा (1e9) volume कधीच नाही
-        assert vs["ok"] and vs["commit"] == vs["n"] - 1 and vs["arm"] == vs["n"] - 5
+        # layer 6b: the review chart speaks the method — no engine numbers in this record ⇒ bars only, never a chart-side average
+        assert not vs["ok"] and vs["commit"] == vs["n"] - 1 and vs["arm"] == vs["n"] - 5 and res["vline"] == VP.METHOD_BARS_LINE
     else:
-        assert res["vline"] == VP.NA_LINE
+        assert res["vline"] == VP.METHOD_NA_LINE
     D, r = _setup_data(False, with_volume)
     _, cap = SC.caption(D, r, res["st"], res["short"], res["longst"], vline=res["vline"], vst=vs)
     assert sum(1 for x in cap.splitlines() if x.startswith("volume")) == 1
@@ -336,3 +337,26 @@ def test_engine_caption_names_the_average_it_was_compared_with():
     legacy = {**st, "vol_vs": "opposite-side candles"}
     assert "the strongest opposite-side candle" in VP.line(legacy) and "the strongest opposite-side candle" in VP.commit_label(legacy)
 
+
+def test_volume_words_legacy_default_and_method():
+    """Layer 6b: `words` — "legacy" (default; the live Vision card's setting `vision_volume_words`) = today's text byte-for-byte;
+    "method" = FUT missing is a data problem, nothing to compare = no commitment, no chart-side average; engine numbers are shown in
+    both (the method's own comparison)."""
+    bars = pd.DataFrame({"timestamp": pd.date_range("2030-01-02 09:15", periods=6, freq="15min"), "open": [10, 9, 8, 7, 6, 7.0],
+                         "high": [10.5, 9.5, 8.5, 7.5, 6.5, 8.0], "low": [8.8, 7.8, 6.8, 5.8, 5.5, 6.0], "close": [9, 8, 7, 6, 6.2, 7.9]})
+    vol = np.array([100.0, 120, 90, 80, 70, 200])
+    leg = VP.study(bars, vol=vol, area=(5.5, 6.5), d=1)
+    assert leg["line"].startswith("volume (chart est.)") and leg["ok"]
+    assert VP.study(bars, vol=vol, area=(5.5, 6.5), d=1, words="junk")["line"] == leg["line"]
+    met = VP.study(bars, vol=vol, area=(5.5, 6.5), d=1, words="method")
+    assert met["line"] == VP.METHOD_BARS_LINE and not met["ok"]
+    assert VP.study(bars, vol=np.full(6, np.nan), area=(5.5, 6.5), d=1)["line"] == VP.NA_LINE
+    assert VP.study(bars, vol=np.full(6, np.nan), area=(5.5, 6.5), d=1, words="method")["line"] == VP.METHOD_NA_LINE
+    info = {"commit": {"vol_mult": 1.8, "vol_vs": "the average of the approach leg and the visit's opposite side"}}
+    e1 = VP.study(bars, vol=vol, info=info, area=(5.5, 6.5), d=1, commit=5, words="method")
+    e0 = VP.study(bars, vol=vol, info=info, area=(5.5, 6.5), d=1, commit=5)
+    assert e1["ok"] and e1["line"] == "volume: commitment 1.8× the average of the approach leg and the visit's opposite side"
+    assert e0["line"].startswith("volume: counter-side candles") and "the average of the approach leg" in e0["line"]   # legacy text
+    noopp = {"commit": {"vol_mult": None, "vol_na": False}}
+    assert VP.study(bars, vol=vol, info=noopp, d=1, commit=5)["line"] == VP.NO_OPP_LINE
+    assert VP.study(bars, vol=vol, info=noopp, d=1, commit=5, words="method")["line"] == VP.METHOD_NO_OPP_LINE

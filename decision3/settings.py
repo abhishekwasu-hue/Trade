@@ -253,6 +253,36 @@ REGISTER = {
     "max_attempts": (3, "—", "Abhi नियम", "spec §5.1 H4 / L4 ⇒ trade नाही"),
 }
 
+# Layer 6b — OUTPUT (display) settings: what the live Vision card / Telegram / pre-open TEXT shows, never a reading or an entry. Each
+# default = today's output byte-for-byte; the live-switch track wires them to the dashboard (bot settings, the same key) and Abhi flips
+# them. {key: (default, options, where it is read)}. The facts dossier's own `display_finder` (facts/dossier.py, not wired live) is listed
+# in REGISTER for completeness.
+OUTPUT = {
+    "approval_band_warn_rule": ("points", ("points", "method"),
+                                "bots_common.plain_text.band_flag / band_wide_words ⇐ vision.approval (ticket), vision.worker (caption), "
+                                "paper.engine_entry (gate tags), scripts.level_gate_preopen (pre-open), scripts.paper_daily_summary (15:45)"),
+    "vision_chart_band_finder": ("validity", ("validity", "method"),
+                                 "vision.chart.render (only with vision_chart_bands ON) + vision.signal_audit chart note; vision/config.py"),
+    "vision_volume_words": ("legacy", ("legacy", "method"),
+                            "decision3.volume_pane.study ⇐ vision.chart (Vision card volume pane + volume line); vision/config.py"),
+}
+REGISTER.update({
+    "approval_band_warn_rule": ("points", "points / method", "setting",
+                                "layer 6b display (C-18): points = today's '⚠️ merged band — check' over approval_band_warn_pts; method = an "
+                                "engine area is one base, never merged (#329, Z-1u) ⇒ width as a fact, no line; other sources keep points"),
+    "approval_band_warn_pts": (150, "pts (display only)", "setting",
+                               "C-18 display alert (cloud_db default 150); read only under approval_band_warn_rule = points / non-engine bands"),
+    "vision_chart_band_finder": ("validity", "validity / method", "setting",
+                                 "layer 6b display: with vision_chart_bands ON, validity = the R1a band finder (today); method = the "
+                                 "decision's own areas (engine gate tags: one base, K4 state, confluence label)"),
+    "vision_volume_words": ("legacy", "legacy / method", "setting",
+                            "layer 6b display: legacy = 'volume: NA (grade cap B)' + chart window average (today); method = FUT missing "
+                            "= data problem (no entry), nothing to compare = no commitment, no chart-side average"),
+    "display_finder": ("method", "method / validity (legacy R1a)", "setting",
+                                       "facts/dossier.py DEFAULTS (dossier config, not a V22 setting) — layer 6b: the Vision facts dossier reads the "
+                                       "decision's own areas / lines / visits; validity = the R1a facts.validity finder (golden only); not live"),
+})
+
 TRENDS = ("UP", "DOWN", "RANGE", "NEUTRAL", "UNKNOWN")
 
 

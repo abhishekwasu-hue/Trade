@@ -70,6 +70,11 @@ BOT_DEFAULTS = {
     "gap_max_age_sessions": 10,            # जुने unfilled gaps किती sessions पर्यंत
     "vision_chart_bands": False,           # (R1, TA4) ON ⇒ approval chart वर M1/M2 एकच-किंमत रेषांऐवजी shared band check चे पट्टे + signal text
                                            # मध्ये त्यांचा legend / किंमती. OFF (default) ⇒ image आधीसारखीच. Abhi ने चालू करायचं (OPEN_QUESTIONS R1a-13)
+    # Layer 6b (Abhi's method; decision3/settings.py OUTPUT) — display only, default = today's card byte-for-byte:
+    "vision_chart_band_finder": "validity",  # vision_chart_bands ON ⇒ which bands: "validity" = the R1a finder (today); "method" = the
+                                           # decision's own areas (engine gate tags: one base, wick to body, K4 state, confluence label)
+    "vision_volume_words": "legacy",       # volume pane text: "legacy" = today ("volume: NA (grade cap B)", chart window average);
+                                           # "method" = FUT missing = data problem, no chart-side average (the method's comparison only)
 }
 BOT_OVERRIDES = {"manual": {"vision_wait_for_bar_close": False,      # manual signal ला bar बंद होण्याची वाट नाही
                             "shadow_cooldown_min": 0}}               # नाकारल्यानंतर नवी /paper आज्ञा लगेच चालते
@@ -78,7 +83,7 @@ RULE_IDS = {"v2_disagree_rules": ("breakout", "reversal_invalid", "weak_level", 
             "v2_gray_rules": ("unclear", "correction_incomplete", "tight_room", "middle_close", "impulse_running", "gap_undecided_early",
                               "line_conflict", "event_day", "gap_c_alone")}
 CTX_KEYS = ("line_lookback_sessions", "inv_buffer_mr", "gap_g0_atr", "gap_large_atr", "gap_stretch_atr", "gap_max_age_sessions",
-            "vision_chart_bands")
+            "vision_chart_bands", "vision_chart_band_finder", "vision_volume_words")
 GLOBAL_DEFAULTS = {
     "vision_daily_budget_usd": 2.0,         # Abhi: दैनिक Vision cap $2.00 (hard stop तसाच; बाकी मर्यादा बदल नाही)
     "vision_monthly_budget_usd": 60.0,      # Abhi: मासिक $60 ($2/दिवस शी सुसंगत). Dashboard / DB मधली value code default वर मात करते
@@ -97,6 +102,7 @@ ENUMS = {
     "vision_mode": MODES, "vision_gray_action": ("half", "skip", "ignore"), "vision_disagree_action": ("skip", "half", "ignore"),
     "vision_fail_action": ("ignore", "skip"), "timeout_action": ("auto_veto", "skip"), "level_gate": ("off", "skip_mid_range"),
     "manual_profile": MANUAL_PROFILES, "vision_v4_audit": ("off", "v4"),
+    "vision_chart_band_finder": ("validity", "method"), "vision_volume_words": ("legacy", "method"),   # layer 6b (display)
 }
 RANGES = {"approve_window_min": (1, 60), "max_drift_mr": (0.05, 5.0), "vision_timeout_sec": (5, 120), "second_audit_below_conf": (0.0, 1.0),
           "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240),

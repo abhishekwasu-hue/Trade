@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
+from . import flip as FL  # noqa: E402
 from . import levels as LV  # noqa: E402
 from . import settings as S3  # noqa: E402
 from . import method as M  # noqa: E402
@@ -154,11 +155,64 @@ def band_view(lv, t, shown, act, debug=False):
     return out
 
 
-def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None, debug=False):
-    """1H: candles of the last `sessions` sessions (up to t), the level bands that pass the shared band check (TA1 / TA4: ≤ 3 above and
-    ≤ 3 below price, the most recent broken one dashed, the active level always; label: role, price, touch count) and the highlighted
-    trigger candle - nothing else. debug=True: all nearby levels (births, sweeps, tests, band-check reasons), D2 swings and liquidity
-    marks."""
+MAX_BANDS_PER_SIDE = 3                                                     # P8 / TA4 display: ≤ 3 areas above and ≤ 3 below price
+
+
+def method_band_view(lv, t, shown, act, debug=False):
+    """Layer 6b (Abhi's method, P8): the areas the 1H chart draws are the DECISION's own (`Levels.snapshot`: one base, wick to body, K4
+    state) — nothing re-checked by a display finder. Every armed area (the decision's watch list) is drawn; of the others the nearest
+    ≤ 3 above and ≤ 3 below price that are trade locations (not BROKEN), plus the most recently broken one (dashed). Returns
+    [(area, style)] with style "armed" / "area" / "broken". debug=True: every area shown (style "debug")."""
+    if debug:
+        return [(x, "debug") for x in shown]
+    out, seen = [], set()
+    for x in shown:
+        if x["id"] in act:
+            out.append((x, "armed"))
+            seen.add(x["id"])
+    rest = [x for x in shown if x["id"] not in seen and x.get("trade_location", True)]
+    live = [x for x in rest if x.get("state") != FL.BROKEN]
+    for side in ("above", "below"):
+        for x in sorted((x for x in live if x.get(side)), key=lambda x: x["dist"])[:MAX_BANDS_PER_SIDE]:
+            out.append((x, "area"))
+    inside = [x for x in live if not x.get("above") and not x.get("below")]
+    out += [(x, "area") for x in inside]
+    broken = sorted((x for x in rest if x.get("state") == FL.BROKEN), key=lambda x: x.get("broken_at") or -1)
+    if broken:
+        out.append((broken[-1], "broken"))
+    return out
+
+
+def area_label(x, armed=False):
+    """Chart label (English) of an area as the method reads it: role, low-high, K4 state, tests / sweeps, confluence (+ line touch N)."""
+    role = {"resistance": "supply", "support": "demand"}.get(x.get("role"), "area")
+    bits = [str(x.get("state") or "ACTIVE").lower()]
+    if x.get("tests"):
+        bits.append(f"{x['tests']} test" + ("s" if x["tests"] > 1 else ""))
+    if x.get("sweeps"):
+        bits.append("swept")
+    return f"{'> ' if armed else ''}{LV.tf_word(x)} {role} {x['lo']:,.0f}-{x['hi']:,.0f} ({', '.join(bits)}{LV.level_tags(x)})"
+
+
+def _trend_line(lv, t, trend):
+    """Layer 4 line on the trend side (`trendline.swing_line`: two separate reactions of the structure, touches by reactions) and its
+    reaction touch (`reaction_touch`: touch N) — the line the decision labels areas with. None when there is none."""
+    from types import SimpleNamespace
+    from . import trendline as TL
+    if trend not in ("UP", "DOWN"):
+        return None, None
+    V = SimpleNamespace(levels=lv, s=lv.s)
+    d = TL.UP if trend == "UP" else TL.DOWN
+    ln = TL.swing_line(V, t, d)
+    return (ln, TL.reaction_touch(V, t, d, ln)) if ln is not None else (None, None)
+
+
+def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None, debug=False, finder="method"):
+    """1H: candles of the last `sessions` sessions (up to t), the areas and the highlighted trigger candle. finder "method" (default,
+    layer 6b): the decision's own areas with their K4 state (`method_band_view`) and the trend-side line with its touch number — nothing
+    the method does not read. finder "validity" (legacy, R1a): the level bands that pass the shared band check (TA1 / TA4: ≤ 3 above
+    and ≤ 3 below price, the most recent broken one dashed, the active level always; label: role, price, touch count). debug=True: all
+    nearby levels (births, sweeps, tests, band-check reasons), D2 swings and liquidity marks."""
     h1, h1_of = lv.h1, lv.h1_of
     j_end = int(h1_of[t])
     days = pd.to_datetime(h1["timestamp"]).dt.normalize()
@@ -173,7 +227,13 @@ def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None,
     lim = (max_sigma or float(lv.s["show_distance_sigma"])) * (sg if np.isfinite(sg) else np.inf)
     act = {x["id"] for x in lv.active(t, trend, band)}                    # Q27: engine ② सारखाच पट्टा
     shown = [x for x in lv.snapshot(t) if x["dist"] <= lim or x["id"] in act]   # दूरची levels chart वर लपवा (snapshot मध्ये आहेत)
-    view = band_view(lv, t, shown, act, debug) if shown else []
+    if finder == "method":
+        _h1_method(ax, lv, t, trend, frame, j0, shown, act, debug)
+        view = []
+    elif finder == "validity":
+        view = band_view(lv, t, shown, act, debug) if shown else []
+    else:
+        raise ValueError(f"h1_png: finder {finder!r} — method / validity")
     for x, f, style in view:
         col = "#2f9e44" if x["role"] == LV.SUP else "#e03131"
         if style == "broken":
@@ -204,37 +264,68 @@ def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None,
     return _png(fig)
 
 
+def _h1_method(ax, lv, t, trend, frame, j0, shown, act, debug):
+    """Layer 6b drawing of the 1H chart: the decision's areas (state, armed) and the trend-side line with its touches / touch N."""
+    for x, style in method_band_view(lv, t, shown, act, debug):
+        col = "#2f9e44" if x["role"] == LV.SUP else "#e03131"
+        if style == "broken":
+            ax.axhspan(x["lo"], x["hi"], facecolor="none", edgecolor="#868e96", ls="--", lw=1.0)
+        else:
+            ax.axhspan(x["lo"], x["hi"], color=col, alpha=0.30 if style == "armed" else 0.10, lw=0)
+        lab = area_label(x, style == "armed")
+        if debug:
+            lab += f" [births {'+'.join(x['births'])}]"
+        ax.text(len(frame) - 0.5, (x["lo"] + x["hi"]) / 2, " " + lab, fontsize=7, color="#868e96" if style == "broken" else col,
+                va="center")
+    ln, rt = _trend_line(lv, t, trend)
+    if ln is None:
+        return
+    (b1, y1), sl = ln["p1"], ln["slope"]
+    xs = [b for b in (b1, t)]
+    jx = [int(lv.h1_of[b]) - j0 for b in xs]
+    ys = [y1 + sl * (b - b1) for b in xs]
+    if jx[0] < 0:                                                          # starts before the window: clip at the first bar shown
+        b0 = next((b for b in range(b1, t + 1) if int(lv.h1_of[b]) >= j0), t)
+        jx[0], ys[0] = 0, y1 + sl * (b0 - b1)
+    ax.plot(jx, ys, color="#7048e8", lw=1.1, ls="-.")
+    for g in ln.get("touch_groups") or [[ln["p1"][0]], [ln["p2"][0]]]:     # touches by reactions (Abhi L4-g)
+        j = int(lv.h1_of[g[0]]) - j0
+        if 0 <= j < len(frame):
+            ax.plot(j, y1 + sl * (g[0] - b1), marker="o", ms=5, mfc="none", mec="#7048e8")
+    lab = f" line ({ln['touches']} touches)"
+    if rt is not None:
+        lab += f"; reaction turn = touch {rt['touch_no']}" + (" (trade location)" if rt["trade_location"] else "")
+    ax.text(len(frame) - 0.5, ys[-1], lab, color="#7048e8", fontsize=7, va="top")
+
+
 def story(r):
-    """§6.5 वाचन: 3–5 ओळींची कथा (Telegram / Vision caption)."""
+    """Layer 6b (method §5): the story in the method's order (Telegram review caption, 3–6 lines) — the trend; the area and its state;
+    how price arrived (the visit, the approach leg); what happened inside (handover); the commitment and its volume comparison; the
+    LTF change; the RSI view. No scores, no ④ counts."""
+    from .setup_chart import rsi_words
     tr = {"UP": "Daily ↑: खरेदीदार नियंत्रणात", "DOWN": "Daily ↓: विक्रेते नियंत्रणात", "RANGE": "Daily range: कडांवरच",
           "NEUTRAL": "Daily neutral: trade नाही", "UNKNOWN": "Daily data अपुरा"}[r["daily_trend"]]
     lines = [tr + (f" (protected {r['protected']['price']:,.0f})" if r.get("protected") else "")]
     lv = r.get("level")
-    if lv:
-        lines.append(f"1H: pullback {lv['role']} {lv['lo']:,.0f}–{lv['hi']:,.0f} ({'+'.join(lv['births'])}) {'★' * lv['sweeps']} कडे")
-    k = r.get("K")
-    if k and k.get("open"):
-        ev = r.get("evidence") or {}
-        bits = [f"pullback चे {k['legs']} पाय"]
-        if ev.get("power_shift"):
-            bits.append("counter जोर संपतोय")
-        if ev.get("tl_break"):
-            bits.append("K ची रेघ close ने तुटली")
-        if ev.get("trap_sweep"):
-            bits.append("sweep होऊन परत ⇒ अडकलेले traders")
-        lines.append("15M: " + ", ".join(bits))
-    lq = r.get("liquidity") or {}
-    if lq.get("sweeps"):
-        x = lq["sweeps"][0]
-        who = "buyers" if x["side"] == "buy" else "sellers"
-        lines.append(f"liquidity: {x['src']} {x['price']:,.0f} ⚡ sweep ⇒ {who} अडकले")
-    c = r["checklist"]
-    lines.append(f"Commitment: {c['⑥'][1]}")
-    if r.get("risk"):
-        rk = r["risk"]
-        lines.append(f"Conviction {r.get('conviction')} · entry {rk['entry']:,.0f} · SL {rk['sl']:,.0f} · target {rk['target'] or 0:,.0f} · R:R {rk['rr']}")
-    elif r.get("why"):
-        lines.append(r["why"])
+    if not lv:
+        lines.append(r.get("why") or "trade-बाजूचा area नाही")
+        return "\n".join(lines)
+    st = str(lv.get("state") or "ACTIVE").lower()
+    lines.append(f"1H area: {lv['role']} {lv['lo']:,.0f}–{lv['hi']:,.0f} ({st}" + (f"; {lv['confluence_label']}" if lv.get("confluence_label")
+                                                                                  else "") + ")")
+    cm = r.get("commit") or {}
+    if cm.get("visit_start"):
+        hs = cm.get("handover_state") or {}
+        lines.append(f"visit {str(cm['visit_start'])[:16]} पासून (approach leg {str(cm.get('approach_from') or '-')[:16]} पासून); handover "
+                     + ("✔" + (f" ({hs['form']})" if hs.get("form") else "") if cm.get("handover_present") else "✘")
+                     + (" · absorption" if cm.get("absorption") else ""))
+    if cm.get("form"):
+        vol = ("volume NA (data problem)" if cm.get("vol_na") else f"volume > {cm['vol_vs']}" if cm.get("vol_vs") else "volume: —")
+        lines.append(f"commitment: {cm['form']} · {vol}")
+    ch = cm.get("choch") or {}
+    if ch.get("line"):
+        lines.append(ch["line"])
+    lines.append(rsi_words(r))
     return "\n".join(lines[:6])
 
 
@@ -291,7 +382,8 @@ def m15_png(V, t, title, bars=60, r=None, debug=False, vol=None, symbol=None):
     vv = (np.asarray(vol, dtype=float)[i0:t + 1] if vol is not None else _col(m, "volume", symbol or title))
     lv = (r or {}).get("level") or {}
     VP.draw_mpl(axv, VP.study(m, vol=vv, info=r, commit=len(m) - 1, symbol=symbol or title,
-                              area=(lv["lo"], lv["hi"]) if lv.get("lo") is not None else None, d=lv.get("role")))
+                              area=(lv["lo"], lv["hi"]) if lv.get("lo") is not None else None, d=lv.get("role"),
+                              words="method"))                            # layer 6b: review chart = the method's words
     _xticks(axv, m["timestamp"].to_numpy(), max(1, len(m) // 12))
     return _png(fig)
 

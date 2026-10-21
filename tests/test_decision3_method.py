@@ -368,13 +368,13 @@ def test_review_charts_default_at_most_six_level_bands(monkeypatch):
                      "reasons": [] if int(x["id"][1:]) % 2 == 0 else ["lt2_reaction_touches"], "touch_count": 2, "touches": [{"bar": 1}],
                      "established": False, "last_break_bar": None}) for x in items]
     monkeypatch.setattr(LVM, "check_bands", fake_check)
-    CH.h1_png(V.levels, t, r["daily_trend"], "NIFTY", max_sigma=1e9)
+    CH.h1_png(V.levels, t, r["daily_trend"], "NIFTY", max_sigma=1e9, finder="validity")   # the R1a legacy view (layer 6b: method)
     drawn = {round(a[0], 2) for a in spans}
     assert drawn == {round(x["lo"], 2) for x in lv if int(x["id"][1:]) % 2 == 0}      # 5 valid (3 below + 2 above), invalid hidden
     assert len(spans) <= CH.MAX_LEVEL_BANDS
     assert sum(1 for a in spans if a[0] > c) <= 3 and sum(1 for a in spans if a[1] < c) <= 3
     spans.clear()
-    CH.h1_png(V.levels, t, r["daily_trend"], "NIFTY", max_sigma=1e9, debug=True)
+    CH.h1_png(V.levels, t, r["daily_trend"], "NIFTY", max_sigma=1e9, debug=True, finder="validity")
     assert len(spans) == 10
 
 
@@ -412,8 +412,37 @@ def test_review_charts_real_band_check_no_stub(monkeypatch):
     spans = []
     orig = matplotlib.axes.Axes.axhspan
     monkeypatch.setattr(matplotlib.axes.Axes, "axhspan", lambda self, *a, **k: spans.append(a) or orig(self, *a, **k))
-    CH.h1_png(lv, t, r["daily_trend"], "NIFTY", max_sigma=1e9)
+    CH.h1_png(lv, t, r["daily_trend"], "NIFTY", max_sigma=1e9, finder="validity")
     assert len(spans) == len(view)
+
+
+def test_review_1h_chart_draws_the_decisions_areas_layer_6b(monkeypatch):
+    """Layer 6b (method P8 / §5): the 1H review chart draws the decision's own areas with their K4 state — every armed area, of the
+    rest ≤ 3 above / ≤ 3 below price and the most recently broken one — and no display band check is called."""
+    import matplotlib.axes
+    from decision3 import charts as CH
+    from decision3 import engine as E3
+    from decision3 import levels as LVM
+    V = E3.V22(_abc_m15(), s=NO_MATURE)
+    rows = V.run()
+    r = next(x for x in rows if x["decision"] == "setup")
+    t = r["bar"]
+    lv = V.levels
+    act = {x["id"] for x in lv.active(t, r["daily_trend"], None)}
+    shown = list(lv.snapshot(t))
+    view = CH.method_band_view(lv, t, shown, act)
+    assert {x["id"] for x, st in view if st == "armed"} == act
+    others = [x for x, st in view if st == "area"]
+    assert sum(1 for x in others if x["above"]) <= 3 and sum(1 for x in others if x["below"]) <= 3
+    assert sum(1 for _, st in view if st == "broken") <= 1
+    monkeypatch.setattr(LVM, "check_bands", lambda *a, **k: (_ for _ in ()).throw(AssertionError("display band check called")))
+    spans = []
+    orig = matplotlib.axes.Axes.axhspan
+    monkeypatch.setattr(matplotlib.axes.Axes, "axhspan", lambda self, *a, **k: spans.append(a) or orig(self, *a, **k))
+    png = CH.h1_png(lv, t, r["daily_trend"], "NIFTY", max_sigma=1e9)
+    assert png[:4] == b"\x89PNG" and len(spans) == len(view)
+    lab = CH.area_label({**shown[0], "state": "FLIPPED", "tests": 2, "sweeps": 1}, armed=True)
+    assert lab.startswith("> ") and "flipped, 2 tests, swept" in lab
 
 
 def test_mature_cap_in_pipeline():

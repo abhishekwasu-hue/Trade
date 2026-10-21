@@ -371,18 +371,20 @@ def test_protected_inside_sharp_zone_is_one_band_one_label(mirror):
 
 
 def test_target_merges_into_any_live_hit():
-    """Target between a broken band (first hit) and a live one ⇒ joins the live one, not a separate target band."""
+    """Layer 6b (C-13 display): a target inside a live band's own area (its swing candle, wick to body — no ± σ fraction) joins that
+    band; a target outside every area is its own price line (lo = hi), never widened into a band."""
     v = _synthetic_levels_v()
-    base = DS.level_bands(v)
-    b80 = next(b for b in base if b["price"] == 80.0)
-    h = (b80["hi"] - b80["lo"]) / 2
-    v["q15"]["objects"]["corrections"].append({"state": "done", "start_bar": 39, "start_price": 125.0, "end_bar": 41,
-                                               "end_price": 80.0 + 3 * h})
-    v["q15"]["targets"] = [80.0 + 1.5 * h]
+    base = DS.level_bands(v, limit=None)
+    live = next(b for b in base if b["state"] != "broken" and b["hi"] > b["lo"] and b["role"] != "target")
+    v["q15"]["targets"] = [(live["lo"] + live["hi"]) / 2]
     out = DS.level_bands(v, limit=None)
-    live = next(b for b in out if abs(b["price"] - round(80.0 + 3 * h, 2)) < 1e-6)
-    assert live["state"] != "broken" and "target" in live["also"] and not any(b["role"] == "target" for b in out)
-    assert not next(b for b in out if b["price"] == 80.0)["also"]
+    got = next(b for b in out if b["price"] == live["price"] and b["label"] == live["label"])
+    assert "target" in got["also"] and not any(b["role"] == "target" for b in out)
+    far = max(b["hi"] for b in base) + 1000.0
+    v["q15"]["targets"] = [far]
+    out = DS.level_bands(v, limit=None)
+    tg = [b for b in out if b["role"] == "target"]
+    assert len(tg) == 1 and tg[0]["lo"] == tg[0]["hi"] == far
 
 
 # ------------------------------------------------------------------------------------------------ Abhi review: wave letters

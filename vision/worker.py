@@ -215,7 +215,8 @@ def band_flag_line(row):
     try:
         g = _row_tags(row).get("gate") or {}
         area = [x for x in (g.get("area") or [])[:2] if x is not None]
-        return PT.band_flag(*area, g.get("band_warn_pts")) if len(area) == 2 else ""
+        return PT.band_flag(*area, g.get("band_warn_pts"), g.get("band_warn_rule"),        # layer 6b: approval_band_warn_rule
+                            engine_area=g.get("mode") == "engine") if len(area) == 2 else ""   # (default points = today)
     except Exception:                                                    # noqa: BLE001 — फक्त माहिती, caption कधीच अडत नाही
         return ""
 

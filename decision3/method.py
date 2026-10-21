@@ -967,7 +967,7 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None, h
         (f" · two-candle reversal: {hs['sharp']['why']}" if (hs.get("sharp") or {}).get("why") and not hs.get("present") else "")
     push = [int(hs["seen_at"]) - 1] if hs.get("form") == "sharp_reversal" and hs.get("seen_at") is not None else []   # the rejected push
     ok, why, cm = commitment(A, t, d, lvl, s, tss, win=arm, approach=approach, exclude=push)
-    out.update(commit=cm, c0=bool(ok), why=why, study=zp)
+    out.update(commit=cm, c0=bool(ok), why=why, study=zp, commit_why=why)   # commit_why: the commitment's own reason (facts / display)
     if callable(ltf) and (not ok or no_ho):                                # lazy LTF (bots): commitment / handover नाही ⇒ LTF fetch नाही
         out.update(wait=C_NO_HANDOVER, why=ho_why) if no_ho else out.update(wait=cm.get("wait") or C_COMMIT)
         return out
