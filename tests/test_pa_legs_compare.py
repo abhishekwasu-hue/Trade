@@ -133,3 +133,27 @@ def test_legs_no_look_ahead(V):
     V2 = E3.V22(cut, ltf=_ltf(cut))
     a, b = LC.read_legs_compare(V, t, tfs=("1H", "15M", "5M")), LC.read_legs_compare(V2, t, tfs=("1H", "15M", "5M"))
     assert a == b
+
+
+def test_fut_volume_path_15m_and_1h():
+    """With FUT volume (levels.A volume_raw): the 15M / 1H legs read volume per bar; a 15M bar without volume makes the 1H candle
+    and the leg holding it NA (never under-counted)."""
+    from decision3 import engine as E3
+    from tests.test_pa_mtf_state import _ltf, _m15, synthetic_closes
+    m = _m15(synthetic_closes())
+    W = E3.V22(m, ltf=_ltf(m))
+    c = m["close"].to_numpy(float)
+    vol = np.where(np.r_[0.0, np.diff(c)] > 0, 300.0, 100.0)               # up bars heavier
+    vol[len(vol) - 5] = np.nan                                             # inside the last closed 1H candle
+    W.levels.A["volume_raw"] = vol
+    t = len(m) - 1
+    r = LC.read_legs_compare(W, t, tfs=("15M", "1H"))
+    for tf in ("15M", "1H"):
+        x = r["tfs"][tf]
+        assert x["volume"].startswith("FUT"), tf
+        done = [g for g in x["legs"] if g["complete"]]
+        assert all(g["measures"]["volume"] in (LC.IMPULSE, LC.CORRECTION, "between") for g in done), tf
+        run = x["legs"][-1]
+        assert not run["complete"] and run["facts"]["volume"] is None and run["measures"]["volume"] is None
+    up = [g for g in r["tfs"]["15M"]["legs"] if g["complete"] and g["dir"] == "up"]
+    assert up and all(g["measures"]["volume"] == LC.IMPULSE for g in up)

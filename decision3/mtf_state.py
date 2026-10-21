@@ -321,7 +321,7 @@ def h1_view(V):
         vol = None
         if vr is not None:
             s = pd.Series(np.where(np.isfinite(vr) & (vr > 0), vr, np.nan)).groupby(h1_of)
-            vol = s.sum(min_count=1).to_numpy(float)
+            vol = s.sum(min_count=1).to_numpy(float).copy()
             vol[s.apply(lambda x: x.isna().any()).to_numpy()] = np.nan    # a 1H bar with a missing FUT child ⇒ NA (never under-counted)
         t1 = pd.to_datetime(h1["timestamp"])
         need = np.minimum((t1 + pd.Timedelta(hours=1)).to_numpy(), (t1.dt.normalize() + pd.Timedelta(hours=15, minutes=30)).to_numpy())
