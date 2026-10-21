@@ -309,6 +309,14 @@ REGISTER.update({
                                        "decision's own areas / lines / visits; validity = the R1a facts.validity finder (golden only); not live"),
 })
 
+# PA standard §2F.3 (track T2, decision3/confluence_pa.py) — Fibonacci retracement as a CONFLUENCE LABEL only (Abhi's rule, KB K7). The
+# ratios are the tool's definition (a declared exception to "no fixed numbers in the reading"): a level is reported only where it lands
+# on an area / resting liquidity, never alone, never a gate or a score. Evidence only — no decision reads it.
+DEFAULTS["pa_fib_ratios"] = (0.382, 0.5, 0.618, 0.786)
+REGISTER["pa_fib_ratios"] = ((0.382, 0.5, 0.618, 0.786), "KB K7 set", "व्याख्या",
+                             "Abhi rule K7 (declared exception): Fibonacci retracement only as a confluence label where a level lands on "
+                             "an area / resting liquidity; never alone, never a gate (decision3/confluence_pa.fib_on_areas)")
+
 TRENDS = ("UP", "DOWN", "RANGE", "NEUTRAL", "UNKNOWN")
 
 
