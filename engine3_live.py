@@ -752,7 +752,7 @@ def reader_facts(r):
 
 
 PAYLOAD_MAX = 20000
-_PAYLOAD_DROP = ("reader", "checklist", "zone_read", "watch_list", "flip_context", "trend_notes", "level", "risk")   # bulky first; never data_problem
+_PAYLOAD_DROP = ("checklist", "zone_read", "watch_list", "flip_context", "trend_notes", "level", "risk")   # bulky first; never data_problem
 
 
 def fit_payload(payload, limit=PAYLOAD_MAX):
@@ -762,6 +762,11 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
     out = dump(payload)
     if len(out) <= limit:
         return out
+    if "reader" in payload:                                              # display-only reader facts (approval card summary): too
+        payload = {k: v for k, v in payload.items() if k != "reader"}     # long ⇒ removed SILENTLY, so the rest is exactly today's
+        out = dump(payload)                                              # payload (no longer "dropped" list, no extra key pushed out)
+        if len(out) <= limit:
+            return out
     p, dropped = dict(payload), []
     for k in _PAYLOAD_DROP:
         if k in p:

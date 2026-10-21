@@ -314,7 +314,8 @@ def test_summary_level_bot_and_manual_and_v0_and_ticket():
     assert top5(c["v0_notify"])[0] == "ℹ️ NIFTY · bear call · फक्त माहिती (Vision असहमत; bot ने नेहमीप्रमाणे ठरवलं)"
     tk = top5(c["ticket"])
     assert tk[0] == "✏️ NIFTY · bear call · नवी entry 22,600 — पुन्हा घ्यायचा?"
-    assert tk[1].startswith("📍 Supply 22,715–22,776 (15M) · entry 22,600 · SL 22,790 · target 22,300 (ref)")
+    assert tk[1] == "📍 Supply 22,715–22,776 (15M) · entry 22,600 · SL 22,790 · target 22,300 (ref) · signal वेळी 22,690 (≈25 pts खाली)"
+    assert "आत्ता" not in tk[1]                                                 # the ticket's spot is the signal-time spot
     assert tk[4] == "👉 ✅ घ्या · ✏️ entry पुन्हा बदला · ❌ नको (कारण)   ⏱ 10 मिनिटं (10:05 पर्यंत)"
 
 
@@ -445,9 +446,52 @@ def test_engine_reader_facts_are_copied_not_read():
     assert EL.reader_facts(r) == READER_A
     assert EL.reader_facts({}) == {"evidence_list": None, "trend": None, "area": None, "handover_form": None, "ltf": None}
     assert EL.reader_facts(None) is None                                          # never raises
-    assert EL._PAYLOAD_DROP[0] == "reader"                                        # an oversize payload drops it first (rest as today)
+    assert "reader" not in EL._PAYLOAD_DROP                                       # removed silently, never listed as "dropped"
     pay = {"engine": "decision3", "reader": READER_A}
     g = EE.engine_gate_tags({"level_lo": 1.0, "level_hi": 2.0, "grade": "A", "payload": json.dumps(pay)}, "BEARISH")
     assert g["reader"] == READER_A
     g = EE.engine_gate_tags({"level_lo": 1.0, "level_hi": 2.0, "grade": "A", "payload": json.dumps({"reader": "x"})}, "BEARISH")
     assert g["reader"] is None
+
+
+def _main_fit_payload(payload, limit):
+    """origin/main's fit_payload (16203b2), verbatim logic — the reference for 'byte-identical once reader is removed'."""
+    import json as _j
+    dump = lambda d: _j.dumps(d, ensure_ascii=False, default=str)  # noqa: E731
+    out = dump(payload)
+    if len(out) <= limit:
+        return out
+    p, dropped = dict(payload), []
+    for k in ("checklist", "zone_read", "watch_list", "flip_context", "trend_notes", "level", "risk"):
+        if k in p:
+            p.pop(k)
+            dropped.append(k)
+            out = dump({**p, "dropped": dropped})
+            if len(out) <= limit:
+                return out
+    keep = {k: payload.get(k) for k in ("engine", "ts", "bar_end", "data_problem")}
+    keep["volume_measure"] = str(payload.get("volume_measure") or "")[:500]
+    return dump({**keep, "dropped": "all context (payload too large)"})
+
+
+def test_payload_cap_drops_reader_silently_and_keeps_mains_bytes():
+    """Near the 20 KB cap: with the reader the payload is too long, without it main's payload fits / is cut exactly as main cuts it —
+    the reader goes first and silently (no longer "dropped" list that could push out an extra context key main keeps)."""
+    import engine3_live as EL
+    base = {"engine": "decision3", "ts": "t", "bar_end": "b", "data_problem": None, "volume_measure": "v",
+            "checklist": {"⑥": [True, "x" * 3000]}, "zone_read": {"z": "y" * 4000}, "watch_list": [{"lo": 1.0}],
+            "flip_context": None, "trend_notes": ["n"], "level": {"id": 7}, "risk": None}
+    main_len = len(json.dumps(base, ensure_ascii=False, default=str))
+    reader = {**READER_A, "pad": "r" * 600}
+    full = {**base, "reader": reader}
+    full_len = len(json.dumps(full, ensure_ascii=False, default=str))
+    edges = [full_len, full_len - 1, main_len, main_len - 1, main_len - 3000, main_len - 7000, 50]
+    for lim in edges:
+        got = EL.fit_payload(full, lim)
+        if lim >= full_len:                                                    # fits ⇒ the reader stays
+            assert json.loads(got)["reader"] == reader
+            continue
+        assert got == _main_fit_payload(base, lim), lim                         # byte-identical to main without the reader
+        assert "reader" not in got
+    with_drop = EL.fit_payload(full, main_len - 1)                              # one char short: main drops only checklist
+    assert json.loads(with_drop)["dropped"] == ["checklist"]

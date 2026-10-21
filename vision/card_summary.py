@@ -135,13 +135,14 @@ def line_where(row, ticket=None):
         out.append(" · ".join(f"{NAMES[k]} {_px(v)}" for k, v in lv if v is not None)
                    + (ref if any(v is not None for k, v in lv if k != "entry") else ""))
     sp = _spot(row)
+    now = "आत्ता" if ticket is None else "signal वेळी"                   # the ✏️ ticket comes minutes later: its spot is the signal's
     if sp is not None and lo is not None:
         if sp < lo:
-            out.append(f"आत्ता {_pt(sp)} (≈{lo - sp:,.0f} pts खाली)")
+            out.append(f"{now} {_pt(sp)} (≈{lo - sp:,.0f} pts खाली)")
         elif sp > hi:
-            out.append(f"आत्ता {_pt(sp)} (≈{sp - hi:,.0f} pts वर)")
+            out.append(f"{now} {_pt(sp)} (≈{sp - hi:,.0f} pts वर)")
         else:
-            out.append(f"आत्ता {_pt(sp)} (area मध्ये)" if area is not None else f"आत्ता {_pt(sp)} (level वर)")
+            out.append(f"{now} {_pt(sp)} (area मध्ये)" if area is not None else f"{now} {_pt(sp)} (level वर)")
     return " · ".join(out)
 
 
