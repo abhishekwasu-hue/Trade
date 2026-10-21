@@ -1,5 +1,52 @@
 # थर v2.2 — OPEN_QUESTIONS (default घेऊन काम चालू; Abhi उत्तर देतील तेव्हा बदल batch PR ने)
 
+## Still open (as of 2026-10-21)
+
+Only what is really open today. Every older section below stays as history; each one now carries a one-line **closed / status**
+pointer under its heading (answered by …, superseded by …, or "listed in Still open"). Abhi's method
+(`docs/knowledge/CHART_READER_METHOD.md`) replaced the piece-by-piece answers — see the section "Abhi's method … all earlier questions
+resolved" near the end.
+
+**For Abhi (an answer or a ✅ is needed):**
+
+| id | Question (one line) | Current default | Where |
+|---|---|---|---|
+| R-BN-1 … R-BN-5 | BANKNIFTY replay: does Abhi agree with "no handover" (E29 / E31), see a handover on any G3 visit (E14, E17, E20, E21, E24, E29), and is E26 / M06 only a note? R-BN-5 = data note (re-run when more history lands) | no change to the reader | trade-data `review/replay_banknifty_6m/04a8b40/ABHI_QUESTIONS_MR.md` (simple Marathi, charts side by side); last section of this file |
+| L5 / L6a ✅ | Layer 5 (RSI divergence inside the move into the zone, L5-a) and layer 6a (verdict: required set ⇒ enter; A = + ≥ 1 confirming, B = required only) — ✅ / ✏️ | as merged; not stable until ✅ | trade-data `review/layer5_6a_report/2b43f17/README.md`; `docs/reader/STABLE.md` |
+| R0-3 | Golden Vision V4 expectations (12 Oct, 29 Sep): ✅ the drafts | drafts; every V4 result PROVISIONAL; live V4 off (R0-8) | trade-data `golden_v4/cases.json`; section "Chart Reader R0" |
+| R1a-13 | Bands on the Vision approval chart (`vision_chart_bands`) — turn on, and change the Vision legend with it? | OFF (image unchanged) | section "R1 (a)" |
+| BW-1 / C-18 | Keep the 150-pt "merged band — check" alert now that bands are never merged (Z-1u)? | 150, display only | decided with layer 6 (output) |
+
+**Open work — no answer needed now (done in the named layer):**
+
+| id | What | Current default | Where |
+|---|---|---|---|
+| L3-c3 · L3-n · Z-1b · R1b-1, R1b-2, R1b-4 … R1b-7 | Facts dossier: its own visit finder (`touch_window_bars`, PENDING in the guard), its commitment read, the shared band check's "flipped", owner disagreements | as coded | layer 6 (output) |
+| CD1 … CD14-E · VP1 … VP6 · R1a-1 … R1a-12 · Q48 | Chart / pane display defaults (Daily structure chart, volume panes, chart line / band checks, 1H / 15M review charts) | as coded | layer 6 (output) |
+| C-22 | Retire the old numeric rsi2 `RSI` class (only the facts dossier still uses it) | kept | layer 5 / 6 clean-up |
+| RSI-4 | The review listener does not record ✏️ (a ✘ + reason is recorded) | as is | tooling |
+
+**Standing operational defaults** (no answer recorded; they stay unless Abhi objects): TG1–TG7 (Telegram), DP1–DP4 (data /
+pre-open), OB2 (an engine setup stays pending for 30 min), OB3 (auto-trader PAPER crons commented in one-bot mode), Z-1l (SENSEX FUT
+missing ⇒ no Telegram line; SENSEX is not live), B3 note (`last_sl_hit_time` is never written, so the optional post-SL cooldown never
+bites).
+
+**Answered today:** L1-c — Abhi: keep N = 2 as the provisional value; he may change it later from the dashboard (setting added by the
+live-switches track).
+
+**Dormant** (not on the live path; reopen only if that part comes back): level bots (LB*, RF-1, RR6, TF6 — rebuilt in ATP on the
+ported reader, off in one-bot mode), reader2 / Chart Reader v2 (CR-Q*, research only), simple_core (Q41, RR5, research / backtest
+only), MCX confirmation (LB12–LB17).
+
+---
+
+> **closed (2026-10-21):** Q15–Q17, Q22–Q40, Q44, Q49, Q55 answered (sections below; Q7 changed by Q33). The rest are superseded by
+> Abhi's method (last sections): Q1 / Q5 / Q8 / Q9 / Q42 / Q43 / Q45 / Q47 / Q50–Q54 → layer 1 ✅ (L1-a, L1-b; C-2 / C-13); Q2 → TL1;
+> Q3 → C-4 / L2-a; Q4 / Q19 → Z-1u (each zone from its own base, never merged); Q6 → C-21; Q10 / Q11 → L6-a (no scores); Q12 → C-15;
+> Q13 / Q18 → C-5 (the visit); Q14 / Q21 → EC1 (no engine R:R / entry / SL / target); Q20 → L4-a … L4-g; Q46 → B1 (wave counts are
+> context only); Q41 → dormant (simple_core G8, research only; the golden xfail stays); Q48 → layer 6 (Still open). Later method
+> rows also replace some batch answers (e.g. Q24 / Q30 forms → L3-f / L3-m; Q40 distance filter → C-14).
+
 | # | प्रश्न | घेतलेला default | पर्याय |
 |---|---|---|---|
 | Q1 | ① HH / HL: "जवळपास समान" (RANGE tol) च्या आत असलेला H2 > H1 HH मानायचा का? | नाही — HH / HL साठी tol पलीकडे हवं (`range_eq_sigma_d` × σ_D); tol च्या आत ⇒ RANGE उमेदवार | साधं `>` |
@@ -61,6 +108,8 @@
 
 ## Abhi उत्तरं Q22–Q34 (batch) — अंमल
 
+> **closed (2026-10-21):** answered (implementation record). Later method rows replace some of them (Q22 / Q27 / Q28 → layer 1 ✅ L1-b; Q24 / Q30 → L3-f / L3-m; Q26 → L6-a).
+
 | # | निर्णय | अंमल |
 |---|---|---|
 | Q22 | option — रचनात्मक: correction त्याच degree ची ⇔ impulse च्या सर्वात मोठ्या आतल्या pullback पलीकडे; वेळ फक्त पुरावा; 0.5 / 0.382 / 0.618 नाही | `corr_degree_rule` = internal_pullback (default); जुना ratio फक्त what-if; Q35 default |
@@ -81,6 +130,8 @@
 
 ## Abhi उत्तरं Q35–Q40 — अंमल
 
+> **closed (2026-10-21):** answered (implementation record). Q40's ATR-distance filter is replaced by C-14 (method table below).
+
 | # | निर्णय | अंमल |
 |---|---|---|
 | Q35 | default OK | तसाच |
@@ -91,6 +142,8 @@
 | Q40 | option (refined) — window आधीचे महत्त्वाचे Daily levels हवेत: फक्त trend-degree swings (impulse origin / टोक, correction टोकं) + Weekly swings, किंमतीपासून ATR-scaled अंतरात; NIFTY holdout swings ⇒ फक्त किंमत (तारीख masked) | `levels._prior_levels`: degree-aware Dow चे protected (origin / correction टोक) + `imp_end` + Weekly pivots, `prior_level_atr_mult` (8) × ATR_D (`prior_level_atr_n` 14) आत; bar 0 ला जन्म, भूमिका तेव्हाच्या किंमतीनुसार; birth "a:D-prior" / "a:W-prior" |
 
 ## Level bots — confirmation (TRADE_SESSION_LEVEL_BOTS_CONFIRMATION) — MVP मध्ये घेतलेले default निर्णय (Abhi ने बदलावे)
+
+> **closed (2026-10-21):** superseded — the level bots are not rebuilt here: they stay off in one-bot mode and are rebuilt in ATP on the ported reader (`docs/reader/STABLE.md`, `METHOD_MAP.md` "Level bots"). The decision3 parts (LB11, LB25–LB30) are replaced by layer 3 (L3-a … L3-n).
 
 | # | प्रश्न | MVP default | पर्याय |
 |---|---|---|---|
@@ -121,6 +174,8 @@
 
 
 ## Chart Reader v2 (TRADE_SESSION_CHART_READER_V2) — CR0–CR3 मध्ये घेतलेले default निर्णय (Abhi ने बदलावे; research-only, कोणताही bot / decision3 वापरत नाही)
+
+> **closed (2026-10-21):** dormant — reader2 is research only (never on the reading path, `tests/test_reader2_boundary.py`); Abhi's method is the reader spec. Defaults stay as recorded; reopen only if reader2 work resumes.
 
 | # | प्रश्न | default | पर्याय |
 |---|---|---|---|
@@ -153,6 +208,8 @@
 
 ## Abhi उत्तरं Q44 / Q55 + family (TRADE_SESSION_Q44_Q49_Q55_CHART_FIX) — PR A अंमल
 
+> **closed (2026-10-21):** answered. The "उघडा" note (COMPLETE ⇒ some 9-wave readings) is covered by layer 1 ✅ (L1-a / L1-b: Daily structure by structure logic; B1: wave labels are context only).
+
 | # | निर्णय | अंमल |
 |---|---|---|
 | Q55 | (B) sharp-fall point = wide-range धावेने तोडलेला **पहिला** swing low (UP आरसा: swing high); band = swing candle wick टोक + base candles | `daily.sharp_zone`: एक degree खालचे swings — impulse origin च्या **आधीचेही** चालतात (BANKNIFTY: Feb top आधीचा late-Jan low), धावेच्या आतले lows सुद्धा; अट: swing चा पहिला close-break origin नंतर, धावेतल्या candle ने (range > आधीच्या bars चा सरासरी range, दिशेचा body, सलग दोन); त्यांपैकी (range > आधीच्या bars चा सरासरी range, दिशेचा body, सलग दोन) close ने तोडलेला सर्वात आधीचा swing; zone = त्या candle चा wick टोक ⇒ base (±1 candle) body टोक, + EQ. Fixture: धाव दोन lows तोडते — पहिला निवडला जातो (test) |
@@ -177,6 +234,8 @@
 
 ## Abhi उत्तर Q49 (TRADE_SESSION_Q44_Q49_Q55_CHART_FIX §2) — PR C अंमल
 
+> **closed (2026-10-21):** answered. The open column (Q49-b, Q49-Q22, Q49-dz, Q49-CH) is covered by layer 1 ✅ (L1-a / L1-b) and B1 (wave labels are context only); the strict xfails stay as recorded.
+
 | # | निर्णय | अंमल | उघडा प्रश्न |
 |---|---|---|---|
 | Q49 | 5-wave पहिला पाय default **wave A** (trend तसाच); wave 1 फक्त (a) counter-move तो correct करत असलेल्या **impulse च्या origin** पलीकडे close करतो (Abhi: engine चा impulse-leg origin, A1 parent / trend सुरुवात नाही — ABC_FIX rule 1 सुसंगत) किंवा (b) counter-move स्वतःची same-degree 5-wave रचना पूर्ण करते. Ratios / खोली नाहीत | `daily.counter_kind`: same-degree 5-wave ⇒ "wave_1a"; (a) origin = `imp_origin(i)`; त्यापलीकडे close ⇒ wave 1 (flip शक्य; origin = तोच तुटलेला origin); नाहीतर parent टिकला ⇒ A1 correction, `DState.wave_a` (chart "A") + `alt = "1"` (फक्त debug). (b) = `daily_legs.unfolded_123` ("1" 5, "2" 3, "3" "1" पलीकडे 5 — दिसणारे पाय). Telegram / trend line / ① मध्ये wave क्रमांक नाही (Q46) | **✅ (a) चा विस्तार — Abhi मंजूर (2026-10-12)** (setting `q49_impulse_origin`, default `complete_impulse`): चालू impulse leg हा एखाद्या **पूर्ण** 5-wave impulse चा wave 5 असेल (`daily.complete_impulse_start`: P ⇒ impulse टोक read_counter impulse, wave 5 bar ने चालू leg आधीच्या correction मध्ये — Rule 4 origin सुद्धा) तर origin = त्या impulse ची सुरुवात. **तिन्ही नवे fixture tests या विस्तारावर अवलंबून**: साध्या वाचनाने (`q49_impulse_origin: leg`, origin = impulse-leg origin) deep zigzag (`very_deep_holds_origin`), `q49_complete_five` आणि `q49_beyond_impulse_origin` तिन्ही fail (A wave (4) high ओलांडतो ⇒ लगेच flip; पडताळलं) |
@@ -187,6 +246,8 @@
 | Q49-CH | Chart: चालू box चं तात्पुरतं family वाचन (triangle / zigzag) wave A शी विसंगत असू शकतं (A = "c"); wave A चं टोक reading corrective झाल्यावर स्थिर राहतं | box चं "a" = wave A ⇒ मोठी अक्षरं A B C; नाहीतर box अक्षरं नाहीत, फक्त "A"; A टोक स्थिर | box family वाचन wave A पासून सुरू करा (A नंतरचे पाय B / C) — engine बदल |
 
 ## Chart declutter (TRADE_SESSION_Q44_Q49_Q55_CHART_FIX §5) — PR B मध्ये घेतलेले default निर्णय (Abhi ने बदलावे)
+
+> **status (2026-10-21):** CD14-A answered; CD1 … CD14-E and the VP1–VP6 table below are display defaults → listed in Still open (layer 6, output). The LB12–LB17 table below → dormant (MCX / level bots, ATP). OB1 → superseded by Z-1c (FUT missing = data problem, no entry); OB2 / OB3 → standing defaults (Still open).
 
 | # | प्रश्न | आत्ता (default) | पर्याय |
 |---|---|---|---|
@@ -231,6 +292,8 @@
 
 ## Telegram cleanup (TRADE_SESSION_TELEGRAM_CLEANUP 1–3, ONE_BOT §4) — घेतलेले default निर्णय (Abhi ने बदलावे)
 
+> **status (2026-10-21):** standing operational defaults (no answer recorded) → listed in Still open.
+
 | # | प्रश्न | आत्ता (default) | पर्याय |
 |---|---|---|---|
 | TG1 | अनोळखी review kind | allowed यादीबाहेरचा kind ⇒ नकार (fail-closed), `--force` ने जातो | फक्त debug kinds नकार, बाकी जाऊ द्या |
@@ -243,6 +306,8 @@
 
 
 ## Trend first — setups audit (TRADE_SESSION_DECISIONS_SENSEX_SETUPS_CD14 §2) — default निर्णय (Abhi ने बदलावे; अहवाल `docs/reports/setups_prA_v1_audit.md`)
+
+> **closed (2026-10-21):** TF2 is Abhi's own rule ("structure UP ⇒ never a bear call"); TF1 / TF3–TF5 / TF7 (audit of the PR A setups) → layer 1 ✅ (L1-a / L1-b); TF6 → dormant (level bots, ATP). D12 table below: D12-1 → B1; D12-2 → L4-g (a line alone is not an entry); D12-3 → TA3 / L4-a; D12-4 → EC2; D12-5 → EC1; D12-6 → L6-a (confluence is a confirming piece).
 
 | # | प्रश्न | आत्ता (default) | पर्याय |
 |---|---|---|---|
@@ -263,6 +328,8 @@
 
 ## Touch / levels audit (TRADE_SESSION_TELEGRAM_CLEANUP §4–§5, one-bot §7(e)) — `docs/reports/v22_missed_levels_touch.md`
 
+> **closed (2026-10-21):** TL1 answered; TL2 / TL3 → Z-1u (each zone from its own base / reaction candles, never merged or widened); TL4 → Z-1p.
+
 | # | प्रश्न | घेतलेला default | पर्याय |
 |---|---|---|---|
 | TL1 | **✅ Abhi मंजूर (2026-10-12): default `level_death_side` = "role"** (Q2 बदलला; "role0" फक्त revert / what-if). **Q2 पुन्हा (9 Oct blind spot):** flip झालेला level कधी मरतो? 9 Oct: तुटलेला support (22,476–22,809 आणि weekly 22,518–22,527) 1 Oct / 8 Oct ला resistance झाला (3 closes, बरोबर), पण 8 Oct 11:15 ला **खालचा** D2 L 22,397 close ने तुटला ⇒ मूळ भूमिकेच्या (support) नियमाने मेला ⇒ 9 Oct (आणि 12 Oct ≈22,600) ला supply engine ला दिसली नाही. Downtrend मध्ये break ची पुढची धाव नेहमी खालचा swing तोडते ⇒ "तुटलेला support = supply" (spec ② (c)) व्यवहारात कधीच trade होत नाही | `level_death_side` = "role0" (जुना Q2 default, बदल नाही) | **"role" (शिफारस)** = चालू भूमिकेची बाजू: flipped supply फक्त वरचा D2 H close ने तुटला तरच मरते. Setting तयार + fixture (आरसा सह). What-if (NIFTY Sep–Oct 2026): setup 1 → 1, no_trade 118 → 142; 9 Oct ला दोन्ही supply दिसतात, 11:30 bar ला weekly 22,518–22,527 वर R:R 5.55 — फक्त maturity cap (weak) ने अडलं. बदल = एक settings ओळ |
@@ -271,6 +338,8 @@
 | TL4 | a2 handover (`zone_study`) — trend-बाजूचा पहिला अर्धा रिकामा (29 Sep: 11:00–12:00 सगळ्या greens, 12:15 पहिली red) ⇒ `trend_growing` NA ⇒ `handover` False, जरी buying candles दमल्या (counter_weakening ✔) आणि 12:15 dominant engulf | तसेच (बदल नाही — `claude/v22-confirmation` चा भाग) | रिकामा पहिला अर्धा + दुसऱ्यात trend candle ⇒ "growing" ✔ |
 
 ## Abhi निर्णय 2026-10-13 — entry candle + R:R (one bot; branch `claude/entry-candle-sl`)
+
+> **closed (2026-10-21):** EC1 / EC2 / EC6 answered. EC3 → layer 3 (the commitment is the dominant candle after the handover; its volume vs the approach leg across the gap — L3-c, L3-c2, L3-e; golden 12 Oct 09:30); EC4 → L3-h (two-candle forms span sessions; a gap is the next candle); EC5 → no option left (c1 unchanged).
 
 | # | प्रश्न | घेतलेला default | पर्याय |
 |---|---|---|---|
@@ -283,6 +352,8 @@
 
 ## R:R correction (branch `claude/rr-correction`) — उरलेले प्रश्न (Abhi ने ठरवावे)
 
+> **closed (2026-10-21):** RR1–RR3 answered; RR4 → EC1 (no engine target by default; facts only); RR5 → dormant (simple_core, no execution); RR6 → dormant (the R:R gate lives in the level gate, `bots_common/level_reaction.py` — level bots, ATP).
+
 | # | प्रश्न | घेतलेला default | पर्याय |
 |---|---|---|---|
 | RR1 | **✅ Abhi निर्णय (PR #316): MCX चे SL / target पूर्णपणे dashboard settings चे; confirmation gate फक्त entry हो / नाही ठरवतो.** (आधी: gate चा structural SL, settings SL कमाल; target = पुढचा उलट area) | `mcx_futures_trader`: gate SL / target कधीच set / cap करत नाही — `SKIPPED_GATE_SL_TOO_WIDE` / `_TARGET_PASSED` / `_INVALIDATED` (gate किंमतींवरून) नाहीत; SL / target = `_sl_target_points` (+ dashboard चे candle-confirm SL / next-level target पर्याय). R:R gate (default बंद) चालू ⇒ dashboard SL / target वर (`_gate_rr_skip`); gate (level_reaction) ला MCX साठी R:R कधीच नाही | — |
@@ -294,6 +365,8 @@
 
 ## Data / pre-open fixes (13 Oct VPS findings) — घेतलेले default निर्णय (Abhi ने बदलावे)
 
+> **status (2026-10-21):** standing operational defaults (no answer recorded) → listed in Still open.
+
 | # | प्रश्न | घेतलेला default | पर्याय |
 |---|---|---|---|
 | DP1 | Futures collector ला SENSEX (BSE FUT) default मध्ये? | हो — `--symbols NIFTY,BANKNIFTY,SENSEX`; BSE front-month FUT सापडला नाही ⇒ ℹ️ log + skip (exit 0, बाकी symbols चालू) | SENSEX फक्त `--symbols` ने स्पष्ट दिल्यावर |
@@ -302,6 +375,8 @@
 | DP4 | 09:45 नंतर "आज row नाही" पण कालचा row आहे ⇒ ❌? | नाही (बदल नाही — सुट्टीच्या दिवशी manual run ला खोटा ❌ टाळला); फक्त store पूर्ण रिकामा ⇒ ❌ | trading day + 09:45 नंतर आजचा row नाही ⇒ ❌ |
 
 ## Trendline / area audit 2026-10-13 (`docs/reports/2026-10-13_trendline_area_audit.md`) — Abhi निर्णय हवे (code बदल नाही)
+
+> **closed (2026-10-21):** TA1–TA4 answered (below). TA5 → layer 4 (a line is gone only by a close beyond AND a swing beyond — L4-d; time never removes it — P2).
 
 | # | प्रश्न | घेतलेला default | पर्याय |
 |---|---|---|---|
@@ -320,6 +395,8 @@ Re-run: अहवाल §8 (रेघा 153 पैकी 24 valid, 8 establish
 | TA5 | "Recent price ने मान" (शेवटच्या 2 sessions मध्ये touch) 2-touch नियमाशी टक्कर देतो: projected 3ऱ्या touch ची वाट पाहणारी रेघ बहुतेक 2 sessions touch शिवाय असते. Re-run मध्ये 44 रेघा फक्त याच नियमावर गळल्या (31 "touch नाही", 13 broken); 30 Sep → 6 Oct golden रेघ 9 Oct close ला फक्त यामुळे लपली असती (12 Oct 09:15 ला तिचा touch 22,654 वर) | audit मध्ये तसाच ठेवला (Abhi: "keep as defined") | (a) फक्त real break (K5) ठेवा, "2 sessions touch" काढा; (b) touch-window = रेघेच्या स्वतःच्या touch-spacing च्या × k; (c) तसेच |
 
 ## R1 (a) — shared line / band checks (branch `claude/r1a-lines-bands`; `facts/validity.py`) — घेतलेले default निर्णय (Abhi ने बदलावे)
+
+> **status (2026-10-21):** chart / band display checks → listed in Still open (layer 6, output); R1a-13 (`vision_chart_bands`) is Abhi's switch → Still open.
 
 TA5 अजून उघडा ⇒ shared line check मध्ये "शेवटच्या 2 sessions मध्ये touch" नियम **लावलेला नाही**. Decision3 चा निर्णय / कोणताही bot gate बदललेला नाही (फक्त charts).
 
@@ -340,6 +417,8 @@ TA5 अजून उघडा ⇒ shared line check मध्ये "शेव�
 | R1a-12 | Dashboard "Trendline Gate" (`signals.detect_trendline`, polyfit) — gate आहे, बदलला नाही. Shared check: 86 पैकी 4 valid (79 anchors wick वर नाहीत) | बदल नाही (या PR चा scope फक्त drawing) | (a) wick-anchored `trendlines2.two_touch` ने बदला; (b) gate मधून काढा |
 
 ## R1 (b) — facts dossier (branch `claude/r1b-facts-dossier`; `facts/dossier.py`, `facts/README.md`) — owners मधले मतभेद / नसलेले owners (Abhi ने ठरवावे)
+
+> **status (2026-10-21):** dossier owner questions → listed in Still open (layer 6, output; L3-n); R1b-3 answered below.
 
 Dossier कुठलाही मतभेद स्वतः सोडवत नाही: §3 चा owner जसा देतो तसा; इतर हिशोब फक्त "evidence" म्हणून नोंदवले.
 
@@ -364,6 +443,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | KP5 | ~~नवीन K11 patterns ना PT गुण~~ **निकाली (Abhi: "KB प्रमाणे")** | गुण नाहीत — फक्त नोंद / narrative; भाग D ची PT ओळ तशीच | — |
 
 ## Chart Reader R0 — Method Pack + Vision V4 checklist (branch `claude/r0-method-pack`) — Abhi निर्णय हवे
+
+> **closed (2026-10-21):** answered (R0 ✅ below); R0-3 (Abhi's ✅ of the golden V4 drafts) → Still open.
 
 | # | प्रश्न | घेतलेला default | पर्याय |
 |---|---|---|---|
@@ -393,6 +474,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 
 ## K-RSI — RSI divergence facts (branch `claude/rsi-divergence`; `rsi2.engine.Divergence`, KB K10.4 pending) — Abhi निर्णय हवे
 
+> **closed (2026-10-21):** RSI-1 → L5-a (the pushes inside the move into the zone); RSI-2 answered (3 bars, below); RSI-3 → the EOD export has the full 13 Oct (`tests/test_decision3_flip.py::test_real_13_oct_no_bear_call`); RSI-5 → L6-a (the commitment's grade never caps; its form is a fact); RSI-6 → Z-1e (spot zone); RSI-7 → P2 (a gap is just the next candle); RSI-4 → Still open (tooling).
+
 | # | प्रश्न | घेतलेला default | पर्याय |
 |---|---|---|---|
 | RSI-1 | "त्याच swing degree चे push" — कोणती swings2 degree? 12 Oct: फक्त D0 मध्ये 9-Oct push high (22,580.75) हा आधीचा H आहे; D1 / D2 मध्ये आधीचा H 7 Oct 22,717.65 / 6 Oct 22,731.85 (12-Oct 22,651.10 = lower high ⇒ divergence नाही) | D0, D1, D2 तिन्ही (`div_degrees`), प्रत्येक divergence ला degree; chart वर same pair एकच रेघ (D0/D1) | एकच degree (उदा. D0 = 15M push, D1 = 1H) |
@@ -405,6 +488,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 
 ### Abhi निर्णय — FUT roll, BANKNIFTY दिवस, zone flip
 
+> **closed (2026-10-21):** answered (Z-1 / Z-2 rows replaced by the final answers below).
+
 | # | निर्णय | परिणाम |
 |---|---|---|
 | R1b-3 | Roll च्या दिवशी सुद्धा FUT volume = **फक्त near-month** contract (दोन contracts ची बेरीज कधीच नाही) | `opportunity_engine.volume.near_month_rows` + `attach_futures_volume(near_month=True)` (default False ⇒ जुने callers तसेच); facts dossier near-month वापरतो; KB K10.3 + pack 5b. ✅ निकाली |
@@ -415,6 +500,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 
 ### Abhi अंतिम उत्तरं (#322 नंतर) — flip नियम
 
+> **closed (2026-10-21):** answered; Z-1 coded (next section).
+
 | # | निर्णय | परिणाम |
 |---|---|---|
 | "strong move" | "strong" आणि dominant candle / displacement अर्थ **काढला**. Zone flip = price zone पलीकडे **आणि** पलीकडच्या बाजूचा swing पार; swing पार होणं हाच पुरावा, candle ची वेगळी अट नाही. तोपर्यंत sweep | KB K4 + pack. ✅ निकाली |
@@ -422,6 +509,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | Z-1 | decision3 BROKEN / FLIPPED code | वेगळा PR (fixtures: 12 Oct sweep, 13 Oct flip, 3 synthetic) |
 
 ### Z-1 code (decision3 BROKEN / FLIPPED, branch `claude/decision3-flip-state`) — निकाल + पुढचे प्रश्न
+
+> **closed (2026-10-21):** Z-1, Z-1a, Z-1c–Z-1f, Z-1k, Z-1o (a) answered; Z-1g → L2-b; Z-1h / Z-1j / Z-1m superseded (rows say so); Z-1i → Z-1u (no merge across timeframes); Z-1n = a note; Z-1b → Still open (layer 6); Z-1l → standing default (Still open).
 
 | # | प्रश्न / नोंद | सध्या code (default) | कोण |
 |---|---|---|---|
@@ -446,6 +535,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 
 ### Abhi अंतिम उत्तरं — Z-1 / RSI-2 (in-zone study)
 
+> **closed (2026-10-21):** answered. The slot-normalised volume here is replaced by C-3 (raw volume bars, no time-slot baseline).
+
 | # | निर्णय |
 |---|---|
 | मुख्य | Zone कडे येण्याची पद्धत (जलद / हळू, कोणताही volume) trade ठरवत नाही. Pullback corrective का आणि volume कमी का = फक्त **context**. निर्णय **zone मध्ये आल्यानंतरच्या वाचनावर** (बाजूनुसार candles, प्रत्येक candle चा normalised FUT volume, zone मधले patterns, कोणती बाजू वाढते / कमी होते, selling / buying volume, RSI divergence) ⇒ dominant commitment (जास्त volume) + LTF CHoCH = entry. ✅ |
@@ -465,6 +556,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 
 ### Abhi B (trader's patience) + Z-1k — code (branch `claude/decision3-flip-state`)
 
+> **closed (2026-10-21):** B1 → C-15 / method §6 (no wave-count gates); B1-a → L6-a (the old caps are context notes, never the label); B2 / B3 / D-29 / Z-1k done (B3 note → Still open, standing).
+
 | # | नोंद | code (default) | कोण |
 |---|---|---|---|
 | Z-1k | Flip झालेला zone पुन्हा far swing पार ⇒ DEAD (Abhi: (a)) | ✅ Z-1f तसंच; 13 Oct high 22,721.95 < 22,731.8 ⇒ BROKEN (close), पुढचे zones armed | ✅ निकाली |
@@ -476,6 +569,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 
 ### Abhi Z-1j / Z-1h / Z-1m — code
 
+> **closed (2026-10-21):** done. Z-1h's slot baseline → C-3 (raw volume); Z-1m's order → Z-1r (no order).
+
 | # | नोंद | code (default) | कोण |
 |---|---|---|---|
 | Z-1j | §5.3 range अवस्था entry gate नाही — context fact (`range_state` row / payload); `range_state_gate` True फक्त जुने tests | ✅ केलं | ✅ निकाली |
@@ -484,6 +579,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | Z-1p | Handover व्याख्येतली कडा: दुसऱ्या अर्ध्यात counter-side candle **नाहीच** ⇒ counter weakening NA ⇒ handover नाही (12 Oct 10:15). Counter बाजू पूर्ण गायब = दमली मानायचं का? 12 Oct 09:30: selling candles + selling volume वाढले, पण buying candles "दमल्या" नाहीत (body / wick majority) ⇒ handover नाही ⇒ golden bear call अजून नाही | ✅ Abhi (a): counter बाजू गायब = दमली ⇒ फक्त trade बाजू वाढतेय का (`method.zone_study` `counter_gone`) | ✅ निकाली |
 
 ### Review follow-ups — घेतलेले default निर्णय (Abhi ने बदलावे)
+
+> **closed (2026-10-21):** RF-2 / Z-1q / Z-1r answered; RF-1 → dormant (level gate, ATP); RF-3 → C-3 (no slot baseline, so no rollover exclusion).
 
 | # | नोंद | code (default) | कोण |
 |---|---|---|---|
@@ -495,6 +592,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 
 ### Deploy fixes (branch `claude/preopen-fixes`)
 
+> **closed (2026-10-21):** done / answered.
+
 | # | प्रश्न | आत्ता काय (default) | पर्याय |
 |---|---|---|---|
 | PF-1 | ~~15:45 सारांश एकच-किंमत areas~~ — केलं (review #326): engine source ⇒ `watched_levels` पट्टे (BROKEN / DEAD नाहीत); own / both ⇒ bot चा gate पट्टा; symbols = `signal_symbols` (SENSEX ओळ नाही) | केलं | — |
@@ -502,6 +601,8 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | PF-3 | ~~`signal_symbols` बदलल्यावर one-bot mode आपोआप लागत नाही~~ — केलं (Abhi 9a, branch `claude/srv2-cooldown-symbols-apply`): dashboard 🎯 panel वर सेव्ह ⇒ `bots_common/one_bot.apply_signal_symbols` = script चाच plan / apply, फक्त signal-symbols भाग (15M SRv2 per symbol on/off + engine + PAPER, Vision srv2 symbols / approval, PAPER instruments); सेव्ह केलेली यादीच वापरतो (पुन्हा वाचलेली जुळली नाही ⇒ काहीच नाही); signal symbols साठी `signal_source` = engine (own / both बदलतं); LIVE combo नाकार तसाच (effective + raw row); बाकी bots (5M / Classic / MCX / auto) ला हात नाही; log (`data/app.log`: before / after, by dashboard, वेळ); अयशस्वी ⇒ symbols सेव्ह राहतात, कोणते भाग लागले ते + script चालवायची सूचना | केलं | — |
 
 ### Abhi अंतिम उत्तरं — zone study (Z-1p … Z-1t, RF-2, PF-2) — code (branch `claude/zone-study-answers`)
+
+> **closed (2026-10-21):** answered (implementation record).
 
 | # | निर्णय (Abhi) | code | स्थिती |
 |---|---|---|---|
@@ -521,6 +622,8 @@ strong_close body 4.5×, volume 1.4× (raw) ⇒ grade B (golden xfail काढ�
 
 ### Zone study answers नंतर — Abhi ने ठरवायचे (नवे)
 
+> **closed (2026-10-21):** answered (Review #329, next section).
+
 | # | प्रश्न | आत्ता काय (default) | पर्याय |
 |---|---|---|---|
 | Z-1u | ~~Daily warm-up (Z-1t, live सारखं) मुळे Q40 prior Daily / **Weekly** पट्टे (weekly candle चा wick-to-body, ~200–330 pts) window सुरुवातीला जन्मतात आणि overlap ⇒ merge होतात. 12 Oct चा 22,544–22,622 zone 22,476–22,809 या मोठ्या पट्ट्यात merge झाला (1 Oct ला तुटून flip; Abhi चा 8 Oct flip नाही); त्याखाली 21,965–22,622 support पट्टा सुद्धा overlap. Live engine3 (Upstox Daily) मध्येही हेच होत असणार~~ | ✅ निकाली (Abhi, खाली "Review #329") | — |
@@ -528,6 +631,8 @@ strong_close body 4.5×, volume 1.4× (raw) ⇒ grade B (golden xfail काढ�
 
 
 ### Review #329 नंतर — Abhi ची उत्तरं (Z-1u, Z-1w, Z-1v) — code (branch `claude/zone-study-answers`)
+
+> **closed (2026-10-21):** answered (implementation record).
 
 | # | निर्णय (Abhi) | code | स्थिती |
 |---|---|---|---|
@@ -544,6 +649,8 @@ close पट्ट्याखाली ⇒ visit संपली; दिवस�
 
 ### Review #329 नंतर — Abhi ने ठरवायचे (नवे)
 
+> **closed (2026-10-21):** answered (Z-1z volume → L3-c2).
+
 | # | प्रश्न | आत्ता काय (default) | पर्याय |
 |---|---|---|---|
 | Z-1x | ✅ **ठरलं (Abhi, final):** zone एकाच base / reaction मधून; रुंदीला आकड्याची मर्यादा नाही, किमान रुंदी नाही. रुंद दिसला ⇒ दोन bases जोडले ⇒ बांधणी दुरुस्त (Z-1u). `trade_band_max_sigma` None (what-if), `level_min_width_sigma` 0; dashboard setting नाही | मर्यादा नाही | — |
@@ -552,6 +659,8 @@ close पट्ट्याखाली ⇒ visit संपली; दिवस�
 | Z-1v-a | ✅ **ठरलं (Abhi, a):** अपयशी dominant candle पट्ट्याबाहेर close ⇒ visit संपली; पुढचा प्रवेश = नवी visit, नवा handover (code आधीपासून असंच) | असंच | — |
 
 ### Abhi च्या Z-1x / Z-1y / Z-1z / Z-1v-a उत्तरांनंतर — Abhi ने ठरवायचे (नवे)
+
+> **closed (2026-10-21):** Z-1z-b / Z-1x-a closed; Z-1z-a, Z-1z-c, Z-1v-b → the method table below.
 
 | # | प्रश्न | आत्ता काय (default) | पर्याय |
 |---|---|---|---|
@@ -563,11 +672,15 @@ close पट्ट्याखाली ⇒ visit संपली; दिवस�
 
 ### Approval पट्ट्याची रुंदी (branch `claude/approval-band-width`)
 
+> **status (2026-10-21):** BW-1 → Still open (decided with layer 6, output; C-18).
+
 | # | प्रश्न | आत्ता काय (default) | पर्याय |
 |---|---|---|---|
 | BW-1 | approval_band_warn_pts default 150 (Abhi) | 15M SRv2 (`15m_dynamic_sr`) setting `approval_band_warn_pts` = **150**: पट्टा (hi − lo) 150 pts पेक्षा रुंद ⇒ approval caption, pre-open आणि 15:45 सारांशात "⚠️ merged band — check" ओळ. फक्त दाखवणं (निर्णय / gate / order बदलत नाही). Dashboard: 15M SRv2 → 🧭 Signal source. Own-path (non-engine) signals ⇒ नेहमी default 150 (setting फक्त engine मार्ग, pre-open आणि सारांश वाचतात). PR #329 (root cause) नंतर हा इशारा ठेवायचा का? | 150 ठीक / दुसरा आकडा (उदा. 100 / 200) / #329 नंतर इशारा काढा |
 
 ### Abhi चं तत्त्व (final): वाचन = तर्क, गणित नाही — उरलेले आकडे
+
+> **closed (2026-10-21):** the C items are resolved in the method table below; the two stray rows here (Z-1z-d, Z-1v-c) → the method table too.
 
 सगळी यादी: `docs/reports/v22/NUMBERS_INVENTORY.md` (A = आता बदलले, B = चालणारे operational / display / data, C = Abhi ने ठरवायचे).
 C मधले मुख्य: C-1 swings2 degree (k × σ) = "खरा swing" ची व्याख्या; C-3 volume slot baseline; C-4 `accept_closes` 3 (break वि. sweep);
@@ -577,6 +690,8 @@ C-17 conviction weights; C-18 approval 150-pt इशारा.
 | Z-1v-c | 29 Sep: जुना test "buyers exhausting" zone study 11:00 पासून (touch-window) वाचतो; visit (Z-1v) 11:45 पासून वाचली तर buyers मजबूत (absorption). Visit मधलं वाचन हेच engine वापरतं | visit पासून (engine) | (a) visit पासून (Abhi Z-1v / Z-1z — test बदलायचा); (b) दुसरं |
 
 ### Abhi's method (`docs/knowledge/CHART_READER_METHOD.md`) — all earlier questions resolved
+
+> **status (2026-10-21):** the resolutions stand; L1-c answered today (row below); layer 5 / 6a await Abhi's ✅ (Still open).
 
 The method replaces every piece-by-piece answer. Each item below is **assumed — no answer needed unless Abhi objects**, resolved by the
 method's own text (resolution order: the method → Abhi's KB words → principles → an experienced trader's reading → the simpler reading).
@@ -635,9 +750,11 @@ Implementation per layer: `docs/reports/v22/METHOD_MAP.md`.
 | L3-j | "At the area" also means the commitment trades in the area: its candle, or the candle just before it (a merged pair, or a commitment right next to the area), touches the band — a candle far below / above it inside a still-open visit is a chase, never an entry (§1 P4, §4 "a breakout away from an area") | 3 |
 | L1-a | **Abhi (answered, layer 1 ✅):** keep A — the approved swings2 D1 / D2 ARE the swing definition. A swing's significance is always judged against the market's own normal movement; swings2 does that at the scale Abhi chose from his own charts (his visual calibration, not a fixed point value). The pure comparative rule is not used (it matched A in 4 / 12 because it counts one-candle turns as swings; trade-data `review/method_layer1_rule/RULE_CASES.md`). The scale is recorded as Abhi's calibration setting (advanced dashboard; KB K1); C-1 resolved. | 1 |
 | L1-b | **Abhi (answered):** the Daily-structure numbers follow C-13 logic; the only calibration that stays is the swings2 scale (D1 / D2). Code: equal = the later extreme reaches the earlier swing candle's area (wick to body) and does not go beyond it (RANGE edges, Q27 RANGE after a broken origin); a lower high / higher low = stays short of the earlier swing's area (trend start); maturity is context only and "near" = the leg's extreme reached the projection's area (the target swing candle, wick to body); origin risk = price reached the protected origin's area; the sharp-fall / sharp-rise zone is the area itself (no σ band); the K pullback resets when price goes beyond the old extreme (no σ). `maturity_sigma_d` and `k_reset_sigma` removed; `range_eq_sigma_d` remains only for the legacy minor fold and the Daily chart's display bands. | 1 |
-| L1-c | **For Abhi (default until he answers):** the Daily pivot size `daily_pivot_n` (a Daily swing = more extreme than N Daily bars each side, N = 2) has no decided logic (C-13 covers "equal" and maturity only). Default: unchanged (N = 2), listed PENDING for layer 1 in the guard. Options: keep it as a Daily definition; or Daily swings from the same rule as the approved swings2 at the Daily degree. | 1 |
+| L1-c | **Abhi (answered 2026-10-21):** keep N = 2 as the provisional value; he may change it later from the dashboard (setting added by the live-switches track). Earlier text: **For Abhi (default until he answers):** the Daily pivot size `daily_pivot_n` (a Daily swing = more extreme than N Daily bars each side, N = 2) has no decided logic (C-13 covers "equal" and maturity only). Default: unchanged (N = 2), listed PENDING for layer 1 in the guard. Options: keep it as a Daily definition; or Daily swings from the same rule as the approved swings2 at the Daily degree. | 1 |
 
 ### BANKNIFTY reader replay at 04a8b40 — observations for Abhi (test report only; no rule, no setting changed)
+
+> **status (2026-10-21):** open → Still open. One simple-Marathi page with the charts side by side: trade-data `review/replay_banknifty_6m/04a8b40/ABHI_QUESTIONS_MR.md`.
 
 Walk-forward replay of the reader as merged (layers 1–4, 5, 6a; default settings) at each closed 15M bar, BANKNIFTY only (NIFTY holdout untouched), 13 Jul–13 Oct (the BANKNIFTY history available locally; not 6 months). Report, charts and CSVs are in the private trade-data repo only: `review/replay_banknifty_6m/04a8b40/`.
 
