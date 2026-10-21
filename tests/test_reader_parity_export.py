@@ -1,8 +1,26 @@
-"""scripts/reader_parity_export.py — the mirror is exact and the export refuses anything but a clean tagged commit (STABLE.md)."""
+"""scripts/reader_parity_export.py — the mirror is exact; the export refuses anything but a clean tagged commit, an output inside this
+public repo, a sealed (holdout) intraday bar, or an engine error, and never leaves a partial folder (STABLE.md). No real data here."""
+import os
+
 import pandas as pd
 import pytest
 
 from scripts import reader_parity_export as P
+
+
+def fake_git(status="", tags="", worktrees=()):
+    """`git` as the exporter calls it: status, rev-parse HEAD / --show-toplevel, tag --points-at, worktree list."""
+    def git(*a):
+        if a[0] == "status":
+            return status
+        if a[0] == "rev-parse":
+            return P.HERE if "--show-toplevel" in a else "abc1234"
+        if a[0] == "tag":
+            return tags
+        if a[0] == "worktree":
+            return "\n".join(f"worktree {w}\nHEAD abc1234\n" for w in (*worktrees, P.HERE))
+        raise AssertionError(a)
+    return git
 
 
 def test_mirror_swaps_high_low_and_keeps_volume():
@@ -18,14 +36,14 @@ def test_mirror_swaps_high_low_and_keeps_volume():
 def test_export_refuses_unknown_layers_untagged_heads_and_existing_fixtures(monkeypatch, tmp_path):
     with pytest.raises(SystemExit, match="only"):
         P.export({5: "reader-layer5-stable-v1"}, str(tmp_path))
-    monkeypatch.setattr(P, "git", lambda *a: {"status": "", "rev-parse": "abc1234", "tag": "reader-layer2-stable-v1"}[a[0]])
+    monkeypatch.setattr(P, "git", fake_git(tags="reader-layer2-stable-v1"))
     with pytest.raises(SystemExit, match="does not point at HEAD"):
         P.export({3: "reader-layer3-stable-v1"}, str(tmp_path))
     (tmp_path / "parity" / "layer2" / "reader-layer2-stable-v1").mkdir(parents=True)
     (tmp_path / "parity" / "layer2" / "reader-layer2-stable-v1" / "x").write_text("x")
     with pytest.raises(SystemExit, match="never overwritten"):
         P.export({2: "reader-layer2-stable-v1"}, str(tmp_path))
-    monkeypatch.setattr(P, "git", lambda *a: {"status": " M x.py", "rev-parse": "abc1234", "tag": ""}[a[0]])
+    monkeypatch.setattr(P, "git", fake_git(status=" M x.py"))
     with pytest.raises(SystemExit, match="changes"):
         P.export({2: "reader-layer2-stable-v1"}, str(tmp_path))
 
@@ -42,11 +60,11 @@ def test_export_writes_inputs_outputs_kb_and_a_checked_manifest(monkeypatch, tmp
     import json
     import numpy as np
     tags = {n: f"reader-layer{n}-stable-v1" for n in (1, 2, 3, 4)}
-    monkeypatch.setattr(P, "git", lambda *a: {"status": "", "rev-parse": "abc1234", "tag": "\n".join(tags.values())}[a[0]])
+    monkeypatch.setattr(P, "git", fake_git(tags="\n".join(tags.values())))
     monkeypatch.setattr(P, "nifty_inputs", lambda td: {"m15": _frame(), "m1": None, "ltf": _frame(), "fut": _frame(), "daily": _frame(2)})
     monkeypatch.setattr(P, "banknifty_inputs", lambda td: {"m15": _frame(base=500.0), "m1": None, "ltf": None, "fut": None,
                                                            "daily": _frame(2, 500.0)})
-    monkeypatch.setattr(P, "holdout_daily_bars", lambda daily: 7)
+    monkeypatch.setattr(P, "check_holdout", lambda symbol, inp: 7 if symbol == "NIFTY" else 0)
     monkeypatch.setattr(P, "build", lambda symbol, inp: {"symbol": symbol, "high0": float(inp["m15"]["high"].iloc[0])})
     monkeypatch.setattr(P, "OUTPUTS", {n: (lambda V, n=n: iter([{"layer": n, "v": V, "x": np.float64("nan"), "i": np.int64(3)}]))
                                        for n in (1, 2, 3, 4)})
@@ -58,7 +76,8 @@ def test_export_writes_inputs_outputs_kb_and_a_checked_manifest(monkeypatch, tmp
         man = json.loads((tmp_path / "parity" / f"layer{n}" / tags[n] / "MANIFEST.json").read_text(encoding="utf-8"))
         assert (man["layer"], man["tag"], man["commit"], man["method_pack_version"]) == (n, tags[n], "abc1234", "0123456789ab")
         assert man["cases"] == ["NIFTY_real", "NIFTY_mirror", "BANKNIFTY_real", "BANKNIFTY_mirror"]
-        assert man["holdout"].endswith(": 7 bars")
+        assert man["holdout_daily_bars"] == {"NIFTY_real": 7, "NIFTY_mirror": 7, "BANKNIFTY_real": 0, "BANKNIFTY_mirror": 0}
+        assert "NIFTY_mirror 7 bars" in man["holdout"]
         for f, sha in man["files"].items():
             assert P._sha(f"{root}/{f}") == sha
         files = set(man["files"])
@@ -72,6 +91,86 @@ def test_export_writes_inputs_outputs_kb_and_a_checked_manifest(monkeypatch, tmp
     assert m["high"].tolist() == [102.0] * 3 and m["low"].tolist() == [100.0] * 3
     with pytest.raises(SystemExit, match="never overwritten"):
         P.export(tags, str(tmp_path), log=lambda m: None)
+    assert sorted(os.listdir(tmp_path / "parity" / "layer1")) == [tags[1]]           # no temp folder left behind
+
+
+def _setup_synthetic(monkeypatch, tags):
+    monkeypatch.setattr(P, "git", fake_git(tags="\n".join(tags.values())))
+    monkeypatch.setattr(P, "nifty_inputs", lambda td: {"m15": _frame(), "m1": None, "ltf": None, "fut": None, "daily": None})
+    monkeypatch.setattr(P, "banknifty_inputs", lambda td: {"m15": _frame(), "m1": None, "ltf": None, "fut": None, "daily": None})
+    monkeypatch.setattr(P, "pack_version", lambda: "0123456789ab")
+
+
+def test_an_engine_error_fails_the_export_and_leaves_no_partial_folder(monkeypatch, tmp_path):
+    """No silent "error" fixtures: an engine exception on any bar stops the export, names the bar, and removes the temp folder, so
+    a re-run is not blocked."""
+    tags = {3: "reader-layer3-stable-v1", 4: "reader-layer4-stable-v1"}
+    _setup_synthetic(monkeypatch, tags)
+
+    class V:
+        m15 = _frame()
+
+        def decide(self, t):
+            if t == 2:
+                raise ValueError("boom")
+            return {"decision": "wait"}
+    monkeypatch.setattr(P, "build", lambda symbol, inp: V())
+    with pytest.raises(P.EngineError, match=r"layer 3: the engine raised on bar 2 .*ValueError: boom"):
+        P.export(tags, str(tmp_path), log=lambda m: None)
+    for n, tag in tags.items():
+        d = tmp_path / "parity" / f"layer{n}"
+        assert not d.exists() or os.listdir(d) == []
+    monkeypatch.setattr(V, "decide", lambda self, t: {"decision": "wait"})
+    monkeypatch.setattr(P, "OUTPUTS", {**P.OUTPUTS, 4: lambda V: iter([{"ok": 1}])})
+    monkeypatch.setattr(P, "golden", lambda V: {})
+    assert sorted(P.export(tags, str(tmp_path), log=lambda m: None)) == [3, 4]  # the re-run is not blocked
+
+
+def test_the_output_never_goes_inside_this_public_repo(monkeypatch, tmp_path):
+    """Parity fixtures are private: an output root inside this checkout, its top level or any worktree of the repo is refused — also
+    through a symlink — before anything is written."""
+    tags = {1: "reader-layer1-stable-v1"}
+    other = tmp_path / "Trade-main"
+    (other / "trade-data").mkdir(parents=True)
+    _setup_synthetic(monkeypatch, tags)
+    monkeypatch.setattr(P, "git", fake_git(tags=tags[1], worktrees=(str(other),)))
+    for out in (os.path.join(P.HERE, "parity"), os.path.join(P.HERE, "..", os.path.basename(P.HERE), "x"), str(other / "trade-data")):
+        with pytest.raises(SystemExit, match="inside this public repo"):
+            P.export(tags, str(tmp_path), out)
+    (tmp_path / "link").symlink_to(P.HERE)
+    with pytest.raises(SystemExit, match="inside this public repo"):
+        P.export(tags, str(tmp_path / "link" / "trade-data"))
+    assert not os.path.exists(os.path.join(P.HERE, "parity"))
+    assert P.guard_out_root(str(tmp_path / "td" / "parity")) == os.path.realpath(tmp_path / "td" / "parity")
+
+
+def test_holdout_check_refuses_sealed_intraday_bars_and_late_sealed_daily(monkeypatch):
+    """NIFTY: no 15M / LTF / FUT / 1m bar on a sealed date; sealed Daily bars only before the 15M window (Abhi Z-1t), counted.
+    BANKNIFTY has no sealed dates."""
+    from elliott import data_policy as DP
+    sealed = DP.HOLDOUT_START + pd.Timedelta(days=30, hours=9, minutes=15)
+    after = DP.ILLUSTRATION_START + pd.Timedelta(days=3, hours=9, minutes=15)
+
+    def fr(ts):
+        return pd.DataFrame({"timestamp": pd.to_datetime(ts), "close": 1.0})
+    ok = {"m15": fr([after]), "ltf": fr([after]), "fut": None, "m1": None, "daily": fr([sealed.normalize(), sealed.normalize()
+                                                                                        + pd.Timedelta(days=1), after.normalize()])}
+    assert P.check_holdout("NIFTY", ok) == 2 and P.check_holdout("BANKNIFTY", {**ok, "m15": fr([sealed])}) == 0
+    for k in P.INTRADAY:
+        with pytest.raises(SystemExit, match=f"{k}: 1 rows on sealed"):
+            P.check_holdout("NIFTY", {**ok, k: fr([sealed])} if k != "m15" else {**ok, "m15": fr([sealed, after])})
+    with pytest.raises(SystemExit, match="at / after the 15M window start"):
+        P.check_holdout("NIFTY", {**ok, "m15": fr([DP.HOLDOUT_START - pd.Timedelta(days=5)]), "ltf": None,   # a VAL window
+                                   "daily": fr([sealed.normalize()])})
+
+
+def test_real_nifty_inputs_have_no_sealed_intraday_bars():
+    """The real golden inputs (private trade-data; skipped without it): no sealed intraday bar; sealed Daily only before the window."""
+    from tests import test_decision3_flip as T
+    if not all(os.path.exists(p) for p in T.files(T.TD).values()):
+        pytest.skip("private trade-data not present")
+    inp = P.nifty_inputs(T.TD)
+    assert P.check_holdout("NIFTY", inp) > 0 and P.check_holdout("NIFTY", P.mirrored(inp)) == P.check_holdout("NIFTY", inp)
 
 
 def test_pack_version_reads_the_check_output(monkeypatch):

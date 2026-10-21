@@ -497,9 +497,18 @@ def test_oct12_synthetic_fixture_supply_flips_when_the_first_swing_after_the_bre
 
 # ------------------------------------------------------------------------------------------------ real days (private data only)
 TD = "/home/user/trade-data"
+
+
+def files(td=TD):
+    """The golden window's private files under trade-data `td` (the parity exporter passes its own --trade-data)."""
+    eod = os.path.join(td, "live_export", "2026-10-13-eod")
+    return {"m1_hist": os.path.join(td, "upstox", "NIFTY_1m_2026-07-01_2026-10-08.csv.gz"),
+            "m1_exp": os.path.join(eod, "NIFTY_1minute.parquet"), "i5": os.path.join(eod, "oe_index_5min_NIFTY.parquet"),
+            "fut5": os.path.join(eod, "oe_futures_5min_NIFTY.parquet")}
+
+
 EOD = os.path.join(TD, "live_export", "2026-10-13-eod")
-FILES = {"m1_hist": os.path.join(TD, "upstox", "NIFTY_1m_2026-07-01_2026-10-08.csv.gz"), "m1_exp": os.path.join(EOD, "NIFTY_1minute.parquet"),
-         "i5": os.path.join(EOD, "oe_index_5min_NIFTY.parquet"), "fut5": os.path.join(EOD, "oe_futures_5min_NIFTY.parquet")}
+FILES = files(TD)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ZONE = (22543.75, 22621.8)                                                # decision3 1H level (spot) = Abhi's 22,667 FUT supply (Z-1e)
 FAR_UP = 22731.8                                                          # D2 H 6 Oct 14:00 (known 7 Oct 13:45) — the 6 / 7 Oct high
@@ -532,19 +541,20 @@ def daily_history(window_start, log_fn=None):
     return HI.repo_level_history("NIFTY", window_start, root=ROOT, log_fn=log_fn)
 
 
-def real_inputs():
+def real_inputs(td=TD):
     """NIFTY SPOT 15M (decision3 runs on spot, as the live engine3 feed): 1m history (golden window) + the EOD export's 1m to 12 Oct ⇒
     market_state.core.frame 15M / 5M; 13 Oct = complete bins of the export's spot 5M. FUT = the export's near-month 5M. Daily = the
     Z-1t warm-up (`daily_history`: IS / VAL + holdout Daily as level history, before the 15M window) + the window's own days — the same
     role as live's Upstox Daily. Returns (m15, ltf, fut, m1, daily). Skips without the data."""
-    if not all(os.path.exists(p) for p in FILES.values()):
+    F = files(td)
+    if not all(os.path.exists(p) for p in F.values()):
         pytest.skip("private trade-data (2026-10-13-eod export / upstox 1m) not present")
     import market_state.core as MC
-    h = _read(FILES["m1_hist"])[["timestamp", "open", "high", "low", "close"]]
-    e = _read(FILES["m1_exp"])[["timestamp", "open", "high", "low", "close"]]
+    h = _read(F["m1_hist"])[["timestamp", "open", "high", "low", "close"]]
+    e = _read(F["m1_exp"])[["timestamp", "open", "high", "low", "close"]]
     m1 = pd.concat([h, e[e["timestamp"] > h["timestamp"].max()]], ignore_index=True)
     end = pd.Timestamp(m1["timestamp"].max().normalize()) + pd.Timedelta(hours=15, minutes=30)
-    i5 = _read(FILES["i5"])
+    i5 = _read(F["i5"])
     i5 = i5[i5["timestamp"].dt.normalize() > m1["timestamp"].max().normalize()][["timestamp", "open", "high", "low", "close"]]
     m15 = pd.concat([MC.frame(m1, "15m", end)[["timestamp", "open", "high", "low", "close"]], _to15(i5)], ignore_index=True)
     m15 = m15.sort_values("timestamp").reset_index(drop=True)
@@ -553,7 +563,7 @@ def real_inputs():
     ltf["bar_end"] = ltf["timestamp"] + pd.Timedelta(minutes=5)
     from decision3 import history as HI
     hist, _n = daily_history(m15["timestamp"].min())
-    return m15, ltf, _read(FILES["fut5"]), m1, HI.daily_warmup("NIFTY", m15, hist)
+    return m15, ltf, _read(F["fut5"]), m1, HI.daily_warmup("NIFTY", m15, hist)
 
 
 @pytest.fixture(scope="module")

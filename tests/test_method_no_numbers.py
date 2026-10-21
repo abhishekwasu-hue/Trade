@@ -69,8 +69,8 @@ CALIBRATION = {                  # Abhi (layer 1 ✅): a swing's significance is
     "level_degree": "the zone's structure = the approved D2 (1H trend degree)",
     "tl_degree": "one degree below the zone's structure = the approved D1 (the pullback's legs)",
     "flip_pullback_inner_degree": "one degree below the zone's structure = the approved D1",
-    # provisional (Abhi L1-c): the Daily pivot size keeps N = 2 as his recorded provisional value; he may change it later from the
-    # dashboard (the live-switches track adds that setting)
+    # provisional (Abhi L1-c): the Daily pivot size keeps N = 2 as his recorded provisional value (REGISTER class "Abhi नियम", same
+    # note); he may change it later from the dashboard (the live-switches track adds that setting)
     "daily_pivot_n": "Abhi L1-c: provisional N = 2; dashboard setting via the live-switches track",
 }
 PENDING = {                      # still a number in the reading path ⇒ removed in the named layer
@@ -135,7 +135,7 @@ def test_layer_one_swings_are_abhis_calibration():
     from swings2 import settings as SS
     assert not [k for k, layer in PENDING.items() if layer == 1]
     assert S3.DEFAULTS["daily_pivot_n"] == 2 and "L1-c" in CALIBRATION["daily_pivot_n"]     # Abhi L1-c: provisional N = 2
-    assert "Abhi L1-c: provisional N = 2" in S3.REGISTER["daily_pivot_n"][3]
+    assert S3.REGISTER["daily_pivot_n"][2] == "Abhi नियम" and S3.REGISTER["daily_pivot_n"][3].startswith(CALIBRATION["daily_pivot_n"])
     import inspect
     from decision3 import daily as DD
     from decision3 import method as M

@@ -34,10 +34,10 @@ Owner decision (Abhi): Trade will be archived only on Abhi's own word; ATP ports
 
 | Layer | Spec (CHART_READER_METHOD.md) | State |
 |---|---|---|
-| 1 | Swings / structure | **Stable v1** (Abhi ✅; L1-a, L1-b merged in #345). L1-c: `daily_pivot_n` N = 2 is Abhi's PROVISIONAL value (recorded; guard class calibration / provisional; he may change it later from the dashboard — the setting comes from the live-switches track). |
-| 2 | Areas + lifecycle | **Stable v1** (Abhi ✅, #332). |
-| 3 | Visit, zone study, commitment, LTF | **Stable v1** (Abhi ✅, #331, #333, #334, #335, #338). |
-| 4 | Lines + confluence | **Stable v1** (Abhi ✅, #336, #339; his L4-g answers merged in #343). |
+| 1 | Swings / structure | **Stable v1 on merge — tag + parity fixtures follow** (Abhi ✅; L1-a, L1-b merged in #345). L1-c: `daily_pivot_n` N = 2 is Abhi's PROVISIONAL value, recorded — guard: the `CALIBRATION` class (Abhi's calibration and his provisional values); register (`decision3/settings.py` REGISTER): class "Abhi नियम", note "Abhi L1-c: provisional N = 2; dashboard setting via the live-switches track". He may change it later from the dashboard (that setting comes from the live-switches track). |
+| 2 | Areas + lifecycle | **Stable v1 on merge — tag + parity fixtures follow** (Abhi ✅, #332). |
+| 3 | Visit, zone study, commitment, LTF | **Stable v1 on merge — tag + parity fixtures follow** (Abhi ✅, #331, #333, #334, #335, #338). |
+| 4 | Lines + confluence | **Stable v1 on merge — tag + parity fixtures follow** (Abhi ✅, #336, #339; his L4-g answers merged in #343). |
 | 5 | RSI | Merged (#341); Abhi's L5-a final answer merged (#344). **Not stable** until Abhi answers ✅. |
 | 6 | Output (charts, dossier, display finder) | 6a (the verdict: required set ⇒ enter; A / B by confirming evidence; no scores) merged (#342) — **not stable** until Abhi answers ✅. 6b (output: charts, dossier, display finder) not merged — in progress on another track. |
 
