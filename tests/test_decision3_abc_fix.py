@@ -11,7 +11,7 @@ def test_rule5_caption_bands_and_next_demand_on_banknifty_shape():
     """Abhi's caption while the new decline is above the b low; once price closes below b, "next demand" is no longer shown."""
     for mirror in (False, True):
         d = F.ohlc(_bn_points()[:-3], mirror)                              # new decline in progress, still above the b low
-        v = DS.build(d, window=len(d), with_elliott=False)
+        v = DS.build(d, window=len(d), with_elliott=False, elliott_debug=True)
         q = v["q15"]
         t = "UP" if mirror else "DOWN"
         side = "fall supply" if t == "DOWN" else "rise demand"
@@ -27,14 +27,14 @@ def test_rule5_caption_bands_and_next_demand_on_banknifty_shape():
         labels = [b["label"] for b in q["levels"]]
         assert any("sharp-" in x for x in labels) and any(x.startswith("next ") for x in labels)
         full, _ = F.acceptance_banknifty(mirror)                           # later bars close beyond the b low
-        vf = DS.build(full, window=len(full), with_elliott=False)
+        vf = DS.build(full, window=len(full), with_elliott=False, elliott_debug=True)
         assert vf["q15"]["next_level"] is None and "next demand" not in DS.trend_line(vf["q15"])
 
 
 def test_rule5_caption_not_shown_while_a_new_correction_runs():
     d2 = F.ohlc(_bn_points() + [(1330.0, 6), (1300.0, 3), (1360.0, 5)])  # same shape + a later bounce (new counter-move)
     st = DD.fold(d2)
-    v = DS.build(d2, window=len(d2), with_elliott=False)
+    v = DS.build(d2, window=len(d2), with_elliott=False, elliott_debug=True)
     if st[-1].phase != "impulse" or st[-1].counter not in (None, "pullback"):
         assert "completed at sharp" not in DS.trend_line(v["q15"])
         V = _V_with(st, [DD.DState(0, st[0].day, st[0].known_at, "UNKNOWN")])
@@ -138,7 +138,7 @@ def test_q44_target_is_first_impulse_leg_extreme_and_inside_window():
         lo, hi = float(d["low"].min()), float(d["high"].max())
         for x in DD.fold(d):
             assert all(lo <= t <= hi for t in (x.targets or ()))
-    q = DS.build(F.correction_fixture("zigzag_c_eq_a")[0], window=200, with_elliott=False)["q15"]
+    q = DS.build(F.correction_fixture("zigzag_c_eq_a")[0], window=200, with_elliott=False, elliott_debug=True)["q15"]
     line = DS.trend_line({**q, "targets": (), "phase": "impulse"})
     assert "target: none (structure incomplete)" in line
 
@@ -146,7 +146,7 @@ def test_q44_target_is_first_impulse_leg_extreme_and_inside_window():
 def test_q44_caption_target_passed_vs_none():
     """Q44 nit (review): a structural target that protected has already moved beyond ⇒ "target passed" (not "none (structure
     incomplete)"); no structure ⇒ "target: none (structure incomplete)"; a live target ⇒ "target <price>"."""
-    q = DS.build(F.correction_fixture("zigzag_c_eq_a")[0], window=200, with_elliott=False)["q15"]
+    q = DS.build(F.correction_fixture("zigzag_c_eq_a")[0], window=200, with_elliott=False, elliott_debug=True)["q15"]
     base = {**q, "phase": "impulse", "counter": None, "rule5": False}
     passed = DS.trend_line({**base, "targets": (), "target_passed": True})
     assert "target passed" in passed and "structure incomplete" not in passed

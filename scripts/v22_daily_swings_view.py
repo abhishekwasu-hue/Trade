@@ -76,12 +76,15 @@ def main(argv=None):
                     help="Daily OHLC files (csv / csv.gz / parquet; timestamp, open, high, low, close) — जुने आधी, नवे नंतर")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--years", type=float, default=2.0)
-    ap.add_argument("--no-elliott", action="store_true")
+    ap.add_argument("--no-elliott", action="store_true", help="(kept for old callers; Elliott is off by default now)")
+    ap.add_argument("--debug-elliott", action="store_true",
+                    help="admin diagnostics only (Abhi 21 Oct): Elliott advisory count + box family / a-b-c marks / 5-wave leg check")
     a = ap.parse_args(argv)
     sym = a.symbol.upper()
     d = load_daily(a.daily, sym)
     w = window_of(d, a.years)
-    v = DS.build(d, window=w, with_elliott=not a.no_elliott, sealed=sealed_fn(sym), symbol=sym)   # CD14: Abhi-accepted legs
+    dbg = bool(a.debug_elliott and not a.no_elliott)
+    v = DS.build(d, window=w, with_elliott=dbg, elliott_debug=dbg, sealed=sealed_fn(sym), symbol=sym)   # CD14: Abhi-accepted legs
     v["full_window"] = v["i0"] == len(d) - w and (d["timestamp"].iloc[-1] - d["timestamp"].iloc[0]).days >= 365.25 * a.years - 7
     sd = os.path.join(a.out_dir, sym)
     os.makedirs(sd, exist_ok=True)
