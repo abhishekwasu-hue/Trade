@@ -2,10 +2,11 @@
 PAPER spread (Abhi P0 #1). Spread selection / strikes / execution: bots चीच existing functions (`strategy.select_credit_spread_itm`,
 `select_naked_option_itm`, `trading_engine.open_multi_leg_trade`) — नवीन execution नाही. **फक्त PAPER**; LIVE ⇒ काहीच नाही.
 Engine signal एकदाच वापरला जातो (`engine_signal.mark_consumed`); HOLD ⇒ पुढच्या cycle ला पुन्हा (gate चा approval मार्ग).
-Entry models E1–E4 (decision3 rows with payload `entries`): each entry on its own — dashboard on/off + lots per model
-(`engine3_model_eN_on` / `engine3_model_eN_lots`), idempotency key (bot, symbol, visit_id, model) persisted in the engine store
-(`engine_signal.claim_entry`) ⇒ at most once per visit per model, its own Vision signal / card / ✅ and PAPER position (entry_reason_tag
-"ENGINE_EN"); one model's open / stopped position never blocks another model. Rows without `entries` ⇒ today's single-setup path.
+Entry models E1–E4 (decision3 rows with payload `entries`): the engine only generates signals — each entry is its own signal
+(idempotency key (bot, symbol, visit_id, model) persisted in the engine store, `engine_signal.claim_entry` ⇒ at most one signal per model
+per visit; its own Vision card / ✅; `engine3_model_eN_on` = which models produce signals). Execution = today's path and today's
+dashboard settings exactly (lots, legs, naked_lots, strikes, SL / target / TSL, one position at a time); the position is tagged
+entry_reason_tag "ENGINE_EN" (journal / summary only). Rows without `entries` ⇒ today's single-setup path.
 """
 import contextlib
 import os
@@ -147,17 +148,17 @@ _AREAS_WARNED = False
 
 
 def process(bot, access_token, symbol, settings, lot_size, source, now=None, has_open=None, gate_fn=None, open_fn=None, chain=None,
-            path=None, cutoff=None, vpath=None, symbols_fn=None, has_open_model=None):
+            path=None, cutoff=None, vpath=None, symbols_fn=None):
     """engine mode चा एक cycle. रिटर्न संदेश (None = engine mode नाही / नवा setup नाही). One cycle per (bot, symbol) at a time
-    (`entry_lock`: the cron cycle and the Telegram ✅ path). Entry models (rows with `entries`): every pending entry on its own
-    (`_process_models`); has_open_model(symbol, source, model) = that model's PAPER position is open."""
+    (`entry_lock`: the cron cycle and the Telegram ✅ path). Entry models (rows with `entries`): every pending entry is its own signal
+    (`_process_models`); execution = today's path and dashboard settings exactly (has_open = the bot's one-position rule)."""
     if ES.source_of(settings) != "engine":
         return None
     with entry_lock(bot, symbol, os.path.dirname(path) if path else None) as held:
         if not held:
             return f"{symbol}: engine — another entry cycle is running (cron / ✅) ⇒ this one skips"
         return _process(bot, access_token, symbol, settings, lot_size, source, now, has_open, gate_fn, open_fn, chain, path, cutoff,
-                        vpath, symbols_fn, has_open_model)
+                        vpath, symbols_fn)
 
 
 def _cutoff(cutoff):
@@ -168,7 +169,7 @@ def _cutoff(cutoff):
 
 
 def _process(bot, access_token, symbol, settings, lot_size, source, now, has_open, gate_fn, open_fn, chain, path, cutoff, vpath,
-             symbols_fn, has_open_model=None):
+             symbols_fn):
     now = ES._naive(now or ES.now_ist())
     if str(settings.get("trading_mode", "PAPER")).upper() != "PAPER":
         return f"{symbol}: signal_source = engine फक्त PAPER साठी — {settings.get('trading_mode')} ⇒ entry नाही"
@@ -179,7 +180,7 @@ def _process(bot, access_token, symbol, settings, lot_size, source, now, has_ope
         return f"{symbol}: signal_symbols मध्ये नाही (dashboard) ⇒ engine entry नाही"
     ents = ES.pending_entries(bot, symbol, settings, now, path)
     if ents is not None:                                                 # decision3 entry models (rows with `entries`)
-        return _process_models(bot, access_token, symbol, settings, lot_size, source, now, ents, has_open_model, gate_fn, open_fn,
+        return _process_models(bot, access_token, symbol, settings, lot_size, source, now, ents, has_open, gate_fn, open_fn,
                                chain, path, cutoff, vpath)
     r = ES.pending_entry(bot, symbol, settings, now, path)               # older rows (no `entries`) ⇒ today's single-setup path
     if r is None:
@@ -233,7 +234,6 @@ def _process(bot, access_token, symbol, settings, lot_size, source, now, has_ope
 
 # ------------------------------------------------------------------------------------------------ entry models E1–E4 (decision3 `entries`)
 MODEL_DEFAULT_ON = True
-MODEL_DEFAULT_LOTS = 1
 
 
 def model_key(model, what):
@@ -242,7 +242,8 @@ def model_key(model, what):
 
 
 def model_on(settings, model):
-    """Dashboard `engine3_model_eN_on` (default True). "false" / "0" / "no" / "off" ⇒ False; None / "" ⇒ default. Never raises."""
+    """Dashboard `engine3_model_eN_on` (default True) — a SIGNAL switch only (which models produce signals / cards); execution never
+    reads it. "false" / "0" / "no" / "off" ⇒ False; None / "" ⇒ default. Never raises."""
     v = (settings or {}).get(model_key(model, "on"))
     if v is None or (isinstance(v, str) and not v.strip()):
         return MODEL_DEFAULT_ON
@@ -254,24 +255,8 @@ def model_on(settings, model):
         return MODEL_DEFAULT_ON
 
 
-def model_lots(settings, model):
-    """Dashboard `engine3_model_eN_lots` (default 1): a whole number ≥ 0 (2.7 ⇒ 2). None / "" / not a number / negative / NaN / bool ⇒ the
-    default. Never raises."""
-    import math
-    v = (settings or {}).get(model_key(model, "lots"))
-    if v is None or isinstance(v, bool) or (isinstance(v, str) and not v.strip()):
-        return MODEL_DEFAULT_LOTS
-    try:
-        f = float(str(v).strip())
-    except (TypeError, ValueError):
-        return MODEL_DEFAULT_LOTS
-    if not math.isfinite(f) or f < 0:
-        return MODEL_DEFAULT_LOTS
-    return int(f)
-
-
 def model_tag(model):
-    """live_trades.entry_reason_tag of a model's PAPER position ("ENGINE_E1" …)."""
+    """live_trades.entry_reason_tag of a model's PAPER position ("ENGINE_E1" …) — journal / summary label only (exits never read it)."""
     return f"ENGINE_{str(model).upper()}"
 
 
@@ -327,34 +312,31 @@ def entry_gate_tags(r, e, direction, settings=None):
             "entry_invalidation": e.get("invalidation"), "entry_evidence": ev}
 
 
-def _has_open_model_default(symbol, source, model):
-    from database import has_open_trade_from_source_tag
-    return has_open_trade_from_source_tag(symbol, source, model_tag(model))
-
-
-def _process_models(bot, access_token, symbol, settings, lot_size, source, now, ents, has_open_model, gate_fn, open_fn, chain, path,
+def _process_models(bot, access_token, symbol, settings, lot_size, source, now, ents, has_open, gate_fn, open_fn, chain, path,
                     cutoff, vpath):
-    """Entry models: each pending entry independently (its own idempotency key, Vision signal, card, ✅ and PAPER position). One
-    entry's error never stops the others. Returns the lines joined."""
+    """Entry models: the engine only generates signals — each pending entry is its own signal (idempotency key, Vision card, ✅);
+    execution is today's path with today's dashboard settings (lots / naked_lots / legs / strikes / SL / target / TSL) and today's
+    bot-wide one-position rule, checked again for every entry (an entry opened earlier in this cycle counts). One entry's error never
+    stops the others. Returns the lines joined."""
     if not ents:
         return f"{symbol}: engine — नवा entry नाही ({ES.opinion(symbol, now, path)})"
     cutoff = _cutoff(cutoff)
-    if has_open_model is None:
-        has_open_model = _has_open_model_default
+    if has_open is None:
+        from database import has_open_trade_from_source as has_open
     if gate_fn is None:
         from vision.gate import entry_gate as gate_fn
     box = {"chain": chain}
     out = []
     for r, e in ents:
         try:
-            out.append(_one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e, has_open_model, gate_fn, open_fn,
+            out.append(_one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e, has_open, gate_fn, open_fn,
                                   box, path, cutoff, vpath))
         except Exception as exc:                                         # noqa: BLE001 — this entry only; no position
             out.append(f"{symbol} {ES.model_label(e)}: त्रुटी ⇒ entry नाही ({type(exc).__name__}: {exc})")
     return "\n".join(out)
 
 
-def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e, has_open_model, gate_fn, open_fn, box, path, cutoff,
+def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e, has_open, gate_fn, open_fn, box, path, cutoff,
                vpath):
     m, visit, bar = e["model"], e["visit_id"], r["bar_ts"]
     d = int(e["direction"])
@@ -366,20 +348,16 @@ def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e,
     if not model_on(settings, m):
         done("SKIPPED_MODEL_OFF")
         return f"{who}: model OFF (dashboard) ⇒ skip"
-    lots_m = model_lots(settings, m)
-    if lots_m <= 0:
-        done("SKIPPED_MODEL_ZERO_LOTS")
-        return f"{who}: model lots 0 (dashboard) ⇒ skip"
     if (now.hour, now.minute) >= cutoff:
         done("SKIPPED_CUTOFF")
         return f"{who}: {cutoff[0]}:{cutoff[1]:02d} नंतर नवीन entry नाही"
     if direction == "BULLISH" and not settings.get("bullish_entry_enabled", True) or direction == "BEARISH" and not settings.get("bearish_entry_enabled", True):
         done("SKIPPED_DIRECTION_OFF")
         return f"{who}: त्या दिशेच्या entries बंद"
-    if has_open_model(symbol, source, m):                                # that model's own position only — other models are free
-        return f"{who}: आधीची {m} position उघडी (model प्रमाणे एका वेळी एकच)"
-    lots = lots_m if settings.get("credit_spread_enabled", True) else 0
-    naked = lots_m if settings.get("naked_enabled", True) else 0
+    if has_open(symbol, source):                                         # today's rule (bot-wide): one position at a time
+        return f"{who}: आधीची position उघडी (एका वेळी एकच) ⇒ पुढच्या cycle ला"
+    lots = int(settings["lots"]) if settings.get("credit_spread_enabled", True) else 0          # today's dashboard lots / legs
+    naked = int(settings.get("naked_lots", settings["lots"])) if settings.get("naked_enabled", True) else 0
     level = entry_level(r, e)
     role = "Support" if d > 0 else "Resistance"
     if box.get("chain") is None:                                         # चालू spot ⇒ gate चा drift guard (one fetch per cycle)

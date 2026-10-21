@@ -1,7 +1,8 @@
-"""Track H2 — live path for the entry models E1–E4 (decision3 rows carry payload `entries`). Fake engine rows only (no data, no network):
-4 models in one visit ⇒ 4 Vision signals / 4 cards / 4 PAPER positions after ✅; same model twice in a visit ⇒ once; model OFF ⇒ skipped;
-lots per model; one model's open / stopped position never blocks another; LIVE ⇒ never; dedupe keys (Vision open row / reuse /
-cooldown); restart idempotency (persisted); the payload never drops `entries`; rows without `entries` ⇒ today's single-setup path."""
+"""Track H2 — live path for the entry models E1–E4 (decision3 rows carry payload `entries`). The engine only generates signals; execution
+is today's path and today's dashboard settings. Fake engine rows only (no data, no network): 4 models in one visit ⇒ 4 Vision signals /
+4 cards; after ✅ the positions open under today's one-position rule; same model twice in a visit ⇒ once; model OFF ⇒ no signal;
+today's lots / naked_lots; a stopped-out position frees the next model; LIVE ⇒ never; dedupe keys (Vision open row / reuse / cooldown);
+restart idempotency (persisted); the payload never drops `entries`; rows without `entries` ⇒ today's single-setup path."""
 import datetime as dt
 import json
 import sqlite3
@@ -82,10 +83,9 @@ class G:
         self.action, self.lots, self.naked_lots, self.note, self.final, self.signal_id = action, lots, naked, note, final, sid
 
 
-def run(p, settings=None, now=RUN, gate_fn=None, has_open=None, has_open_model=None, chain=CHAIN):
+def run(p, settings=None, now=RUN, gate_fn=None, has_open=None, chain=CHAIN):
     return EE.process(BOT, "tok", SYM, settings or ST, 65, BOT, now=now, has_open=has_open or (lambda s, src: False),
-                      gate_fn=gate_fn, chain=chain, path=p, symbols_fn=lambda: [SYM],
-                      has_open_model=has_open_model or (lambda s, src, m: False), cutoff=(15, 0))
+                      gate_fn=gate_fn, chain=chain, path=p, symbols_fn=lambda: [SYM], cutoff=(15, 0))
 
 
 def recorder(action="ENTER"):
@@ -136,9 +136,17 @@ def test_four_models_one_visit_four_cards_then_four_positions(db, es, opened, mo
     for r in rows:
         _approve(r["signal_id"], NOW + dt.timedelta(minutes=1))
     assert len(enter_now) == 4                                                     # every ✅ runs the cycle at once (same lock)
-    msg = run(es)
-    assert len(opened) == 4 and sorted(o["tag"] for o in opened) == ["ENGINE_E1", "ENGINE_E2", "ENGINE_E3", "ENGINE_E4"]
-    assert all(o["source"] == BOT and o["lots"] == 1 and o["direction"] == "BEARISH" for o in opened)   # bot's own source ⇒ its exits
+    closed = [0]
+    book = lambda s, src: len(opened) > closed[0]                                  # noqa: E731 — today's one-position rule (bot-wide)
+    msg = run(es, has_open=book)
+    assert [o["tag"] for o in opened] == ["ENGINE_E1"] and msg.count("आधीची position उघडी (एका वेळी एकच)") == 3
+    assert ES.entry_status(BOT, SYM, VISIT, "E2", es) is None                      # approved, waits for the open position
+    for n in (2, 3, 4):
+        closed[0] += 1                                                             # the open position exits (SL / target / TSL)
+        run(es, has_open=book)
+        assert len(opened) == n                                                    # the next approved model, still one at a time
+    assert [o["tag"] for o in opened] == ["ENGINE_E1", "ENGINE_E2", "ENGINE_E3", "ENGINE_E4"]
+    assert all(o["source"] == BOT and o["lots"] == 1 and o["naked"] == 0 and o["direction"] == "BEARISH" for o in opened)   # dashboard
     assert all(ES.entry_status(BOT, SYM, VISIT, m, es) == "EXECUTED" for m in ("E1", "E2", "E3", "E4"))
     assert "नवा entry नाही" in run(es) and len(opened) == 4                     # never again in this visit
 
@@ -167,7 +175,7 @@ def test_hold_keeps_the_entry_pending_and_reject_consumes_it(es, opened):
     assert ES.entry_status(BOT, SYM, VISIT, "E2", es) == "NOT_ENTERED_HOLD" and not opened
 
 
-# ------------------------------------------------------------------------------------------------ 3. dashboard: OFF / lots
+# ------------------------------------------------------------------------------------------------ 3. dashboard: model OFF / today's lots
 def test_model_off_is_skipped_without_a_card(es, opened):
     put(es, [entry("E1"), entry("E2"), entry("E3")])
     gate_fn, calls = recorder()
@@ -177,40 +185,50 @@ def test_model_off_is_skipped_without_a_card(es, opened):
     assert ES.entry_status(BOT, SYM, VISIT, "E2", es) == "SKIPPED_MODEL_OFF"
 
 
-def test_lots_per_model(es, opened):
-    put(es, [entry("E1"), entry("E2"), entry("E3"), entry("E4")])
-    gate_fn = lambda *a, **k: G("ENTER", lots=a[9], naked=a[10])                 # noqa: E731 — gate passes the asked lots
-    run(es, settings={**ST, "naked_enabled": True, "engine3_model_e1_lots": 2, "engine3_model_e2_lots": "3",
-                      "engine3_model_e3_lots": "bad", "engine3_model_e4_lots": 0}, gate_fn=gate_fn)
-    got = {o["tag"]: (o["lots"], o["naked"]) for o in opened}
-    assert got == {"ENGINE_E1": (2, 2), "ENGINE_E2": (3, 3), "ENGINE_E3": (1, 1)}   # bad ⇒ default 1; 0 lots ⇒ skipped
-    assert ES.entry_status(BOT, SYM, VISIT, "E4", es) == "SKIPPED_MODEL_ZERO_LOTS"
+def test_execution_uses_todays_dashboard_lots_and_legs(es, opened):
+    put(es, [entry("E1"), entry("E2"), entry("E3")])
+    asked = []
+    gate_fn = lambda *a, **k: asked.append((a[9], a[10])) or G("ENTER", lots=a[9], naked=a[10])   # noqa: E731
+    stray = {"engine3_model_e1_lots": 7, "engine3_model_e2_lots": 0}              # no per-model lots exist: ignored
+    run(es, settings={**ST, "lots": 2, "naked_enabled": True, "naked_lots": 3, **stray}, gate_fn=gate_fn)
+    assert asked == [(2, 3)] * 3 and {o["tag"]: (o["lots"], o["naked"]) for o in opened} == \
+        {"ENGINE_E1": (2, 3), "ENGINE_E2": (2, 3), "ENGINE_E3": (2, 3)}              # dashboard lots / naked_lots for every model
+    opened.clear()
+    put(es, [entry("E4")], bar="2026-10-06 10:45:00")
+    run(es, now="2026-10-06 10:47", settings={**ST, "lots": 2, "credit_spread_enabled": False, "naked_enabled": True, "naked_lots": 1},
+        gate_fn=gate_fn)
+    assert [(o["lots"], o["naked"]) for o in opened] == [(0, 1)]                  # dashboard leg switches as today
 
 
 def test_model_settings_safe_parsing_and_defaults():
     import cloud_db
     d = cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]
     for m in ("e1", "e2", "e3", "e4"):
-        assert d[f"engine3_model_{m}_on"] is True and d[f"engine3_model_{m}_lots"] == 1
+        assert d[f"engine3_model_{m}_on"] is True and f"engine3_model_{m}_lots" not in d   # signal switch only
     assert EE.model_on({}, "E1") and EE.model_on({"engine3_model_e1_on": ""}, "E1") and not EE.model_on({"engine3_model_e1_on": "false"}, "E1")
     assert not EE.model_on({"engine3_model_e1_on": False}, "E1") and EE.model_on({"engine3_model_e1_on": "yes"}, "E1")
-    for v, want in ((None, 1), ("", 1), ("x", 1), (-2, 1), (float("nan"), 1), (True, 1), (2.7, 2), ("4", 4), (0, 0)):
-        assert EE.model_lots({"engine3_model_e3_lots": v}, "E3") == want, v
+    assert not hasattr(EE, "model_lots")
 
 
-# ------------------------------------------------------------------------------------------------ 4. stop-out of one model
-def test_open_or_stopped_model_never_blocks_another(es, opened):
+# ------------------------------------------------------------------------------------------------ 4. today's one-position rule
+def test_two_model_signals_respect_the_one_position_rule(es, opened):
     put(es, [entry("E1"), entry("E2")])
     gate_fn, calls = recorder()
-    msg = run(es, gate_fn=gate_fn, has_open=lambda s, src: True,                     # the bot-wide "one at a time" is not used here
-              has_open_model=lambda s, src, m: m == "E1")                          # E1's own position is open
-    assert [o["tag"] for o in opened] == ["ENGINE_E2"] and "आधीची E1 position उघडी" in msg
-    assert ES.entry_status(BOT, SYM, VISIT, "E1", es) is None                      # not consumed: E1 may still enter in this window
-    run(es, gate_fn=gate_fn)                                                       # E1 stopped out (closed) ⇒ E1 free again
-    assert sorted(o["tag"] for o in opened) == ["ENGINE_E1", "ENGINE_E2"]
-    put(es, [entry("E3")], bar="2026-10-06 10:45:00")                              # E1 / E2 stopped earlier ⇒ E3 of the same visit
-    run(es, now="2026-10-06 10:47", gate_fn=gate_fn, has_open_model=lambda s, src, m: m in ("E1", "E2"))
-    assert sorted(o["tag"] for o in opened) == ["ENGINE_E1", "ENGINE_E2", "ENGINE_E3"]
+    msg = run(es, gate_fn=gate_fn, has_open=lambda s, src: True)                   # a position of this bot is open (any model / own)
+    assert not opened and not calls and msg.count("आधीची position उघडी (एका वेळी एकच)") == 2
+    assert ES.entry_status(BOT, SYM, VISIT, "E1", es) is None                      # not consumed: may enter once the position exits
+    run(es, gate_fn=gate_fn, has_open=lambda s, src: len(opened) > 0)              # free ⇒ E1 opens, E2 waits (one at a time)
+    assert [o["tag"] for o in opened] == ["ENGINE_E1"] and ES.entry_status(BOT, SYM, VISIT, "E2", es) is None
+
+
+def test_stop_out_of_one_model_does_not_lock_out_the_next(es, opened):
+    put(es, [entry("E1")])
+    gate_fn, calls = recorder()
+    run(es, gate_fn=gate_fn)
+    assert [o["tag"] for o in opened] == ["ENGINE_E1"]
+    put(es, [entry("E2")], bar="2026-10-06 10:45:00")
+    run(es, now="2026-10-06 10:47", gate_fn=gate_fn, has_open=lambda s, src: False)   # E1 stopped out (closed) ⇒ nothing open
+    assert [o["tag"] for o in opened] == ["ENGINE_E1", "ENGINE_E2"]               # no extra lock-out after a stop (today's rules only)
 
 
 def test_one_entry_error_does_not_stop_the_others(es, monkeypatch):
@@ -290,13 +308,13 @@ def test_restart_idempotency_is_persisted(es, opened, tmp_path):
     assert got == [(BOT, SYM, VISIT, "E1", "EXECUTED"), (BOT, SYM, VISIT, "E2", "EXECUTED")]
     gate_fn, calls = recorder()                                                   # "restart": nothing in memory, only the store
     msg = EE.process(BOT, "tok", SYM, ST, 65, BOT, now=RUN, has_open=lambda s, src: False, gate_fn=gate_fn, chain=CHAIN, path=es,
-                     symbols_fn=lambda: [SYM], has_open_model=lambda s, src, m: False, cutoff=(15, 0))
+                     symbols_fn=lambda: [SYM], cutoff=(15, 0))
     assert not calls and len(opened) == 2 and "नवा entry नाही" in msg
     assert not ES.claim_entry(BOT, SYM, VISIT, "E1", "ENTERING", BAR, es)            # the key is taken (INSERT OR IGNORE)
     assert ES.claim_entry(BOT, SYM, VISIT, "E3", "ENTERING", BAR, es) and ES.entry_status(BOT, SYM, VISIT, "E3", es) == "ENTERING"
     put(es, [entry("E3")], bar="2026-10-06 10:45:00")                              # claimed (crash before EXECUTED) ⇒ never re-entered
     EE.process(BOT, "tok", SYM, ST, 65, BOT, now="2026-10-06 10:47", has_open=lambda s, src: False, gate_fn=gate_fn, chain=CHAIN,
-               path=es, symbols_fn=lambda: [SYM], has_open_model=lambda s, src, m: False, cutoff=(15, 0))
+               path=es, symbols_fn=lambda: [SYM], cutoff=(15, 0))
     assert not calls and len(opened) == 2
 
 
@@ -307,7 +325,7 @@ def test_cutoff_and_direction_off_consume_per_model(es, opened):
     assert ES.entry_status(BOT, SYM, VISIT, "E2", es) == "SKIPPED_DIRECTION_OFF" and [o["tag"] for o in opened] == ["ENGINE_E1"]
     put(es, [entry("E3")], bar="2026-10-06 14:45:00")
     EE.process(BOT, "tok", SYM, ST, 65, BOT, now="2026-10-06 15:05", has_open=lambda s, src: False, gate_fn=gate_fn, chain=CHAIN, path=es,
-               symbols_fn=lambda: [SYM], has_open_model=lambda s, src, m: False, cutoff=(15, 0))
+               symbols_fn=lambda: [SYM], cutoff=(15, 0))
     assert ES.entry_status(BOT, SYM, VISIT, "E3", es) == "SKIPPED_CUTOFF" and len(opened) == 1
 
 
