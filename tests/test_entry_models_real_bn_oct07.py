@@ -68,6 +68,7 @@ def day_rows():
     from bots_common import level_reaction as LR
     from decision3 import engine as E3, history as HI
     m15_all, m5_all, m1_all, fut_all, daily_all = _inputs()
+    prev = INS.current()
     INS.set_current("BANKNIFTY")
     S = L.DEFAULTS
     D = pd.Timestamp(DAY)
@@ -86,7 +87,10 @@ def day_rows():
                ltf=ltf, futures=fut)
     ts = pd.to_datetime(V.m15["timestamp"]).reset_index(drop=True)
     bars = [i for i in range(len(ts)) if ts[i].normalize() == D]
-    return V, ts, {str(ts[t])[11:16]: V.decide(t) for t in bars}
+    try:
+        yield V, ts, {str(ts[t])[11:16]: V.decide(t) for t in bars}
+    finally:
+        INS.set_current(prev)                                              # never leak the instrument to later tests
 
 
 def _on_band(e):
