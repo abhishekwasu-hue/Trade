@@ -74,7 +74,7 @@ def draw(V, t, tf, read, title, path, sessions):
     pad = (hi - lo) * 0.08
     shown = 0
     for p in read["patterns"]:
-        if p["end_bar"] < i0:
+        if p["end_bar"] < i0 and max(ln["until_bar"] for ln in p["lines"]) < i0:
             continue
         col = STATE_COLOR.get(p["state"], "#495057")
         ls = "-" if p["named"] else ":"
@@ -148,7 +148,7 @@ def main(argv=None):
             r = PP.read_patterns(V, t, tf=tf)
             dt = time.time() - t1
             name = f"{a.symbol}_{ts[t]:%Y%m%d_%H%M}_{tf}.png"
-            shown = draw(V, t, tf, r, a.symbol, os.path.join(a.out, name), a.sessions if tf == "1H" else max(2, a.sessions // 3))
+            shown = draw(V, t, tf, r, a.symbol, os.path.join(a.out, name), a.sessions if tf == "1H" else max(3, a.sessions // 2))
             print(f"\n{a.symbol} {ts[t]} {tf} (D{r['degree']}) — {len(r['patterns'])} patterns ({shown} drawn) "
                   f"in {dt * 1000:.0f} ms ⇒ {name}")
             for p in r["patterns"]:

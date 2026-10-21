@@ -518,7 +518,7 @@ def _state(A, fine, pat, t):
             st, why = "broken", "neckline broken: close beyond + swing beyond"
         elif nk["state"] == "retested":
             st, why = "retested", "neckline broken, then retested from the broken side"
-        elif nk["state"] in ("fakeout", "failed"):
+        elif nk["state"] in ("fakeout", "failed") or nk["fakeouts"] or nk["failed_bar"] is not None:
             st, why = "failed", ("neckline closed through and came back inside (false break) ⇒ name cancelled"
                                  if nk["state"] == "fakeout" else "neckline broken, then reclaimed (close + swing back inside)")
         else:
@@ -589,7 +589,9 @@ def _role(pat, d):
 def _evidence(pat, tf, d):
     nm = NAMES[pat["family"]]
     ln = pat["lines"][0]
-    lvl = f"{ln.name} {pat['lines'][0].y1:,.2f}" if ln.slope == 0 else f"{ln.name} (sloped)"
+    if pat.get("break_side") is not None:                                  # the decisive boundary
+        ln = next((x for x in pat["lines"] if pat["boundaries"][x.name]["side"] == pat["break_side"]), ln)
+    lvl = f"{ln.name} {ln.y1:,.2f}" if ln.slope == 0 else f"{ln.name} (sloped, {ln(pat['upto']):,.2f} at bar {pat['upto']})"
     role = pat.get("role")
     tag = {"E": " — against the trade side [E]", "A": " — on the trade side [A]", "P": " — pullback shape [P]"}.get(role, "")
     return f"{tf} {nm}: {STATE_WORDS[pat['state']]} · {lvl}{tag}"
@@ -713,7 +715,7 @@ def read_patterns(V, t, d=None, tf="1H"):
 def _retest(pats, t):
     out = []
     for p in pats:
-        if p["state"] not in ("broken", "retested"):
+        if p["state"] not in ("broken", "retested") or not p["named"]:     # K11.0: a candidate's line is not a pattern boundary
             continue
         for ln in p["lines"]:
             b = p["boundaries"].get(ln["name"])

@@ -363,3 +363,16 @@ def test_candidate_line_break_keeps_the_shape_unnamed():
     w = [p for p in r["patterns"] if p["family"] == "falling_wedge"]
     assert w and not w[0]["named"] and w[0]["state"] in ("broken", "retested")
     assert not any("wedge" in e for e in r["evidence"]) and any("wedge" in c for c in r["candidates"])
+
+
+@pytest.mark.parametrize("mir", [False, True])
+def test_neckline_fakeout_stays_cancelled_after_a_later_sweep(mir):
+    pts = DT + [(21, "", 96), (22, "", 94), (24, "", 99), (27, "", 103), (30, "", 96), (33, "", 100)]
+    if mir:
+        pts = mirror(pts)
+    A, piv = build(pts, n=36)
+    lo = A["low" if not mir else "high"]
+    lo[30] = 94.5 if not mir else 105.5                                    # a wick through the neckline later, close inside
+    p = [x for x in PP.find_patterns(A, piv, piv, 35) if x["family"] == ("double_bottom" if mir else "double_top")][0]
+    assert p["boundaries"]["neckline"]["state"] == "sweep" and p["state"] == "failed" and p["named"]
+    assert not PP._retest([p], 35)
