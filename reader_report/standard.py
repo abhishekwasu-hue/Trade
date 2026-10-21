@@ -10,12 +10,15 @@ RULES_LINE = "Rules re-read: CLAUDE.md, REPORT_STANDARD.md"
 REQUIRED_LAYERS = ("areas_1h_states", "lines", "channels", "patterns", "liquidity_sweeps", "fut_volume_pane", "rsi_pane",
                    "rsi_divergence_pair", "ltf_choch_inset", "htf_state_strip", "story")
 
-REQUIRED_CARD_FIELDS = ("model", "area", "state", "side", "evidence", "invalidation", "story", "outcome", "mfe", "mae")
+REQUIRED_CARD_FIELDS = ("entry_key", "model", "area", "state", "side", "evidence", "invalidation", "story", "outcome", "mfe", "mae")
 
 OUTCOMES = ("next_area_first", "invalidation_first", "open_at_data_end")
 
-# words that mark a calendar / session / clock horizon (forbidden: the outcome is measured by structure across sessions)
-_DAY_WORDS = ("day", "session", "eod", "clock", "date", "intraday", "expiry", "o'clock")
+import re
+
+# whole words that mark a calendar / session / clock horizon (forbidden: the outcome is measured by structure across sessions)
+_DAY_RE = re.compile(r"\b(days?|sessions?|eod|clock|o'clock|dates?|intraday|expiry|hours?|hrs?|weeks?|months?|tomorrow|overnight|"
+                     r"today|market close|next open)\b")   # timeframe labels (15M, 1H) are bar sizes, not horizons
 
 
 class ReportStandardError(ValueError):
@@ -24,7 +27,8 @@ class ReportStandardError(ValueError):
 
 def validate_chart(meta):
     """Every required layer present and evaluated; the story has exactly two lines."""
-    layers = (meta or {}).get("layers") or {}
+    meta = meta or {}
+    layers = meta.get("layers") or {}
     missing = [k for k in REQUIRED_LAYERS if not (layers.get(k) or {}).get("evaluated")]
     if missing:
         raise ReportStandardError(f"chart {meta.get('entry_key')!r}: missing layer(s) {', '.join(missing)}")
@@ -36,14 +40,14 @@ def validate_chart(meta):
 
 def validate_outcome_rule(rule):
     """{"horizon": "structure", "target": ..., "stop": ...}: structural horizon, never a day / session / clock one."""
-    h = str((rule or {}).get("horizon", "")).lower()
+    h = str((rule or {}).get("horizon", "")).strip().lower()
     if h != "structure":
         raise ReportStandardError(f"outcome horizon must be 'structure' (got {h!r})")
     for k, v in (rule or {}).items():
         if k == "horizon":
             continue
         text = f"{k} {v}".lower()
-        if any(w in text for w in _DAY_WORDS):
+        if _DAY_RE.search(text):
             raise ReportStandardError(f"outcome rule {k!r} is day / session / clock based: {v!r}")
     return True
 

@@ -42,7 +42,8 @@ def test_story_is_two_lines():
 
 @pytest.mark.parametrize("rule", [{"horizon": "trigger_day"}, {"horizon": "session_end"}, {"horizon": "eod"},
                                   {"horizon": "structure", "cutoff": "end of the trigger day"},
-                                  {"horizon": "structure", "max_hold": "2 sessions"}])
+                                  {"horizon": "structure", "max_hold": "2 sessions"}, {"horizon": "structure", "max_hold": "48 hours"},
+                                  {"horizon": "structure", "cutoff": "till market close"}, {"horizon": "structure", "cut": "3 weeks"}])
 def test_day_based_horizon_fails(rule):
     with pytest.raises(RS.ReportStandardError):
         RS.validate_outcome_rule(rule)
@@ -83,3 +84,17 @@ def test_claude_md_and_standard_exist_with_key_rules():
     std = (root / "docs" / "reader" / "REPORT_STANDARD.md").read_text(encoding="utf-8")
     for k in RS.REQUIRED_LAYERS:
         assert f"`{k}`" in std, k
+
+
+@pytest.mark.parametrize("text", ["close beyond invalidation; update on new swing", "next opposite area; candidate area",
+                                  "validated by volume", "the area's far edge on the same timeframe"])
+def test_structural_words_are_not_day_words(text):
+    assert RS.validate_outcome_rule({"horizon": " Structure ", "stop": text})
+
+
+def test_malformed_inputs_raise_the_standard_error():
+    with pytest.raises(RS.ReportStandardError):
+        RS.validate_chart(None)
+    c = card(); c.pop("entry_key")
+    with pytest.raises(RS.ReportStandardError, match="entry_key"):
+        RS.validate_card(c)
