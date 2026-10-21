@@ -1497,6 +1497,10 @@ def render():
                                               "21 Oct, method) · elliott = जुनं 5-wave / zigzag / flat + percentiles वाचन.",
                     "engine3_entry_cluster_rule": "Layer 3 entry models: cluster = एकाच visit मधले, एकाच role चे overlapping areas = एक "
                                                   "location (प्रत्येक model चा एकच signal; lead provisional) · area = प्रत्येक area वेगळा.",
+                    "engine3_daily_range_rule": "Layer 1 range: structure = H आणि L नंतरचे swings दोन्ही बाजूंनी नवा टोक करत नाहीत (Abhi "
+                                                "21 Oct, method) · c13 = जुनं दोन समान H + दोन समान L.",
+                    "engine3_range_state_rule": "Layer 1 row range state (context): structure = प्रत्येक timeframe ची range रचनेतून (method) · "
+                                                "overlap = जुनं §5.3 overlap + doji.",
                 }
                 _sw_shown = {k: _L3.switch_choice(k, engine3_switches[k]) for k in _L3.METHOD_SWITCHES}
                 if st.checkbox("Advanced: method layers (legacy fallback)",

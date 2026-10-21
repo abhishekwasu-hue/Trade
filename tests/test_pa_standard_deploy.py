@@ -158,7 +158,7 @@ def test_status_block_clean_and_never_prints_the_token():
     assert st["ok"], st["problems"]
     assert TOKEN not in txt and TOKEN not in json.dumps(st, default=str) and "Upstox token check: ok" in txt
     assert "entry gate models" in txt and "E1✓ E2✓ E3✓ E4✓" in txt and "vision_mode human_confirm" in txt
-    assert "daily_leg_read compare" in txt and "entry clusters cluster" in txt and "max_hits_per_zone 2" in txt
+    assert "range rule structure (row state structure)" in txt and "daily_leg_read compare" in txt and "entry clusters cluster" in txt and "max_hits_per_zone 2" in txt
     assert "mode PAPER" in txt and "LIVE: none of the engine bots is LIVE" in txt
     assert "last engine row BANKNIFTY: 2026-10-21 10:30:00 setup · entries E2↓" in txt
 

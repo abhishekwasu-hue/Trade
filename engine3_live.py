@@ -523,6 +523,9 @@ METHOD_SWITCHES = {
     "engine3_daily_leg_read": ("daily_leg_read", ("compare", "elliott"), "layer 1 Daily leg nature"),
     # Lead (provisional): overlapping same-role areas in one visit = one location (one signal per model per cluster); area = per area.
     "engine3_entry_cluster_rule": ("entry_cluster_rule", ("cluster", "area"), "layer 3 entry models: one location per overlapping cluster"),
+    # Abhi 21 Oct (PA standard T7): the range from structure (Daily / Weekly fold + 1H / 15M); c13 = two equal highs + two equal lows.
+    "engine3_daily_range_rule": ("daily_range_rule", ("structure", "c13"), "layer 1 range (Daily / Weekly / 1H / 15M)"),
+    "engine3_range_state_rule": ("range_state_rule", ("structure", "overlap"), "row range state (context)"),
 }
 
 

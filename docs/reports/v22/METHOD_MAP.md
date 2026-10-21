@@ -60,7 +60,7 @@ They are listed so nothing claims to own a concept twice. Where a row below name
 | Chart patterns (§2H, §2K) | `decision3.patterns_pa` | Evidence / retest levels (E4 b hook). | — | PA T4 |
 | Candle forms / volume reads (§2G, §2I) | `decision3.candle_forms`, `decision3.volume_read` | Evidence only. | — | PA T5 |
 | Hidden divergence (§2J) | `decision3.rsi_hidden` | Classic hidden divergence, continuation evidence. | — | PA T6 |
-| Range edges (§2L) | `decision3.range_edges` (`range_state_rule`) | Range edges = areas; range from structure. | — | PA T7 |
+| Range edges (§2L) | `decision3.range_edges` + `decision3.daily` (`daily_range_rule`, `range_state_rule`) | Range edges = areas; range from structure (both sides fail to make a new extreme). | — | PA T7 |
 | Output objects (§4) | `decision3.draw_objects` / `draw_render` (`chart_objects`, off) | Display only. | — | PA T8 |
 
 ## How the open questions are resolved (per the method's resolution order; no questions to Abhi)

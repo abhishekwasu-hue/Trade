@@ -90,7 +90,8 @@ the pieces they call). Each one is in one of three groups:
 | `entry_gate` ("models") | Abhi नियम | The entry models E1–E4 decide; `legacy_k` = the old ③ BOS + K gate | A switch, no number |
 | `entry_models_on` (E1–E4) | Abhi नियम | Replays / what-if only (live on/off = dashboard `engine3_model_eN_on`) | A switch, no number |
 | `entry_cluster_rule` ("cluster") | अंदाज (lead, provisional) | Overlapping same-role areas visited together = one location: one signal per model per cluster per visit | Overlap is a comparison of bands; no number |
-| `range_state_rule` ("overlap") | Abhi नियम | The row's range state from structure per timeframe (`structure`) or the legacy §5.3 overlap measure | A switch; the legacy overlap numbers (C-20) apply only under `overlap` |
+| `daily_range_rule` ("structure") | Abhi नियम | A range from structure: after a swing high and a swing low, later swings fail to make a new extreme on both sides (Daily / Weekly fold, 1H / 15M); `c13` = two equal highs + two equal lows (what-if) | No number: a comparison of swings |
+| `range_state_rule` ("structure") | Abhi नियम | The row's range state from structure per timeframe (`structure`) or the legacy §5.3 overlap measure | A switch; the legacy overlap numbers (C-20) apply only under `overlap` |
 | `chart_objects` ("off") | setting (display) | The T8 object list drawn on the approval / review charts | Display only |
 | dashboard `max_hits_per_zone` (2) | operational (existing) | Now also applied to engine entries (per area / overlapping cluster, per role, per day), exactly as the touch paths apply it | An existing execution setting; no new number |
 

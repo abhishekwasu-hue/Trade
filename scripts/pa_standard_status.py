@@ -53,7 +53,7 @@ def resolved(settings):
     over = L.method_switches(settings or {})
     eff = {**S3.DEFAULTS, **over}
     return {"entry_gate": eff["entry_gate"], "daily_leg_read": eff["daily_leg_read"], "entry_cluster_rule": eff["entry_cluster_rule"],
-            "range_state_rule": eff["range_state_rule"]}
+            "range_state_rule": eff["range_state_rule"], "daily_range_rule": eff["daily_range_rule"]}
 
 
 def collect(io=None, token_check=True, token_fn=None, check_fn=None, row_fn=None):
@@ -149,7 +149,8 @@ def render(st):
         ms = " ".join(f"{m}{'✓' if on else '✗'}" for m, on in b["models"].items())
         out.append(f"  15M SRv2 {b['symbol']:<10} mode {b['trading_mode']} · on {b['symbol_enabled']} · source {b.get('signal_source')} · "
                    f"entry gate {b.get('entry_gate')} · models {ms} · max_hits_per_zone {b['max_hits_per_zone']}")
-        out.append(f"      daily_leg_read {b.get('daily_leg_read')} · range rule {b.get('range_state_rule')} · "
+        out.append(f"      daily_leg_read {b.get('daily_leg_read')} · range rule {b.get('daily_range_rule')} (row state "
+                   f"{b.get('range_state_rule')}) · "
                    f"entry clusters {b.get('entry_cluster_rule')}")
     v = st.get("vision") or {}
     out.append(f"Vision {VISION_BOT}: vision_mode {v.get('vision_mode')} (effective PAPER {v.get('effective_paper')}, LIVE "
