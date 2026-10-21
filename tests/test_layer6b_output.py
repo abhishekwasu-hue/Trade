@@ -15,8 +15,14 @@ def test_output_settings_registered_with_todays_default():
     from vision import config as VCF
     assert set(S3.OUTPUT) == {"approval_band_warn_rule", "vision_chart_band_finder", "vision_volume_words",
                               "approval_card_layout",                            # + the simple approval card (default classic)
-                              "chart_objects"}                                   # + PA §4 object list on the charts (default off)
+                              "chart_objects",                                   # + PA §4 object list on the charts (default off)
+                              "chart_max_lines"}                                 # + P8 clean charts: the legend cap (a number range)
     for k, (default, options, where) in S3.OUTPUT.items():
+        if isinstance(default, int):                                             # a numeric display setting: (default, (lo, hi), where)
+            assert S3.REGISTER[k][0] == default and S3.REGISTER[k][2] == "setting" and options[0] <= default <= options[1] and where
+            from vision import config as VCF
+            assert VCF.BOT_DEFAULTS[k] == default and VCF.RANGES[k] == options and k in VCF.CTX_KEYS
+            continue
         assert S3.REGISTER[k][0] == default and S3.REGISTER[k][2] == "setting" and default == options[0] and where, k
         assert S3.REGISTER[k][1] == " / ".join(options), k
     assert PT.band_warn_rule(None) == S3.OUTPUT["approval_band_warn_rule"][0]

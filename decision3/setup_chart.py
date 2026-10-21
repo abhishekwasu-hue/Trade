@@ -476,9 +476,12 @@ def m15_panel(D, ax, axv, r, st, setup_ts, w, vst, debug=False, objects=None):
     if objects:                                                            # PA §4 (chart_objects on): the one object list, minus what this
         from . import draw_render as DR                                    # panel already draws (the traded area, the Daily protected line)
         lvk = (round(float(lv["lo"]), 2), round(float(lv["hi"]), 2))
+        from . import chart_lines as CL                                    # P8 clean charts: the selected lines only (display)
         objs = [o for o in objects if not ((o["kind"] == "area" and (o["p0"], o["p1"]) == lvk) or o["style_key"] == "level.protected")]
+        sel = CL.select(objs, {**CL.ctx_of_row(r), "bars": D.m15.iloc[:idx[-1] + 1][["timestamp", "high", "low", "close"]]})
         xm = DR.XMap(D.m15["timestamp"].iloc[:idx[-1] + 1], idx[0], n=n)
-        DR.draw_mpl(ax, [p for p in DR.geometry(objs, xm, ylim=(ylo, yhi)) if not p.get("margin")])   # margin = the label column above
+        DR.draw_mpl(ax, [p for p in DR.geometry(sel["shown"], xm, ylim=(ylo, yhi), max_lines=sel["max_lines"],
+                                                hidden_n=len(sel["hidden"])) if not p.get("margin")])   # margin = the label column above
     ax.set_xlim(-1, right)
     ax.set_ylim(ylo, yhi)
     ax.grid(alpha=0.25)

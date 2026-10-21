@@ -110,6 +110,11 @@ DEFAULTS = {
     "entry_models_on": ("E1", "E2", "E3", "E4"),   # replays / what-if: कोणते models चालू (live on/off live थरात, इथे नाही)
     "entry_cluster_rule": "cluster",         # lead (provisional, Abhi may override): एकाच visit मधले, एकाच role / बाजूचे overlapping areas = एक
                                              # location ⇒ प्रत्येक model चा एकच signal प्रति cluster प्रति visit. "area" = प्रत्येक area वेगळा (what-if)
+    "entry_trigger_rule": "inside",          # Abhi 21 Oct RC3: a model fires only while price is inside its (refined) area and not beyond its
+                                             # invalidation (close at the trigger bar). "legacy" = the da7cbbc trigger (what-if / old fixtures)
+    "entry_area_refine": "setup_tf",         # Abhi 21 Oct RC2 (RESEARCH DEFAULT, review after replay): 1H / Daily area = context; the
+                                             # refined 15M base inside it (TA4) = trigger proximity, E1 and invalidation. "area" = the context
+                                             # area itself (the da7cbbc reading, what-if)
     "sharp_reversal_handover": True,         # Abhi Z-1z: zone मध्ये push नाकारला + dominant उलट candle ने गिळला = handover (तुलना, आकडा नाही)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
     "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.
@@ -214,8 +219,19 @@ REGISTER = {
                         "per-model on / off for live sits in the live layer"),
     "entry_cluster_rule": ("cluster", "cluster / area", "अंदाज", "Lead's provisional choice (Abhi may override): overlapping areas of "
                            "the same role on the same side visited together = ONE location — at most one signal per model per overlapping "
-                           "cluster per visit (the card lists every member area; E1 invalidation = beyond the cluster's far edge); "
+                           "cluster per visit — the cluster only COUNTS (Abhi 21 Oct, Z-1u): edges, trigger and invalidation come from the "
+                           "actual visited area, never the union (the card lists every member area with its own band); "
                            "area = each area on its own (the 6852bfc reading, what-if)"),
+    "entry_trigger_rule": ("inside", "inside / legacy", "Abhi नियम", "Abhi 21 Oct RC3 (07 Oct BANKNIFTY review, §3 models / C "
+                           "lifecycle): a model fires only while price is inside the visited (refined) area and not beyond its "
+                           "invalidation — the trigger bar's close inside the area's own band and not beyond the model's invalidation; "
+                           "E4 (b): the rejection form at the retested object, closing on its trade side; beyond ⇒ lifecycle / break, "
+                           "not an entry. legacy = the da7cbbc trigger (what-if, old fixtures)"),
+    "entry_area_refine": ("setup_tf", "setup_tf / area", "Abhi नियम", "Abhi 21 Oct RC2 — RESEARCH DEFAULT, review after the replay: "
+                          "the 1H / Daily area (levels' TA4 band) is the context (where); inside it the refined base on the setup TF "
+                          "(the newest 15M turn of the area's side inside the band, wick to body by the same TA4 rule) gives the trigger "
+                          "proximity, the E1 entry and the invalidation; no refined base yet ⇒ the models wait. area = the context area "
+                          "itself (what-if / the da7cbbc reading)"),
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
     "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
@@ -308,6 +324,10 @@ OUTPUT = {
     "chart_objects": ("off", ("off", "on"),
                       "PA standard §4 (track T8): vision.chart.render (Telegram / Vision chart: the signal's object list) + "
                       "decision3.charts.h1_png / m15_png + decision3.setup_chart.render (verification charts); vision/config.py"),
+    "chart_max_lines": (6, (1, 20),
+                        "P8 clean charts (Abhi 21 Oct): decision3.chart_lines.select ⇐ decision3.draw_render.geometry (max_lines) ⇐ "
+                        "vision.chart (Telegram / Vision chart) + decision3.charts / setup_chart (chart_objects on) + the replay group "
+                        "reports; reader_report.standard.validate_chart (legend ≤ it); vision/config.py"),
 }
 REGISTER.update({
     "approval_band_warn_rule": ("points", "points / method", "setting",
@@ -331,6 +351,10 @@ REGISTER.update({
                       "(decision3.draw_objects: swings, areas + state, lines, channels, levels, patterns, liquidity, sweeps, divergence, "
                       "FVG / Fib confluence, E1–E4 marks) drawn by decision3.draw_render on the Telegram chart and the verification charts; "
                       "display only, never a reading / entry"),
+    "chart_max_lines": (6, "1–20 lines (display only)", "setting",
+                        "P8 clean charts (Abhi 21 Oct): the most lines a chart shows — evidence lines, the channel price is in, the next "
+                        "line in the path above / below, respected higher-degree lines; the rest behind 'Show all lines' (HTML) / "
+                        "'hidden: N' (PNG). Display only: the reader reads ALL lines"),
     "display_finder": ("method", "method / validity (legacy R1a)", "setting",
                                        "facts/dossier.py DEFAULTS (dossier config, not a V22 setting) — layer 6b: the Vision facts dossier reads the "
                                        "decision's own areas / lines / visits; validity = the R1a facts.validity finder (golden only); not live"),

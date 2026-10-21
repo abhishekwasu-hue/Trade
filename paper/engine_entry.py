@@ -276,13 +276,10 @@ def entry_area(e):
 
 
 def entry_zone(e):
-    """The entry's zone for `max_hits_per_zone`: (direction, lo, hi) of its overlapping cluster (decision3 `entry_cluster_rule`), else
-    of its own area; no band ⇒ None (no zone to count on — as a touch path without a level)."""
-    cl = e.get("cluster") if isinstance(e.get("cluster"), dict) else None
-    a = None
-    if cl and _num(cl.get("lo")) is not None and _num(cl.get("hi")) is not None:
-        a = sorted([_num(cl["lo"]), _num(cl["hi"])])
-    a = a or entry_area(e)
+    """The entry's zone for `max_hits_per_zone`: (direction, lo, hi) of its own visited area (Abhi 21 Oct, Z-1u: the overlapping
+    cluster only counts one signal per model per place — never a band; zone_lo / hi = the visited area); no band ⇒ None (no zone to
+    count on — as a touch path without a level)."""
+    a = entry_area(e)
     try:
         return None if a is None else (int(e["direction"]), a[0], a[1])
     except (TypeError, ValueError, KeyError):
@@ -344,7 +341,14 @@ def entry_gate_tags(r, e, direction, settings=None):
             areas.append({"id": x.get("area_id"), "role": "support" if int(e["direction"]) > 0 else "resistance", "lo": lo, "hi": hi,
                           "tf": x.get("tf"), "state": x.get("state"), "confluence_label": "cluster"})
         g["areas"] = areas
-        g["cluster"] = {k: cl.get(k) for k in ("id", "lo", "hi", "n", "visit_id")}
+        g["cluster"] = {k: cl.get(k) for k in ("id", "n", "visit_id")}   # count only — no union band (Z-1u)
+    rb = e.get("refined_base") if isinstance(e.get("refined_base"), dict) else None
+    if rb and _num(rb.get("lo")) is not None and _num(rb.get("hi")) is not None:   # RC2: the refined 15M base (chart: strong)
+        g["refined"] = {"lo": _num(rb["lo"]), "hi": _num(rb["hi"]), "ts": rb.get("ts")}
+    from decision3 import chart_lines as CL
+    ev_lines = CL.evidence_ids_of(e)
+    if ev_lines:                                                          # P8: the evidence line(s) the chart always shows
+        g["evidence_lines"] = ev_lines
     g["grade"] = e.get("label") if e.get("label") in ("A", "B") else None   # this entry's own label (none ⇒ no label, never the row's)
     ev = e.get("evidence")
     el = e.get("evidence_list") if isinstance(e.get("evidence_list"), dict) else ev

@@ -873,14 +873,15 @@ def _invalidation_of(e):
 
 
 def _cluster_of(c):
-    """decision3 `entry_cluster_rule = cluster`: the overlapping cluster an entry stands for ⇒ {id, anchor, lo, hi, visit_id, n,
-    members [{area_id, tf, lo, hi, state}]} (ids as text). Not a dict ⇒ None."""
+    """decision3 `entry_cluster_rule = cluster`: the overlapping cluster an entry stands for ⇒ {id, anchor, visit_id, n, members
+    [{area_id, tf, lo, hi, state}]} (ids as text). Abhi 21 Oct (Z-1u): the cluster only COUNTS one signal per model per place — it has
+    no band of its own (the entry's zone = its own visited area, `area`). Not a dict ⇒ None."""
     if not isinstance(c, dict):
         return None
     txt = lambda v: None if v is None else (v if isinstance(v, (str, int, float)) and not isinstance(v, bool) else str(v))  # noqa: E731
     num = lambda v: None if v is None else float(v)  # noqa: E731
     try:
-        return {"id": txt(c.get("id")), "anchor": txt(c.get("anchor")), "lo": num(c.get("lo")), "hi": num(c.get("hi")),
+        return {"id": txt(c.get("id")), "anchor": txt(c.get("anchor")),
                 "visit_id": None if c.get("visit_id") is None else str(c["visit_id"]), "n": int(c.get("n") or 0),
                 "members": [{"area_id": txt(m.get("area_id")), "tf": m.get("tf"), "lo": num(m.get("lo")), "hi": num(m.get("hi")),
                              "state": m.get("state")} for m in (c.get("members") or []) if isinstance(m, dict)]}
@@ -902,6 +903,9 @@ def compact_entries(entries):
         x["invalidation"] = _invalidation_of(e)
         if e.get("cluster") is not None:                                 # one location = the overlapping cluster (its member areas)
             x["cluster"] = _cluster_of(e.get("cluster"))
+        rb = e.get("refined_base")
+        if isinstance(rb, dict) and rb.get("lo") is not None:            # RC2: the refined 15M base inside the area (display + card)
+            x["refined_base"] = {"lo": float(rb["lo"]), "hi": float(rb["hi"]), "ts": None if rb.get("ts") is None else str(rb["ts"])}
         for k in ("trigger_ts", "visit_id", "visit_start", "trigger_bar_end", "key"):
             if x.get(k) is not None:
                 x[k] = str(x[k])

@@ -26,6 +26,15 @@ STYLE = {
     "area.demand.armed": dict(color="#2f9e44", alpha=0.30),
     "area.supply.broken": dict(color="#868e96", alpha=0.0, ls="--"),
     "area.demand.broken": dict(color="#868e96", alpha=0.0, ls="--"),
+    # P8 clean charts (decision3.chart_lines.style_areas): refined base + target strong, the context area faint, the rest faded
+    "area.supply.refined": dict(color="#c92a2a", alpha=0.42),
+    "area.demand.refined": dict(color="#2b8a3e", alpha=0.42),
+    "area.supply.target": dict(color="#1c7ed6", alpha=0.30),
+    "area.demand.target": dict(color="#1c7ed6", alpha=0.30),
+    "area.supply.context": dict(color="#e03131", alpha=0.08),
+    "area.demand.context": dict(color="#2f9e44", alpha=0.08),
+    "area.supply.faded": dict(color="#adb5bd", alpha=0.06),
+    "area.demand.faded": dict(color="#adb5bd", alpha=0.06),
     "line": dict(color="#7048e8", lw=1.3, ls="-."),
     "channel": dict(color="#0c8599", lw=1.3, ls="-"),
     "level": dict(color="#495057", lw=1.0, ls=":"),
@@ -111,11 +120,13 @@ def _note(items):
     return " · ".join(items[:2]) + (f" +{len(items) - 2} more" if len(items) > 2 else "")
 
 
-def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None, short=False):
+def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None, short=False, max_lines=None, hidden_n=None):
     """Objects ⇒ primitives [{type: seg | band | marker | text, …}] in the chart's (x, price). ylim = (lo, hi) of the chart's price axis:
     a horizontal object outside it becomes an edge note (▲ / ▼); None ⇒ no clipping. min_degree: swings below it are not drawn (a 1H
     chart shows the D2 structure only). kinds: only these kinds. Right-margin labels are spread so they never overlap. short=True: the
-    labels without their bracketed details (a narrow panel)."""
+    labels without their bracketed details (a narrow panel). max_lines (P8, the display setting chart_max_lines): the legend may list
+    at most that many lines — checked here (AssertionError otherwise; the caller selects with decision3.chart_lines.select first);
+    hidden_n: how many lines that selection hid ⇒ a "hidden: N" note (the PNG has no toggle)."""
     n = xm.n
     right = n - 0.5
     left = -0.5
@@ -157,7 +168,7 @@ def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None
             xb = right if k == "area" else max(x1 + 0.5, xa + 1)
             prims.append({"type": "band", "x0": xa, "x1": xb, "y0": a, "y1": b, "color": st["color"], "alpha": st["alpha"],
                           "ls": st["ls"] if st["alpha"] == 0 else None})
-            margin.append(((a + b) / 2, o["label"], st["color"]))
+            margin.append(((a + b) / 2, o["label"], st["color"], k))
         elif k in ("level", "liquidity", "fib") and abs(p1 - p0) < 1e-9:
             if not inside(p0):
                 edge(p0, o["label"])
@@ -165,7 +176,7 @@ def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None
             xa = max(x0, left)
             xb = right if o.get("state") not in ("taken",) else max(x1, xa + 1)
             prims.append({"type": "seg", "x0": xa, "y0": p0, "x1": xb, "y1": p0, "color": st["color"], "lw": st["lw"], "ls": st["ls"]})
-            margin.append((p0, o["label"], st["color"]))
+            margin.append((p0, o["label"], st["color"], k))
         elif k in ("line", "channel", "pattern", "liquidity", "level", "fib"):
             segs = [(x0, p0, x1, p1)] + [(xm.x(d["t0"]), d["p0"], xm.x(d["t1"]) or right, d["p1"]) for d in o.get("lines") or ()
                                          if xm.x(d["t0"]) is not None]
@@ -180,7 +191,7 @@ def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None
                     prims.append({"type": "marker", "x": xp, "y": float(pp), "marker": "o", "size": 5, "color": st["color"], "hollow": True})
             if x1 >= left:
                 margin.append((p1, o["label"] + (f" ({o['state']})" if o.get("state") and o["state"] not in o["label"] else ""),
-                               st["color"]))
+                               st["color"], k))
         elif k == "sweep":
             xs = xm.x(o["t0"], frac=False)
             if xs is None or xs < 0:
@@ -207,18 +218,24 @@ def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None
             prims.append({"type": "marker", "x": xs, "y": p0, "marker": "^" if up else "v", "size": st["size"], "color": st["color"]})
             prims.append({"type": "text", "x": xs, "y": p0, "text": o["label"], "color": st["color"], "size": 8, "weight": "bold",
                           "ha": "center", "va": "top" if up else "bottom", "dy": -9 if up else 9})
-            if inside(p1):
-                prims.append({"type": "seg", "x0": xs - 0.5, "y0": p1, "x1": min(xs + 4, right), "y1": p1, "color": "#c92a2a", "lw": 1.0,
+            if inside(p1):                                                  # P8: the invalidation drawn strong, to the right edge
+                prims.append({"type": "seg", "x0": xs - 0.5, "y0": p1, "x1": right, "y1": p1, "color": "#c92a2a", "lw": 1.6,
                               "ls": "--"})
-                prims.append({"type": "text", "x": min(xs + 4, right), "y": p1, "text": "invalidation", "color": "#c92a2a", "size": 6.5,
-                              "weight": "normal", "ha": "left", "va": "center", "dy": 0})
+                prims.append({"type": "text", "x": xs + 0.5, "y": p1, "text": "invalidation", "color": "#c92a2a", "size": 7,
+                              "weight": "bold", "ha": "left", "va": "bottom", "dy": 2})
     gap = label_gap if label_gap is not None else (0.035 * (hi - lo) if np.isfinite(hi - lo) else 0.0)
     if short:
-        margin = [(y, _short(t), c) for y, t, c in margin]
+        margin = [(y, _short(t), c, k) for y, t, c, k in margin]
         above, below = [_short(t) for t in above], [_short(t) for t in below]
-    for y, text, color in _spread(margin, lo, hi, gap):
+    for y, text, color, k in _spread(margin, lo, hi, gap):
         prims.append({"type": "text", "x": right, "y": y, "text": text, "color": color, "size": 7, "weight": "normal", "ha": "left",
-                      "va": "center", "dy": 0, "margin": True})
+                      "va": "center", "dy": 0, "margin": True, "src_kind": k})
+    if hidden_n:
+        prims.append({"type": "note", "where": "bottom-left", "x": left, "y": lo,
+                      "text": f"hidden: {int(hidden_n)} line{'s' if int(hidden_n) != 1 else ''} (Show all lines)", "color": "#868e96"})
+    if max_lines is not None:
+        from .chart_lines import assert_legend
+        assert_legend(prims, max_lines)
     if above:
         prims.append({"type": "note", "where": "top", "x": right, "y": hi, "text": "▲ " + _note(above), "color": "#868e96"})
     if below:
@@ -229,7 +246,7 @@ def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None
 def _spread(items, lo, hi, gap):
     """Right-margin labels sorted by price and pushed apart by `gap` (kept inside lo … hi when finite)."""
     items = sorted(items, key=lambda x: x[0])
-    ys = [y for y, _, _ in items]
+    ys = [y for y, *_ in items]
     for i in range(1, len(ys)):
         ys[i] = max(ys[i], ys[i - 1] + gap)
     if ys and np.isfinite(hi) and ys[-1] > hi:
@@ -237,7 +254,7 @@ def _spread(items, lo, hi, gap):
         ys = [y - shift for y in ys]
         for i in range(len(ys) - 2, -1, -1):
             ys[i] = min(ys[i], ys[i + 1] - gap)
-    return [(y, t, c) for y, (_, t, c) in zip(ys, items)]
+    return [(y, *rest) for y, (_, *rest) in zip(ys, items)]
 
 
 def y_range(df_lo, df_hi, objects, pad=0.04):
@@ -276,6 +293,8 @@ def draw_mpl(ax, prims, zorder=4):
             ax.annotate(p["text"], (p["x"], p["y"]), textcoords="offset points", xytext=(4 if p.get("margin") else 0, p["dy"]),
                         ha=p["ha"], va=p["va"], fontsize=p["size"], color=p["color"], fontweight=p["weight"], annotation_clip=False,
                         zorder=zorder + 2)
+        elif t == "note" and p["where"] == "bottom-left":
+            ax.text(0.01, 0.01, p["text"], transform=ax.transAxes, ha="left", va="bottom", fontsize=7, color=p["color"])
         elif t == "note":
             ax.text(0.99, 0.99 if p["where"] == "top" else 0.01, p["text"], transform=ax.transAxes, ha="right",
                     va="top" if p["where"] == "top" else "bottom", fontsize=7, color=p["color"])
@@ -320,5 +339,6 @@ def draw_plotly(fig, prims, row=1, col=1, label=True):
                                    xanchor={"center": "center", "left": "left", "right": "right"}[p["ha"]], yshift=ys,
                                    font=dict(size=int(round(p["size"] + 1)), color=p["color"]), row=row, col=col)
         elif t == "note" and label:
-            fig.add_annotation(x=p["x"], y=p["y"], text=p["text"], showarrow=False, xanchor="right",
+            fig.add_annotation(x=p["x"], y=p["y"], text=p["text"], showarrow=False,
+                               xanchor="left" if p["where"] == "bottom-left" else "right",
                                yshift=-8 if p["where"] == "top" else 8, font=dict(size=8, color="#b0bec5"), row=row, col=col)
