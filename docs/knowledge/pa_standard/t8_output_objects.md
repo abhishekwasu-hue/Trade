@@ -36,7 +36,7 @@ words / draws it. Display numbers only (how many sessions a default window shows
 
 - swings at D1 and D2 with their HH / HL / LH / LL label (swings2);
 - the decision's own areas with the K4 state, tests / sweeps and the confluence label (Levels.snapshot; the trade side labelled with the
-  line confluence exactly as engine.step2) — the 1H chart's selection inside the view distance + the decision's next armed area;
+  line confluence exactly as engine.step2) — the 1H chart's selection inside the view distance + the decision's nearest ≤ 3 armed areas;
 - the trade-side line with its touches and the reaction's touch N (trendline.swing_line / reaction_touch);
 - equal highs / lows (liquidity.pools, method rule) — resting or taken;
 - sweeps / trapped (failed breakout) — liquidity.sweeps_and_traps, one sweep per poke (the outermost pool);
@@ -68,6 +68,6 @@ multi-timeframe state track can pass its own words (`states=`) — no second rea
 
 - The Telegram chart draws the list only when the signal carries it — the engine adapter (paper/engine_entry, T9) must put
   `collect(V, t, r=r)` into the gate tags; until then `on` changes nothing on Telegram.
-- The engine arms every area ahead on the trade side; the drawn view keeps the ones inside the view distance + the next one.
+- The engine arms every area ahead on the trade side; the drawn view keeps the ones inside the view distance + the nearest 3 armed.
 - A 15M line drawn on a 1H chart is straight between its two anchors in the 1H bar index (the session's last short hour makes a tiny
   difference to the in-between touches).
