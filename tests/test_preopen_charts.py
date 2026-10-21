@@ -90,16 +90,18 @@ def test_crux_from_fake_reader_state_nearest_sequence_invalidation_target():
                         "confluence: none")
     assert nifty[2].startswith("Entry only if: price visits it → handover → commitment candle with volume → 5-min change of character.")
     assert "Label A needs one more piece (RSI divergence" in nifty[2] and "without it B" in nifty[2]   # confluence नाही ⇒ B, A ला piece हवा
-    assert nifty[3] == ("Invalid: a 15M close above 23,111 (beyond the area); Daily DOWN ends on a daily close above 23,456 "
-                        "(protected).")
+    assert nifty[3] == ("Invalid: close above 23,111 + a swing beyond it (area broken); Daily DOWN ends on a daily close above "
+                        "23,456 (protected).")                                                # engine rule: close + swing beyond
     # target = विरुद्ध बाजूचा सर्वात जवळचा जिवंत support (BROKEN 22,400 tradeable_levels ने वगळला); पुढचा supply = 1H 23,119
-    assert nifty[4] == ("Target: next demand 22,610–22,655 (1H, ≈234 pts below) · if it breaks, next: supply 23,119–23,172 (1H).")
+    assert nifty[4] == ("Next opposite area (engine): demand 22,610–22,655 (1H, ≈234 pts below) · SL / target = dashboard · "
+                        "if it breaks, next: supply 23,119–23,172 (1H).")
     assert bank[1] == ("Nearest: supply 55,699–55,970 (1H, ≈211 pts above last close 55,488) · flipped (reader role now supply, was demand), "
                        "tested 1× · "
                        "confluence: Daily")
     assert "Confluence is already there ⇒ label A if all of this happens." in bank[2]          # method §5: confluence = confirming piece
-    assert bank[3] == "Invalid: a 15M close above 55,970 (beyond the area)."                   # protected नाही ⇒ ती अट नाही
-    assert bank[4].startswith("Target: no demand area in the engine's list") and "next: supply 55,947–56,066" in bank[4]
+    assert bank[3] == "Invalid: close above 55,970 + a swing beyond it (area broken)."         # protected नाही ⇒ ती अट नाही
+    assert bank[4].startswith("Next opposite area (engine): no demand area in the list · SL / target = dashboard")
+    assert "next: supply 55,947–56,066" in bank[4]
     # नवा आकडा नाही: crux मधला प्रत्येक आकडा = input (पट्टे, last close, protected) किंवा त्यांचं अंतर, किंवा tf / touch / tests
     allowed = {float(v) for s in LEVELS for x in LEVELS[s] for v in (x["lo"], x["hi"])} | set(LAST.values()) | {23456.0}
     allowed |= {round(23039 - 22889), round(22889 - 22655), round(55699 - 55488)} | {1.0, 5.0, 15.0}
@@ -190,7 +192,8 @@ def test_main_sends_text_first_then_one_album_per_symbol_and_survives_chart_erro
         return L3.tradeable_levels(LEVELS[sym])
     monkeypatch.setattr(L3, "watched_levels", watched)
     monkeypatch.setattr(PCH, "line_facts", lambda V, trend: {"line": None, "tags": {}})
-    monkeypatch.setattr(PCH, "render", lambda V, sym, f, wk, line: ([(tf, b"\x89PNG" + V.encode(), f"{sym} {tf}") for tf in PCH.TFS], []))
+    monkeypatch.setattr(PCH, "render", lambda V, sym, f, wk, line, **k: ([(tf, b"\x89PNG" + V.encode(), f"{sym} {tf}") for tf in PCH.TFS],
+                                                                     []))
     monkeypatch.setattr(notifications, "send_telegram_message", lambda m: sent.append(("text", m)) or True)
     monkeypatch.setattr(notifications, "send_telegram_media_group", lambda items: sent.append(("album", items)) or True)
     assert P.main([]) == 0
@@ -203,12 +206,12 @@ def test_main_sends_text_first_then_one_album_per_symbol_and_survives_chart_erro
     assert P.main([]) == 0 and [k for k, _ in sent] == ["text"]
     # render त्रुटी ⇒ "(chart unavailable)", album नाही, संदेश गेला
     sent.clear()
-    monkeypatch.setattr(PCH, "render", lambda *a: (_ for _ in ()).throw(MemoryError("x")))
+    monkeypatch.setattr(PCH, "render", lambda *a, **k: (_ for _ in ()).throw(MemoryError("x")))
     assert P.main([]) == 0 and [k for k, _ in sent] == ["text"] and sent[0][1].count(PC.CHART_NA) == 2
     # setting बंद ⇒ V ठेवत नाही, charts नाहीत, crux नाही
     sent.clear()
     monkeypatch.setattr(cloud_db, "get_strategy_settings", _settings(ONE_BOT, {"preopen_charts": False}))
-    monkeypatch.setattr(PCH, "render", lambda *a: pytest.fail("charts must not render when the setting is off"))
+    monkeypatch.setattr(PCH, "render", lambda *a, **k: pytest.fail("charts must not render when the setting is off"))
     assert P.main([]) == 0 and [k for k, _ in sent] == ["text"] and "🎯" not in sent[0][1]
     # --dry-run ⇒ काहीच पाठवत नाही
     sent.clear()
@@ -292,7 +295,7 @@ def test_crux_edge_cases_no_area_na_unclear():
     f = PC.facts(NIFTY, 22889.0, [(LR.BEAR, 23000.0, 23050.0, "DYNAMIC_SR_RESISTANCE_15M")], None)
     out = PC.lines("NIFTY", NIFTY, "UP", 22889.0, f)
     assert out[1] == "Nearest: supply 23,000–23,050 (15-min, ≈111 pts above last close 22,889) · confluence: none"
-    assert out[4] == "Target: no demand area in the engine's list — use your dashboard target."
+    assert out[4] == "Next opposite area (engine): no demand area in the list · SL / target = dashboard."
     # line touch N (reader चं confluence_areas) ⇒ confluence शब्द
     f = PC.facts(NIFTY, 22889.0, [(LR.BEAR, 23039.0, 23111.0, "ENGINE_LEVEL_1D")], LEVELS["NIFTY"], {1: "line (touch 3)"})
     assert f["nearest"]["conf"] == "line (touch 3)"
@@ -313,6 +316,50 @@ def test_nearest_is_by_edge_distance_not_midpoint_order():
     assert (f["next"]["lo"], f["next"]["hi"]) == (22570.0, 22579.0)
     out = PC.lines("NIFTY", NIFTY, "UP", last, f)
     assert out[1] == "Nearest: supply 22,544–22,622 (1H, ≈181 pts above last close 22,363) · tested 5× · confluence: none"
-    assert out[3].startswith("Invalid: a 15M close above 22,622 (beyond the area)")
+    assert out[3].startswith("Invalid: close above 22,622 + a swing beyond it (area broken)")
     assert out[4].endswith("if it breaks, next: supply 22,570–22,579 (1H).")
     assert [(a["lo"], a["hi"]) for a in f["watched"]] == [(x[1], x[2]) for x in ordered]       # everything else unchanged
+
+
+def test_crux_error_never_blocks_the_message_and_omits_the_crux(monkeypatch, capsys):
+    """Review MUST 1: crux (facts / lines) त्रुटी ⇒ log + crux नाही ⇒ संदेश setting-off सारखाच अक्षरशः."""
+    P = _preopen()
+    active = P.bot_status(["NIFTY", "BANKNIFTY"], _settings(ONE_BOT))
+    off = _report(P, active, crux_on=False)
+    monkeypatch.setattr(PC, "facts", lambda *a, **k: (_ for _ in ()).throw(KeyError("boom")))
+    assert _report(P, active) == off
+    assert capsys.readouterr().out.count("pre-open crux: KeyError") == 2
+    monkeypatch.undo()
+    calls = []
+
+    def lines(sym, *a, **k):                                                                    # एकाच symbol ला त्रुटी ⇒ दुसऱ्याचा crux राहतो
+        calls.append(sym)
+        if sym == "NIFTY":
+            raise ValueError("x")
+        return ["<b>🎯 BANKNIFTY</b> — ok"]
+    monkeypatch.setattr(PC, "lines", lines)
+    msg = _report(P, active)
+    assert "🎯 NIFTY" not in msg and "<b>🎯 BANKNIFTY</b> — ok\n\n<b>NIFTY</b>" in msg and calls == ["NIFTY", "BANKNIFTY"]
+
+
+def test_render_time_budget_skips_remaining_charts(synth_v):
+    from decision3 import preopen_chart as PCH
+    t = iter([0.0, 100.0, 100.0])
+    f = PC.facts({"ok": True, "trend": "DOWN", "sides": {LR.BEAR}}, float(synth_v.m15["close"].iloc[-1]), [], None)
+    items, errs = PCH.render(synth_v, "BANKNIFTY", f, "UP", None, deadline=50.0, clock=lambda: next(t))
+    assert [tf for tf, _, _ in items] == ["Daily"] and errs == ["1H: skipped (time budget)", "15M: skipped (time budget)"]
+
+
+def test_media_group_no_duplicate_on_read_timeout_and_log_never_raises(monkeypatch, tmp_path):
+    import notifications as N
+    calls = []
+    monkeypatch.setattr(N, "_load_telegram_credentials", lambda: ("T", "C"))
+    monkeypatch.setattr(N, "LOG_PATH", str(tmp_path / "no" / "log.txt"))
+
+    def slow(url, **k):
+        calls.append(url.rsplit("/", 1)[1])
+        raise N.requests.ReadTimeout("x")
+    monkeypatch.setattr(N.requests, "post", slow)
+    assert N.send_telegram_media_group([(b"a", "x"), (b"b", "y")]) is False and calls == ["sendMediaGroup"]   # album कदाचित गेला ⇒ पुन्हा नाही
+    monkeypatch.setattr(N.os, "makedirs", lambda *a, **k: (_ for _ in ()).throw(PermissionError("ro")))
+    N._log_locally("x")                                                                         # raise नाही

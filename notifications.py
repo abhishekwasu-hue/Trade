@@ -144,17 +144,22 @@ def send_telegram_media_group(items, timeout=30):
                              data={"chat_id": chat_id, "media": json.dumps(media)}, files=files, timeout=timeout)
         if resp.status_code == 200:
             return True
-    except requests.RequestException:
+    except requests.ConnectionError:                                    # पोहोचलंच नाही ⇒ एकेक photo
         pass
+    except requests.RequestException:                                   # उदा. ReadTimeout: album कदाचित पोहोचला ⇒ पुन्हा नाही (duplicate नको)
+        return False
     return all([send_telegram_photo(b, c, timeout=timeout) for b, c in items])
 
 
 def _log_locally(message):
     """Telegram पाठवता आलं की नाही, याची पर्वा न करता — प्रत्येक सूचना स्थानिक फाईलमध्येही नोंदवली जाते."""
-    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(LOG_PATH, "a") as f:
-        f.write(f"[{ts}] {message}\n")
+    try:                                                                 # log लिहिता आला नाही (disk / permission) ⇒ तरी raise नाही
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(LOG_PATH, "a") as f:
+            f.write(f"[{ts}] {message}\n")
+    except OSError:
+        pass
 
 
 def notify_entry(script_name, symbol, strategy, direction, strikes_summary, net_credit, trade_id):

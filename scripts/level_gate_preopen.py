@@ -106,6 +106,7 @@ INDEX_BOTS = (
 )
 LABEL_TFS = {"15M SRv2": BOT_TFS["15M SRv2"], "5M Instant": BOT_TFS["5M Instant"], "SR V3 shadow": BOT_TFS["5M Instant"],
              "Classic SR": BOT_TFS["Classic"]}
+CHART_BUDGET_S = 60                                                        # pre-open charts: एका run मध्ये एकूण कमाल वेळ (s)
 ENGINE_STALE_HOURS = 96                                                    # weekend + एक सुट्टी: त्यापेक्षा जुना engine ⇒ ❌ चालू नाही
 ENGINE_TFS = ("1H", "1D")              # decision3 ② Levels: 1H areas (+ a Daily band where no 1H zone overlaps it, Abhi Z-1u)
 
@@ -347,8 +348,13 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
             plain.append(symbol_line(sym, ctx, wk, last, zones, tfs, areas=[x for _, _, ar, _ in per_bot for x in (ar or [])], na=na,
                                      warn_pts=warn))
             if (PC.setting_for(active, sym) if crux_on is None else crux_on):
-                crux.extend(([""] if crux else []) + crux_block(sym, ctx, wk, last, per_bot, na, raw.get(sym), (views or {}).get(sym),
-                                                                 chart_fn))
+                try:                                                       # crux कधीच संदेश थांबवत नाही: त्रुटी ⇒ log + crux नाही
+                    cx = crux_block(sym, ctx, wk, last, per_bot, na, raw.get(sym), (views or {}).get(sym), chart_fn)
+                except Exception as exc:                                   # noqa: BLE001
+                    print(f"⚠️ {sym} pre-open crux: {type(exc).__name__}: {exc}")
+                    cx = []
+                if cx:
+                    crux.extend(([""] if crux else []) + cx)
         if sym in eng_syms:
             bad, t = engine_problem(sym, engine_fn or engine_last_run, now, cron_installed=engine_cron)
             if bad:
@@ -518,14 +524,19 @@ def main(argv=None):
             views[sym] = keep["V"]
         return out
 
+    budget = {}
+
     def chart_fn(sym, f, wk, line):
-        """Daily / 1H / 15M PNG (रिटर्न True = तिन्ही तयार). V वापरून झाल्यावर लगेच सोडतो (1 GB VPS)."""
+        """Daily / 1H / 15M PNG (रिटर्न True = तिन्ही तयार). V वापरून झाल्यावर लगेच सोडतो (1 GB VPS). सगळ्या charts साठी एकूण
+        CHART_BUDGET_S (पहिल्या chart पासून) — पार ⇒ उरलेले वगळले, संदेश उशिरा नाही."""
+        import time
         V = views.pop(sym, None)
         if V is None:
             print(f"⚠️ {sym} pre-open charts: no engine run to draw from (engine areas not available / signal source not engine)")
             return False
         from decision3 import preopen_chart as PCH
-        items, errs = PCH.render(V, sym, f, wk, line)
+        budget.setdefault("deadline", time.monotonic() + CHART_BUDGET_S)
+        items, errs = PCH.render(V, sym, f, wk, line, deadline=budget["deadline"])
         del V
         for e in errs:
             print(f"⚠️ {sym} pre-open chart {e}")

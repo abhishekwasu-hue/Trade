@@ -109,7 +109,7 @@ def _overlay(ax, f, n_bars, tf):
         bull = near["side"] == LR.BULL
         edge = near["lo"] if bull else near["hi"]
         ax.axhline(edge, color=SUPPLY if not bull else DEMAND, lw=1.0, ls="--")
-        labels.append((edge, f"invalid: 15M close {'below' if bull else 'above'} {edge:,.0f}", INK, False))
+        labels.append((edge, f"invalid: close {'below' if bull else 'above'} {edge:,.0f} + a swing beyond it (area broken)", INK, False))
         mid = (near["lo"] + near["hi"]) / 2
         ax.annotate(ENTRY_NOTE + ("\nA: one confirming piece (confluence / RSI divergence …); else B" if near.get("conf") == "none"
                                   else "\nconfluence present ⇒ A if all of this happens"),
@@ -118,8 +118,8 @@ def _overlay(ax, f, n_bars, tf):
     t = f.get("target")
     if t:
         ax.axhspan(t["lo"], t["hi"], facecolor="none", edgecolor=TARGET, lw=1.2, ls="-")
-        labels.append(((t["lo"] + t["hi"]) / 2, f"target area: {_kind(t['side'])} {_rng(t['lo'], t['hi'])}"
-                       + (f" · {t['tf']}" if t.get("tf") else ""), TARGET, False))
+        labels.append(((t["lo"] + t["hi"]) / 2, f"next opposite area (engine): {_kind(t['side'])} {_rng(t['lo'], t['hi'])}"
+                       + (f" · {t['tf']}" if t.get("tf") else "") + " · SL / target = dashboard", TARGET, False))
     p = f.get("protected")
     if p is not None:
         ax.axhline(float(p), color=PROT, lw=1.1, ls=":")
@@ -255,11 +255,17 @@ def caption(sym, tf, f):
     return head + f" · nearest {_kind(n['side'])} {_rng(n['lo'], n['hi'])} ({n.get('tf') or ''}) · entry only after handover + commitment + 5M CHoCH"
 
 
-def render(V, sym, f, weekly=None, line=None, tfs=TFS):
-    """[(tf, png bytes, caption)] — प्रत्येक tf स्वतंत्र (एक अयशस्वी ⇒ तोच वगळला, कारण errors मध्ये). रिटर्न (items, errors)."""
+def render(V, sym, f, weekly=None, line=None, tfs=TFS, deadline=None, clock=None):
+    """[(tf, png bytes, caption)] — प्रत्येक tf स्वतंत्र (एक अयशस्वी ⇒ तोच वगळला, कारण errors मध्ये). deadline (clock() वेळ) पार ⇒
+    उरलेले charts वगळले ("skipped (time budget)") — संदेश उशिरा जाऊ नये. रिटर्न (items, errors)."""
+    import time
+    clock = clock or time.monotonic
     fn = {"Daily": daily_png, "1H": h1_png, "15M": m15_png}
     items, errors = [], []
     for tf in tfs:
+        if deadline is not None and clock() > deadline:
+            errors.append(f"{tf}: skipped (time budget)")
+            continue
         try:
             kw = {} if tf == "Daily" else {"line": line}
             items.append((tf, fn[tf](V, sym, f, weekly, **kw), caption(sym, tf, f)))

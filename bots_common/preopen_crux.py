@@ -1,7 +1,7 @@
 """bots_common/preopen_crux.py — pre-open संदेशाच्या वर लहान CRUX (Abhi, track F): प्रत्येक symbol ≤ 5 ओळी — Daily (+ Weekly) trend, engine
 पाहत असलेला सर्वात जवळचा trade-बाजूचा area (kind, पट्टा, last close पासून अंतर, state, confluence एका शब्दात), entry आधी काय हवं (method
-चा क्रम: visit → handover → commitment with volume → 5-min CHoCH; A = एक confirming piece, नाहीतर B), invalidation (area पलीकडचा 15M close /
-protected Daily level) आणि target = विरुद्ध बाजूचा जवळचा area.
+चा क्रम: visit → handover → commitment with volume → 5-min CHoCH; A = एक confirming piece, नाहीतर B), invalidation (engine चा नियम: area पलीकडे
+close + पलीकडे swing ⇒ BROKEN; protected Daily level) आणि विरुद्ध बाजूचा जवळचा area (engine; SL / target = dashboard).
 
 "High-probability" = फक्त reader जे आधीच सांगतो (engine चे watched areas, त्यांची state, confluence, line touch N, method चा A / B नियम) —
 नवा score / नियम / आकडा नाही: प्रत्येक आकडा area च्या lo / hi, last close किंवा protected मधूनच. फक्त दाखवणं — gate / order / निर्णय बदलत
@@ -180,7 +180,8 @@ def lines(sym, ctx, weekly, last, f=None, na=None, chart_ok=True):
         ab = f"Label A needs one more piece ({CONFIRMING_WORDS}); without it B."
     out.append(f"Entry only if: {SEQUENCE}. {ab}")
     edge = n["lo"] if bull else n["hi"]
-    inv = f"Invalid: a 15M close {'below' if bull else 'above'} {edge:,.0f} (beyond the area)"
+    # engine (KB K4, decision3/levels.py): BROKEN = a close beyond AND a swing formed beyond; a close beyond alone = sweep
+    inv = f"Invalid: close {'below' if bull else 'above'} {edge:,.0f} + a swing beyond it (area broken)"
     p, tr = f["protected"], str(ctx.get("trend") or "")
     if p is not None and tr in ("UP", "DOWN"):
         inv += f"; Daily {tr} ends on a daily close {'below' if tr == 'UP' else 'above'} {float(p):,.0f} (protected)"
@@ -188,10 +189,11 @@ def lines(sym, ctx, weekly, last, f=None, na=None, chart_ok=True):
     t = f.get("target")
     opp = "supply" if bull else "demand"
     if t:
-        tgt = (f"Target: next {opp} {_rng(t['lo'], t['hi'])} ({_esc(t['tf']) + ', ' if t['tf'] else ''}{PT.pts(t['dist'])} "
-               f"{'above' if bull else 'below'})")
+        tgt = (f"Next opposite area (engine): {opp} {_rng(t['lo'], t['hi'])} ({_esc(t['tf']) + ', ' if t['tf'] else ''}"
+               f"{PT.pts(t['dist'])} {'above' if bull else 'below'})")
     else:
-        tgt = f"Target: no {opp} area in the engine's list — use your dashboard target"
+        tgt = f"Next opposite area (engine): no {opp} area in the list"
+    tgt += " · SL / target = dashboard"
     nx = f.get("next")
     if nx:
         tgt += f" · if it breaks, next: {_kind(nx['side'])} {_rng(nx['lo'], nx['hi'])}" + (f" ({_esc(nx['tf'])})" if nx["tf"] else "")
