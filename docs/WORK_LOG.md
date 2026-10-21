@@ -2942,3 +2942,15 @@ legs owner वि. reader2 gate).
   zone = area स्वतः; K reset = जुन्या टोकापलीकडे (σ नाही). `maturity_sigma_d`, `k_reset_sigma` काढले; `range_eq_sigma_d` फक्त legacy /
   display. `daily_pivot_n` = L1-c (Abhi ला प्रश्न; default N = 2).
 
+
+## 2026-10-21 · Layer 6b (output): charts, the facts dossier and the display finders read the method (branch `claude/method-layer6b-output`)
+
+- **Facts dossier (Vision facts input):** areas / lines / visits / zone study / commitment / LTF / RSI = `decision3.engine.V22` itself
+  (levels + K4 state, `swing_line` / `touch_groups` / `reaction_touch`, `V22.visit` by structure, `V22._confirm`, `V22.rsi_divergence`).
+  `touch_window_bars` and the old `rsi2.engine.RSI` class are no longer read (CI guard: layer-6 PENDING empty); `display_finder =
+  validity` keeps the R1a finder for the R1a golden. Not wired live.
+- **Display:** Daily chart bands / RANGE report by C-13 (`daily.c13_*`, no σ fraction); 1H / setup review charts draw the decision's
+  objects with the label + evidence list ✓ / ✗ / NA; volume pane in the method's words.
+- **Live text / card — display settings, defaults = today (decision3/settings.py OUTPUT, for the live-switch track):**
+  `approval_band_warn_rule` (points / method), `vision_chart_band_finder` (validity / method), `vision_volume_words` (legacy / method).
+- Golden expectations unchanged; charts before / after: trade-data `review/layer6b/<commit>/`. Open questions in the PR body.
