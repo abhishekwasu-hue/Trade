@@ -124,6 +124,31 @@ def send_telegram_photo(png_bytes, caption, timeout=20):
         return False
 
 
+def send_telegram_media_group(items, timeout=30):
+    """Abhi (pre-open charts): [(png_bytes, caption)] ⇒ एकच album (sendMediaGroup, 2–10 images; caption साधा मजकूर, ≤ 1024). एकच image ⇒
+    send_telegram_photo. Album अयशस्वी ⇒ एकेक photo (send_telegram_photo). send_telegram_message सारखंच: कधीच raise नाही, token
+    कधीच छापत नाही; credentials नाहीत ⇒ False. रिटर्न bool (सगळे पोहोचले)."""
+    items = [(b, str(c or "")) for b, c in (items or []) if b][:10]
+    if not items:
+        return False
+    if len(items) == 1:
+        return send_telegram_photo(items[0][0], items[0][1], timeout=timeout)
+    token, chat_id = _load_telegram_credentials()
+    _log_locally(f"[album {len(items)}] " + " | ".join(c for _, c in items))
+    if not token or not chat_id:
+        return False
+    media = [{"type": "photo", "media": f"attach://p{i}", "caption": c[:1024]} for i, (_, c) in enumerate(items)]
+    files = {f"p{i}": (f"chart{i}.png", b, "image/png") for i, (b, _) in enumerate(items)}
+    try:
+        resp = requests.post(f"https://api.telegram.org/bot{token}/sendMediaGroup",
+                             data={"chat_id": chat_id, "media": json.dumps(media)}, files=files, timeout=timeout)
+        if resp.status_code == 200:
+            return True
+    except requests.RequestException:
+        pass
+    return all([send_telegram_photo(b, c, timeout=timeout) for b, c in items])
+
+
 def _log_locally(message):
     """Telegram पाठवता आलं की नाही, याची पर्वा न करता — प्रत्येक सूचना स्थानिक फाईलमध्येही नोंदवली जाते."""
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)

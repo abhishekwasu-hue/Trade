@@ -1399,6 +1399,8 @@ def render():
     engine3_swing_k = {d: settings.get(f"engine3_swing_k_d{d}") for d in (1, 2)}   # रिकामं ⇒ approved scale (D1 = 4, D2 = 6)
     from bots_common import plain_text as _PT
     approval_band_warn_pts = _PT.band_warn_pts(settings)
+    from bots_common import preopen_crux as _PC
+    preopen_charts = _PC.charts_on(settings.get(_PC.SETTING_KEY))           # stored "false" ⇒ unchecked; रिकामं ⇒ default ON
     if strategy_key in ("1m_instant", "15m_dynamic_sr"):
         # 🎓 Abhi (Monday PAPER): signal कुठून — own (bot चा स्वतःचा, default) / engine (common analysis engine चा setup) / both (दोन्ही एकाच
         # दिशेला तरच). कुठलाही असो: Vision + ✅ approval शिवाय PAPER entry नाही; engine चं मत caption मध्ये नेहमी (shadow).
@@ -1422,6 +1424,11 @@ def render():
                                                          value=float(approval_band_warn_pts), step=10.0,
                                                          key=_widget_key(strategy_key, symbol, "approval_band_warn_pts"),
                                                          help="फक्त Telegram संदेशात इशारा — निर्णय / gate / order बदलत नाही. Default 150.")
+                # 🎓 Abhi: pre-open संदेशाच्या वर crux + प्रत्येक symbol चे Daily / 1H / 15M charts (फक्त दाखवणं)
+                preopen_charts = st.checkbox("Pre-open: crux + charts (Daily / 1H / 15M)", value=preopen_charts,
+                                             key=_widget_key(strategy_key, symbol, "preopen_charts"),
+                                             help="ON (default) = सकाळच्या संदेशाच्या वर मुख्य मुद्दे + charts · OFF = जुनाच text संदेश. "
+                                                  "Chart अयशस्वी ⇒ संदेश तसाच जातो.")
                 # 🎓 Abhi (layer 1 ✅): swing scale = त्यांचं visual calibration (swings2 D1 / D2, his approved charts). Advanced —
                 # default बदलायचा नाही; बदल फक्त engine च्या swings साठी (charts / replay approved scale वरच).
                 from swings2 import settings as _SW
@@ -1493,6 +1500,7 @@ def render():
             for _d in (1, 2):                                            # रिकामं ("") ⇒ approved scale
                 new_settings[f"engine3_swing_k_d{_d}"] = "" if engine3_swing_k[_d] in (None, "") else float(engine3_swing_k[_d])
             new_settings["approval_band_warn_pts"] = float(approval_band_warn_pts)
+            new_settings["preopen_charts"] = bool(preopen_charts)
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_support_max"] = int(rsi_support_max)

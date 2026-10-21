@@ -516,11 +516,12 @@ def tradeable_levels(levels):
             and x.get("trade_location", True)]
 
 
-def watched_levels(symbol, feed, now, s=None):
+def watched_levels(symbol, feed, now, s=None, keep=None):
     """Pre-open (Abhi): engine (V22 ② Levels) चे शेवटच्या बंद 15M bar ला जिवंत levels — [{"role", "lo", "hi", …}] (`Levels.snapshot`).
     पट्टे swing / base candles वरून (TA4, lo < hi). 15M + Daily (+ 1m, live `compute` सारखंच — Z-1o: s = `ES.engine3_settings(sym)`,
     `engine3_use_1m` False ⇒ 1m मागवत नाही) पुरे (levels ला LTF / FUT लागत नाही ⇒ c1 इशारा दाबला). 1m नाही / V22 1m सह त्रुटी ⇒ 1m
-    शिवाय (कारण log). Data नाही ⇒ EngineDataError (caller NA + कारण)."""
+    शिवाय (कारण log). Data नाही ⇒ EngineDataError (caller NA + कारण). keep (dict) ⇒ keep["V"] = तोच V22 (pre-open charts तोच data
+    वापरतात — पुन्हा fetch / build नाही); None ⇒ जुनंच."""
     import contextlib
     import io
     import warnings
@@ -551,6 +552,8 @@ def watched_levels(symbol, feed, now, s=None):
                 m1_complete(symbol, V, info)
     finally:
         INS._current["name"] = prev
+    if keep is not None:
+        keep["V"] = V
     return tradeable_levels(V.levels.snapshot(len(V.m15) - 1))
 
 
