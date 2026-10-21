@@ -1397,6 +1397,7 @@ def render():
     import engine3_live as _L3                                       # तोच parser (stored "false" ⇒ unchecked; रिकामं ⇒ default ON)
     engine3_use_1m = _L3.use_1m({"engine3_use_1m": settings.get("engine3_use_1m")})
     engine3_swing_k = {d: settings.get(f"engine3_swing_k_d{d}") for d in (1, 2)}   # रिकामं ⇒ approved scale (D1 = 4, D2 = 6)
+    engine3_switches = {k: str(settings.get(k) or "").strip().lower() for k in _L3.METHOD_SWITCHES}   # रिकामं ⇒ method (default)
     from bots_common import plain_text as _PT
     approval_band_warn_pts = _PT.band_warn_pts(settings)
     if strategy_key in ("1m_instant", "15m_dynamic_sr"):
@@ -1444,6 +1445,34 @@ def render():
                         engine3_swing_k = {1: None, 2: None}
                 else:
                     engine3_swing_k = {1: None, 2: None}
+                # 🎓 Abhi (live switches): प्रत्येक Chart Reader layer ⇒ method (default) किंवा त्याचा जुना what-if — deploy शिवाय fallback.
+                # रिकामं / method ⇒ आजचं वर्तन; engine3_live.method_switches तोच नियम तपासतो (चुकीचं ⇒ engine run fail-closed).
+                _E3_SW_CAPTION = {
+                    "engine3_zone_visit_rule": "Layer 3 visit: structure = visit फक्त रचनेने संपते (method) · close_away / touch_window = जुनं.",
+                    "engine3_commit_volume_rule": "Layer 3 commitment volume: approach leg + visit च्या opposite candles च्या सरासरीपेक्षा "
+                                                  "जास्त (method) · opposite = जुनं (#329).",
+                    "engine3_line_rule": "Layer 4 lines: logic = दोन reactions, candle शी तुलना (method) · sigma = जुनं σ / touch count.",
+                    "engine3_verdict_rule": "Layer 6a verdict: method = required set ⇒ entry, A / B पुराव्याने · score = जुनं score / weights.",
+                }
+                if st.checkbox("Advanced: method layers (legacy fallback)",
+                               value=any(engine3_switches[k] not in ("", _a[0]) for k, (_v, _a, _l) in _L3.METHOD_SWITCHES.items()),
+                               key=_widget_key(strategy_key, symbol, "engine3_switch_adv")):
+                    for _k, (_v22, _allowed, _label) in _L3.METHOD_SWITCHES.items():
+                        _cur = engine3_switches[_k] or _allowed[0]
+                        if _cur not in _allowed:                         # a bad stored value never breaks the page
+                            st.warning(f"{_k}: जतन केलेलं {_cur!r} अज्ञात ⇒ method ({_allowed[0]}) दाखवतो.")
+                            _cur = _allowed[0]
+                        engine3_switches[_k] = st.selectbox(f"Engine {_label}", list(_allowed), index=list(_allowed).index(_cur),
+                                                            format_func=lambda v, a=_allowed: f"{v} (method, default)" if v == a[0] else f"{v} (legacy)",
+                                                            key=_widget_key(strategy_key, symbol, _k))
+                        st.caption(_E3_SW_CAPTION[_k])
+                    try:
+                        _L3.method_switches(engine3_switches)
+                    except ValueError as _e:
+                        st.error(f"{_e} — visit / commitment volume method (default) जतन होईल.")
+                        engine3_switches["engine3_zone_visit_rule"] = engine3_switches["engine3_commit_volume_rule"] = ""
+                else:
+                    engine3_switches = {k: "" for k in _L3.METHOD_SWITCHES}
 
     st.markdown("---")
     if st.button("💾 Settings जतन करा", key="bdsr_save_btn", type="primary"):
@@ -1492,6 +1521,9 @@ def render():
             new_settings["engine3_use_1m"] = bool(engine3_use_1m)
             for _d in (1, 2):                                            # रिकामं ("") ⇒ approved scale
                 new_settings[f"engine3_swing_k_d{_d}"] = "" if engine3_swing_k[_d] in (None, "") else float(engine3_swing_k[_d])
+            for _k, (_v22, _allowed, _label) in _L3.METHOD_SWITCHES.items():   # रिकामं ("") ⇒ method
+                _v = str(engine3_switches.get(_k) or "")
+                new_settings[_k] = "" if _v in ("", _allowed[0]) or _v not in _allowed else _v
             new_settings["approval_band_warn_pts"] = float(approval_band_warn_pts)
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice

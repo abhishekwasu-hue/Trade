@@ -398,6 +398,44 @@ def swing_scale(s=None):
     return {"swing_k": k}
 
 
+# Abhi (live switches): each finished Chart Reader layer can fall back to its legacy what-if from the dashboard (advanced, 15M SRv2 engine
+# block) without a deploy. Dashboard key ⇒ (decision3 V22 setting, allowed values — the method first (= decision3's default), then the
+# existing legacy what-ifs, label). Empty / None / the method ⇒ V22 gets nothing ⇒ today's behaviour byte-for-byte.
+METHOD_SWITCHES = {
+    "engine3_zone_visit_rule": ("zone_visit_rule", ("structure", "close_away", "touch_window"), "layer 3 visit"),
+    "engine3_commit_volume_rule": ("commit_volume_rule", ("approach_and_opposite", "opposite"), "layer 3 commitment volume"),
+    "engine3_line_rule": ("line_rule", ("logic", "sigma"), "layer 4 lines"),
+    "engine3_verdict_rule": ("verdict_rule", ("method", "score"), "layer 6a verdict"),
+}
+
+
+def method_switches(s=None):
+    """Dashboard `engine3_*` layer switches ⇒ {V22 key: legacy value} — only the ones set away from the method (empty / the method ⇒
+    omitted). Unknown value, or a legacy visit rule without the legacy commitment volume (V22: "never a silent half-rule") ⇒ ValueError
+    with the reason (the engine run fails closed: error row + Telegram) — before any data fetch or instrument switch."""
+    out = {}
+    for key, (v22_key, allowed, _label) in METHOD_SWITCHES.items():
+        v = (s or {}).get(key)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            continue
+        v = str(v).strip().lower()
+        if v not in allowed:
+            raise ValueError(f"{key} = {v!r} — allowed: {' / '.join(allowed)} (empty = {allowed[0]}, the method)")
+        if v != allowed[0]:
+            out[v22_key] = v
+    if out.get("zone_visit_rule") and out.get("commit_volume_rule") != "opposite":
+        raise ValueError(f"engine3_zone_visit_rule = {out['zone_visit_rule']!r} (legacy) knows no approach leg — set "
+                         "engine3_commit_volume_rule = 'opposite' with it")
+    return out
+
+
+def v22_settings(s=None):
+    """Dashboard `engine3_*` ⇒ V22 settings (`s`) for the live decision and the pre-open levels: the swing scale (layer 1) + the layer
+    switches. Nothing set ⇒ None (V22 on decision3's defaults = the method, today's behaviour). Bad value ⇒ ValueError (fail closed)."""
+    out = {**(swing_scale(s) or {}), **method_switches(s)}
+    return out or None
+
+
 def load_m1(feed, symbol, m15, now, s=None):
     """Abhi Z-1o (a): spot 1m ⇒ (df1m | None, info). फक्त बंद 1m (start + 1 ≤ now), session मधले, m15 च्या पहिल्या bar पासून शेवटच्या
     बंद 15M bar च्या bar_end पर्यंत (त्यानंतरचा 1m कधीच नाही ⇒ look-ahead नाही); NIFTY ⇒ holdout rows नाहीत. 1m नाही / त्रुटी ⇒ None +
@@ -527,10 +565,10 @@ def watched_levels(symbol, feed, now, s=None):
     import instruments as INS
     from decision3 import engine as E3
     from decision3 import history as HI
+    s3 = v22_settings(s)                                                 # live compute सारखेच V22 settings (swing scale + layer switches); bad ⇒ raise
     m15, daily, _l, _f, _n = build_inputs(feed, symbol, now, s, levels_only=True)
     m1, info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)           # live compute सारखाच 1m ⇒ pre-open = engine चे पट्टे
     m15 = m15.drop(columns=[c for c in ("volume",) if c in m15.columns])
-    s3 = swing_scale(s)                                                  # live compute सारखाच swing scale (Abhi calibration); bad ⇒ raise
     prev = INS._current["name"]                                          # before the process-wide instrument changes
     INS.set_current(symbol)
 
@@ -627,9 +665,10 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
 
 
 def compute(symbol, feed, now, s=None):
+    s3 = v22_settings(s)                                                 # dashboard swing scale + layer switches; bad ⇒ raise before any fetch
     m15, daily, ltf, fut, note = build_inputs(feed, symbol, now, s)
     m1, m1_info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)
-    r = evaluate(symbol, m15, daily, ltf, fut, s3=swing_scale(s), m1=m1, m1_info=m1_info)
+    r = evaluate(symbol, m15, daily, ltf, fut, s3=s3, m1=m1, m1_info=m1_info)
     r["volume_note"] = note
     r["m1"] = m1_info                                                    # Z-1o: 1m वापरला का / fallback कारण (row payload)
     return r

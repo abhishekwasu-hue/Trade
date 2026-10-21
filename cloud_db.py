@@ -467,6 +467,10 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "engine3_use_1m": True,          # 🎓 Abhi Z-1o (a): engine (decision3) ला 1m spot ⇒ swings2 candle आतला high / low क्रम (False ⇒ जुनं)
         # 🎓 Abhi (layer 1 ✅): swing scale = his calibration (advanced). रिकामं ⇒ approved swings2 scale (D1 = 4, D2 = 6)
         "engine3_swing_k_d1": "", "engine3_swing_k_d2": "",
+        # 🎓 Abhi (live switches, advanced): each Chart Reader layer ⇒ method (रिकामं, default) किंवा त्याचा जुना what-if
+        # (engine3_live.METHOD_SWITCHES: visit structure / close_away / touch_window, commitment volume approach_and_opposite / opposite,
+        # lines logic / sigma, verdict method / score). रिकामं ⇒ method = आजचं वर्तन.
+        "engine3_zone_visit_rule": "", "engine3_commit_volume_rule": "", "engine3_line_rule": "", "engine3_verdict_rule": "",
         # 🎓 Abhi (merged band — check): approval संदेश / pre-open / 15:45 सारांशात पट्ट्याची रुंदी (pts) दाखवतो; रुंदी यापेक्षा जास्त ⇒
         # "⚠️ merged band — check" ओळ. फक्त दाखवणं — निर्णय / gate / order बदलत नाही (bots_common/plain_text.band_warn_pts). Default 150.
         "approval_band_warn_pts": 150,
