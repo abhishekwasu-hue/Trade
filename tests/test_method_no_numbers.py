@@ -25,7 +25,8 @@ LEGACY = {                       # used only by a non-default rule / gate (what-
     "sl_buffer_sigma": ("rr_step = True", {"method.py"}),
     "min_rr": ("rr_step = True", {"method.py"}),
     "max_attempts": ("wave_gates = True", {"engine.py"}),
-    "accept_closes": ("break_rule = closes / liquidity_rule = sigma", {"levels.py", "liquidity.py"}),
+    "accept_closes": ("break_rule = closes / liquidity_rule = sigma", {"levels.py", "liquidity.py",
+                      "range_edges.py"}),   # range_edges replays Levels._step_far_swing and only passes it through (legacy branch)
     "liquidity_eq_sigma": ("liquidity_rule = sigma", {"levels.py", "liquidity.py"}),
     "liquidity_lookback": ("liquidity_rule = sigma (method: the pullback's / leg's own window)", {"engine.py", "dossier.py"}),
     "candle_avg_n": ("candle_rule = ratio", {"method.py"}),

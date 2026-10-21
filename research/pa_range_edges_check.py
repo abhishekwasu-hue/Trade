@@ -59,6 +59,8 @@ def chart(V, t, edges, title, path, tf, bars, struct=None, overlap=None):
         j1 = int(lv.h1_of[t])
         j0 = max(0, j1 - bars)
         fr = lv.h1.iloc[j0:j1 + 1].reset_index(drop=True)
+        o, h, l, c = lv._h1_upto(j1, t)                                    # the hour as known at t (no later 15M bars)
+        fr.loc[len(fr) - 1, ["open", "high", "low", "close"]] = [o, h, l, c]
         pos = lambda b: int(lv.h1_of[b]) - j0  # noqa: E731
     else:
         j0 = max(0, t - bars)
@@ -108,6 +110,7 @@ def main(argv=None):
     ap.add_argument("--daily", required=True)
     ap.add_argument("--days", nargs="+", required=True, help="sessions to scan (YYYY-MM-DD)")
     ap.add_argument("--charts", type=int, default=4, help="sample charts of differing bars (besides each day's last bar)")
+    ap.add_argument("--at", nargs="*", default=[], help="extra bars to chart (15M bar start timestamps)")
     ap.add_argument("--out-dir", required=True)
     a = ap.parse_args(argv)
     warnings.filterwarnings("ignore")
@@ -142,6 +145,9 @@ def main(argv=None):
         db = [t for t in bars if ts.iloc[t].normalize() == day]
         if db:
             picks.append(db[-1])
+    for x in a.at:
+        hit = [i for i in range(len(ts)) if ts.iloc[i] == pd.Timestamp(x)]
+        picks += [i for i in hit if i not in picks]
     dbars = [t for t in bars if struct[t] != overlap[t]]
     step = max(1, len(dbars) // max(1, a.charts))
     picks += [t for t in dbars[::step][:a.charts] if t not in picks]

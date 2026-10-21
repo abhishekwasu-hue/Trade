@@ -144,7 +144,7 @@ def lifecycle(LVS, edge, lo, hi, born, t, anchor_px, tf, key):
     L = LV.Level(key, ROLE[edge], float(lo), float(hi), int(born), [BIRTH], anchor_px, tf=tf)
     L.bands.append((int(born), L.lo, L.hi))
     H, Lo, C = LVS.A["high"], LVS.A["low"], LVS.A["close"]
-    acc = int(LVS.s["accept_closes"])
+    acc = int(LVS.s["accept_closes"])                                   # read by _step_far_swing only under break_rule = closes (legacy)
     touching, excursion, st = False, {}, {"brk": False, "start": None, "rc": 0, "back": None}
     for b in range(int(born) + 1, int(t) + 1):
         if not L.alive(b):
@@ -383,7 +383,8 @@ def read_intraday(V, t, tf, snap=None):
     band = (min(p.price for p in ls), max(p.price for p in hs))
     born = max(p.confirm_bar for p in hs + ls)
     C = V.levels.A["close"]
-    out_of = [b for b in range(born + 1, t + 1) if C[b] > band[1] or C[b] < band[0]]   # a close beyond the band ends the range
+    out_of = [b for b in range(born, t + 1) if C[b] > band[1] or C[b] < band[0]]   # a close beyond the band ends the range (and, at
+    # the bar the fourth swing is confirmed, means it never was one — the Daily RANGE too is read only with the close inside its band)
     snap = V.levels.snapshot(t) if snap is None else snap
     edges = edges_from_rectangle(V, t, {"tf": tf, "highs": hs, "lows": ls}, snap=snap, current=not out_of)
     if not edges:

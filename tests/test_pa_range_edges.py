@@ -330,3 +330,14 @@ def test_engine_range_state_rule_default_is_today_and_structure_wires_the_row():
         raise AssertionError("unknown rule accepted")
     except ValueError:
         pass
+
+
+def test_intraday_range_needs_the_close_inside_the_band_when_it_is_known():
+    """As the Daily RANGE (read only with the close inside its band): a close already beyond the band at the bar the fourth swing is
+    confirmed ⇒ never a range (reported as context: last_range + breakout)."""
+    V, m, born = _intraday_case()
+    hi = max(p.price for p in RE._degree_pivots(V, "15M") if p.kind == "H")
+    V.levels.A["close"] = V.levels.A["close"].copy()
+    V.levels.A["close"][born] = hi + 1.0
+    r = RE.read_intraday(V, born, "15M")
+    assert r["state"] == "no_range" and r["breakout"]["bar"] == born and r["breakout"]["dir"] == "up"

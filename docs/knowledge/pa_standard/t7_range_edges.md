@@ -77,7 +77,15 @@ Daily edge (Abhi Z-1u: then the 1H band is the location — named in `inside_1h`
 
 ## Real data (21 Oct NIFTY, BANKNIFTY) — finding
 
-With the default Daily reading (impulse-degree Dow, C-13 equal), **no Daily or Weekly RANGE episode exists in the whole history** of
-either symbol (NIFTY 2016–2026, BANKNIFTY 2016–2026). So on real data the range edges come from the 1H / 15M structural reading only.
-Open question for Abhi: is the Daily RANGE (C-13 equal: the later extreme inside the earlier swing candle's own wick-to-body, never
-beyond) as strict as he wants, given it has never fired on Daily / Weekly?
+* Daily / Weekly: with the default Daily reading (impulse-degree Dow, C-13 equal), **no Daily or Weekly RANGE episode exists in the
+  whole history** of either symbol (NIFTY 2016–2026, BANKNIFTY 2016–2026).
+* 1H / 15M (the structure reading): equal swing pairs are rare and both pairs at once rarer. BANKNIFTY 13 Jul – 9 Oct (1,575 bars): 1H
+  swings 14 H / 14 L, 3 equal-high pairs, 2 equal-low pairs, one 1H rectangle (24 Sep) — and on the bar its fourth swing confirmed the
+  close was already below it (a gap down), so by the Daily rule (the close inside the band) it never became a range; it is reported as
+  context (last range + breakout down, the lower edge flipped). 15M: 2 + 2 equal pairs, no rectangle.
+* Structure vs the legacy overlap + doji measure: NIFTY 21 Oct — 22 bars, structure 0, overlap 5 (all 5 differ); NIFTY 1–21 Oct — 322
+  bars, structure 0, overlap 96; BANKNIFTY 1–9 Oct — 150 bars, structure 0, overlap 58; BANKNIFTY 22–29 Sep — 150 bars, structure 0,
+  overlap 51. The overlap measure calls short sideways pauses "range"; the structure reading calls a range only two equal highs + two
+  equal lows.
+* Open question for Abhi: is "equal" (C-13: the later extreme inside the earlier swing candle's own wick-to-body, never beyond) as strict
+  as he wants for a range, given it has never fired on Daily / Weekly and almost never intraday?
