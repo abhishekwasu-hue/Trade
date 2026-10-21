@@ -111,6 +111,9 @@ DEFAULTS = {
                                              # False = जुनं (a2 फक्त absorption ⇒ वाट) — जुने tests / what-if
     "range_state_gate": False,               # Abhi Z-1j: §5.3 range अवस्था (overlap + doji) = context fact, gate नाही (sideways = handover study;
                                              # range trades चालतात). True = जुना gate (फक्त जुने tests)
+    "range_state_rule": "overlap",           # Abhi 21 Oct: row चा `range_state` = रचनेतून (structure: प्रत्येक TF चे दोन समान swing highs + दोन
+                                             # समान swing lows, C-13; कडा = range_edges areas; W / D / 1H / 15M). "overlap" = आजचं (§5.3
+                                             # overlap + doji, फक्त verdict_rule = score) — default overlap, Abhi ✅ deploy वेळी structure
     "ltf_choch": True,                       # ⑥ c1 (Abhi, REQUIRED): lower-timeframe CHoCH by close (15M setup ⇒ 5M; method.LTF_OF). False = फक्त what-if
     "power_overlap": 0.5,                    # (b) bodies overlap
     # ⑤ Trendline (grade फक्त)
@@ -206,6 +209,10 @@ REGISTER = {
     "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
     "a2_handover_required": (True, "True / False", "Abhi नियम", "Abhi Z-1m: handover (a2) अनिवार्य, क्रम a2 → c1 → c0; False फक्त जुने tests"),
     "range_state_gate": (False, "False / True", "Abhi नियम", "Abhi Z-1j: §5.3 range अवस्था context fact फक्त; True फक्त जुने tests"),
+    "range_state_rule": ("overlap", "overlap / structure", "Abhi नियम", "Abhi 21 Oct: range state from structure per timeframe (C-13 "
+                         "equal highs + equal lows of that TF's swings; edges = decision3/range_edges areas; breakout = context only). "
+                         "overlap = legacy §5.3 overlap + doji (admin diagnostics; range_state_gate only with it); default overlap until "
+                         "Abhi ✅ at deploy"),
     "watch_levels_max": (3, "—", "Abhi नियम", "Abhi B2 watch-list (final) + KB K4 chart display (≤ 3 bands above / below price)"),
     "wave_gates": (False, "False / True", "Abhi नियम", "Abhi B1: no wave prediction — wave / maturity / C = a context only; True फक्त जुने tests"),
     "level_flip_rule": ("far_swing", "far_swing / acceptance", "Abhi नियम", "KB K4 / G4 (Abhi final, Z-1): flip = पलीकडे + पलीकडचा swing पार (swing नसेल ⇒ break नंतरचा पहिला swing confirm होताच — Z-1s, तोडायची गरज नाही); नाहीतर BROKEN; flipped zone दुसऱ्यांदा ⇒ DEAD"),
