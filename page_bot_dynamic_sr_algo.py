@@ -1491,6 +1491,8 @@ def render():
                     "engine3_div_degree_rule": "Layer 5 RSI divergence: zone = zone मध्ये येणाऱ्या चालीच्या आतले pushes (method) · "
                                                "all = जुनं D0–D2 वाचन.",
                     "engine3_verdict_rule": "Layer 6a verdict: method = required set ⇒ entry, A / B पुराव्याने · score = जुनं score / weights.",
+                    "engine3_entry_gate": "Layer 3 entry gate: models = चार entry models E1–E4 (Abhi 21 Oct, method) · legacy_k = जुना ③ "
+                                          "(BOS impulse + K pullback) gate — जुनं वर्तन.",
                 }
                 _sw_shown = {k: _L3.switch_choice(k, engine3_switches[k]) for k in _L3.METHOD_SWITCHES}
                 if st.checkbox("Advanced: method layers (legacy fallback)",

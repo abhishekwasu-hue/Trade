@@ -773,6 +773,8 @@ class V22:
         mark = None
         if dec == SETUP:
             mark = "✅" if best.get("conviction") == "A" else "🟡"
+            if not self.legacy_k and best.get("conviction") not in ("A", "B"):   # an entry model without the 6a required set: no label
+                mark = "⚪"
         row = {"bar": int(t), "ts": str(pd.Timestamp(self.m15["timestamp"].iloc[t])), "bar_end": str(self.bar_end[t]),
                 "engine_version": "v22", "daily_trend": st.trend, "trend_used": trend, "trend_resolution": ctx["resolution"],
                 "weekly_trend": ctx["weekly"], "daily_phase": st.phase, "daily_leg": st.wave, "corr_label": st.corr_label,

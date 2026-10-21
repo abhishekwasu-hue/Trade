@@ -442,7 +442,8 @@ class Reader:
     # ------------------------------------------------------------------------------------------ evidence (layer 6a builders)
     def evidence(self, t, d, lvl, arm, appr=None, move_from=None, cm=None, read_ok=None):
         """The 6a evidence list + label A / B for an entry at bar t (method.confirming_evidence / method_label / evidence_list — the
-        same builders _level_eval uses): required set as read (handover + c0 + volume + c1), confirming pieces, context facts."""
+        same builders _level_eval uses): required set as read (handover + c0 + volume + c1), confirming pieces, context facts. The label
+        is None when the required set reads absent (6a: A and B both need it)."""
         V = self.V
         A = self.A
         if cm is None:                                                     # a broken line: the same shared confirmation, window = revisit
@@ -462,7 +463,6 @@ class Reader:
         k = V.pb.at(t, d)
         tl = TL.k_line(V, t, d, k) if k and k.get("open") else None
         confirm = M.confirming_evidence(zr, rsi, lvl, tl)
-        label = M.method_label(confirm)
         last3 = range(max(0, t - 2), t + 1)
         sw, tr = LQ.sweeps_and_traps(V, t, start=arm)                    # method §7: the visit's own window
         sd = "buy" if d == M.DOWN else "sell"
@@ -473,6 +473,9 @@ class Reader:
               "against_bodies": any((A["close"][i] - A["open"][i]) * d < 0 and M.candle_read(A, i, V.s, arm)["big_body"] for i in last3),
               "tl_confluence": "tl" in (lvl.get("births") or [])}
         el = M.evidence_list(ev, confirm, bool(read_ok), in_hours=V.entry_window(t))
+        # Method §5 / 6a: A = the required set + ≥ 1 confirming piece, B = the required set only — both need the required set. An entry
+        # model fired without it (E1 before any commitment, E2 before the LTF CHoCH, …) has no A / B label: the evidence list says ✗.
+        label = M.method_label(confirm) if el["required"] == "present" else None
         chx = self.channel_evidence(t, d)
         marks = [["required set (handover + commitment + volume + LTF CHoCH)", MARK[el["required"]]]] + \
             [[CONF_NAME.get(k2, k2), MARK.get(v, v)] for k2, v in el["confirming"].items()] + \

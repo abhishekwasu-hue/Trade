@@ -382,8 +382,13 @@ def test_decide_row_carries_entries_armed_and_the_legacy_k_diagnostic(oct12):
     e = st[0]["entries"][0]
     assert set(e) >= {"model", "name", "direction", "side", "area", "visit_id", "key", "trigger_bar", "trigger_ts", "entry_ref",
                       "invalidation", "invalidation_rule", "evidence", "evidence_list", "label", "confirming", "facts"}
-    assert e["side"] == ("bull_put" if mirror else "bear_call") and e["label"] in ("A", "B")
-    assert st[0]["conviction"] == e["label"] and st[0]["mark"] == ("✅" if e["label"] == "A" else "🟡")
+    assert e["side"] == ("bull_put" if mirror else "bear_call") and e["label"] in ("A", "B", None)
+    assert st[0]["conviction"] == e["label"] and st[0]["mark"] == {"A": "✅", "B": "🟡", None: "⚪"}[e["label"]]
+    for x in (x for r in rows for x in r["entries"]):                       # 6a: A / B only with the required set present
+        req = x["evidence_list"]["required"]
+        assert (x["label"] is None) == (req != "present"), (x["model"], req, x["label"])
+        if req == "present":
+            assert x["label"] == ("A" if any(v is True for v in x["confirming"].values()) else "B")
     assert e["evidence"][0][1] in ("✓", "✗") and {k for k in e["area"]} >= {"id", "tf", "lo", "hi", "state"}
     keys = [x["key"] for r in rows for x in r["entries"]]
     assert len(keys) == len(set(keys))                                       # one fire per (area, visit, model)

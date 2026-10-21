@@ -24,6 +24,7 @@ import os
 import pickle
 import urllib.parse
 
+import numpy as np
 import pandas as pd
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -515,6 +516,9 @@ METHOD_SWITCHES = {
     "engine3_line_rule": ("line_rule", ("logic", "sigma"), "layer 4 lines"),
     "engine3_div_degree_rule": ("div_degree_rule", ("zone", "all"), "layer 5 RSI divergence"),
     "engine3_verdict_rule": ("verdict_rule", ("method", "score"), "layer 6a verdict"),
+    # Abhi 21 Oct (PA standard §3): the entry models E1–E4 decide (decision3 default); legacy_k = the old ③ BOS + K pullback gate + the
+    # old visit end, exactly as before the models — the no-deploy fallback for the live PAPER engine.
+    "engine3_entry_gate": ("entry_gate", ("models", "legacy_k"), "layer 3 entry gate (entry models E1–E4)"),
 }
 
 
@@ -835,36 +839,57 @@ def reader_facts(r):
         return None
 
 
-ENTRY_KEYS = ("model", "name", "direction", "side", "visit_id", "trigger_ts", "entry_ref", "evidence", "label")
-AREA_KEYS = ("id", "tf", "lo", "hi", "state")
+ENTRY_KEYS = ("model", "name", "direction", "side", "object", "visit_id", "visit_start", "key", "trigger_ts", "trigger_bar_end",
+              "entry_ref", "evidence", "evidence_list", "label")
+AREA_KEYS = ("id", "tf", "role", "lo", "hi", "state", "object")
+ARMED_MODEL_KEYS = ("status", "at", "waiting", "note")
 
 
 def _area_of(a):
-    return {k: a.get(k) for k in AREA_KEYS} if isinstance(a, dict) else None
+    return {k: a.get(k) for k in AREA_KEYS if k in a or k in ("id", "tf", "lo", "hi", "state")} if isinstance(a, dict) else None
+
+
+def _invalidation_of(e):
+    """decision3 (H1) gives `invalidation` = the price and `invalidation_rule` = its text (separate keys); a dict {price, rule} is read
+    the same way. ⇒ {"price": float | None, "rule": str | None} (card: information only — the trade's SL / target are the dashboard's)."""
+    inv = e.get("invalidation")
+    if isinstance(inv, dict):
+        px, rule = inv.get("price"), inv.get("rule")
+    else:
+        px, rule = inv, None
+    rule = e.get("invalidation_rule") if rule is None else rule
+    try:
+        px = None if px is None else float(px)
+    except (TypeError, ValueError):
+        px = None
+    return {"price": px if px == px else None, "rule": None if rule is None else str(rule)}
 
 
 def compact_entries(entries):
-    """decision3 `entries` (fired entry models of this bar) ⇒ the contract fields only (model, name, direction, side, area {id, tf, lo, hi,
-    state}, visit_id, trigger_ts, entry_ref, invalidation {price, rule}, evidence, label); timestamps as text. Not a list ⇒ []. A
-    non-dict item is skipped. Nothing is re-read or scored."""
+    """decision3 `entries` (fired entry models of this bar) ⇒ the contract fields only (model, name, direction, side, object, area {id,
+    tf, role, lo, hi, state, object}, visit_id, visit_start, key, trigger_ts, trigger_bar_end, entry_ref, invalidation {price, rule},
+    evidence ([name, mark] pairs), evidence_list (the 6a dict), label); timestamps as text. Not a list ⇒ []. A non-dict item is skipped.
+    Nothing is re-read or scored."""
     out = []
     for e in entries if isinstance(entries, (list, tuple)) else []:
         if not isinstance(e, dict):
             continue
         x = {k: e.get(k) for k in ENTRY_KEYS}
         x["area"] = _area_of(e.get("area"))
-        inv = e.get("invalidation")
-        x["invalidation"] = {"price": inv.get("price"), "rule": inv.get("rule")} if isinstance(inv, dict) else inv
-        for k in ("trigger_ts", "visit_id"):
+        x["invalidation"] = _invalidation_of(e)
+        for k in ("trigger_ts", "visit_id", "visit_start", "trigger_bar_end", "key"):
             if x.get(k) is not None:
                 x[k] = str(x[k])
+        if x["area"] is not None and x["area"].get("id") is not None and not isinstance(x["area"]["id"], (str, int, float)):
+            x["area"]["id"] = str(x["area"]["id"])                       # numpy ints ⇒ text, never a JSON error
         out.append(x)
     return out
 
 
 def compact_armed(armed):
-    """decision3 `armed` (per armed area: models still armed / already fired) ⇒ compact: scalars and lists of scalars kept, a nested
-    area reduced to {id, tf, lo, hi, state}, anything else dropped. Not a list ⇒ []."""
+    """decision3 `armed` (per armed area: each model's status — fired / fired_earlier / waiting / passed / off / disarmed …) ⇒ compact:
+    scalars and lists of scalars kept, a nested area reduced to {id, tf, lo, hi, state}, the per-model status dict `models` kept as
+    {model: {status, at, waiting (≤ 160 chars), note}}, anything else dropped. Not a list ⇒ []."""
     def scalar(v):
         return v is None or isinstance(v, (str, int, float, bool))
     out = []
@@ -875,12 +900,17 @@ def compact_armed(armed):
         for k, v in a.items():
             if k == "area":
                 x[k] = _area_of(v)
+            elif k == "models" and isinstance(v, dict):
+                x[k] = {str(m): {kk: (str(st.get(kk))[:160] if kk in ("waiting", "note") and st.get(kk) is not None else st.get(kk))
+                                 for kk in ARMED_MODEL_KEYS if kk in st} for m, st in v.items() if isinstance(st, dict)}
             elif scalar(v):
                 x[k] = v
             elif isinstance(v, (list, tuple)) and all(scalar(i) for i in v):
                 x[k] = list(v)
             elif hasattr(v, "isoformat"):
                 x[k] = str(v)
+            elif isinstance(v, (np.integer, np.floating)):
+                x[k] = v.item()
         out.append(x)
     return out
 

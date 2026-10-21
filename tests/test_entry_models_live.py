@@ -7,6 +7,7 @@ import datetime as dt
 import json
 import sqlite3
 
+import pandas as pd
 import pytest
 
 import engine3_live as L
@@ -415,3 +416,62 @@ def test_cards_without_a_model_stay_todays():
     assert CS.model_lines({"engine": True}) == []
     assert CS.evidence_text({"required": "present", "confirming": {"rsi_divergence": "absent", "confluence": None}}) == \
         "✓ required · ✗ rsi divergence · NA confluence"
+
+
+# ------------------------------------------------------------------------------------------------ 9. the joined contract (H1 rows ⇒ H2)
+@pytest.fixture(scope="module")
+def h1_rows():
+    """Real decision3 rows (entry_gate = models, the default) on the synthetic 12 Oct fixture — the rows the live engine stores."""
+    from decision3 import engine as E3
+    from tests import oct12_fixture as F
+    m15, fut, ltf = F.build(mirror=False)
+    V = E3.V22(m15, s={"level_death_side": "role"}, ltf=ltf, futures=fut)
+    ts = V.levels.ts
+    last = ts.dt.normalize().iloc[-1]
+    bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == last]
+    return m15, fut, ltf, bars, [V.decide(t) for t in bars]
+
+
+def test_h1_rows_reach_the_live_path_with_the_contract_fields(h1_rows, es):
+    """decision3's own row schema (invalidation = price + invalidation_rule; area {id, tf, role, lo, hi, state, object}; visit_id; key;
+    evidence pairs + the 6a evidence_list; armed[].models) ⇒ engine3_live payload ⇒ engine_signal store ⇒ pending_entries ⇒ the Vision
+    tags / card lines — nothing lost or mis-shaped on the way."""
+    _m15, _fut, _ltf, _bars, rows = h1_rows
+    st = [r for r in rows if r["entries"]]
+    assert st
+    r = st[0]
+    row = L.row_from_v22(SYM, r, lambda: RUN)
+    pay = json.loads(row["payload"])
+    assert row["decision"] == "setup" and len(pay["entries"]) == len(r["entries"])
+    for e, x in zip(r["entries"], pay["entries"]):
+        assert x["invalidation"] == {"price": float(e["invalidation"]), "rule": e["invalidation_rule"]}
+        assert x["visit_id"] == e["visit_id"] and x["key"] == e["key"] and x["model"] == e["model"] and x["direction"] == e["direction"]
+        assert x["area"]["lo"] == e["area"]["lo"] and x["area"]["hi"] == e["area"]["hi"] and x["area"]["role"] == e["area"]["role"]
+        assert x["evidence_list"]["required"] in ("present", "absent") and x["label"] == e["label"]
+        assert [list(p) for p in x["evidence"]] == [list(p) for p in e["evidence"]]
+    assert all("models" in a and all("status" in v for v in a["models"].values()) for a in pay["armed"])   # per-model status kept
+    ES.save(row, es)
+    got = ES.pending_entries(BOT, SYM, ST, now=pd.Timestamp(r["bar_end"]) + pd.Timedelta(minutes=1), path=es)
+    assert [(e["visit_id"], e["model"]) for _r, e in got] == [(e["visit_id"], e["model"]) for e in r["entries"]]
+    for _r, e in got:
+        tags = EE.entry_gate_tags(_r, e, ES.DIR_TXT[e["direction"]])
+        assert tags["entry_invalidation"]["rule"] and tags["gate"]["reader"]["evidence_list"] == e["evidence_list"]
+        assert tags["gate"]["grade"] == tags["engine_grade"] == (e["label"] if e["label"] in ("A", "B") else None)
+        lines = CS.model_lines(tags)
+        assert any("invalidation (info): " in ln and e["invalidation"]["rule"][:20] in ln for ln in lines)
+        assert any("required set" in ln for ln in lines)                                  # the 6a required set ✓ / ✗ on the card
+
+
+def test_h1_keys_are_stable_across_a_cron_rerun(h1_rows):
+    """A cron re-run recomputes the bar from scratch (a new V22 on the same closed bars) ⇒ the same visit_id / key per model ⇒ the
+    (bot, symbol, visit_id, model) claim dedupes it. A later bar of the same visit never re-fires a model that fired earlier."""
+    from decision3 import engine as E3
+    m15, fut, ltf, bars, rows = h1_rows
+    t = next(b for b, r in zip(bars, rows) if r["entries"])
+    V2 = E3.V22(m15.iloc[:t + 1].reset_index(drop=True), s={"level_death_side": "role"}, ltf=ltf, futures=fut)
+    again = V2.decide(t)
+    first = next(r for b, r in zip(bars, rows) if b == t)
+    assert [(e["visit_id"], e["model"], e["key"]) for e in again["entries"]] == \
+        [(e["visit_id"], e["model"], e["key"]) for e in first["entries"]]
+    seen = [(e["visit_id"], e["model"]) for r in rows for e in r["entries"]]
+    assert len(seen) == len(set(seen))                                               # one fire per (visit, model) over the day

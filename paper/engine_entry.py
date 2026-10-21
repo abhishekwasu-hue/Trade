@@ -300,12 +300,12 @@ def entry_gate_tags(r, e, direction, settings=None):
             areas.insert(0, {"id": ar.get("id"), "role": "support" if int(e["direction"]) > 0 else "resistance", "lo": a[0], "hi": a[1],
                              "tf": ar.get("tf"), "state": ar.get("state"), "confluence_label": None})
         g["areas"] = areas
-    if e.get("label") in ("A", "B"):
-        g["grade"] = e["label"]
+    g["grade"] = e.get("label") if e.get("label") in ("A", "B") else None   # this entry's own label (none ⇒ no label, never the row's)
     ev = e.get("evidence")
-    if isinstance(ev, dict) and ("required" in ev or "confirming" in ev):   # the 6a evidence list in the reader's own shape
-        g["reader"] = {**(g.get("reader") or {}), "evidence_list": ev}
-    return {"engine": True, "engine_bar": r["bar_ts"], "engine_grade": e.get("label") or r.get("grade"), "gate": g,
+    el = e.get("evidence_list") if isinstance(e.get("evidence_list"), dict) else ev
+    if isinstance(el, dict) and ("required" in el or "confirming" in el):   # the 6a evidence list in the reader's own shape
+        g["reader"] = {**(g.get("reader") or {}), "evidence_list": el}
+    return {"engine": True, "engine_bar": r["bar_ts"], "engine_grade": g["grade"], "gate": g,
             "entry_model": str(e["model"]).upper(), "entry_name": e.get("name") or ES.MODEL_NAMES.get(str(e["model"]).upper()),
             "entry_label": ES.model_label(e), "entry_visit": str(e["visit_id"]), "entry_area_id": ar.get("id"),
             "entry_trigger_ts": None if e.get("trigger_ts") is None else str(e["trigger_ts"]), "entry_ref": e.get("entry_ref"),
