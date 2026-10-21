@@ -16,25 +16,34 @@ cd /root/Trade && bash scripts/export_banknifty_history_vps.sh 2>&1 | tee /root/
 Then paste the output (or `/root/banknifty_history_export.log`) to Claude. It contains no secret: only counts, dates and checksums.
 
 **What it does:**
-1. `git pull --ff-only` in `/root/trade-data`. This is the VPS clone that already pushes every night as `vps-data-export`, through
-   the `github-trade-data` deploy key.
-2. `scripts/export_banknifty_history.py` **reads** the bot's local files and writes ONE new folder,
-   `trade-data/banknifty/vps_history/<IST date_time>/`. The folder holds the CSV.gz files, `manifest.json` and `README.md`.
-3. `git add --ignore-removal` + commit of **that folder only**, then `git push origin HEAD:main`. It then checks that the remote has
-   every file and prints `✅ trade-data push पक्की … commit <sha>`.
-4. If there is no clone, or the pull or push does not work, it writes a tarball instead,
-   `/root/banknifty_history_<IST date_time>.tgz`, and prints its sha256. Copy that file to the laptop
+1. The market-hours check runs first (`--guard-only`). Between 08:30 and 15:35 IST on a trading day it stops before touching anything.
+2. It checks `/root/trade-data`: it must be on `main`, and `git pull --ff-only` must work. This is the VPS clone that already pushes
+   every night as `vps-data-export`, through the `github-trade-data` deploy key. If either check fails, the clone is not touched and
+   the run goes to the tarball (step 6).
+3. `scripts/export_banknifty_history.py` **reads** the bot's local files and writes ONE new folder,
+   `trade-data/banknifty/vps_history/<IST date_time>/`. The folder holds the CSV.gz files, `manifest.json` and `README.md`. The files
+   are written into a hidden sibling folder first, then renamed into place, so a half-written folder never sits at the final path.
+4. `git add --ignore-removal` + commit of **that folder only**, then `git push origin HEAD:main`. If the push is rejected, it runs
+   `pull --rebase --autostash` (as `vision_archive.py` does) and pushes once more.
+5. It fetches again and compares every file's blob on the remote with the local file, then prints
+   `✅ trade-data push पक्की … commit <sha>`.
+6. Tarball: if there is no clone, the clone is not on `main`, or the first pull fails, the folder is written outside the clone and
+   packed as `/root/banknifty_history_<IST date_time>.tgz`, with its sha256 printed. Copy that file to the laptop
    (`scp root@<VPS>:/root/banknifty_history_….tgz .`) and give it to Claude. Nothing is lost.
+7. Committed but not pushed: if the rebase or the second push fails, the commit stays in the clone. The script then exits with
+   **exit code 4** and makes **no** tarball, because a tarball as well would land the folder twice. The nightly `vision_archive.py` push
+   (23:50 IST) sends it. If that push also fails, vision_archive sends a Telegram ⚠️; then tell Claude. **Do not re-run** in that
+   case.
 
 **Safety:**
 * The export is **read-only** on the bot's files. SQLite is opened with `mode=ro`, and parquet / cache files are only read.
 * There is no Upstox, Supabase or paid call, and no network at all, apart from git to trade-data.
 * It is **BANKNIFTY only**. NIFTY / SENSEX rows are never read into an output, and a FUT contract that is not BANKNIFTY makes the run
   refuse.
-* It never overwrites anything: the folder must be new, and files are opened with "x".
-* It refuses 08:30–15:35 IST on trading days (`config.is_market_open` with a margin).
-* It does not touch settings, cron, services or `.env`. It runs under `nice` / `ionice`.
-* The exit code is not 0 on any error. When that happens, nothing is committed.
+* It never overwrites anything: the folder must be new, and files are opened with "x". A failed write removes its own hidden folder.
+* It does not touch settings, cron, services or `.env`. It runs under `nice` / `ionice`. Git push hints are silenced.
+* Exit codes: 0 = pushed and verified, or tarball written · 1 = error · 2 = refused · 3 = no BANKNIFTY data · 4 = committed in the
+  clone, push pending. On an export error nothing is committed.
 
 ## What the VPS is expected to have (honest)
 
@@ -72,6 +81,7 @@ A later run makes a new folder and never changes an older one.
 
 ```bash
 cd /root/Trade && python3 scripts/export_banknifty_history.py --check          # coverage only, writes nothing
+cd /root/Trade && python3 scripts/export_banknifty_history.py --guard-only     # market-hours check only
 ```
 
 Tests (synthetic sqlite / parquet / cache, no real data): `python3 -m pytest -q tests/test_export_banknifty_history.py`.

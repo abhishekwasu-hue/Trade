@@ -160,3 +160,24 @@ def test_names_match_the_bot():
     assert X.classify_symbol("BANKNIFTY") == "spot" and X.classify_symbol("BANKNIFTY FUT 27 OCT 26") == "fut"
     assert X.classify_symbol("NIFTY") is None and X.classify_symbol("NIFTY FUT 27 OCT 26") is None
     assert X.classify_symbol("SENSEX") is None
+
+
+def test_guard_only_reads_nothing(tmp_path, no_network):
+    assert X.main(["--guard-only", "--now", AFTER_CLOSE]) == 0
+    assert X.main(["--guard-only", "--now", "2026-10-21 12:00"]) == 2
+
+
+def test_written_aside_then_renamed_and_no_partial_left(tmp_path, monkeypatch):
+    root = _bot(tmp_path)
+    parent = tmp_path / "td" / "vps_history"
+    assert _run(root, "--out-dir", str(parent / "ok")) == 0
+    assert sorted(os.listdir(parent)) == ["ok"]                                    # no hidden partial sibling left
+    real = X._write_files
+
+    def half(built, d, meta):
+        X.write_csv_gz(built["1M"][0], os.path.join(d, "BANKNIFTY_1M.csv.gz"))   # one file written, then a failure
+        raise OSError("disk full")
+    monkeypatch.setattr(X, "_write_files", half)
+    assert _run(root, "--out-dir", str(parent / "bad")) == 1
+    assert sorted(os.listdir(parent)) == ["ok"]                                    # neither the final folder nor the partial one
+    monkeypatch.setattr(X, "_write_files", real)

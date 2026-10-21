@@ -10,7 +10,7 @@ Safety (Abhi):
   • BANKNIFTY only. NIFTY / SENSEX rows are never read into an output (every source is BANKNIFTY by name; a FUT row whose contract is
     not BANKNIFTY ⇒ refused).
   • Never overwrites: writes ONE new folder (`--out-dir`, must not exist yet; files opened with "x"); refuses a folder inside this
-    (public) repo.
+    (public) repo. Written into a hidden sibling first and renamed into place at the end ⇒ never a partial folder at the final path.
   • Refuses during market hours on a trading day (08:30–15:35 IST, config.is_market_open with a margin).
   • Exit code ≠ 0 on any error (0 = written / checked, 1 = error, 2 = refused, 3 = no BANKNIFTY data found at all).
 
@@ -27,6 +27,7 @@ timestamp (IST, naive), open, high, low, close, volume, oi, [contract], source) 
 missing / incomplete sessions, missing FUT-volume days, sha256) + README.md. Printed: the same per dataset, and `sha256  file` lines.
 
     python3 scripts/export_banknifty_history.py --check                       # coverage only, writes nothing
+    python3 scripts/export_banknifty_history.py --guard-only                  # market-hours check only (the VPS wrapper runs it first)
     python3 scripts/export_banknifty_history.py --out-dir /root/trade-data/banknifty/vps_history/<name>
 """
 import argparse
@@ -355,9 +356,37 @@ def report(built, log=print):
             + (f" (first {m[0]}, last {m[-1]})" if m else ""))
 
 
+def partial_dir(out_dir):
+    """Hidden sibling the export is written into first (renamed into place only when every file is written)."""
+    out_dir = os.path.abspath(out_dir)
+    return os.path.join(os.path.dirname(out_dir), f".{os.path.basename(out_dir)}.partial-{os.getpid()}")
+
+
 def write_all(built, out_dir, meta, log=print):
-    os.makedirs(os.path.dirname(os.path.abspath(out_dir)), exist_ok=True)
-    os.makedirs(out_dir, exist_ok=False)
+    """All files into a hidden sibling, then ONE rename into `out_dir` ⇒ never a half-written folder at the final path (a later
+    `git add` elsewhere cannot push a partial export). Any error ⇒ the sibling is removed (only this run's own folder)."""
+    import shutil
+    out_dir = os.path.abspath(out_dir)
+    os.makedirs(os.path.dirname(out_dir), exist_ok=True)
+    tmp = partial_dir(out_dir)
+    os.makedirs(tmp, exist_ok=False)
+    try:
+        manifest = _write_files(built, tmp, meta)
+        if os.path.exists(out_dir):
+            raise Refused(f"--out-dir appeared while writing ({out_dir}) — not overwritten")
+        os.rename(tmp, out_dir)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    log("sha256 (sha256sum format):")
+    for f in sorted(manifest["files"]):
+        log(f"{manifest['files'][f]['sha256']}  {f}")
+    for f in ("manifest.json", "README.md"):
+        log(f"{sha256_file(os.path.join(out_dir, f))}  {f}")
+    return manifest
+
+
+def _write_files(built, out_dir, meta):
     files = {}
     for ds, (fname, _, _) in DATASETS.items():
         if ds not in built:
@@ -375,11 +404,6 @@ def write_all(built, out_dir, meta, log=print):
     lines += [f"| {f} | {v['rows']} | {v['first']} | {v['last']} | {v['days']} |" for f, v in files.items()]
     with open(os.path.join(out_dir, "README.md"), "x", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
-    log("sha256 (sha256sum format):")
-    for f in sorted(files):
-        log(f"{files[f]['sha256']}  {f}")
-    for f in ("manifest.json", "README.md"):
-        log(f"{sha256_file(os.path.join(out_dir, f))}  {f}")
     return manifest
 
 
@@ -399,12 +423,16 @@ def main(argv=None):
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--out-dir", help="NEW folder for the export (must not exist; outside this repo)")
     g.add_argument("--check", action="store_true", help="print coverage only, write nothing")
+    g.add_argument("--guard-only", action="store_true", help="only the market-hours check (exit 0 = allowed, 2 = refused); reads nothing")
     ap.add_argument("--now", default=None, help="IST time for the market-hours guard (tests); default = now")
     a = ap.parse_args(argv)
     try:
         import config
         now = pd.Timestamp(a.now).to_pydatetime() if a.now else config.get_ist_now()
         guard_time(now)
+        if a.guard_only:
+            print(f"✅ {now:%Y-%m-%d %H:%M} IST: outside market hours — export allowed")
+            return 0
         root = os.path.abspath(a.root)
         db = a.db or os.path.join(root, config.DB_PATH)
         if a.out_dir:
