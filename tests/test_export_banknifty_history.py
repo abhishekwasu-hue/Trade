@@ -181,3 +181,50 @@ def test_written_aside_then_renamed_and_no_partial_left(tmp_path, monkeypatch):
     assert _run(root, "--out-dir", str(parent / "bad")) == 1
     assert sorted(os.listdir(parent)) == ["ok"]                                    # neither the final folder nor the partial one
     monkeypatch.setattr(X, "_write_files", real)
+
+
+def test_partial_folder_lives_in_the_clones_git_dir(tmp_path, monkeypatch):
+    import subprocess
+    root = _bot(tmp_path)
+    clone = tmp_path / "trade-data"
+    clone.mkdir()
+    subprocess.run(["git", "init", "-q", str(clone)], check=True)
+    out = clone / "banknifty" / "vps_history" / "run"
+    seen = {}
+    real = X._write_files
+
+    def spy(built, d, meta):
+        seen["dir"] = d
+        return real(built, d, meta)
+    monkeypatch.setattr(X, "_write_files", spy)
+    assert _run(root, "--out-dir", str(out)) == 0
+    assert seen["dir"].startswith(str(clone / ".git") + os.sep)                    # never in the work tree (git add -A cannot see it)
+    assert not os.path.exists(seen["dir"]) and sorted(os.listdir(out))[-1] == "manifest.json"
+    assert subprocess.run(["git", "-C", str(clone), "status", "--porcelain", "--ignored"], capture_output=True, text=True).stdout \
+        .strip() == "?? banknifty/"
+    plain = tmp_path / "plain" / "x"
+    plain.parent.mkdir()
+    assert os.path.dirname(X.partial_dir(str(plain))) == str(plain.parent)         # outside git ⇒ hidden sibling
+
+
+def test_wrapper_failed_tarball_is_not_exit_0(tmp_path):
+    import shutil
+    import subprocess
+    if not shutil.which("bash"):
+        pytest.skip("bash")
+    root = _bot(tmp_path)                                                          # fake bot folder = TRADE
+    (root / "scripts").mkdir()
+    for f in ("export_banknifty_history.py", "export_banknifty_history_vps.sh"):
+        shutil.copy(os.path.join(X.ROOT, "scripts", f), root / "scripts" / f)
+    cfg = open(os.path.join(X.ROOT, "config.py"), encoding="utf-8").read()
+    (root / "config.py").write_text(cfg + "\n\ndef is_market_open(*a, **k):\n    return False\n", encoding="utf-8")
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "tar").write_text("#!/bin/sh\nexit 1\n")
+    os.chmod(fake / "tar", 0o755)
+    env = {**os.environ, "TRADE": str(root), "DATA": str(tmp_path / "no-clone"), "TARDIR": str(tmp_path / "tars"),
+           "PATH": f"{fake}{os.pathsep}{os.environ['PATH']}"}
+    r = subprocess.run(["bash", str(root / "scripts" / "export_banknifty_history_vps.sh")], env=env, capture_output=True, text=True,
+                       timeout=120)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "tarball अयशस्वी" in r.stdout

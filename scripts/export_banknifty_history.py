@@ -10,7 +10,8 @@ Safety (Abhi):
   • BANKNIFTY only. NIFTY / SENSEX rows are never read into an output (every source is BANKNIFTY by name; a FUT row whose contract is
     not BANKNIFTY ⇒ refused).
   • Never overwrites: writes ONE new folder (`--out-dir`, must not exist yet; files opened with "x"); refuses a folder inside this
-    (public) repo. Written into a hidden sibling first and renamed into place at the end ⇒ never a partial folder at the final path.
+    (public) repo. Written aside first (under the clone's .git/ — never tracked — or a hidden sibling outside git) and renamed into
+    place at the end ⇒ never a partial folder at the final path, and a crash leftover cannot be pushed.
   • Refuses during market hours on a trading day (08:30–15:35 IST, config.is_market_open with a margin).
   • Exit code ≠ 0 on any error (0 = written / checked, 1 = error, 2 = refused, 3 = no BANKNIFTY data found at all).
 
@@ -356,15 +357,42 @@ def report(built, log=print):
             + (f" (first {m[0]}, last {m[-1]})" if m else ""))
 
 
+def _git_dir_of(path):
+    """The git directory of the work tree that contains `path` (walks up; `.git` folder or a `gitdir:` file), else None."""
+    d = os.path.abspath(path)
+    while True:
+        g = os.path.join(d, ".git")
+        if os.path.isdir(g):
+            return g
+        if os.path.isfile(g):
+            with open(g, encoding="utf-8") as fh:
+                line = fh.read().strip()
+            if line.startswith("gitdir:"):
+                gd = line.split(":", 1)[1].strip()
+                return gd if os.path.isabs(gd) else os.path.normpath(os.path.join(d, gd))
+            return None
+        up = os.path.dirname(d)
+        if up == d:
+            return None
+        d = up
+
+
 def partial_dir(out_dir):
-    """Hidden sibling the export is written into first (renamed into place only when every file is written)."""
+    """Where the export is written before ONE rename into `out_dir` (the parent must exist). Inside a git work tree (trade-data
+    clone) ⇒ under that repo's git directory: git never tracks it, so a crash leftover (SIGKILL / OOM) cannot be pushed by a later
+    `git add -A`; same filesystem required (os.rename stays atomic) — else, and outside git, a hidden sibling."""
     out_dir = os.path.abspath(out_dir)
-    return os.path.join(os.path.dirname(out_dir), f".{os.path.basename(out_dir)}.partial-{os.getpid()}")
+    parent = os.path.dirname(out_dir)
+    name = f"banknifty_export.{os.path.basename(out_dir)}.partial-{os.getpid()}"
+    gd = _git_dir_of(parent)
+    if gd and os.path.isdir(gd) and os.stat(gd).st_dev == os.stat(parent).st_dev:
+        return os.path.join(gd, name)
+    return os.path.join(parent, f".{name}")
 
 
 def write_all(built, out_dir, meta, log=print):
-    """All files into a hidden sibling, then ONE rename into `out_dir` ⇒ never a half-written folder at the final path (a later
-    `git add` elsewhere cannot push a partial export). Any error ⇒ the sibling is removed (only this run's own folder)."""
+    """All files into `partial_dir` (the clone's git directory, or a hidden sibling), then ONE rename into `out_dir` ⇒ never a
+    half-written folder at the final path. Any error ⇒ that folder is removed (only this run's own folder)."""
     import shutil
     out_dir = os.path.abspath(out_dir)
     os.makedirs(os.path.dirname(out_dir), exist_ok=True)

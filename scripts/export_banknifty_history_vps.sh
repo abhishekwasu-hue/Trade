@@ -56,22 +56,38 @@ pending() {   # committed locally, not on the remote: no tarball (it would land 
   exit 4
 }
 
-if [ "$PUSH" = 0 ]; then tarball; exit 0; fi
+if [ "$PUSH" = 0 ]; then tarball || { echo "❌ tarball अयशस्वी — folder: $OUT"; exit 1; }; exit 0; fi
 
 move_out() {  # not committed ⇒ take the folder OUT of the clone (a later `git add -A` there must not push it too), then tarball
   "${G[@]}" reset -q -- "$REL" >/dev/null 2>&1
-  mkdir -p "$TARDIR/banknifty_history_export" && mv "$OUT" "$TARDIR/banknifty_history_export/$STAMP" && OUT="$TARDIR/banknifty_history_export/$STAMP"
-  echo "   folder clone बाहेर हलवला: $OUT"; tarball
+  mkdir -p "$TARDIR/banknifty_history_export" && mv "$OUT" "$TARDIR/banknifty_history_export/$STAMP" \
+    || { echo "❌ folder clone बाहेर हलवता आला नाही — तो $OUT इथे आहे (commit नाही); Claude ला सांगा"; return 1; }
+  OUT="$TARDIR/banknifty_history_export/$STAMP"
+  echo "   folder clone बाहेर हलवला: $OUT"
+  tarball || { echo "❌ tarball अयशस्वी — folder: $OUT"; return 1; }
+}
+stash_note() {  # autostash re-apply conflicted ⇒ git keeps the local changes in the stash (nothing lost) — say so
+  local n; n=$("${G[@]}" stash list | wc -l)
+  if [ "$n" -gt "$STASH0" ]; then
+    echo "⚠️ trade-data clone चे local बदल परत लावताना conflict ⇒ ते clone च्या stash मध्ये सुरक्षित आहेत ($("${G[@]}" stash list | head -1 | cut -d: -f1))."
+    # the tracked files now hold conflict markers (UU) ⇒ the nightly vision_archive rebase would fail. Every local change is in the
+    # stash entry kept above ⇒ put the tracked files back to HEAD (untracked files untouched); `git stash pop` restores the changes.
+    "${G[@]}" reset -q --hard HEAD && echo "   clone चे tracked files HEAD प्रमाणे केले (conflict markers काढले); बदल stash मध्येच आहेत."
+    echo "   काहीही delete नाही; Claude ला सांगा (git -C $DATA stash list / stash show -p)."
+  fi
 }
 "${G[@]}" add --ignore-removal -- "$REL" || { echo "❌ git add अयशस्वी — commit नाही"; move_out; exit 1; }
 "${G[@]}" commit -q -m "banknifty/vps_history/$STAMP: BANKNIFTY history from the VPS (read-only export)" -- "$REL" \
   || { echo "❌ commit अयशस्वी — commit नाही"; move_out; exit 1; }
 if ! "${G[@]}" push -q origin HEAD:main; then
   echo "↻ push नाकारला — pull --rebase --autostash करून एकदा पुन्हा"
+  STASH0=$("${G[@]}" stash list | wc -l)
   if ! "${G[@]}" pull -q --rebase --autostash origin main; then
     "${G[@]}" rebase --abort >/dev/null 2>&1
+    stash_note
     pending "rebase जमला नाही"
   fi
+  stash_note
   "${G[@]}" push -q origin HEAD:main || pending "दुसरा push पण नाकारला"
 fi
 

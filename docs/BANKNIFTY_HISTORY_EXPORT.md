@@ -22,13 +22,16 @@ Then paste the output (or `/root/banknifty_history_export.log`) to Claude. It co
    the run goes to the tarball (step 6).
 3. `scripts/export_banknifty_history.py` **reads** the bot's local files and writes ONE new folder,
    `trade-data/banknifty/vps_history/<IST date_time>/`. The folder holds the CSV.gz files, `manifest.json` and `README.md`. The files
-   are written into a hidden sibling folder first, then renamed into place, so a half-written folder never sits at the final path.
+   are written first under the clone's `.git/` folder, which git never tracks (outside a git clone: a hidden sibling folder). They are
+   then renamed into place, so a half-written folder never sits at the final path. A crash leftover can never be pushed.
 4. `git add --ignore-removal` + commit of **that folder only**, then `git push origin HEAD:main`. If the push is rejected, it runs
-   `pull --rebase --autostash` (as `vision_archive.py` does) and pushes once more.
+   `pull --rebase --autostash` (as `vision_archive.py` does) and pushes once more. Sometimes the clone's own uncommitted changes cannot
+   be put back after the rebase (a conflict). Git then keeps them in the clone's stash. The script says so, and puts the tracked files
+   back to HEAD so that no conflict markers break the nightly push. `git stash pop` restores the changes, so nothing is lost.
 5. It fetches again and compares every file's blob on the remote with the local file, then prints
    `✅ trade-data push पक्की … commit <sha>`.
 6. Tarball: if there is no clone, the clone is not on `main`, or the first pull fails, the folder is written outside the clone and
-   packed as `/root/banknifty_history_<IST date_time>.tgz`, with its sha256 printed. Copy that file to the laptop
+   packed as `/root/banknifty_history_<IST date_time>.tgz`, with its sha256 printed. If `tar` fails, the run exits 1. Copy that file to the laptop
    (`scp root@<VPS>:/root/banknifty_history_….tgz .`) and give it to Claude. Nothing is lost.
 7. Committed but not pushed: if the rebase or the second push fails, the commit stays in the clone. The script then exits with
    **exit code 4** and makes **no** tarball, because a tarball as well would land the folder twice. The nightly `vision_archive.py` push
