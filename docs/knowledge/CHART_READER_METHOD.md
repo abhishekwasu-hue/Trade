@@ -21,7 +21,12 @@ HOW TO USE IT
  P5 Patience, no prediction. Nobody knows where a correction ends; it can extend. Do not predict the end of a wave and do not block on wave count or maturity. Arm every valid area ahead in the trend direction and read each one when price arrives. If an area fails, the next one is already armed.
  P6 Areas are references until price proves them. An area is not confirmed by being touched and not killed by being entered or poked. It is confirmed only by what price does inside it, and it dies only by structure.
  P7 Probabilistic. A valid read can lose. Never change a rule to turn a losing case into a win; check only that the read followed the method.
- P8 Clean charts. Draw only what is significant and tradeable. Fewer, truer lines and areas.
+ P8 Clean charts. Draw only what is significant and tradeable. Fewer, truer lines and areas. (Display only — the reader reads every
+    line.) Shown: the evidence lines (the line in confluence with the entry area that price touched in this visit; for E4 (b) the broken
+    line being retested), the channel price is in now, the next line in price's path above and below, and the higher-degree lines price
+    respects in the current move. Hidden behind "Show all lines": dead lines, lines outside the trade's path, a lower-degree line nearly
+    parallel and close to a higher-degree one, and lines that ended before the current leg's start swing. The number shown is the
+    display setting chart_max_lines. Areas: the refined base, the target and the invalidation strong; the context area faint.
  P9 Settings are Abhi's. R:R, SL, target, lots and exits come from the dashboard. The reader never filters on them.
 
 2. READING ORDER (top-down, every read)
@@ -147,3 +152,16 @@ HOW TO USE IT
    each fires at most once per visit. E2 and E3 never fire while the zone study reads absorption without a handover. Overlapping
    areas of the same role visited together are one location: one signal per model per visit (lead's provisional choice, Abhi may
    override). The dashboard's existing limit of trades per zone applies to these entries as it does to every other entry path.
+ - Trigger inside the area (Abhi, §3 models / C lifecycle): a model fires only while price is inside the visited area and not beyond
+   its invalidation — the trigger candle closes inside the area and not beyond the model's invalidation (E4 (b): the rejection form is
+   at the retested object and closes on its trade side). A candle that gaps or closes through the area, or a commitment that closes
+   outside it, is the area being broken or left (lifecycle), not an entry.
+ - Overlapping areas are never one area (Z-1u): the cluster only counts one signal per model per place. The area's edges, the trigger
+   check and the invalidation always come from the actual area price is visiting, never from the union of the cluster.
+ - Refined base (RESEARCH DEFAULT — review after the replay): the 1H / Daily area is the context (where). Inside it, the refined base on
+   the setup timeframe (15M) by the same base rule: the newest 15M turn of the area's side inside the band (the swing candle's wick to
+   body), from the area's own birth turn on. It gives the trigger proximity (price has reached it in this visit), the E1 entry (the
+   visit's first candle at the refined base) and the invalidation (E1: beyond the base's far side; E2 / E3: beyond the farther of the
+   base's far side and the visit's extreme). No refined base yet: the models wait.
+ - E4 (b) revisit: a broken line or area is being revisited only while price is actually back at it; the revisit ends when price leaves
+   it by structure (a new swing that does not reach it).

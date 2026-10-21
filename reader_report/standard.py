@@ -31,7 +31,7 @@ def chart_max_lines_default():
 
 def validate_lines_view(meta, chart_max_lines=None):
     """P8 clean charts (REPORT_STANDARD §3a): meta["lines_view"] = {"max_lines", "shown": [line keys], "evidence": [line keys],
-    "legend": [labels], "hidden": n}. The legend lists only the shown lines and never more than `chart_max_lines` (the display
+    "legend": [line keys in the legend], "hidden": n}. The legend lists only the shown lines and never more than `chart_max_lines` (the display
     setting; the value the chart was drawn with, never above the setting passed here); every evidence line is among the shown lines."""
     key = (meta or {}).get("entry_key")
     lv = (meta or {}).get("lines_view")
@@ -42,10 +42,11 @@ def validate_lines_view(meta, chart_max_lines=None):
     if used > limit:
         raise ReportStandardError(f"chart {key!r}: drawn with max_lines {used} > chart_max_lines {limit}")
     legend, shown = list(lv.get("legend") or []), list(lv.get("shown") or [])
-    if len(legend) > used:
-        raise ReportStandardError(f"chart {key!r}: the legend lists {len(legend)} lines > chart_max_lines {used}")
-    if len(legend) != len(shown):
-        raise ReportStandardError(f"chart {key!r}: the legend must list only the shown lines ({len(legend)} vs {len(shown)} shown)")
+    if len(legend) > used or len(shown) > used:
+        raise ReportStandardError(f"chart {key!r}: the legend lists {max(len(legend), len(shown))} lines > chart_max_lines {used}")
+    extra = [x for x in legend if x not in shown]
+    if extra:
+        raise ReportStandardError(f"chart {key!r}: the legend must list only the shown lines (not shown: {', '.join(map(str, extra))})")
     miss = [e for e in lv.get("evidence") or [] if e not in shown]
     if miss:
         raise ReportStandardError(f"chart {key!r}: evidence line(s) {', '.join(map(str, miss))} not shown")

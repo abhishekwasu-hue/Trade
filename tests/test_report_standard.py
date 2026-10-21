@@ -10,7 +10,7 @@ def chart(key="E1@a", drop=None, story="line one\nline two"):
     if drop:
         layers.pop(drop)
     return {"entry_key": key, "layers": layers,
-            "lines_view": {"max_lines": 6, "shown": ["ev", "ch"], "evidence": ["ev"], "legend": ["evidence line", "channel"], "hidden": 3}}
+            "lines_view": {"max_lines": 6, "shown": ["ev", "ch"], "evidence": ["ev"], "legend": ["ev", "ch"], "hidden": 3}}
 
 
 def card(key="E1@a", **kw):
@@ -106,7 +106,7 @@ def test_evidence_lines_must_be_shown_and_legend_only_shown_lines():
     with pytest.raises(RS.ReportStandardError, match="evidence line"):
         RS.validate_chart(m)
     m = chart()
-    m["lines_view"]["legend"] = ["evidence line", "channel", "a hidden line"]
+    m["lines_view"]["legend"] = ["ev", "ch", "a hidden line"]
     with pytest.raises(RS.ReportStandardError, match="only the shown lines"):
         RS.validate_chart(m)
     m = chart()

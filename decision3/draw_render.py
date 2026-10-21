@@ -115,6 +115,14 @@ def _short(text):
     return str(text).split(" (")[0].lstrip("> ").strip()
 
 
+def _key(o):
+    """The object's identity for the legend check (decision3.chart_lines.key_of)."""
+    if o.get("id") is not None:
+        return str(o["id"])
+    ev = o.get("evidence") or []
+    return str(ev[0]) if ev else f"{o.get('kind')}|{o.get('label')}|{o.get('t0')}"
+
+
 def _note(items):
     """Edge note text: the first two names + how many more."""
     return " · ".join(items[:2]) + (f" +{len(items) - 2} more" if len(items) > 2 else "")
@@ -168,7 +176,7 @@ def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None
             xb = right if k == "area" else max(x1 + 0.5, xa + 1)
             prims.append({"type": "band", "x0": xa, "x1": xb, "y0": a, "y1": b, "color": st["color"], "alpha": st["alpha"],
                           "ls": st["ls"] if st["alpha"] == 0 else None})
-            margin.append(((a + b) / 2, o["label"], st["color"], k))
+            margin.append(((a + b) / 2, o["label"], st["color"], k, _key(o)))
         elif k in ("level", "liquidity", "fib") and abs(p1 - p0) < 1e-9:
             if not inside(p0):
                 edge(p0, o["label"])
@@ -176,7 +184,7 @@ def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None
             xa = max(x0, left)
             xb = right if o.get("state") not in ("taken",) else max(x1, xa + 1)
             prims.append({"type": "seg", "x0": xa, "y0": p0, "x1": xb, "y1": p0, "color": st["color"], "lw": st["lw"], "ls": st["ls"]})
-            margin.append((p0, o["label"], st["color"], k))
+            margin.append((p0, o["label"], st["color"], k, _key(o)))
         elif k in ("line", "channel", "pattern", "liquidity", "level", "fib"):
             segs = [(x0, p0, x1, p1)] + [(xm.x(d["t0"]), d["p0"], xm.x(d["t1"]) or right, d["p1"]) for d in o.get("lines") or ()
                                          if xm.x(d["t0"]) is not None]
@@ -191,7 +199,7 @@ def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None
                     prims.append({"type": "marker", "x": xp, "y": float(pp), "marker": "o", "size": 5, "color": st["color"], "hollow": True})
             if x1 >= left:
                 margin.append((p1, o["label"] + (f" ({o['state']})" if o.get("state") and o["state"] not in o["label"] else ""),
-                               st["color"], k))
+                               st["color"], k, _key(o)))
         elif k == "sweep":
             xs = xm.x(o["t0"], frac=False)
             if xs is None or xs < 0:
@@ -225,11 +233,11 @@ def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None
                               "weight": "bold", "ha": "left", "va": "bottom", "dy": 2})
     gap = label_gap if label_gap is not None else (0.035 * (hi - lo) if np.isfinite(hi - lo) else 0.0)
     if short:
-        margin = [(y, _short(t), c, k) for y, t, c, k in margin]
+        margin = [(y, _short(t), c, k, key) for y, t, c, k, key in margin]
         above, below = [_short(t) for t in above], [_short(t) for t in below]
-    for y, text, color, k in _spread(margin, lo, hi, gap):
+    for y, text, color, k, key in _spread(margin, lo, hi, gap):
         prims.append({"type": "text", "x": right, "y": y, "text": text, "color": color, "size": 7, "weight": "normal", "ha": "left",
-                      "va": "center", "dy": 0, "margin": True, "src_kind": k})
+                      "va": "center", "dy": 0, "margin": True, "src_kind": k, "src_key": key})
     if hidden_n:
         prims.append({"type": "note", "where": "bottom-left", "x": left, "y": lo,
                       "text": f"hidden: {int(hidden_n)} line{'s' if int(hidden_n) != 1 else ''} (Show all lines)", "color": "#868e96"})
