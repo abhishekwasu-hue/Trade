@@ -7,7 +7,10 @@
   the candle-form reader (method.reversal_form) · RSI / zone read / confirming evidence (layer 5 / 6a) for the label.
 
 Armed while price VISITS a valid (alive, not BROKEN / DEAD) trade-side area:
-  E1 Aggressive    — the first bar of a NEW visit (price enters the area). Invalidation: beyond the area's far edge.
+  E1 Aggressive    — defaults (Abhi 21 Oct RC2 / RC3: `entry_area_refine = setup_tf`, `entry_trigger_rule = inside`): the visit's first
+                     bar AT the refined 15M base inside the area (no earlier visit bar touched it, none closed beyond its far edge),
+                     closing inside the area and not beyond the base's far edge. Invalidation: beyond the refined base's far edge.
+                     `entry_area_refine = area` (what-if / da7cbbc): the first bar of a NEW visit; invalidation beyond the area's far edge.
   E2 Confirmation  — the commitment candle (c0, incl. its volume comparison and the FUT-volume data-problem rule) inside the visit.
                      Invalidation: beyond the visit's extreme.
   E3 Structure     — LTF CHoCH by close inside the visit (c1). Invalidation: beyond the visit's extreme.
@@ -135,6 +138,12 @@ class Reader:
 
     def inside_on(self):
         return str(self.V.s.get("entry_trigger_rule", "inside")) == "inside"
+
+    def base_broken(self, start, u, rb, d):
+        """RC3 lifecycle for the refined base: the first bar of the visit (start … u) that CLOSED beyond the base's far edge, or None.
+        Such a base is being broken, not entered — E1 never fires on it (its invalidation would sit inside price already traded)."""
+        far = self.rb_far(rb, d)
+        return next((i for i in range(start, u + 1) if (float(self.A["close"][i]) - far) * d < 0), None)
 
     def refine_on(self):
         return str(self.V.s.get("entry_area_refine", "setup_tf")) == "setup_tf"
@@ -319,7 +328,7 @@ class Reader:
         if not any(i >= start and len(touch(i, i)) > 0 for i in bars):
             return "the rejection candle is not at the retested object (price already away from it)"
         ext = self.back(max(self.P(i, d) for i in range(start, u + 1)), d)
-        return self.beyond(u, ext, d)
+        return self.beyond(u, ext, d)                                      # guard: ext includes bar u, so today it never trips
 
     # ------------------------------------------------------------------------------------------ one armed area
     def area(self, t, lvl, d):
@@ -386,6 +395,8 @@ class Reader:
             ok, rb = rb_ok(u)                                              # E1 = the first bar of the visit AT the refined base
             if not ok or not self.touches(u, rb) or any(self.touches(i, rb) for i in range(start, u)):
                 return False, None
+            if self.base_broken(start, u, rb, d) is not None:              # RC3 lifecycle: the base was already closed through in this
+                return False, None                                         # visit ⇒ its far edge is not an invalidation any more
             return self.beyond(u, self.rb_far(rb, d), d) is None, rb
 
         def e23(u, m):
@@ -395,7 +406,8 @@ class Reader:
             if not ok:
                 return False, None
             inv = self.farther(ext_at(u), self.rb_far(rb, d), d) if rb else ext_at(u)
-            if self.beyond(u, inv, d) is not None:
+            if self.beyond(u, inv, d) is not None:                         # guard only: inv includes this visit's extreme up to u,
+                                                                           # so a close cannot be beyond it today (RC3 stated explicitly)
                 return False, None
             if m == "E2":
                 hit = self.c0(u, lvl, d, start, appr_at(u))[0]
@@ -405,7 +417,8 @@ class Reader:
 
         def e4(u):
             r = self.sweep(u, lvl, d, start)
-            if r is None or not at_area(u) or self.beyond(u, r["sweep_extreme"], d) is not None:
+            if r is None or not at_area(u) or self.beyond(u, r["sweep_extreme"], d) is not None:   # beyond = guard (the sweep read
+                                                                           # already requires no bar beyond its extreme)
                 return False, None
             ok, rb = rb_ok(u)
             return ok, ({**r, "refined": rb} if rb else r)
@@ -453,10 +466,20 @@ class Reader:
                 rb = self.refined(t, lvl, d)
                 if rb is None:
                     return "no refined base yet: no 15M turn of the area's side inside its band (RC2) — E1 waits"
-                if any(self.touches(i, rb) for i in range(start, t + 1)):
-                    return (f"E1 fires only on the visit's first bar at the refined 15M base {rb['lo']:,.2f}–{rb['hi']:,.2f}; that bar "
-                            f"did not qualify (close outside the area / beyond the base's far edge) — E1 re-arms with the next visit")
-                return f"waiting for price to reach the refined 15M base {rb['lo']:,.2f}–{rb['hi']:,.2f}"
+                base = f"the refined 15M base {rb['lo']:,.2f}–{rb['hi']:,.2f} ({rb['ts'][:16]})"
+                brk = self.base_broken(start, t, rb, d)
+                if brk is not None:
+                    return (f"{base} was closed through in this visit at {self.T(brk)[:16]} (lifecycle: broken, not entered) — E1 "
+                            f"re-arms with the next visit")
+                touched = [i for i in range(start, t + 1) if self.touches(i, rb)]
+                if not touched:
+                    return f"waiting for price to reach {base}"
+                if int(rb["bar"]) >= start:
+                    return (f"{base} is a newer turn formed inside this visit (price was already at it) — E1 fires only on the first "
+                            f"arrival at a base known before; E1 re-arms with the next visit")
+                why = self.h2_block(touched[0], lvl, d) or self.outside(touched[0], lvl, d) or "it closed beyond the base's far edge"
+                return (f"E1 fires only on the visit's first bar at {base}; that bar ({self.T(touched[0])[:16]}) did not qualify: "
+                        f"{why} — E1 re-arms with the next visit")
             why = self.h2_block(start, lvl, d) or self.outside(start, lvl, d)
             return (f"E1 fires only on a new visit's first bar (this visit began {self.T(start)})" +
                     (f"; that bar did not qualify: {why}" if why else ""))

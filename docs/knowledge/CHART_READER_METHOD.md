@@ -152,8 +152,8 @@ HOW TO USE IT
    short story per timeframe; display only.
  - Entry models (E1 aggressive, E2 confirmation, E3 structure, E4 sweep-retest): armed while price visits a valid trade-side area;
    each fires at most once per visit. E2 and E3 never fire while the zone study reads absorption without a handover. Overlapping
-   areas of the same role visited together are one location: one signal per model per visit (lead's provisional choice, Abhi may
-   override). The dashboard's existing limit of trades per zone applies to these entries as it does to every other entry path.
+   areas of the same role visited together count as one place: one signal per model per visit — a counter only, never one area (see
+   the Z-1u bullet below: edges, trigger and invalidation come from the area price is visiting). The dashboard's existing limit of trades per zone applies to these entries as it does to every other entry path.
  - Trigger inside the area (Abhi, §3 models / C lifecycle): a model fires only while price is inside the visited area and not beyond
    its invalidation — the trigger candle closes inside the area and not beyond the model's invalidation (E4 (b): the rejection form is
    at the retested object and closes on its trade side). A candle that gaps or closes through the area, or a commitment that closes

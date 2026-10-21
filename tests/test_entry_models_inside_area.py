@@ -258,3 +258,72 @@ def test_no_union_field_reaches_an_entry_the_payload_or_the_card(mirror):
             g = EE.entry_gate_tags({"bar_ts": "2030-01-07 10:00:00", "payload": json.dumps({})}, x,
                                    "BEARISH" if d < 0 else "BULLISH")["gate"]
             assert g["area"] == sorted([lv["lo"], lv["hi"]]) and "lo" not in (g.get("cluster") or {})
+
+
+# ------------------------------------------------------------------------------------------------ review #364: E1 on a broken base
+@MIRRORS
+def test_e1_never_fires_on_a_refined_base_already_closed_through_in_the_visit(mirror):
+    """Bar 6 gaps into the top of the context area ABOVE the refined base and closes beyond its far edge (103.9 > 103.5); bar 7 comes
+    back into the base. E1 must not fire there: its invalidation (the base's far edge) would sit inside price already traded — the
+    base is being broken (lifecycle), not entered."""
+    rows = REF[:6] + [(103.8, 103.95, 103.6, 103.9, 1.0), (103.9, 103.95, 103.2, 103.3, 1.0), (103.3, 103.4, 102.0, 102.1, 1.0)]
+    V, lvl, d = _ref_rows(rows, mirror)
+    fired = _fired(V, lvl, d, range(6, len(rows)))
+    assert "E1" not in sum(fired.values(), [])
+    a7 = EM.Reader(V).area(7, lvl, d)[0]
+    assert "closed through in this visit" in a7["models"]["E1"]["waiting"]
+    ok = REF[:6] + [(103.0, 103.45, 102.9, 103.2, 1.0)]                    # control: the first touch closes inside ⇒ E1
+    V2, lvl2, d2 = _ref_rows(ok, mirror)
+    assert _fired(V2, lvl2, d2, [6])[6] == ["E1"]
+
+
+def _ref_rows(rows, mirror, ltf=False):
+    rr = _mirror_rows(rows) if mirror else rows
+    return _bare(rows, REF_SW + [("H", 103.6, 13, 14)], band=(100.0, 104.0), mirror=mirror,
+                 s={"entry_area_refine": "setup_tf", "entry_trigger_rule": "inside"}, ltf=_ltf_from(rr) if ltf else None)
+
+
+# ------------------------------------------------------------------------------------------------ the DEFAULT path, every model
+FULL = REF[:9] + [(103.1, 103.3, 100.4, 100.6, 5.0),   # 9  dominant red on volume, closes inside the context ⇒ E2 + the 5M CHoCH (E3)
+                  (100.6, 101.0, 100.3, 100.9, 1.0),   # 10
+                  (100.9, 104.4, 100.8, 103.8, 1.0),   # 11 sweep beyond the context's far edge, closes back inside
+                  (103.8, 103.9, 102.9, 103.0, 1.0),   # 12
+                  (103.0, 103.6, 102.8, 103.4, 1.0),   # 13 the next push fails inside the sweep extreme (swing high, known at 14)
+                  (103.4, 103.45, 102.0, 102.1, 1.0),  # 14 ⇒ E4 (a), closing inside the area
+                  (102.1, 102.2, 101.0, 101.1, 1.0)]   # 15
+
+
+@MIRRORS
+def test_default_settings_every_model_fires_end_to_end(mirror):
+    """entry_area_refine = setup_tf + entry_trigger_rule = inside (the defaults): E1 at the refined base, E2 on the commitment, E3 on the
+    LTF CHoCH, E4 (a) after the sweep — each once, each closing inside the area, each invalidation from the actual area / base."""
+    assert S3.DEFAULTS["entry_area_refine"] == "setup_tf" and S3.DEFAULTS["entry_trigger_rule"] == "inside"
+    V, lvl, d = _ref_rows(FULL, mirror, ltf=True)
+    st = {t: EM.Reader(V).area(t, lvl, d)[1] for t in range(6, len(FULL))}
+    fired = {t: [f["model"] for f in fs] for t, fs in st.items()}
+    assert fired[8] == ["E1"] and fired[9] == ["E2", "E3"] and fired[14] == ["E4"]
+    assert sum(len(v) for v in fired.values()) == 4
+    inv = {f["model"]: f["invalidation"] for fs in st.values() for f in fs}
+    m = (lambda x: 2 * MID - x) if mirror else (lambda x: x)
+    assert inv["E1"] == pytest.approx(m(103.5)) and inv["E2"] == pytest.approx(m(103.5)) and inv["E3"] == pytest.approx(m(103.5))
+    assert inv["E4"] == pytest.approx(m(104.4))                            # the sweep extreme
+    for t, fs in st.items():
+        for f in fs:
+            c = float(V.levels.A["close"][t])
+            assert float(lvl["lo"]) <= c <= float(lvl["hi"]) and (c - float(f["invalidation"])) * d >= 0, (t, f["model"])
+
+
+@MIRRORS
+def test_default_settings_e4b_fires_end_to_end(mirror, monkeypatch):
+    rows, neck = _neck(mirror)
+    monkeypatch.setattr(TL, "channel_lines", lambda V, t, degree=None: [])
+    monkeypatch.setattr(TL, "channels", lambda V, t, degree=None: [])
+    monkeypatch.setattr(TL, "break_known_at", lambda V, x: 4)
+    monkeypatch.setattr(EM, "PATTERN_HOOK", lambda V, t, d: [neck])
+    V, _l, _d = _bare(rows, [], trend_at=lambda u: "UP" if mirror else "DOWN",
+                      s={"entry_area_refine": "setup_tf", "entry_trigger_rule": "inside"})
+    d = M.UP if mirror else M.DOWN
+    fired = [(t, f) for t in range(4, len(rows)) for f in EM.Reader(V).broken(t, d)[1]]
+    assert [t for t, _ in fired] == [8] and fired[0][1]["variant"] == "b"
+    c = float(V.levels.A["close"][8])
+    assert (c - fired[0][1]["invalidation"]) * d >= 0                      # not beyond the retest extreme

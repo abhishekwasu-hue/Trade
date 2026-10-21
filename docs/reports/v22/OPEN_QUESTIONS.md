@@ -119,9 +119,10 @@ only), MCX confirmation (LB12–LB17).
 
 **Provisional (lead, from the method + research defaults; Abhi may override):**
 - Overlapping areas of the same role visited together = one location: at most one signal per model per overlapping cluster per visit
-  (`entry_cluster_rule = cluster`; the card lists every member area; E1 invalidation = beyond the cluster's far edge).
-- Engine entries respect the existing dashboard setting `max_hits_per_zone`, as every other entry path does (per area / cluster, per
-  role, per day).
+  (`entry_cluster_rule = cluster`; the card lists every member area; ~~E1 invalidation = beyond the cluster's far edge~~ —
+  **SUPERSEDED by RC1 (Abhi 21 Oct, Z-1u): the cluster only counts; edges, trigger and invalidation come from the visited area**).
+- Engine entries respect the existing dashboard setting `max_hits_per_zone`, as every other entry path does (~~per area / cluster~~
+  **SUPERSEDED by RC1: per visited area**, per role, per day).
 - E4a kept as is, observed in the PAPER stats.
 - Hidden divergence = the classic reading (the pullback low vs the trend's previous higher low across the impulse; mirror for highs);
   the inside-the-move read is kept as a second, labelled read.

@@ -123,3 +123,14 @@ def test_ci_rendered_sample_charts_never_exceed_the_setting(cap):
     names = {DR._short(o["label"]) for o in objects(extra) if o["kind"] in CL.LINE_KINDS}
     assert sum(1 for a in ann if a in names or any(a.startswith(n) for n in names)) <= cap
     assert any(str(a).startswith("hidden:") for a in ann)
+
+
+def test_vision_objects_failure_gives_the_chart_without_objects(monkeypatch):
+    """Display only: a failing line selection never costs the PNG — the panel is drawn without objects and the error is noted."""
+    from plotly.subplots import make_subplots
+    from vision import chart as VC
+    df = pd.DataFrame({"start": TS, "open": CLOSE, "high": CLOSE + 1.0, "low": CLOSE - 1.0, "close": CLOSE})
+    monkeypatch.setattr(CL, "select", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    fig, errs = make_subplots(rows=1, cols=1), []
+    VC._objects(fig, objects(), df, 90, 108, 1, sig={"direction": "BEARISH"}, errors=errs)
+    assert errs and "boom" in errs[0] and len(fig.layout.shapes) == 0
