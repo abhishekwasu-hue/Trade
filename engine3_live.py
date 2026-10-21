@@ -86,16 +86,25 @@ def raise_if_token_rejected(what, status, body=None, error=None):
         raise TokenRejected(f"{what}: Upstox token rejected (HTTP {status}{' ' + code if code else ''})")
 
 
+PROFILE_PATH = "/user/profile"                                            # = scripts/paper_status.PROFILE_URL (test तपासतो)
+PROFILE_TIMEOUT = (5, 5)                                                  # (connect, read) सेकंद — run सुरुवातीची तपासणी लहानच
+
+
+def profile_url():
+    """GET /v2/user/profile — verify_opportunity_data_availability.BASE_V2 वरून (scripts/ import नाही ⇒ VPS वर ImportError नाही)."""
+    import verify_opportunity_data_availability as V
+    return f"{V.BASE_V2}{PROFILE_PATH}"
+
+
 def profile_check(token, get=None):
-    """Run सुरुवातीची एकच स्वस्त authenticated तपासणी: GET /v2/user/profile (scripts/paper_status.py चा PROFILE_URL). रिटर्न "ok" /
-    "rejected (HTTP 401 UDAPI100050)" / "unknown (…)" (network / इतर status ⇒ unknown = आजचा मार्ग). कधीच raise नाही; token कधीच
-    output मध्ये नाही."""
+    """Run सुरुवातीची एकच स्वस्त authenticated तपासणी: GET /v2/user/profile (paper_status सारखाच URL), retry नाही, timeout (5, 5).
+    रिटर्न "ok" / "rejected (HTTP 401 UDAPI100050)" / "unknown (…)" (network / इतर status ⇒ unknown = आजचा मार्ग). कधीच raise नाही;
+    token कधीच output मध्ये नाही."""
     try:
-        from scripts.paper_status import PROFILE_URL
         if get is None:
             import verify_opportunity_data_availability as V
-            get = lambda url, tok: V._get(url, tok, timeout=10, retries=1)  # noqa: E731
-        status, body, error = get(PROFILE_URL, token)
+            get = lambda url, tok: V._get(url, tok, timeout=PROFILE_TIMEOUT, retries=0)  # noqa: E731
+        status, body, error = get(profile_url(), token)
     except Exception as exc:                                             # noqa: BLE001
         return f"unknown ({type(exc).__name__})"
     if status == 200:

@@ -198,3 +198,74 @@ def test_paper_status_401_udapi100050_is_rejected(monkeypatch):
                                                                                    json=lambda: BODY_401))
     got = PS.IO().token()
     assert got == "rejected (HTTP 401)" and SECRET not in got
+
+
+# ------------------------------------------------------------------------------------------------ review fixes
+@pytest.mark.parametrize("content", ["[1, 2]", '{"_token": "x"}', '"str"', "null", "{not json", '{"_token": [1]}'])
+def test_malformed_state_file_never_stops_the_run(env, content):
+    p, al = env
+    open(al, "w", encoding="utf-8").write(content)
+    sent = []
+    assert _main(al, "2030-01-07 12:16", lambda tok: "ok", wait, sent) == 0 and sent == []          # ok run: no crash, no line
+    open(al, "w", encoding="utf-8").write(content)
+    assert _main(al, "2030-01-07 12:31", lambda tok: "rejected (HTTP 401)", wait, sent) == 2 and sent == [RED]
+    assert ES.latest("NIFTY", "2030-01-07 12:32", path=p)["decision"] == ES.ERROR
+    assert _main(al, "2030-01-07 12:46", lambda tok: "ok", wait, sent) == 0 and sent == [RED, GREEN]
+
+
+def test_alert_state_non_dict_is_empty(tmp_path):
+    f = tmp_path / "a.json"
+    for content in ("[1, 2]", '"x"', "3"):
+        f.write_text(content)
+        assert ES._alert_state(str(f)) == {}
+
+
+def test_alert_raising_never_stops_the_run(env, monkeypatch):
+    p, al = env
+    seen = []
+    monkeypatch.setattr(ES, "alert_token_restored", lambda **k: (_ for _ in ()).throw(AttributeError("x")))
+    assert _main(al, "2030-01-07 12:16", lambda tok: "ok", lambda s, t: seen.append(s) or wait(s, t), []) == 0
+    assert seen == ["NIFTY", "BANKNIFTY"]
+    monkeypatch.setattr(ES, "alert_token_rejected", lambda **k: (_ for _ in ()).throw(AttributeError("x")))
+    assert _main(al, "2030-01-07 12:31", lambda tok: "rejected (HTTP 401)", wait, []) == 2
+    assert ES.latest("BANKNIFTY", "2030-01-07 12:32", path=p)["decision"] == ES.ERROR
+
+
+def test_403_alert_says_http_403(env):
+    p, al = env
+    sent = []
+    assert _main(al, "2030-01-07 12:16", lambda tok: "rejected (HTTP 403)", wait, sent) == 2
+    assert sent == [RED + " [HTTP 403]"]
+
+
+def test_unknown_check_is_printed(env, capsys):
+    p, al = env
+    assert _main(al, "2030-01-07 12:16", lambda tok: "unknown (HTTP 503)", wait, []) == 0
+    out = capsys.readouterr().out
+    assert "Upstox token check unknown (HTTP 503)" in out and SECRET not in out
+
+
+def test_profile_url_matches_paper_status():
+    from scripts import paper_status as PS
+    assert L.profile_url() == PS.PROFILE_URL
+
+
+@pytest.mark.parametrize("code,want", [(503, "unknown (HTTP 503)"), (401, "rejected (HTTP 401 UDAPI100050)"), ("boom", "unknown (network)")])
+def test_profile_check_default_get_is_short_no_retry(code, want, monkeypatch):
+    """Real default path (V._get) with a mocked requests.get: one call, timeout (5, 5), no retry / Retry-After wait."""
+    import requests
+    from types import SimpleNamespace as NS
+    calls, sleeps = [], []
+    monkeypatch.setattr(V, "REQUEST_PAUSE_SECONDS", 0)
+    monkeypatch.setattr(V.time, "sleep", lambda s: sleeps.append(s))
+
+    def get(url, headers=None, params=None, timeout=None):
+        calls.append((url, timeout))
+        if code == "boom":
+            raise requests.ConnectionError(f"failed for {SECRET}")
+        return NS(status_code=code, headers={"Retry-After": "20"}, text=TEXT_401 if code == 401 else "x",
+                  json=lambda: BODY_401 if code == 401 else {})
+    monkeypatch.setattr(V.requests, "get", get)
+    got = L.profile_check(SECRET)
+    assert got == want and SECRET not in got
+    assert calls == [(L.profile_url(), (5, 5))] and all(s <= 1 for s in sleeps)

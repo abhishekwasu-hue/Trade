@@ -165,9 +165,10 @@ ALERT_REPEAT_MIN = 60                                                       # �
 
 def _alert_state(p):
     try:
-        return json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+        st = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
     except (OSError, ValueError):
         return {}
+    return st if isinstance(st, dict) else {}                            # valid JSON पण dict नाही (उदा. [1, 2]) ⇒ रिकामं
 
 
 def _alert_send(line, send):
@@ -279,17 +280,25 @@ def _alert_save(st, p):
         pass
 
 
-def alert_token_rejected(send=None, state_path=None, now=None):
+def _token_state(st):
+    cur = st.get("_token")
+    return cur if isinstance(cur, dict) else {}
+
+
+def alert_token_rejected(send=None, state_path=None, now=None, detail=None):
     """Upstox ने token नाकारला ⇒ TOKEN_REJECTED_LINE लगेच, आणि हे चालू असेपर्यंत **प्रत्येक** 15M bar ला पुन्हा (60 मिनिटांचा throttle
     नाही; एकाच bar ला दोनदा नाही). Symbol प्रमाणे नाही — token एकच. State "_token" (त्याच alert file मध्ये). रिटर्न पाठवलं का."""
     p = _alert_path(state_path)
     now = _naive(now or now_ist())
     bar = str(expected_bar_end(now))
     st = _alert_state(p)
-    cur = st.get("_token") or {}
+    cur = _token_state(st)
     if cur.get("rejected") and cur.get("last_bar") == bar:
         return False
-    ok = _send_ok(TOKEN_REJECTED_LINE, send)
+    line = TOKEN_REJECTED_LINE
+    if "HTTP 403" in str(detail or ""):                                  # 403 = नाकारलेला token किंवा permission / IP ⇒ ओळखता यावं
+        line += " [HTTP 403]"
+    ok = _send_ok(line, send)
     st["_token"] = {"rejected": True, "since": cur.get("since") if cur.get("rejected") else str(now),
                     "last_bar": bar if ok else cur.get("last_bar")}
     _alert_save(st, p)
@@ -300,7 +309,7 @@ def alert_token_restored(send=None, state_path=None, now=None):
     """आधी token नाकारलेला होता आणि आता तपासणी पास ⇒ TOKEN_RESTORED_LINE एकदाच. रिटर्न पाठवलं का."""
     p = _alert_path(state_path)
     st = _alert_state(p)
-    if not (st.get("_token") or {}).get("rejected"):
+    if not _token_state(st).get("rejected"):
         return False
     if not _send_ok(TOKEN_RESTORED_LINE, send):
         return False                                                     # send अयशस्वी ⇒ पुढच्या run ला पुन्हा

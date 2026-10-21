@@ -94,10 +94,18 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                         ES.save_error(sym, bar, msg, engine=engine)
                     except Exception as exc2:                            # noqa: BLE001
                         print(f"⚠️ {sym}: error row लिहिता आली नाही: {exc2}")
-                ES.alert_token_rejected(send=send, state_path=alert_path, now=now)
+                try:
+                    ES.alert_token_rejected(send=send, state_path=alert_path, now=now, detail=chk)
+                except Exception as exc2:                                # noqa: BLE001
+                    print(f"⚠️ token alert पाठवता आला नाही: {type(exc2).__name__}: {exc2}")
             return 2
+        if chk.startswith("unknown"):
+            print(f"⚠️ Upstox token check {chk} ⇒ engine तसाच चालतो (network चूक ≠ token नाकारला)")
         if chk == "ok" and not a.dry_run:
-            ES.alert_token_restored(send=send, state_path=alert_path, now=now)
+            try:
+                ES.alert_token_restored(send=send, state_path=alert_path, now=now)
+            except Exception as exc2:                                    # noqa: BLE001 — alert मुळे run कधीच थांबत नाही
+                print(f"⚠️ token restored alert पाठवता आला नाही: {type(exc2).__name__}: {exc2}")
     if run_fn is None:
         if engine == "decision3":
             run_fn = lambda sym, t: ES.run3(sym, t, now=now, dry_run=a.dry_run, s=ES.engine3_settings(sym))  # noqa: E731
@@ -130,7 +138,10 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                 except Exception as exc2:                                # noqa: BLE001
                     print(f"⚠️ {sym}: error row लिहिता आली नाही: {exc2}")
                 if getattr(exc, "token_rejected", False):               # engine3_live.TokenRejected ⇒ तीच 🔴 ओळ (दर bar, एकदाच)
-                    ES.alert_token_rejected(send=send, state_path=alert_path, now=now)
+                    try:
+                        ES.alert_token_rejected(send=send, state_path=alert_path, now=now, detail=str(exc))
+                    except Exception as exc2:                            # noqa: BLE001
+                        print(f"⚠️ token alert पाठवता आला नाही: {type(exc2).__name__}: {exc2}")
                 elif getattr(exc, "data_problem", False) and _fut_required(sym):   # Abhi Z-1c: FUT volume missing ⇒ एकच ओळ, दिवसातून एकदा
                     ES.alert_data_problem(sym, str(exc), send=send, state_path=alert_path, now=now)
                 else:
