@@ -785,3 +785,20 @@ Walk-forward replay of the reader as merged (layers 1–4, 5, 6a; default settin
 | R-BN-3 | E26: fast handover + engulf A + confluence, still waiting for the 5M CHoCH. The next area came about 2 h later, but the adverse move first was larger than the code-default spot SL. Recorded only; no rule. | `charts/E26_*`, `observations.md` |
 | R-BN-4 | 10 large moves had no setup before them. 4 were against the Daily trend (by design). The largest drop started from a sideways top that was not an area. | `missed_moves.md`, `charts/missed/M06_*` |
 | R-BN-5 | Data: BANKNIFTY FUT 5M volume exists only from 30 Sep, and 5M / 1m only from 15 Sep, so 24 of 32 visits could not be read as live (flagged, not filled). Re-run when more history is exported, and when layers 5 / 6b change. | `data_check.md`, `README.md` |
+
+## BANKNIFTY replay reading checks (deployed code da7cbbc; report in private trade-data `review/replay_banknifty_6m/da7cbbc/checks/`)
+Misreads are bugs against a named concept of the Price Action Standard (never one-chart rules). Not fixed yet — fix in a separate PR.
+- **BUG — concept C (area base), BOS-origin area (birth "b").** A 1H support area was built from the BOS breakout candle itself
+  (the base 1H candle cut at the BOS bar = the breakout 15M candle), not from the candles where buyers acted. Method §3 Areas: "An
+  area is built from ONE base or reaction: the candles where buyers or sellers acted (wick to body)". Owner: `decision3/levels.py`
+  (BOS base selection).
+- **BUG — concept C (area band), Z-1x.** When the base candle has no wick on the area side, the code takes the whole candle
+  (`decision3/levels.py` ~503–505) instead of the body (Z-1x: wick-to-body; no wick ⇒ body).
+- **Checked, matches the method — concept C:** a swing-born 1H area (birth "a") ~300 points wide is one 1H candle's wick-to-body
+  after a sharp first-hour push; no merge of bases or timeframes (Z-1u holds).
+- **Checked, matches the definition — §3 E2 commitment:** the commitment candle is the dominant candle IN the visit (body larger than
+  every other visit candle, volume above). It closed outside the area, so the invalidation (visit extreme) was ~460 points away.
+  **Question for Abhi (provisional default: no change):** should a commitment that closes far beyond the area be skipped (P4 "no
+  chase")? No such rule exists in the method today.
+- **Info — same-bar entries (two models on one bar):** 5 bars / 10 entries over 30 Sep → 19 Oct. `max_hits_per_zone` = 2 does not
+  choose between them; the one-position-at-a-time rule moves the second to the next cycle. Abhi decides (provisional: no change).
