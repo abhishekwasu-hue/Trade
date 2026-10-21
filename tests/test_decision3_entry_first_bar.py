@@ -19,7 +19,7 @@ from tests.test_decision3_method import NO_MATURE, _abc_m15
 
 S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False,
           "level_merge": True, "zone_visit_rule": "touch_window",
-          "commit_volume_rule": "opposite"}   # Z-1 acceptance-flip + Z-1u / Z-1v आधीचा fixture — legacy pin
+          "commit_volume_rule": "opposite", "entry_gate": "legacy_k"}   # Z-1 acceptance-flip + Z-1u / Z-1v आधीचा fixture — legacy pin
 S_OLD = {**S_ROLE, "rr_step": True, "entry_first_bar": False}
 
 
@@ -148,7 +148,7 @@ def test_replay_day_default_output_has_no_engine_rr_sl_target(tmp_path):
     from scripts import replay_day as RD
     out = tmp_path / "new.json"
     assert RD.main(["--date", "2030-03-04", "--synthetic", "--dry-run", "--json", str(out), "--out-dir", str(tmp_path),
-                    "--flip-rule", "acceptance", "--legacy-zone-gates", "--legacy-bands"]) == 0                    # Z-1: fixture चा supply acceptance-flip — pin
+                    "--flip-rule", "acceptance", "--legacy-zone-gates", "--legacy-bands", "--entry-gate", "legacy_k"]) == 0                    # Z-1: fixture चा supply acceptance-flip — pin
     j = json.loads(out.read_text(encoding="utf-8"))
     assert j["setup"]["side"] == "bear call" and not {"rr", "sl", "target", "entry"} & set(j["setup"])
     msg = j["approval"]["message"]
@@ -157,6 +157,6 @@ def test_replay_day_default_output_has_no_engine_rr_sl_target(tmp_path):
     assert all("⑦" not in b["checklist"] for b in j["bars"])
     old = tmp_path / "old.json"
     assert RD.main(["--date", "2030-03-04", "--synthetic", "--dry-run", "--json", str(old), "--out-dir", str(tmp_path),
-                    "--legacy-rr", "--no-first-bar-entry", "--flip-rule", "acceptance", "--legacy-zone-gates", "--legacy-bands"]) == 0
+                    "--legacy-rr", "--no-first-bar-entry", "--flip-rule", "acceptance", "--legacy-zone-gates", "--legacy-bands", "--entry-gate", "legacy_k"]) == 0
     jo = json.loads(old.read_text(encoding="utf-8"))
     assert jo["setup"]["rr"] >= 3 and "R:R" in jo["approval"]["message"]

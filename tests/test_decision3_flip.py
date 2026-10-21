@@ -24,6 +24,7 @@ from tests.test_decision3 import P, m15_from, res_of
 
 UP, DOWN = M.UP, M.DOWN
 S = S3.load()
+LEGACY_K = {"entry_gate": "legacy_k"}      # Abhi 21 Oct: the old ③ (K) gate + old visit end — these tests read the ⑥ path under it
 MID = 125.0                                                               # mirror: p ⇒ 2·MID − p
 
 # Resistance zone R (D2 H 118, bar 20) between the far-side swing high 130 (bar 6) and the impulse origin 108 (bar 26).
@@ -329,7 +330,7 @@ def abc():
     are at a FLIPPED zone (end-to-end G4 path through V22.decide). Volume-less fixture ⇒ c0_volume_required off except where tested."""
     from tests.test_decision3_method import _abc_m15
     m15 = _abc_m15()
-    s = {"maturity_sigma_d": -1e6, "ltf_choch": False, "c0_dominance": False}
+    s = {"maturity_sigma_d": -1e6, "ltf_choch": False, "c0_dominance": False, **LEGACY_K}
     return m15, s, E3.V22(m15, s={**s, "c0_volume_required": False}), E3.V22(m15, s=s)
 
 
@@ -572,7 +573,9 @@ def real():
     m15, ltf, fut, m1, daily = real_inputs()
     # 1m intrabar order data where it exists (as the rsi2 phase-1 run and replay_day): swings2 D0 pivots — and so the RSI divergence
     # pairs — depend on it (without 1m the 12 Oct 09:15 swing high is not a D0 pivot). 13 Oct has no 1m (5M-built bars).
-    return m15, ltf, fut, E3.V22(m15, m1, daily, s=None, ltf=ltf, futures=fut, sealed=HI.sealed_fn("NIFTY"))
+    # Abhi 21 Oct: these goldens are the old ③ gate's expectations ⇒ pinned to entry_gate = legacy_k (exact old behaviour); what the
+    # new default (the entry models) reads on these days is reported (PR), never asserted here.
+    return m15, ltf, fut, E3.V22(m15, m1, daily, s={"entry_gate": "legacy_k"}, ltf=ltf, futures=fut, sealed=HI.sealed_fn("NIFTY"))
 
 
 def _day_bars(V, day):
@@ -863,7 +866,7 @@ def test_short_fut_history_falls_back_to_raw_per_bar_volume_not_a_data_error():
     last = pd.to_datetime(m15["timestamp"]).dt.normalize().iloc[-1]
     days = sorted(pd.to_datetime(fut["timestamp"]).dt.normalize().unique())
     short = fut[pd.to_datetime(fut["timestamp"]).dt.normalize() >= days[-5]]                    # 4 earlier sessions only
-    sv = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False,   # fixture's setup level (old pins)
+    sv = {**LEGACY_K, "level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False,   # fixture's setup level (old pins)
           "volume_baseline": "slot"}                                       # the Z-1h fallback exists only with the slot baseline (what-if)
     V = E3.V22(m15, s=sv, ltf=ltf, futures=short)
     ts = V.levels.ts
@@ -1014,7 +1017,7 @@ def _default_case(window, commit_vol=1.2e6, with_fut=True):
     vol[741] = commit_vol
     fut = pd.DataFrame({"timestamp": [t + pd.Timedelta(minutes=5 * j) for t in m15["timestamp"] for j in range(3)],
                         "volume": np.repeat(vol / 3.0, 3), "expiry": pd.Timestamp("2030-03-28")})
-    return E3.V22(m15, ltf=split_bars(m15, 15, 3), futures=fut if with_fut else None)
+    return E3.V22(m15, ltf=split_bars(m15, 15, 3), futures=fut if with_fut else None, s=LEGACY_K)   # the ⑥ path under the old ③ gate
 
 
 def test_end_to_end_default_path_flipped_zone_handover_choch_commitment_with_volume_is_a_setup():

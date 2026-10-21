@@ -6,12 +6,17 @@ conviction (A ✅ / B 🟡 / weak ⇒ वाट / against ⇒ नाही). Abh
 approval वेळचा निर्णय). rr_step = True = जुना ⑦ फक्त जुने reports / golden tests reproduce. कठोर नियम फक्त H1 (①), H2 (②③, breakout नाही), H3 (⑦); ⑥ = entry trigger;
 §5.3 range अवस्था = gate. ⑤ K ची आतली रेघ close ने तुटली = पुरावा (grade +), gate नाही (`trendline.py`).
 जुना decision2 (v2.1) तसाच — `engine_version` setting ने shadow तुलना. हा module order / broker call करत नाही; AI order देत नाही.
+Abhi 21 Oct (`entry_gate`, default "models"): ③ = the four entry models (decision3/entry_models.py — E1 aggressive / E2 confirmation /
+E3 structure / E4 sweep-retest) built only from the earlier layers' outputs; the old ③ (BOS impulse + K pullback) is logged per row as
+`legacy_k_gate` and never decides. A visit ends only by structure (one candle closing outside never ends it). "legacy_k" = the old ③
+gate + the old visit end, exact old rows (golden reproduce).
 Known_at: प्रत्येक bar चा निर्णय फक्त त्या bar च्या close पर्यंतच्या माहितीवर (Daily state known_at ≤ bar_end; levels त्यांच्या जन्म-bar पासून).
 """
 import numpy as np
 import pandas as pd
 
 from . import daily as DD
+from . import entry_models as EM
 from . import flip as FL
 from . import levels as LV
 from . import liquidity as LQ
@@ -25,6 +30,9 @@ M_SETUP, M_WAIT, M_NO = "s", "w", "n"
 
 STEPS = ("③", "④", "⑤", "⑥", "⑦")
 VISIT_RULES = ("structure", "close_away", "touch_window")                 # method §3 Visit (+ legacy what-ifs); settings.zone_visit_rule
+ENTRY_GATES = ("models", "legacy_k")                                      # Abhi 21 Oct: settings.entry_gate
+MODELS = ("E1", "E2", "E3", "E4")
+MODEL_NAME = {"E1": "Aggressive", "E2": "Confirmation", "E3": "Structure", "E4": "Sweep-retest"}
 
 
 def level_eval_brief(dd, part, extra, lvl):
@@ -102,6 +110,11 @@ class V22:
         if self.s.get("zone_visit_rule", "structure") != "structure" and \
                 self.s.get("commit_volume_rule", "approach_and_opposite") == "approach_and_opposite":   # never a silent half-rule
             raise ValueError("decision3 V22: a legacy zone_visit_rule knows no approach leg — pair it with commit_volume_rule = opposite")
+        if self.s.get("entry_gate", "models") not in ENTRY_GATES:          # Abhi 21 Oct: fail at start, never a silent gate
+            raise ValueError(f"decision3 V22: unknown entry_gate {self.s['entry_gate']!r} (allowed: {', '.join(ENTRY_GATES)})")
+        bad = [m for m in (self.s.get("entry_models_on") or ()) if m not in MODELS]
+        if bad or isinstance(self.s.get("entry_models_on"), str):
+            raise ValueError(f"decision3 V22: entry_models_on accepts a list of {', '.join(MODELS)} (got {self.s.get('entry_models_on')!r})")
         if self.s.get("div_degree_rule", "zone") not in ("zone", "all"):   # fail at start, not on the first in-zone bar
             raise ValueError(f"decision3 V22: unknown div_degree_rule {self.s['div_degree_rule']!r} (allowed: zone, all)")
         self.sealed = sealed                                              # Q33: sealed (NIFTY holdout) तारखा output मध्ये नाहीत
@@ -124,6 +137,12 @@ class V22:
         self._ts = pd.to_datetime(self.m15["timestamp"]).to_numpy()
         self.pb = M.Pullbacks(self)
         self._confirm_inputs(ltf, futures)
+
+    @property
+    def legacy_k(self):
+        """entry_gate = legacy_k: the old ③ (BOS impulse + K pullback) gate decides and a visit still ends at a failed commitment that
+        closed outside (exact old behaviour). Default `models`: the entry models decide; ③ K is a logged diagnostic."""
+        return self.s.get("entry_gate", "models") == "legacy_k"
 
     @property
     def rr_step(self):
@@ -244,6 +263,8 @@ class V22:
             return {"start": arm, "prev_end": None, "why": None}
         lid = lvl.get("parent_level", lvl.get("id"))
         born = self.levels.L[lid].born_bar if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(self.levels.L) else 0
+        if lvl.get("visit_from") is not None:                              # E4 (b): a revisit of a BROKEN area counts from its break
+            born = max(int(born), int(lvl["visit_from"]))
         if rule == "structure":
             return self._visit_structure(t, lvl, d, int(born))
         C = A["close"]
@@ -291,7 +312,8 @@ class V22:
         ended_by}."""
         A = self.levels.A
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
-        key = (lvl.get("parent_level", lvl.get("id")), int(t), int(d), lo, hi)
+        commit_end = self.legacy_k                                         # Abhi 21 Oct: the "failed commitment closed outside" end = legacy
+        key = (lvl.get("parent_level", lvl.get("id")), int(t), int(d), lo, hi, int(born), commit_end)
         memo = self.__dict__.setdefault("_visit_memo", {})
         if key in memo:                                                    # visit() is asked twice per level per bar (③ and ⑥)
             return memo[key]
@@ -299,12 +321,17 @@ class V22:
         piv = {p for p in every if p >= born}
         before = [p for p in every if p < born]
         start, prev_end, ended_by, last_piv, approach_from = None, None, None, (before[-1] if before else None), None
-        for i in range(born, t + 1):
+        if commit_end:
+            steps = range(born, t + 1)
+        else:                                                              # only touches and away swings change the state (same loop, sparse)
+            touch = np.flatnonzero((A["low"][born:t + 1] <= hi) & (A["high"][born:t + 1] >= lo)) + born if t >= born else []
+            steps = sorted(set(int(i) for i in touch) | {p for p in piv if p <= t})
+        for i in steps:
             if start is not None:
                 if i in piv and i > start:
                     start, prev_end, ended_by, last_piv = None, i, "swing", i
                     continue
-                if i < t and self._failed_commit_outside(i, start, lvl, d):
+                if commit_end and i < t and self._failed_commit_outside(i, start, lvl, d):
                     inside = [p for p in piv if start <= p <= i]           # a swing on the visit's first candle still starts the next leg
                     start, prev_end, ended_by = None, i, "commitment"
                     last_piv = max(inside) if inside else last_piv
@@ -405,6 +432,9 @@ class V22:
         away_t = (A["close"][t] < lvl["lo"]) if d < 0 else (A["close"][t] > lvl["hi"])
         if self.s.get("zone_visit_rule", "structure") == "structure":      # method §3: only a failed commitment closing outside ends it here
             away_t = not ok and self._failed_commit_outside(t, arm, lvl, d)
+            if not self.legacy_k:                                          # Abhi 21 Oct: one candle never ends a visit — a logged note only
+                cm["commit_closed_outside"] = ts_(t) if away_t else None
+                away_t = False
         cm["visit_end"] = ts_(t) if (away_t and not ok) else None         # Z-1v: closed outside, away, without a commitment ⇒ visit over
         cm["approach_from"] = ts_(vi.get("approach_from"))
         cm["move_from_bar"] = (int(vi["approach_from"]) - 1) if vi.get("approach_from") is not None else None   # the move's own swing
@@ -721,7 +751,12 @@ class V22:
         for k in STEPS if self.rr_step else STEPS[:-1]:                  # default: ⑦ नाही (Abhi 13 Oct)
             chk[k] = [None, "—"]
         dec, best, evals = (NO_TRADE if not ok1 else WAIT), {}, []
-        if ok1 and ok2:
+        em = None
+        if ok1 and ok2 and not self.legacy_k:                             # Abhi 21 Oct: the entry models decide (③ K = diagnostic only)
+            em = self._models_eval(t, trend, act, ctx.get("notes"))
+            chk.update(em["chk"])
+            dec, best, evals = em["decision"], em["best"], em["evals"]
+        elif ok1 and ok2:
             rank = {M_SETUP: 0, M_WAIT: 1, M_NO: 2}
             res = []
             for lvl in act:
@@ -738,7 +773,7 @@ class V22:
         mark = None
         if dec == SETUP:
             mark = "✅" if best.get("conviction") == "A" else "🟡"
-        return {"bar": int(t), "ts": str(pd.Timestamp(self.m15["timestamp"].iloc[t])), "bar_end": str(self.bar_end[t]),
+        row = {"bar": int(t), "ts": str(pd.Timestamp(self.m15["timestamp"].iloc[t])), "bar_end": str(self.bar_end[t]),
                 "engine_version": "v22", "daily_trend": st.trend, "trend_used": trend, "trend_resolution": ctx["resolution"],
                 "weekly_trend": ctx["weekly"], "daily_phase": st.phase, "daily_leg": st.wave, "corr_label": st.corr_label,
                 "mature": st.mature, "maturity_targets": list(st.targets), "trend_notes": ctx["notes"],
@@ -763,6 +798,77 @@ class V22:
                 "flip": None if not best.get("level") else {k: best["level"].get(k) for k in ("state", "broken_ts", "far_swing",
                                                                                               "flipped_ts", "break_dir")},
                 "level_evals": evals}
+        if self.legacy_k:                                                  # exact old row (golden reproduce)
+            return row
+        row.update(entry_gate="models", entries=(em or {}).get("entries", []), armed=(em or {}).get("armed", []),
+                   legacy_k_gate=self.legacy_k_gate(t, trend, act),
+                   channel_lines=[x for g in TL.line_degrees(self) for x in TL.channel_lines(self, t, g)],
+                   channels=[{k: v for k, v in c.items() if k != "base_line"} for g in TL.line_degrees(self)
+                             for c in TL.channels(self, t, g)],
+                   entry_models_on=list(EM.Reader(self).on))
+        if em is None and ok1 and not ok2:
+            row["why"] = why2
+        return row
+
+    def legacy_k_gate(self, t, trend, act=None):
+        """The old ③ (BOS impulse + K pullback, `method.Pullbacks`) read at bar t, LOGGED only (entry_gate = models): pass / fail + the
+        reason it would have given + K's values. Never decides. RANGE ⇒ one read per direction of the armed roles."""
+        dirs = [M._dir(trend)] if trend in ("UP", "DOWN") else sorted({M._dir(trend, x["role"]) for x in (act or [])} - {0})
+        ts_ = lambda i: None if i is None else str(pd.Timestamp(self._ts[int(i)]))   # noqa: E731
+        out = []
+        for d in dirs:
+            k = self.pb.at(t, d)
+            ok = bool(k is not None and k.get("open"))
+            why = (f"K open ({k.get('why_open')}), legs {k.get('legs')}" if ok else "K (pullback) उघडी नाही" if k is not None else
+                   "trend-दिशेचा impulse (BOS) नाही / origin तुटला")
+            vals = None if k is None else {"origin": k["origin"], "origin_ts": ts_(k["origin_bar"]), "bos_ts": ts_(k["bos_bar"]),
+                                           "i_end": k["i_end"], "i_end_ts": ts_(k["i_end_bar"]), "open": bool(k["open"]),
+                                           "k_open_ts": ts_(k.get("k_open_bar")), "why_open": k.get("why_open"), "legs": k.get("legs")}
+            out.append({"pass": ok, "reason": why, "direction": int(d), "values": vals})
+        if not out:
+            return {"pass": None, "reason": "no trade direction (① ✘)", "direction": 0, "values": None}
+        return out[0] if len(out) == 1 else {**out[0], "by_direction": out}
+
+    def _models_eval(self, t, trend, act, notes=None):
+        """Abhi 21 Oct (entry_gate = models): ③ = the entry models (decision3/entry_models.py) on the step2 watch-list. A model fired
+        at t ⇒ setup (the first fired entry gives the row's level / label / evidence list); none ⇒ wait, the reason = what each armed
+        model waits for."""
+        r = EM.read(self, t, trend, act)
+        armed, entries = r["armed"], r["entries"]
+        live = [a for a in armed if not a.get("disarmed")]
+        chk = {"③": [bool(live), (f"entry models armed at {len(live)} visit(s): " + ", ".join(
+                   f"{a['area_id']} ({a['visit_start'][5:16]})" for a in live[:4])) if live else EM.waiting_text(armed)],
+               "④": [None, "power shift count: not in the method — the entry models decide (Abhi 21 Oct)"],
+               "⑤": [None, "K line: context only (entry models)"]}
+        evals = []
+        for a in armed:
+            st = {m: x.get("status") for m, x in (a.get("models") or {}).items()}
+            fired = any(v == "fired" for v in st.values())
+            evals.append({"id": a["area_id"], "role": a.get("role"), "lo": a["lo"], "hi": a["hi"], "object": a["object"],
+                          "decision": SETUP if fired else WAIT, "reached": "③" if not a.get("disarmed") else "②",
+                          "n_ok": sum(1 for v in st.values() if v in ("fired", "fired_earlier")), "checklist": {},
+                          "conviction": None, "form": None, "models": st, "why": (a.get("disarmed") or "")[:120]})
+        for e in entries:
+            for x in evals:
+                if x["id"] == e["area"]["id"] and x["conviction"] is None:
+                    x["conviction"] = e["label"]
+        if entries:
+            e = entries[0]
+            ev = e["_eval"]
+            chk["⑥"] = [True, " · ".join(f"{x['model']} {x['name']} @ {x['area']['id']} (invalidation {x['invalidation']:,.2f})"
+                                         for x in entries)]
+            best = {"level": e["_lvl"], "conviction": e["label"], "evidence_list": e["evidence_list"], "confirming": e["confirming"],
+                    "missing": [k for k, v in e["confirming"].items() if v is not True], "commit": ev["commit"],
+                    "zone_read": ev["zone_read"], "trendline": ev["trendline"], "evidence": ev["context"], "verdict_rule": "method",
+                    "K": self.pb.at(t, e["direction"]), "why": f"entry {e['model']} {e['name']} · {e['invalidation_rule']}",
+                    "context_notes": list(notes or [])}
+        else:
+            chk["⑥"] = [False, EM.waiting_text(armed)]
+            fa = r["first_area"]
+            best = {"level": fa[0] if fa else (act[0] if act else None), "why": EM.waiting_text(armed), "verdict_rule": "method",
+                    "K": self.pb.at(t, fa[1]) if fa else None}
+        clean = [{k: v for k, v in e.items() if not k.startswith("_")} for e in entries]
+        return {"chk": chk, "decision": SETUP if entries else WAIT, "best": best, "evals": evals, "entries": clean, "armed": armed}
 
     def run(self, bars=None):
         bars = range(len(self.m15)) if bars is None else bars
