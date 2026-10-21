@@ -39,6 +39,11 @@ def bear_hidden(h2=106.0, r1=65.0, r2=70.0, n=40):
     return df, ps, rsi_with(n, {10: r1, 25: r2})
 
 
+def IN(*a, **k):
+    """The inside-the-move reading (Abhi L5-a frame) of one side."""
+    return RH.read_hidden_divergence(*a, **k)["inside_move"]
+
+
 def hid(df, ps, r, **s):
     return build(df, ps, r, div_hidden=True, **s)
 
@@ -46,7 +51,7 @@ def hid(df, ps, r, **s):
 # ------------------------------------------------------------------------------------------------ the definition (mirror)
 def test_uptrend_pullback_higher_low_with_rsi_lower_low_is_hidden_bull():
     df, ps, r = bull_hidden()
-    got = RH.read_hidden_divergence(V_of(hid(df, ps, r), df), 30, +1, move_from=5)
+    got = IN(V_of(hid(df, ps, r), df), 30, +1, move_from=5)
     assert got["found"] is True and got["side"] == "bull" and got["degree"] == 0 and got["pushes"][0] == 2
     (x,) = got["divergences"]
     assert (x["L1"]["price"], x["L2"]["price"], x["price_rel"]) == (95.0, 97.0, "higher low")
@@ -57,7 +62,7 @@ def test_uptrend_pullback_higher_low_with_rsi_lower_low_is_hidden_bull():
 
 def test_downtrend_pullback_lower_high_with_rsi_higher_high_is_hidden_bear():
     df, ps, r = bear_hidden()
-    got = RH.read_hidden_divergence(V_of(hid(df, ps, r), df), 30, -1, move_from=5)
+    got = IN(V_of(hid(df, ps, r), df), 30, -1, move_from=5)
     assert got["found"] is True and got["side"] == "bear"
     (x,) = got["divergences"]
     assert x["price_rel"] == "lower high" and (x["L1"]["rsi"], x["L2"]["rsi"]) == (65.0, 70.0)
@@ -65,22 +70,22 @@ def test_downtrend_pullback_lower_high_with_rsi_higher_high_is_hidden_bear():
 
 def test_regular_shape_and_rsi_with_price_are_not_hidden():
     df, ps, r = bull_hidden(l2=93.0, r1=30.0, r2=35.0)                  # lower low + higher RSI = regular, not hidden
-    assert RH.read_hidden_divergence(V_of(hid(df, ps, r), df), 30, +1, move_from=5)["found"] is False
+    assert IN(V_of(hid(df, ps, r), df), 30, +1, move_from=5)["found"] is False
     df, ps, r = bull_hidden(r1=30.0, r2=35.0)                            # higher low with a higher RSI low = no divergence
-    assert RH.read_hidden_divergence(V_of(hid(df, ps, r), df), 30, +1, move_from=5)["found"] is False
+    assert IN(V_of(hid(df, ps, r), df), 30, +1, move_from=5)["found"] is False
 
 
 def test_equal_low_is_a_double_bottom_not_hidden():
     df, ps, r = bull_hidden(l2=95.0)
     D = hid(df, ps, r)
     assert any(x["type"] == "hidden" and x["price_rel"] == "equal low" for x in D.history(30))   # rsi2 marks it hidden …
-    assert RH.read_hidden_divergence(V_of(D, df), 30, +1, move_from=5)["found"] is False       # … the method words say "higher low"
+    assert IN(V_of(D, df), 30, +1, move_from=5)["found"] is False       # … the method words say "higher low"
 
 
 # ------------------------------------------------------------------------------------------------ the frame (Abhi L5-a)
 def test_a_swing_from_before_the_move_is_never_compared():
     df, ps, r = bull_hidden()
-    got = RH.read_hidden_divergence(V_of(hid(df, ps, r), df), 30, +1, move_from=12)   # the move starts after the low at 10
+    got = IN(V_of(hid(df, ps, r), df), 30, +1, move_from=12)   # the move starts after the low at 10
     assert got["found"] is False and got["degree"] is None and got["pushes"][0] == 1
     assert "fewer than two pushes" in got["statements"][0]
 
@@ -93,35 +98,35 @@ def test_highest_degree_with_two_pushes_is_read():
     r = rsi_with(n, {10: 30.0, 18: 40.0, 25: 32.0})                     # D1 95 → 97 RSI 30 → 32 (none); D0 98 → 97 is a lower low
     ps = [piv(df, "H", 5, degree=1), piv(df, "L", 10, degree=1), piv(df, "H", 15, degree=1), piv(df, "L", 25, degree=1),
           piv(df, "H", 5), piv(df, "L", 10), piv(df, "H", 15), piv(df, "L", 18), piv(df, "H", 21), piv(df, "L", 25)]
-    got = RH.read_hidden_divergence(V_of(hid(df, ps, r, div_degrees=(0, 1, 2)), df), 30, +1, move_from=5)
+    got = IN(V_of(hid(df, ps, r, div_degrees=(0, 1, 2)), df), 30, +1, move_from=5)
     assert got["degree"] == 1 and got["pushes"] == {0: 3, 1: 2, 2: 0} and got["found"] is False
     r2 = rsi_with(n, {10: 35.0, 18: 40.0, 25: 30.0})                    # D1 95 → 97 with RSI 35 → 30 ⇒ hidden at D1
-    got = RH.read_hidden_divergence(V_of(hid(df, ps, r2, div_degrees=(0, 1, 2)), df), 30, +1, move_from=5)
+    got = IN(V_of(hid(df, ps, r2, div_degrees=(0, 1, 2)), df), 30, +1, move_from=5)
     assert got["found"] is True and [x["degree"] for x in got["divergences"]] == [1]
 
 
 def test_overtaken_when_price_goes_beyond_the_held_low():
     df, ps, r = bull_hidden(n=45, after={35: 96.0})
     D = hid(df, ps, r)
-    assert RH.read_hidden_divergence(V_of(D, df), 34, +1, move_from=5)["found"] is True
-    got = RH.read_hidden_divergence(V_of(D, df), 36, +1, move_from=5)       # 96 < 97: the higher low is gone
+    assert IN(V_of(D, df), 34, +1, move_from=5)["found"] is True
+    got = IN(V_of(D, df), 36, +1, move_from=5)       # 96 < 97: the higher low is gone
     assert got["found"] is False and len(got["overtaken"]) == 1 and "went beyond" in got["statements"][0]
 
 
 def test_arm_keeps_only_pairs_whose_second_push_is_inside_the_visit():
     df, ps, r = bull_hidden()
     D = hid(df, ps, r)
-    assert RH.read_hidden_divergence(V_of(D, df), 30, +1, move_from=5, arm=20)["found"] is True
-    assert RH.read_hidden_divergence(V_of(D, df), 30, +1, move_from=5, arm=26)["found"] is False
+    assert IN(V_of(D, df), 30, +1, move_from=5, arm=20)["found"] is True
+    assert IN(V_of(D, df), 30, +1, move_from=5, arm=26)["found"] is False
 
 
 def test_decision_row_frame_and_na_when_the_move_is_not_known():
     df, ps, r = bull_hidden()
     V = V_of(hid(df, ps, r), df)
     row = {"trend_used": "UP", "level": {"role": "SUP"}, "commit": {"move_from_bar": 5, "arm_bar": 20}}
-    got = RH.read_hidden_divergence(V, 30, row=row)
+    got = IN(V, 30, row=row)
     assert got["found"] is True and got["d"] == 1 and got["frame"]["arm"] == 20
-    na = RH.read_hidden_divergence(V, 30, +1, row={"commit": {}})
+    na = IN(V, 30, +1, row={"commit": {}})
     assert na["found"] is None and "not known" in na["na"]
 
 
@@ -135,9 +140,9 @@ def test_level_frame_uses_the_areas_visit_like_the_confirmation():
         return {"start": 20, "approach_from": 6} if lvl["id"] == "a" else {"start": None, "approach_from": None, "why": "no visit in progress"}
     V = V_of(hid(df, ps, r), df, pb=NS(at=lambda t, d: {"k_open_bar": 12}))
     V.visit = visit
-    got = RH.read_hidden_divergence(V, 30, row={"trend_used": "UP", "level": {"id": "a", "role": "SUP"}, "commit": {}})
+    got = IN(V, 30, row={"trend_used": "UP", "level": {"id": "a", "role": "SUP"}, "commit": {}})
     assert got["found"] is True and (got["frame"]["move_from"], got["frame"]["arm"]) == (5, 20) and calls == [(30, 1, 12)]
-    na = RH.read_hidden_divergence(V, 30, +1, lvl={"id": "b"})
+    na = IN(V, 30, +1, lvl={"id": "b"})
     assert na["found"] is None and "no visit in progress" in na["na"]
 
 
@@ -145,14 +150,111 @@ def test_pullback_K_frame_and_both_sides_when_d_is_none():
     df, ps, r = bull_hidden()
     pb = NS(at=lambda t, d: {"i_end_bar": 5, "open": True} if d == 1 else None)
     got = RH.read_hidden_divergence(V_of(hid(df, ps, r), df, pb=pb), 30)
-    assert got["bull"]["found"] is True and got["bull"]["frame"]["kind"] == "pullback_K"
-    assert got["bear"]["found"] is None and "no trend-side impulse" in got["bear"]["na"]
+    assert got["bull"]["inside_move"]["found"] is True and got["bull"]["inside_move"]["frame"]["kind"] == "pullback_K"
+    assert got["bear"]["inside_move"]["found"] is None and "no trend-side impulse" in got["bear"]["inside_move"]["na"]
 
 
 def test_rsi2_failure_is_na_with_the_reason():
     df, _, _ = bull_hidden()
-    got = RH.read_hidden_divergence(NS(_rsi_hidden="ValueError: x", _ts=None), 30, +1, move_from=5)
+    got = IN(NS(_rsi_hidden="ValueError: x", _ts=None), 30, +1, move_from=5)
     assert got["found"] is None and "rsi2 Divergence (hidden on) failed" in got["na"]
+
+
+# ------------------------------------------------------------------------------------------------ CLASSIC: across the impulse
+def classic_bull(l2=97.0, r1=35.0, r2=30.0, n=40, after=None):
+    """Uptrend at D2: previous higher low 95 @ 10 (the impulse's origin) · impulse to 110 @ 15 · pullback lows 98 @ 20, l2 @ 25 (H 103 @
+    22 between). RSI r1 @ 10, 40 @ 20, r2 @ 25. Inside the pullback 98 → 97 is a lower low (no hidden there); across the impulse
+    95 → 97 is a higher low."""
+    df = frame(n, highs={15: 110.0, 22: 103.0}, lows={10: 95.0, 20: 98.0, 25: l2, **(after or {})})
+    ps = [piv(df, "L", 10, degree=2), piv(df, "H", 15, degree=2), piv(df, "L", 20, degree=2), piv(df, "H", 22, degree=2),
+          piv(df, "L", 25, degree=2)]
+    D = hid(df, ps, rsi_with(n, {10: r1, 20: 40.0, 25: r2}), div_degrees=(0, 1, 2))
+    pb = NS(at=lambda t, d: {"origin_bar": 10, "origin": 95.0, "i_end_bar": 15, "i_end": 110.0, "open": True} if d == 1 else None)
+    return df, D, pb
+
+
+def classic_bear(h2=103.0, r1=65.0, r2=70.0, n=40):
+    df = frame(n, highs={10: 105.0, 20: 102.0, 25: h2}, lows={15: 90.0, 22: 97.0})
+    ps = [piv(df, "H", 10, degree=2), piv(df, "L", 15, degree=2), piv(df, "H", 20, degree=2), piv(df, "L", 22, degree=2),
+          piv(df, "H", 25, degree=2)]
+    D = hid(df, ps, rsi_with(n, {10: r1, 20: 60.0, 25: r2}), div_degrees=(0, 1, 2))
+    pb = NS(at=lambda t, d: {"origin_bar": 10, "origin": 105.0, "i_end_bar": 15, "i_end": 90.0, "open": True} if d == -1 else None)
+    return df, D, pb
+
+
+def test_classic_uptrend_pullback_low_vs_previous_higher_low_across_the_impulse():
+    df, D, pb = classic_bull()
+    got = RH.read_hidden_divergence(V_of(D, df, pb=pb), 30, +1, move_from=15)
+    c = got["classic"]
+    assert got["found"] is True and got["reading"] == RH.CLASSIC and c["frame"]["kind"] == "classic_across_impulse"
+    (x,) = c["divergences"]
+    assert (x["L1"]["price"], x["L2"]["price"], x["price_rel"], x["L1"]["rsi"], x["L2"]["rsi"]) == (95.0, 97.0, "higher low", 35.0, 30.0)
+    assert x["degree"] == 2 and c["frame"]["impulse"]["price"] == 110.0
+    assert "classic, across the impulse" in c["statements"][0] and "previous higher low 95.00" in c["statements"][0]
+    assert got["inside_move"]["found"] is False                         # inside the pullback 98 → 97 is a lower low: labelled apart
+    assert [s.split(":")[0] for s in got["statements"]][0].startswith("hidden bull divergence (classic")
+
+
+def test_classic_mirror_downtrend_lower_high_with_rsi_higher_high():
+    df, D, pb = classic_bear()
+    c = RH.read_hidden_divergence(V_of(D, df, pb=pb), 30, -1, move_from=15)["classic"]
+    assert c["found"] is True and c["side"] == "bear"
+    (x,) = c["divergences"]
+    assert (x["L1"]["price"], x["L2"]["price"], x["price_rel"], x["L1"]["rsi"], x["L2"]["rsi"]) == (105.0, 103.0, "lower high", 65.0, 70.0)
+
+
+def test_classic_not_hidden_when_rsi_holds_or_price_equal():
+    df, D, pb = classic_bull(r1=30.0, r2=35.0)
+    c = RH.read_hidden_divergence(V_of(D, df, pb=pb), 30, +1)["classic"]
+    assert c["found"] is False and "price higher low, RSI 30.00 → 35.00" in c["statements"][0] and c["pair"]["price_rel"] == "higher low"
+    df, D, pb = classic_bull(l2=95.0)
+    assert RH.read_hidden_divergence(V_of(D, df, pb=pb), 30, +1)["classic"]["found"] is False   # equal low = double bottom
+
+
+def test_classic_waits_for_the_pullbacks_confirmed_low_and_is_causal():
+    df, D, pb = classic_bull()
+    early = RH.read_hidden_divergence(V_of(D, df, pb=pb), 19, +1)["classic"]   # no confirmed pullback low yet
+    assert early["found"] is False and "no confirmed swing low" in early["statements"][0]
+    mid = RH.read_hidden_divergence(V_of(D, df, pb=pb), 22, +1)["classic"]     # 98 @ 20 confirmed: 95 → 98, RSI 35 → 40
+    assert mid["found"] is False and mid["pair"]["L2"]["price"] == 98.0
+    assert RH.read_hidden_divergence(V_of(D, df, pb=pb), 26, +1)["classic"]["found"] is True
+
+
+def test_classic_overtaken_when_price_goes_below_the_pullbacks_low():
+    df, D, pb = classic_bull(after={33: 96.5})
+    c = RH.read_hidden_divergence(V_of(D, df, pb=pb), 34, +1)["classic"]
+    assert c["found"] is False and len(c["overtaken"]) == 1 and "went beyond" in c["statements"][0]
+
+
+def test_classic_previous_swing_must_be_the_extreme_up_to_the_pullback():
+    """A lower price between the previous higher low and the pullback's low (rsi2's consecutive rule) ⇒ that low is not the trend's
+    previous higher low ⇒ not read as hidden; stated."""
+    df, D, pb = classic_bull(after={12: 94.0})
+    c = RH.read_hidden_divergence(V_of(D, df, pb=pb), 30, +1)["classic"]
+    assert c["found"] is False and c["pair"]["consecutive"] is False and "not the trend's previous higher low" in c["statements"][0]
+
+
+def test_classic_without_a_known_impulse_uses_the_opposite_swing_between():
+    df, D, _ = classic_bull()
+    c = RH.read_hidden_divergence(V_of(D, df), 30, +1)["classic"]     # no V.pb: last low 97 @ 25, the H @ 22 between, previous low 98
+    assert c["frame"]["impulse"]["bar"] == 22 and c["pair"]["L1"]["price"] == 98.0 and c["found"] is False
+    c = RH.read_hidden_divergence(V_of(D, df), 30, +1)
+    assert c["classic"]["frame"]["degree"] == 2
+
+
+def test_classic_degree_is_the_trends_structure_degree():
+    df, D, pb = classic_bull()
+    V = V_of(D, df, pb=pb)
+    V.s = {"level_degree": 1}
+    c = RH.read_hidden_divergence(V, 30, +1)["classic"]
+    assert c["degree"] == 1 and c["found"] is False                    # no D1 swings here
+
+
+def test_draw_objects_name_the_reading():
+    df, D, pb = classic_bull()
+    objs = RH.draw_objects(V_of(D, df, pb=pb), 30, +1, move_from=15)
+    assert [o["kind"] for o in objs] == ["rsi_hidden_div", "rsi_hidden_div_rsi"] and "(classic (across the impulse))" in objs[0]["label"]
+    assert (objs[0]["p0"], objs[0]["p1"]) == (95.0, 97.0)
 
 
 # ------------------------------------------------------------------------------------------------ the live reader is untouched
@@ -183,16 +285,19 @@ def test_no_lookahead_cut_never_changes_earlier_reads():
     m15 = m15_from(walk(25 * 30, 3, step=3.0))
     full = RE.Divergence(m15, "15M", s={"div_hidden": True}, areas=False)
     n = len(m15)
-    seen = 0
+    seen = seen_c = 0
     for c in (n - 1 - 9 * k for k in range(0, 30, 5)):
         cut = RE.Divergence(m15.iloc[:c + 1], "15M", s={"div_hidden": True}, areas=False)
         for t in range(c - 20, c + 1):
             for d in (1, -1):
-                a = RH.read_hidden_divergence(V_of(full, m15), t, d, move_from=max(0, t - 120))
-                b = RH.read_hidden_divergence(V_of(cut, m15.iloc[:c + 1]), t, d, move_from=max(0, t - 120))
+                va, vb = V_of(full, m15), V_of(cut, m15.iloc[:c + 1])
+                va.s = vb.s = {"level_degree": 1}                      # the walk has no D2 swings; D1 carries the classic pairs here
+                a = RH.read_hidden_divergence(va, t, d, move_from=max(0, t - 120))
+                b = RH.read_hidden_divergence(vb, t, d, move_from=max(0, t - 120))
                 assert json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str), (c, t, d)
-                seen += bool(a["found"])
-    assert seen                                                          # the walk does show hidden pairs
+                seen += bool(a["inside_move"]["found"])
+                seen_c += bool(a["classic"]["found"])
+    assert seen and seen_c                                                          # the walk does show hidden pairs
 
 
 def test_draw_objects_shape():
@@ -218,6 +323,7 @@ def test_real_nifty_21_oct_reads_run_and_are_json_safe():
     day = pd.Timestamp(m15["timestamp"].iloc[-1]).normalize()
     assert DP.period(day) != "HOLDOUT"
     from decision3 import history as HI
+    daily = daily[pd.to_datetime(daily["timestamp"]).dt.normalize() < day].reset_index(drop=True)   # Daily history before the day only
     V = E3.V22(m15, None, daily, sealed=HI.sealed_fn("NIFTY"))
     bars = [i for i in range(len(m15)) if pd.Timestamp(m15["timestamp"].iloc[i]).normalize() == day]
     for t in bars:
@@ -225,4 +331,9 @@ def test_real_nifty_21_oct_reads_run_and_are_json_safe():
         got = RH.read_hidden_divergence(V, t, row=row) if row.get("level") else RH.read_hidden_divergence(V, t)
         json.dumps(got, default=str)
     print("\n" + json.dumps(RH.read_hidden_divergence(V, bars[-1]), default=str)[:600])
+    c = bars[-6]                                                         # no look-ahead: a V built on data cut at c reads the same
+    Vc = E3.V22(m15.iloc[:c + 1].reset_index(drop=True), None, daily, sealed=HI.sealed_fn("NIFTY"))
+    for t in range(c - 3, c + 1):
+        a, b = RH.read_hidden_divergence(V, t), RH.read_hidden_divergence(Vc, t)
+        assert json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str), t
     assert V._rsi_hidden is not getattr(V, "_rsi", None)
