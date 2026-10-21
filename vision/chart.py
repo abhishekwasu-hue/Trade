@@ -446,7 +446,7 @@ def _objects(fig, objects, df, lo, hi, c, xm=None):
     shapes only (it is narrow). The panel's price range is kept — an object outside it becomes an ▲ / ▼ note."""
     from decision3 import draw_render as DR
     xm = xm or DR.XMap(df["start"], 0)
-    DR.draw_plotly(fig, DR.geometry(objects, xm, ylim=(lo, hi)), row=1, col=c, label=c == 1)
+    DR.draw_plotly(fig, DR.geometry(objects, xm, ylim=(lo, hi), short=True), row=1, col=c, label=c == 1)
 
 
 def chart_objects_of(sig):

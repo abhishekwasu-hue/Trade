@@ -101,10 +101,21 @@ def _is_high(o):
     return str(o.get("label", "")).strip().upper() in ("HH", "LH", "EQH", "H")
 
 
-def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None):
+def _short(text):
+    """Short label (the Vision panel is narrow): the words before the details in brackets."""
+    return str(text).split(" (")[0].lstrip("> ").strip()
+
+
+def _note(items):
+    """Edge note text: the first two names + how many more."""
+    return " · ".join(items[:2]) + (f" +{len(items) - 2} more" if len(items) > 2 else "")
+
+
+def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None, short=False):
     """Objects ⇒ primitives [{type: seg | band | marker | text, …}] in the chart's (x, price). ylim = (lo, hi) of the chart's price axis:
     a horizontal object outside it becomes an edge note (▲ / ▼); None ⇒ no clipping. min_degree: swings below it are not drawn (a 1H
-    chart shows the D2 structure only). kinds: only these kinds. Right-margin labels are spread so they never overlap."""
+    chart shows the D2 structure only). kinds: only these kinds. Right-margin labels are spread so they never overlap. short=True: the
+    labels without their bracketed details (a narrow panel)."""
     n = xm.n
     right = n - 0.5
     left = -0.5
@@ -202,13 +213,16 @@ def geometry(objects, xm, ylim=None, min_degree=None, kinds=None, label_gap=None
                 prims.append({"type": "text", "x": min(xs + 4, right), "y": p1, "text": "invalidation", "color": "#c92a2a", "size": 6.5,
                               "weight": "normal", "ha": "left", "va": "center", "dy": 0})
     gap = label_gap if label_gap is not None else (0.035 * (hi - lo) if np.isfinite(hi - lo) else 0.0)
+    if short:
+        margin = [(y, _short(t), c) for y, t, c in margin]
+        above, below = [_short(t) for t in above], [_short(t) for t in below]
     for y, text, color in _spread(margin, lo, hi, gap):
         prims.append({"type": "text", "x": right, "y": y, "text": text, "color": color, "size": 7, "weight": "normal", "ha": "left",
                       "va": "center", "dy": 0, "margin": True})
     if above:
-        prims.append({"type": "note", "where": "top", "x": right, "y": hi, "text": "▲ " + " · ".join(above), "color": "#868e96"})
+        prims.append({"type": "note", "where": "top", "x": right, "y": hi, "text": "▲ " + _note(above), "color": "#868e96"})
     if below:
-        prims.append({"type": "note", "where": "bottom", "x": right, "y": lo, "text": "▼ " + " · ".join(below), "color": "#868e96"})
+        prims.append({"type": "note", "where": "bottom", "x": right, "y": lo, "text": "▼ " + _note(below), "color": "#868e96"})
     return prims
 
 

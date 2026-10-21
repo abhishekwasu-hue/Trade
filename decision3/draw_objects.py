@@ -275,8 +275,8 @@ def _area_state(x):
 def area_objects(V, t, trend, r=None, mode="view"):
     """The decision's own areas (`Levels.snapshot`: one base, K4 state, confluence label) — for the trade side labelled with the line
     confluence exactly as engine.step2 does (`trendline.confluence_areas`). mode "view" = the 1H chart's selection
-    (charts.method_band_view) on the areas inside the view distance plus the decision's next armed area (the engine arms every area
-    ahead — drawing all of them would hide the candles)."""
+    (charts.method_band_view) on the areas inside the view distance plus the decision's nearest armed areas (≤ 3, as the view's 3 + 3;
+    the engine arms every area ahead — drawing all of them would hide the candles)."""
     from . import charts as CH
     from . import method as M
     from . import trendline as TL
@@ -296,9 +296,9 @@ def area_objects(V, t, trend, r=None, mode="view"):
     else:
         sg = lv.sig1h[t]
         lim = float(s["show_distance_sigma"]) * (sg if math.isfinite(sg) else math.inf)
-        near = [x for x in snap if x["dist"] <= lim]                       # the view distance (`show_distance_sigma`, display)
-        nxt = sorted((x for x in snap if x["id"] in by_id), key=lambda x: x["dist"])[:1]   # + the decision's next area, always
-        shown = near + [x for x in nxt if x["id"] not in {y["id"] for y in near}]
+        near = [x for x in snap if x["dist"] <= lim and x["id"] not in by_id]   # the view distance (`show_distance_sigma`, display)
+        armed = sorted((x for x in snap if x["id"] in by_id), key=lambda x: x["dist"])
+        shown = near + armed[:CH.MAX_BANDS_PER_SIDE]                        # the decision's nearest armed areas (≤ 3 + 3 rule of the view)
         view = CH.method_band_view(lv, t, shown, {x["id"] for x in shown if x["id"] in by_id})
     out = []
     for x, style in view:
@@ -566,6 +566,9 @@ def _story_objects(objects, close, area_degree):
             pick += [o for o in xs if lo_(o) <= close <= hi_(o)][:1]
             pick += sorted((o for o in xs if lo_(o) > close), key=lo_)[:1]
             pick += sorted((o for o in xs if hi_(o) < close), key=hi_, reverse=True)[:1]
+            if k == "area":                                                # + the decision's next armed area of this timeframe
+                pick += [o for o in sorted((o for o in xs if o["style_key"].endswith("armed")),
+                                           key=lambda o: min(abs(o["p0"] - close), abs(o["p1"] - close)))[:1] if o not in pick]
         for k in ("sweep", "divergence", "fvg"):
             xs = [o for o in objs if o["kind"] == k]
             pick += sorted(xs, key=lambda o: o["t1"])[-1:]
