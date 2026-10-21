@@ -158,12 +158,16 @@ def structure_move(D, day, n=60):
 
 
 def trend_first_status(D, r):
-    pct, n = structure_move(D, r["ts"])
+    """Layer 6b (method §2 b / P4): the trend side as the decision read it — the trade side against the Daily impulse-degree Dow trend
+    it used (`trend_used`, `trade_side`); no %-move check (P1: comparisons, not numbers). Returns (short, long)."""
     side = side_of(r)
-    against = (side == "BEAR CALL" and pct > 5) or (side == "BULL PUT" and pct < -5)
-    txt = (f"Trend-first check: {side.lower()} vs Daily {n}-session move {pct:+.1f}% (Weekly {r['weekly_trend']}) - "
-           + ("DEFECT FLAG: side against the multi-month Daily structure" if against else "side agrees with the Daily structure"))
-    return ("DEFECT FLAG: against Daily structure" if against else "trend-first OK"), txt
+    want = {"bear_call": "BEAR CALL", "bull_put": "BULL PUT"}
+    sides = [want.get(x, str(x).upper()) for x in r.get("trade_side") or ()]
+    ok = side in sides
+    txt = (f"Trend side: {side.lower()} with Daily {r.get('trend_used') or r.get('daily_trend')} "
+           f"({r.get('trend_resolution') or 'no resolution'}), Weekly {r.get('weekly_trend')} - "
+           + ("the trade is on the trend side" if ok else "AGAINST the trend side the method arms"))
+    return ("trend side OK" if ok else "against the trend side"), txt
 
 
 # ------------------------------------------------------------------------------------------------ volume (shared helper वापरून)
@@ -180,7 +184,8 @@ def m15_study(D, r, w, setup_end):
     """15M pane: futures / own volume (setup bar च्या शेवटापर्यंतच), window = engine चं (info) नाहीतर area arrival → setup bar."""
     vol = VP.bar_volume(w["timestamp"], w["bar_end"], D.fut, asof=setup_end)
     info = {**r, **(D.info.get(str(r["ts"])) or {})}
-    return VP.study(w.reset_index(drop=True), vol=vol, info=info, area=_area(r), d=_dir(r), commit=len(w) - 1, symbol=D.symbol)
+    return VP.study(w.reset_index(drop=True), vol=vol, info=info, area=_area(r), d=_dir(r), commit=len(w) - 1, symbol=D.symbol,
+                    words="method")                                       # layer 6b: the method's words (review chart)
 
 
 def ltf_frame(D, setup_end):
@@ -214,7 +219,7 @@ def ltf_study(D, r, g, arm_ts, setup_end):
     if arm is None and arm_ts is not None and pd.Timestamp(arm_ts) < g["timestamp"].iloc[0]:
         arm = 0
     st = VP.study(g, vol=vol, area=_area(r), d=_dir(r), commit=commit, arm=arm if arm is not None and arm <= commit else None,
-                  symbol=D.symbol)
+                  symbol=D.symbol, words="method")
     return st, what
 
 
@@ -314,7 +319,7 @@ def daily_panel(D, ax, axv, axs, r, st, setup_ts, setup_end):
     ax.set_title(f"Daily (last {n} sessions; yellow = setup day, partial to the setup bar) - state at the setup bar: {st.trend} "
                  f"{phase_en(st)}", fontsize=9, loc="left")
     ax.grid(alpha=0.25)
-    VP.draw_daily_mpl(axv, daily_volume(D, rows, day, setup_end), x=x, source=VP.source_label(D.symbol))
+    VP.draw_daily_mpl(axv, daily_volume(D, rows, day, setup_end), x=x, source=VP.source_label(D.symbol), words="method")
     axv.set_xlim(-1, XR)
     seg = []
     for i, be in enumerate(list(hist["bar_end"]) + [setup_end]):       # trend strip: त्या दिवसाच्या close ला माहीत state
@@ -358,7 +363,20 @@ def _session_ticks(ax, ts, n, hours=(11, 13)):
 
 
 def k_line_facts(D, r, t):
-    """TA1 / TA3 (Abhi, design §10), drawing layer only: the V22 K line (r["trendline"], unchanged) through the shared K6 line check
+    """Layer 6b (Abhi's method §3 Lines / layer 4): the K line exactly as the decision read it (`trendline.k_line`, r["trendline"]) —
+    touches by the candle (wick reaches the line, body on its side), closed through BY the commitment candle = the trigger form, gone
+    before (a close beyond + a swing beyond, K6.5) = no trigger, otherwise intact. No MR tolerance, no K5 / K6 display check, no
+    projected MR zone (`k_line_facts_validity` = the R1a legacy label). Always drawable: the decision used it."""
+    tl = r["trendline"]
+    bb, gone = tl.get("break_bar"), tl.get("broken_before")
+    when = f" {pd.Timestamp(D.m15['timestamp'].iloc[int(bb)]):%H:%M}" if bb is not None and 0 <= int(bb) <= t else ""
+    state = (f"closed through by the commitment{when}" if tl.get("broken") else
+             f"gone{when} (close + swing beyond; no trigger)" if gone is not None else "intact")
+    return {"facts": tl, "drawable": True, "label": f"K line ({tl.get('touches')} touches, {state})"}
+
+
+def k_line_facts_validity(D, r, t):
+    """Legacy (R1a) — TA1 / TA3 (Abhi, design §10), drawing layer only: the V22 K line (r["trendline"], unchanged) through the shared K6 line check
     (facts/validity.py) on the 15M bars up to the setup bar t. The K line's real break is its trigger (K6.5), so "broken" does not hide
     it; any other K6 reason does (debug only). Label: touch count; the break state is V22's own (r["trendline"]["broken"], the one the
     decision used), with the K5 real break added only when it differs; the projected next-touch zone while both say intact."""
@@ -411,7 +429,7 @@ def m15_panel(D, ax, axv, r, st, setup_ts, w, vst, debug=False):
     right = n + max(24, n // 3)                                            # labels साठी रिकामी जागा (candles नाहीत)
     ax.axhspan(lv["lo"], lv["hi"], color=C["level"], alpha=0.14, zorder=2)
     stars = f", {lv['sweeps']} sweeps" if lv.get("sweeps") else ""
-    ax.text(0.5, lv["hi"], f"{LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} ({'+'.join(lv['births'])}{stars}, "
+    ax.text(0.5, lv["hi"], f"{LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} ({str(lv.get('state') or 'ACTIVE').lower()}{stars}, "
             f"{'fresh' if lv['fresh'] else 'tested'}{LV.level_tags(lv)})", fontsize=8, color=C["level"], va="bottom", zorder=7,
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1))
     if vst["arm"] is not None:                                             # study window (volume pane सारखाच) — वर पातळ पट्टी
@@ -493,25 +511,59 @@ def ltf_panel(D, ax, axv, r, g, vst, what, setup_end):
 
 
 # ------------------------------------------------------------------------------------------------ footer / caption
+MARK = {"present": "✓", "absent": "✗", "NA": "NA"}
+
+
+def evidence_marks(r):
+    """Method §5 evidence list as marks: "required ✓ · volume growing ✗ · RSI divergence NA · …" (never a score)."""
+    el = r.get("evidence_list") or {}
+    if not el:
+        return "evidence list: none (legacy score rule)" if r.get("verdict_rule") == "score" else "evidence list: none"
+    conf = el.get("confirming") or {}
+    names = {"volume_growing": "volume growing inside", "rsi_divergence": "RSI divergence", "confluence": "confluence",
+             "correction_line_closed_through": "correction line closed through"}
+    return (f"required set {MARK.get(el.get('required'), '?')} · " + " · ".join(f"{names.get(k, k)} {MARK.get(v, v)}" for k, v in conf.items())
+            + f" · entry hours {el.get('entry_hours')}")
+
+
+def rsi_words(r):
+    """Layer 5 as read at the zone: found / absent / NA, the degree with two pushes inside the move, the zone's own degree."""
+    rs = (((r.get("zone_read") or {}).get("summary") or {}).get("rsi_divergence")) or {}
+    if not rs:
+        return "RSI: not read"
+    if rs.get("found") is None:
+        return f"RSI: NA ({rs.get('na') or 'not readable'})"
+    side = "bear" if _dir(r) < 0 else "bull"
+    zd = rs.get("zone_degree")
+    zt = "" if zd is None else f"; zone degree: {'yes' if zd else 'none'}"
+    return (f"RSI: {side} divergence {'present' if rs['found'] else 'absent'} inside the move into the zone"
+            + (f" (D{rs['degree']}, pushes {rs.get('pushes')})" if rs.get("degree") is not None else "") + zt)
+
+
 def footer_lines(r, st, status, vline):
-    chk = r["checklist"]
-    lv, K, rk, cm = r["level"], r.get("K") or {}, r.get("risk") or {}, r.get("commit") or {}
-    ps = chk.get("④", [None, ""])[1]
-    ps = ps[ps.find("power shift"):] if "power shift" in ps else "-"
+    """Layer 6b: the story in the method's order (§5) — trend, the area, how price arrived, inside the area, the commitment and its
+    volume comparison, the LTF change, the RSI view, the correction line — then the verdict label with the evidence list (✓ / ✗ / NA)."""
+    lv, K, cm = r["level"], r.get("K") or {}, r.get("commit") or {}
     tl = r.get("trendline")
     why_open = WHY_OPEN.get(K.get("why_open"), K.get("why_open"))
     notes = [note_en(n) for n in r.get("trend_notes") or []]
-    return [f"(1) Daily {st.trend}: {phase_en(st)} · protected {fmt(getattr(st.protected, 'price', None))} · Weekly {r['weekly_trend']} · "
-            f"trend cap {r['trend_cap'] or 'none'} · mature {'YES' if r['mature'] else 'no'} · Q44 target "
-            f"{' / '.join(fmt(t) for t in r['maturity_targets']) or 'none'} (Daily panel only)",
-            "    trend notes: " + ("; ".join(notes) if notes else "none"),
-            f"(2) {LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} (born {'+'.join(lv['births'])}, tests {lv.get('tests')}, sweeps {lv.get('sweeps')}, "
-            f"{'fresh' if lv['fresh'] else 'not fresh'})   (3) K pullback open ({why_open}), leg {K.get('legs')}   (4) {ps}",
-            f"(5) K line: {'none' if not tl else ('broken (grade +)' if tl['broken'] else 'gone before (no trigger)' if tl.get('broken_before') is not None else 'intact')}   (6) commitment {cm.get('form')} grade "
-            f"{cm.get('grade')}" + (f"   (7) R:R {rk.get('rr')} · entry {fmt(rk.get('entry'))} / SL {fmt(rk.get('sl'))} / target "
-                                   f"{fmt(rk.get('target'))}" if rk else ""),       # legacy rr_step फक्त (Abhi 13 Oct)
-            f"(8) {vline}",
-            f"{label_text(r)} · missing: {', '.join(r.get('missing') or []) or 'none'} · {status}"]
+    hs = cm.get("handover_state") or {}
+    ch = cm.get("choch") or {}
+    t16 = (lambda x: str(x)[:16] if x else "-")                           # noqa: E731
+    return [f"(1) Trend: Daily {st.trend} {phase_en(st)} · protected {fmt(getattr(st.protected, 'price', None))} · Weekly "
+            f"{r['weekly_trend']} · context: " + ("; ".join(notes) if notes else "none"),
+            f"(2) Area: {LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} · {str(lv.get('state') or 'ACTIVE').lower()} · born "
+            f"{'+'.join(lv['births'])} · tests {lv.get('tests')} · sweeps {lv.get('sweeps')}{LV.level_tags(lv)}",
+            f"(3) Arrival: visit since {t16(cm.get('visit_start'))} · approach leg from {t16(cm.get('approach_from'))} · pullback open "
+            f"({why_open})",
+            f"(4) Inside the area: handover {'present' if cm.get('handover_present') else 'absent'}"
+            + (f" ({hs.get('form')}, seen {t16(hs.get('seen_ts'))})" if hs.get("form") else "")
+            + (" · absorption" if cm.get("absorption") else ""),
+            f"(5) Commitment: {cm.get('form') or 'none'} · {vline}",
+            f"(6) LTF: {ch.get('line') or 'not read'}",
+            f"(7) {rsi_words(r)}",
+            f"(8) Correction line: {'none' if not tl else ('closed through by the commitment' if tl['broken'] else 'gone before (no trigger)' if tl.get('broken_before') is not None else 'intact')}",
+            f"{label_text(r)} · {evidence_marks(r)} · {status}"]
 
 
 def label_text(r):
@@ -528,19 +580,19 @@ def headline(r, st, vst):
     up = lv["role"] == "support"
     who, other = ("buyers", "sellers") if up else ("sellers", "buyers")
     trend = {"UP": "up", "DOWN": "down", "RANGE": "sideways"}.get(st.trend, str(st.trend).lower())
-    vol = (f"entry candle volume {vst['commit_mult']:.1f}x the study-window average" if vst.get("ok")
-           else "no volume data (grade capped at B)")
+    vol = (f"commitment volume {vst['commit_mult']:.1f}x {VP._engine_what(vst)}" if vst.get("ok") and vst.get("engine")
+           else vst.get("line") or VP.METHOD_NA_LINE)                     # layer 6b: the method's comparison, else the pane's words
     return (f"What to look at: {'bull put' if up else 'bear call'} at 1H {'support' if up else 'resistance'} {lv['lo']:,.0f}-{lv['hi']:,.0f} "
             f"in a Daily {trend} trend - did the {who} take over from the {other} at the area? {vol[0].upper() + vol[1:]}.")
 
 
 def caption(D, r, st, short, longst, head="V22 setup", tail="Reading review only: chart ends at the setup bar, no outcome, no trade, no order.",
-            vline=VP.NA_LINE, vst=None):
+            vline=VP.METHOD_NA_LINE, vst=None):
     """भाग 1: साधं English (headline, trade, volume ओळ). भाग 2 ("Engine detail"): raw engine codes (K leg, births, sweeps, Q44, caps)."""
     rk, lv, cm, K = r.get("risk") or {}, r["level"], r.get("commit") or {}, r.get("K") or {}
     notes = [note_en(x) for x in r.get("trend_notes") or []]
     ts = pd.Timestamp(r["ts"])
-    reading = f"{D.symbol} 15M {ts:%Y-%m-%d %H:%M} · {side_of(r)} · conviction {r['conviction']} · {short}"
+    reading = f"{D.symbol} 15M {ts:%Y-%m-%d %H:%M} · {side_of(r)} · {label_text(r)} · {short}"
     trade = ([f"Trade: entry {fmt(rk.get('entry'))} · stop {fmt(rk.get('sl'))} · target {fmt(rk.get('target'))} · reward/risk {rk.get('rr')}"]
              if rk else [])                                                 # legacy rr_step फक्त — default: SL / target dashboard चे (Abhi 13 Oct)
     cap = "\n".join([
@@ -553,11 +605,10 @@ def caption(D, r, st, short, longst, head="V22 setup", tail="Reading review only
         f"Daily {st.trend} {phase_en(st)}; protected {fmt(getattr(st.protected, 'price', None))}; Weekly {r['weekly_trend']}. "
         f"Trend notes{'' if r.get('verdict_rule', 'method') == 'score' else ' (context only, never cap the label)'}: "
         f"{'; '.join(notes) if notes else 'none'}.",
-        f"Trend cap {r['trend_cap'] or 'none'} · {label_text(r)} (missing "
-        f"{', '.join(r.get('missing') or []) or 'none'}) · impulse mature: {'YES' if r['mature'] else 'no'} (Q44 target "
+        f"{label_text(r)} · {evidence_marks(r)} · impulse mature: {'YES' if r['mature'] else 'no'} (context; Q44 target "
         f"{' / '.join(fmt(t) for t in r['maturity_targets']) or 'none'})",
-        f"{LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} ({'+'.join(lv['births'])}, sweeps {lv.get('sweeps')}) · K leg {K.get('legs')} · "
-        f"commitment {cm.get('form')} ({cm.get('grade')})",
+        f"{LV.tf_word(lv)} {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} ({str(lv.get('state') or 'ACTIVE').lower()}, "
+        f"{'+'.join(lv['births'])}, sweeps {lv.get('sweeps')}) · K leg {K.get('legs')} · commitment {cm.get('form')} · {rsi_words(r)}",
         longst])
     assert all(not (0x0900 <= ord(ch) <= 0x097F) for ch in cap)            # English only
     return reading, cap
@@ -594,12 +645,13 @@ def render(D, r, header="", status=None, path=None, dpi=110, debug=False):
     ax_f = fig.add_subplot(outer[1, :])
     ax_f.axis("off")
     vline = vst["line"]
-    fig.suptitle(f"{D.symbol} {setup_ts:%Y-%m-%d %H:%M} · {side_of(r)} · conviction {r['conviction']} · {short}", fontsize=14,
+    fig.suptitle(f"{D.symbol} {setup_ts:%Y-%m-%d %H:%M} · {side_of(r)} · {label_text(r)} · {short}", fontsize=14,
                  fontweight="bold", x=0.045, ha="left", y=0.990)
     fig.text(0.045, 0.957, headline(r, st, vst), fontsize=11.5, color=C["ink"], ha="left")
     fig.text(0.045, 0.936, (header + " · " if header else "") + f"Weekly {r['weekly_trend']} · Daily {r['daily_trend']} {r['daily_phase']} · "
-             f"trend cap {r['trend_cap'] or 'none'} · impulse mature: {'YES' if r['mature'] else 'no'} · reading review only - no outcome, "
-             "no order", fontsize=10, color=C["muted"], ha="left")
+             + (f"trend cap {r['trend_cap'] or 'none'} · " if r.get("verdict_rule") == "score" else "")
+             + f"impulse mature: {'YES' if r['mature'] else 'no'} (context) · reading review only - no outcome, no order",
+             fontsize=10, color=C["muted"], ha="left")
     ax_f.text(0.0, 0.98, "\n".join(footer_lines(r, st, longst, vline)), fontsize=9.2, va="top", ha="left", family="DejaVu Sans Mono",
               transform=ax_f.transAxes, color=C["ink"])
     out = {"st": st, "short": short, "longst": longst, "vol": vst, "ltf_vol": lst, "vline": vline, "fig": fig, "ltf": has_ltf}

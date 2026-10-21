@@ -31,8 +31,10 @@ def caption(V, r, symbol, count=None):
     """Telegram caption (मराठी, 5–7 ओळी, ≤ 1024). दुसरी ओळ = ① (Daily impulse-degree Dow state) + elliott count सल्ला (Q15 (5))."""
     head = f"🧭 v2.2 {symbol} · {r['ts'][:16]} · " + (f"{r['mark']} {r.get('conviction') or ''}".strip() if r.get("mark")
                                                        else {"wait": "⏳ वाट", "no_trade": "⛔ trade नाही"}.get(r["decision"], r["decision"]))
+    from .setup_chart import evidence_marks
     story = [x for x in CH.story(r).splitlines() if x.strip() != "Commitment: —"]
-    marks = " ".join(f"{k}{'✔' if v[0] else ('✘' if v[0] is False else '·')}" for k, v in r["checklist"].items())
+    marks = evidence_marks(r) if r.get("verdict_rule", "method") == "method" and r.get("evidence_list") else \
+        " ".join(f"{k}{'✔' if v[0] else ('✘' if v[0] is False else '·')}" for k, v in r["checklist"].items())   # layer 6b: §5 list
     one = "① " + r["checklist"]["①"][1] + (f" | {count}" if count else "")
     lines = [head, one[:300]] + story[1:3] + [marks]                     # शीर्षक + ① + कथा ≤ 2 + checklist + अडलं / B1-B2 + disclaimer ≤ 7
     if r["decision"] != "setup":
