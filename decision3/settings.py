@@ -17,7 +17,7 @@ DEFAULTS = {
     "range_after_trend": True,               # Q27 (Abhi): origin तुटला + दोन समान H आणि दोन समान L ⇒ RANGE (कडांवर trade)
     "weekly_min_bars": 10,                   # weekly पालक: यापेक्षा कमी weekly candles ⇒ weekly UNKNOWN
     "daily_swing_method": "pivot",           # pivot (N bars दोन्ही बाजूला) / dc (k_D × σ_D) — Q15: pivot; dc फक्त what-if
-    "daily_pivot_n": 2,
+    "daily_pivot_n": 2,                      # Abhi L1-c: N = 2 provisional (recorded); तो नंतर dashboard वरून बदलू शकतो
     "daily_dc_k": 1.0,                       # θ_D = k_D × σ_D (σ_D = Daily range median)
     "daily_sigma_sessions": 10,              # σ_D साठी Daily candles (warm-up फक्त σ साठी)
     "daily_min_sessions": 10,                # यापेक्षा कमी (≤) Daily candles ⇒ trend UNKNOWN (data अपुरा)
@@ -160,7 +160,8 @@ REGISTER = {
     "range_after_trend": (True, "True / False", "Abhi नियम", "Q27: origin_broken + दोन समान H / L ⇒ RANGE; पट्टा ② / ③ ला"),
     "weekly_min_bars": (10, "—", "Abhi नियम", "daily_min_sessions सारखाच — weekly data अपुरा ⇒ UNKNOWN"),
     "daily_swing_method": ("pivot", "pivot / dc", "setting", "spec ① — pivot default; Q15: N = 1 / DC primary नाहीत (फक्त what-if)"),
-    "daily_pivot_n": (2, "1/2/3", "अंदाज", "spec ① (N config default 2)"),
+    "daily_pivot_n": (2, "1/2/3", "Abhi नियम",
+                      "Abhi L1-c: provisional N = 2; dashboard setting via the live-switches track (spec ① N config default 2)"),
     "daily_dc_k": (1.0, "0.75/1.0/1.5", "अंदाज", "spec ① (k_D config)"),
     "daily_sigma_sessions": (10, "10/15/20", "अंदाज", "spec ① warm-up फक्त σ साठी, default 10"),
     "daily_min_sessions": (10, "—", "Abhi नियम", "spec §3: Daily unknown फक्त data अपुरा (≤ 10 sessions)"),

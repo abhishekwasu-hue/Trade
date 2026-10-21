@@ -64,15 +64,16 @@ DATA_QUALITY = {                 # is there enough / complete data (method §1 P
     "weekly_min_bars", "daily_min_sessions", "daily_sigma_sessions", "vol_gap_max_frac", "flip_vol_min_coverage",
 }
 CALIBRATION = {                  # Abhi (layer 1 ✅): a swing's significance is judged against the market's own normal movement (σ) at
-                                 # the scale he chose from his own charts — his visual calibration, not a fixed point value: {setting: source}
+                                 # the scale he chose from his own charts — his visual calibration, not a fixed point value; and the values
+                                 # Abhi recorded as PROVISIONAL (his number until he changes it): {setting: source}
     "level_degree": "the zone's structure = the approved D2 (1H trend degree)",
     "tl_degree": "one degree below the zone's structure = the approved D1 (the pullback's legs)",
     "flip_pullback_inner_degree": "one degree below the zone's structure = the approved D1",
+    # provisional (Abhi L1-c): the Daily pivot size keeps N = 2 as his recorded provisional value (REGISTER class "Abhi नियम", same
+    # note); he may change it later from the dashboard (the live-switches track adds that setting)
+    "daily_pivot_n": "Abhi L1-c: provisional N = 2; dashboard setting via the live-switches track",
 }
 PENDING = {                      # still a number in the reading path ⇒ removed in the named layer
-    # Abhi (L1-b): only the swings2 scale stays a calibration. The Daily pivot size has no decided logic yet (C-13 covers "equal" and
-    # maturity) — OPEN_QUESTIONS L1-c, for Abhi
-    "daily_pivot_n": 1,
     # decision3 reads touch_window_bars only behind the legacy visit rules, but facts/dossier `_visits` still counts it (layer 6)
     "touch_window_bars": 6,
 }
@@ -129,9 +130,12 @@ def test_layer_four_lines_are_logic():
 
 def test_layer_one_swings_are_abhis_calibration():
     """Abhi (layer 1 ✅): the approved swings2 D1 / D2 ARE the swing definition — significance against the market's own normal movement
-    at his calibrated scale. Nothing of layer 1 stays PENDING; the scale is a registered calibration setting (advanced dashboard)."""
+    at his calibrated scale. Nothing of layer 1 stays PENDING; the scale is a registered calibration setting (advanced dashboard), and
+    the Daily pivot size N = 2 is Abhi's provisional value (L1-c)."""
     from swings2 import settings as SS
-    assert [k for k, layer in PENDING.items() if layer == 1] == ["daily_pivot_n"]       # L1-c, for Abhi
+    assert not [k for k, layer in PENDING.items() if layer == 1]
+    assert S3.DEFAULTS["daily_pivot_n"] == 2 and "L1-c" in CALIBRATION["daily_pivot_n"]     # Abhi L1-c: provisional N = 2
+    assert S3.REGISTER["daily_pivot_n"][2] == "Abhi नियम" and S3.REGISTER["daily_pivot_n"][3].startswith(CALIBRATION["daily_pivot_n"])
     import inspect
     from decision3 import daily as DD
     from decision3 import method as M
