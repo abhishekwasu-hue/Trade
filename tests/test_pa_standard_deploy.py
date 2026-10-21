@@ -199,9 +199,13 @@ def test_deploy_script_shape():
     src = open(os.path.join(ROOT, "scripts", "deploy_pa_standard_vps.sh"), encoding="utf-8").read()
     assert src.startswith("#!/usr/bin/env bash") and "set -euo pipefail" in src
     assert subprocess.run(["bash", "-n", os.path.join(ROOT, "scripts", "deploy_pa_standard_vps.sh")]).returncode == 0
-    for need in ("/root/pa_standard_prev_settings.json", "bash scripts/deploy_one_bot.sh", "bash scripts/deploy_one_bot.sh --revert",
+    for need in ("/root/pa_standard_prev_settings.json", "bash scripts/deploy_one_bot.sh", "ROLLBACK_FILE",
                  "vision.config set srv2_momentum_reversal vision_mode human_confirm --by abhi", "pa_standard_settings.py apply",
-                 "pa_standard_settings.py revert", "scripts/pa_standard_status.py"):
+                 "helper revert", "helper save", "scripts/pa_standard_status.py", "git show origin/main:scripts/deploy_pa_standard_vps.sh"):
         assert need in src, need
-    assert src.index("pa_standard_settings.py\" save") < src.index("bash scripts/deploy_one_bot.sh\n")   # saved before anything changes
+    assert src.index("helper save --file") < src.index("bash scripts/deploy_one_bot.sh\n")   # saved before anything changes
+    rev = src[src.index('if [ "${1:-}" = "--revert" ]'):src.index("exit 0\nfi")]
+    assert "deploy_one_bot.sh --revert" not in rev and "install_engine_schedule" not in rev   # undoes only this deploy
+    assert rev.index("helper revert") < rev.index("git checkout")                  # settings first; a failed revert stops before the code
+    assert "already at $REF" in src                                                # a pulled checkout refuses (wrong rollback point)
     assert "echo $UPSTOX" not in src and "cat .env" not in src and "cat ./.env" not in src

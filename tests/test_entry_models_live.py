@@ -285,6 +285,17 @@ def test_vision_keys_carry_the_model(db):
     assert VS.find_reusable({**base, "setup_json": j(t1)}, 15)["signal_id"] == sid
 
 
+def test_two_visits_of_one_model_never_expire_each_others_card(db, es):
+    tags = EE.entry_gate_tags({"bar_ts": BAR, "payload": "{}"}, entry("E1"), "BEARISH")
+    t2 = {**tags, "entry_visit": "Z15-7@later"}
+    for _ in range(3):                                                             # three bot cycles, both visits pending
+        g1 = VG.entry_gate(BOT, SYM, "PAPER", "BEARISH", 25100.0, "Resistance", "15M", NOW, 25100.0, 1, 0, tags=tags)
+        g2 = VG.entry_gate(BOT, SYM, "PAPER", "BEARISH", 25100.0, "Resistance", "15M", NOW, 25100.0, 1, 0, tags=t2)
+    rows = VS.rows_with_status(("QUEUED", "RUNNING", "PENDING_HUMAN", "EXPIRED", "APPROVED", "REJECTED"), None)
+    assert len(rows) == 2 and not [r for r in rows if r["status"] == "EXPIRED"]    # one card per visit, no churn
+    assert g1.signal_id != g2.signal_id
+
+
 def test_rejected_model_cooldown_is_per_model(db, es, monkeypatch, tmp_path):
     monkeypatch.setitem(VC.BOT_DEFAULTS, "shadow_cooldown_min", 30)
     monkeypatch.setenv("PAPER_JOURNAL_DB", str(tmp_path / "pj.db"))              # the would-have note of the rejected E1

@@ -213,7 +213,8 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
     now = pd.Timestamp(VS.now_ist())
     day = VS._iso(signal_ts)[:10]
     row = VS.find_open_decision(bot, sym, setup_tf, level, day, path=path, timeout=DB_TIMEOUT,
-                                match=lambda r: _same_model(r, tags))    # E1 / E2 … on one area ⇒ separate rows
+                                match=lambda r: _same_model(r, tags)     # E1 / E2 … on one area ⇒ separate rows; and one row per visit:
+                                and _row_tags(r).get("entry_visit") == (tags or {}).get("entry_visit"))   # two visits never expire each other's card
     if row is not None:
         row, _ = resolve_due(row, s, now, path)
         if row["status"] in ("APPROVED", "REJECTED") and _exec_expired(row, s, now):
