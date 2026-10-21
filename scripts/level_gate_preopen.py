@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bots_common import level_reaction as LR  # noqa: E402
 from bots_common import plain_text as PT  # noqa: E402
+from bots_common import preopen_crux as PC  # noqa: E402
 
 BOT_TFS = {"5M Instant": ("1M", "5M"), "Classic": ("5M", "15M"), "15M SRv2": ("15M", "30M", "60M")}
 ALL_TFS = ("1M", "5M", "15M", "30M", "60M")
@@ -119,6 +120,7 @@ INDEX_BOTS = (
 )
 LABEL_TFS = {"15M SRv2": BOT_TFS["15M SRv2"], "5M Instant": BOT_TFS["5M Instant"], "SR V3 shadow": BOT_TFS["5M Instant"],
              "Classic SR": BOT_TFS["Classic"]}
+CHART_BUDGET_S = 60                                                        # pre-open charts: एका run मध्ये एकूण कमाल वेळ (s)
 ENGINE_STALE_HOURS = 96                                                    # weekend + एक सुट्टी: त्यापेक्षा जुना engine ⇒ ❌ चालू नाही
 ENGINE_TFS = ("1H", "1D")              # decision3 ② Levels: 1H areas (+ a Daily band where no 1H zone overlaps it, Abhi Z-1u)
 
@@ -135,7 +137,7 @@ def bot_status(symbols, get_settings, mcx_fn=None):
             if on(s, sym):
                 out.append({"label": label, "symbol": sym, "source": ES.source_of(s, src_key), "mode": str(s.get("trading_mode", "PAPER")),
                             "pad_pct": s.get("gate_area_pad_pct"), "band_warn_pts": s.get(PT.BAND_WARN_KEY),
-                            "band_warn_rule": s.get(PT.BAND_WARN_RULE_KEY)})
+                            "band_warn_rule": s.get(PT.BAND_WARN_RULE_KEY), PC.SETTING_KEY: s.get(PC.SETTING_KEY)})
     for sym in (mcx_fn() if mcx_fn else ()):
         out.append({"label": "MCX Futures", "symbol": sym, "source": "own", "mode": "PAPER/LIVE (MCX settings)"})
     return out
@@ -314,12 +316,16 @@ def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS, areas=None, na=None,
 
 
 def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn=None, day=None, active=False, engine_fn=None,
-                 now=None, problems=(), engine_cron=False, engine_areas_fn=None):
+                 now=None, problems=(), engine_cron=False, engine_areas_fn=None, crux_on=None, views=None, chart_fn=None):
     """एकच संदेश (HTML). ओळ 1 = चालू bot(s) (settings वरून: "Only 15M SRv2 active · signal source: engine · symbols … · mode PAPER"),
     ओळ 2 साधी (काय पाहायचं), ओळ 3 Decision needed; symbol-निहाय एक ओळ (+ ❌ engine / data ओळ) · ── details ── (bot-निहाय areas, MCX, नियम).
     active = bot_status() निकाल (None ⇒ settings वाचता नाही ⇒ ❌; False ⇒ status ओळ नाही — जुने callers). engine_fn(sym) ⇒ computed_at —
     signal source engine / both असलेल्या symbols साठीच तपासणी. engine_cron = one-bot engine cron ओळ आहे (`engine_cron_installed`).
-    active list ⇒ फक्त चालू bots चे पट्टे (engine source ⇒ engine_areas_fn(sym) = `watched_levels`); बंद bots / MCX नियम संदेशात नाहीत."""
+    active list ⇒ फक्त चालू bots चे पट्टे (engine source ⇒ engine_areas_fn(sym) = `watched_levels`); बंद bots / MCX नियम संदेशात नाहीत.
+    Abhi (track F): setting `preopen_charts` (crux_on None ⇒ चालू bots च्या settings वरून, default ON; जुने callers / settings वाचता नाहीत
+    ⇒ बंद) ⇒ "Decision needed" नंतर symbol-निहाय CRUX block (`bots_common.preopen_crux`); बंद ⇒ आजचाच संदेश, अक्षरशः. views = {sym: V22}
+    (pre-open चा तोच engine run ⇒ reader ची रेघ / touch N); chart_fn(sym, facts, weekly, line) ⇒ True (charts तयार) / False / raise ⇒
+    crux ओळीत "(chart unavailable)" — chart कधीच संदेश थांबवत नाही."""
     trend_fn = trend_fn or (lambda sym: LR.daily_trend(sym, token))
     weekly_fn = weekly_fn or (lambda sym: None)
     day = day or dt.date.today().isoformat()
@@ -330,6 +336,13 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
     eng_syms = {a["symbol"] for a in (active or []) if a["source"] in ("engine", "both")}
     plain, det = list(problems), []
     legacy = active is False                                               # जुने callers: सगळे bots (settings माहीत नाहीत)
+    crux, raw = [], {}
+    if engine_areas_fn is not None:                                        # engine चे मूळ पट्टे (state / tf / confluence) crux साठी
+        _areas_fn = engine_areas_fn
+
+        def engine_areas_fn(sym):
+            raw[sym] = _areas_fn(sym)
+            return raw[sym]
     for sym in symbols:
         ctx = trend_fn(sym)
         last = last_close(sym)
@@ -349,6 +362,14 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
                   else nas[0] if len(nas) == len(per_bot) else None)
             plain.append(symbol_line(sym, ctx, wk, last, zones, tfs, areas=[x for _, _, ar, _ in per_bot for x in (ar or [])], na=na,
                                      warn_pts=warn, warn_rule=rule))
+            if (PC.setting_for(active, sym) if crux_on is None else crux_on):
+                try:                                                       # crux कधीच संदेश थांबवत नाही: त्रुटी ⇒ log + crux नाही
+                    cx = crux_block(sym, ctx, wk, last, per_bot, na, raw.get(sym), (views or {}).get(sym), chart_fn)
+                except Exception as exc:                                   # noqa: BLE001
+                    print(f"⚠️ {sym} pre-open crux: {type(exc).__name__}: {exc}")
+                    cx = []
+                if cx:
+                    crux.extend(([""] if crux else []) + cx)
         if sym in eng_syms:
             bad, t = engine_problem(sym, engine_fn or engine_last_run, now, cron_installed=engine_cron)
             if bad:
@@ -384,7 +405,35 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
             "(distance in points from the last close).")
     if active is not False:                                                # ONE_BOT §4: संदेश चालू bot च्या ओळीने सुरू
         head = status_line(active, symbols) + "\n" + head
-    return f"{head}\n{PT.DECISION_NONE}\n\n" + "\n".join(plain) + f"\n{PT.SEP}\n" + "\n".join(det)
+    top = ("\n".join(crux) + "\n\n") if crux else ""                       # Abhi (track F): crux वर, जुना मजकूर खाली तसाच
+    return f"{head}\n{PT.DECISION_NONE}\n\n" + top + "\n".join(plain) + f"\n{PT.SEP}\n" + "\n".join(det)
+
+
+def crux_block(sym, ctx, wk, last, per_bot, na, levels=None, V=None, chart_fn=None):
+    """एका symbol च्या crux ओळी (`preopen_crux.lines`). areas = symbol ओळीतलाच watched list (nearest 3); levels = engine चे मूळ पट्टे;
+    V ⇒ reader ची रेघ (touch N). chart_fn फक्त trend ठीक + last close असताना; त्रुटी / False ⇒ "(chart unavailable)" (log मध्ये कारण)."""
+    ar = nearest([x for _, _, a, _ in per_bot for x in (a or [])], last, 3) if last is not None else []
+    line = None
+    if V is not None and ctx.get("ok"):
+        try:
+            from decision3 import preopen_chart as PCH
+            line = PCH.line_facts(V, ctx.get("trend"))
+        except Exception as exc:                                           # noqa: BLE001 — रेघ फक्त माहिती
+            print(f"⚠️ {sym} line facts: {type(exc).__name__}: {exc}")
+    try:
+        from engine3_live import tradeable_levels
+        lv = tradeable_levels(levels) if levels else None
+    except Exception:                                                      # noqa: BLE001
+        lv = None
+    f = PC.facts(ctx, last, ar, lv, (line or {}).get("tags"))
+    ok = True
+    if chart_fn is not None and ctx.get("ok") and last is not None:
+        try:
+            ok = bool(chart_fn(sym, f, wk, line))
+        except Exception as exc:                                           # noqa: BLE001 — chart कधीच संदेश थांबवत नाही
+            print(f"⚠️ {sym} pre-open charts: {type(exc).__name__}: {exc}")
+            ok = False
+    return PC.lines(sym, ctx, wk, last, f, na=na, chart_ok=ok)
 
 
 def one_bot_problems(status_fn=None):
@@ -420,6 +469,8 @@ def main(argv=None):
     ap.add_argument("--symbols", default=None, help="default: dashboard signal_symbols (त्या यादीबाहेरचे वगळले)")
     ap.add_argument("--no-telegram", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="फक्त छाप — Telegram ला पाठवत नाही (--no-telegram सारखंच)")
+    ap.add_argument("--no-charts", action="store_true", help="charts बनवत नाही (crux setting प्रमाणे राहतो)")
+    ap.add_argument("--charts-dir", default=None, help="charts PNG इथे सुद्धा जतन करा (review)")
     a = ap.parse_args(argv)
     import cloud_db
     token = cloud_db.get_effective_upstox_token(None)
@@ -470,7 +521,7 @@ def main(argv=None):
         engine_cron = engine_cron_installed(read_crontab())
     except Exception:                                                      # noqa: BLE001 — खात्री नाही ⇒ ❌ कायम
         engine_cron = False
-    feed = {}
+    feed, views, pngs = {}, {}, {}
 
     def engine_areas(sym):
         """engine (decision3) चे शेवटच्या बंद 15M bar चे पट्टे — engine तेच trade करतो. Token नाही / data नाही ⇒ raise (NA + कारण)."""
@@ -481,17 +532,84 @@ def main(argv=None):
         if "f" not in feed:
             feed["f"] = L3.UpstoxFeed(token, today)
         # Z-1o: live engine सारखाच 1m (engine3_use_1m dashboard setting; OFF ⇒ 1m मागवत नाही) ⇒ pre-open पट्टे = engine चे पट्टे
-        return L3.watched_levels(sym, feed["f"], ES._naive(ES.now_ist()), ES.engine3_settings(sym))
+        if a.no_charts or not PC.setting_for(active, sym):
+            return L3.watched_levels(sym, feed["f"], ES._naive(ES.now_ist()), ES.engine3_settings(sym))
+        keep = {}                                                          # Abhi (track F): तोच V22 charts साठी (पुन्हा fetch / build नाही)
+        out = L3.watched_levels(sym, feed["f"], ES._naive(ES.now_ist()), ES.engine3_settings(sym), keep=keep)
+        if keep.get("V") is not None:
+            views[sym] = keep["V"]
+        return out
+
+    budget = {}
+
+    def chart_fn(sym, f, wk, line):
+        """Daily / 1H / 15M PNG (रिटर्न True = तिन्ही तयार). V वापरून झाल्यावर लगेच सोडतो (1 GB VPS). सगळ्या charts साठी एकूण
+        CHART_BUDGET_S (पहिल्या chart पासून) — पार ⇒ उरलेले वगळले, संदेश उशिरा नाही."""
+        import time
+        V = views.pop(sym, None)
+        if V is None:
+            print(f"⚠️ {sym} pre-open charts: no engine run to draw from (engine areas not available / signal source not engine)")
+            return False
+        from decision3 import preopen_chart as PCH
+        budget.setdefault("deadline", time.monotonic() + CHART_BUDGET_S)
+        items, errs = PCH.render(V, sym, f, wk, line, deadline=budget["deadline"])
+        del V
+        for e in errs:
+            print(f"⚠️ {sym} pre-open chart {e}")
+        if items:
+            pngs[sym] = items
+        return bool(items) and not errs
 
     msg = build_report(syms, token, lambda s: cloud_db.get_market_zones(s), last_close,
                        trend_fn=lambda s: LR.daily_trend(s, token, fetch=lambda tok, sy: daily_df(sy)),
                        weekly_fn=lambda s: weekly_trend(daily_df(s), today), day=today.isoformat(), active=active,
-                       problems=problems, engine_cron=engine_cron, engine_areas_fn=engine_areas)
+                       problems=problems, engine_cron=engine_cron, engine_areas_fn=engine_areas, views=views,
+                       chart_fn=None if a.no_charts else chart_fn)
+    views.clear()
     print(msg)
+    save_charts(pngs, a.charts_dir)
     if a.no_telegram or a.dry_run:
         return 0
     from notifications import send_telegram_message
-    return 0 if send_checked(msg, send_telegram_message) else 1
+    ok = send_checked(msg, send_telegram_message)
+    send_charts(pngs)                                                      # संदेशानंतर; अयशस्वी ⇒ फक्त log (exit code संदेशाचाच)
+    return 0 if ok else 1
+
+
+def save_charts(pngs, out_dir=None):
+    """charts ची नोंद (stdout) + out_dir दिलं ⇒ PNG जतन. कधीच raise नाही."""
+    for sym, items in (pngs or {}).items():
+        print(f"🖼️ {sym} charts: " + ", ".join(f"{tf} {len(b) // 1024} KB" for tf, b, _ in items))
+        if not out_dir:
+            continue
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+            for tf, b, _ in items:
+                with open(os.path.join(out_dir, f"{sym}_{tf}.png"), "wb") as fh:
+                    fh.write(b)
+        except Exception as exc:                                           # noqa: BLE001
+            print(f"⚠️ charts not saved: {type(exc).__name__}: {exc}")
+
+
+def send_charts(pngs, send=None):
+    """प्रत्येक symbol ⇒ एक media group (Daily / 1H / 15M). अयशस्वी / त्रुटी ⇒ फक्त log — संदेश / engine / bots / exits ला हात नाही."""
+    if not pngs:
+        return {}
+    out = {}
+    try:
+        if send is None:
+            from notifications import send_telegram_media_group as send
+    except Exception as exc:                                               # noqa: BLE001
+        print(f"⚠️ pre-open charts not sent: {type(exc).__name__}: {exc}")
+        return {s: False for s in pngs}
+    for sym, items in pngs.items():
+        try:
+            out[sym] = send([(b, cap) for _, b, cap in items]) is not False
+        except Exception as exc:                                           # noqa: BLE001
+            print(f"⚠️ {sym} pre-open charts: {type(exc).__name__}: {exc}")
+            out[sym] = False
+        print(("✅" if out[sym] else "❌") + f" {sym} pre-open charts " + ("sent" if out[sym] else "NOT sent (text message already sent)"))
+    return out
 
 
 def send_checked(msg, send):
