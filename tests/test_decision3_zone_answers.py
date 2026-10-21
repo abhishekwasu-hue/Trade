@@ -43,6 +43,7 @@ FADE = [(100.9, 100.85, 0.7), (100.85, 101.0, 0.7), (101.0, 100.95, 0.6), (100.9
 ABSORB = [(100.9, 101.9, 1.8), (101.9, 101.7, 0.7), (101.7, 102.6, 2.0), (102.6, 102.4, 0.7)]      # buying candles strengthen again
 SIDEWAYS = [(100.9, 101.1, 0.6), (101.1, 101.0, 0.5), (101.0, 101.15, 0.6), (101.15, 101.05, 0.5), (101.05, 101.2, 0.6),
             (101.2, 101.1, 0.5)]                                     # method §3 absorption: small buying candles keep coming, price stuck
+LEGACY_K = {"entry_gate": "legacy_k"}                               # Abhi 21 Oct: the old ③ gate + the old visit end (exact old behaviour)
 LEGACY_ABSORB = {**S3.load(), "absorption_rule": "strengthening"}     # the #329 read (counter side strengthening), what-if only
 
 
@@ -189,7 +190,7 @@ def _gap_case(drop):
     fut = pd.DataFrame({"timestamp": [t + pd.Timedelta(minutes=5 * j) for t in m15["timestamp"] for j in range(3)],
                         "volume": np.repeat(vol / 3.0, 3), "expiry": pd.Timestamp("2030-03-28")})
     fut = fut[~fut["timestamp"].dt.floor("15min").isin(set(m15["timestamp"].iloc[list(drop)]))]
-    return E3.V22(m15, ltf=split_bars(m15, 15, 3), futures=fut)
+    return E3.V22(m15, ltf=split_bars(m15, 15, 3), futures=fut, s=LEGACY_K)
 
 
 def test_fut_gaps_below_the_limit_average_over_bars_with_volume_and_report_gaps():
@@ -408,12 +409,12 @@ def test_a_close_outside_the_band_away_from_it_ends_the_visit_the_next_needs_a_n
     assert cm["visit_start_bar"] == 738 and cm["handover_present"] is False
 
 
-def _visit_v(rows, swings=(), d=DOWN, lvl=(100.0, 102.0)):
+def _visit_v(rows, swings=(), d=DOWN, lvl=(100.0, 102.0), s=None):
     """A bare V22 for `visit` (structure): rows = (open, high, low, close); swings = (kind, price, bar, confirm_bar) of the finest
     structure degree; one area born at bar 0."""
     from types import SimpleNamespace as NS
     V = E3.V22.__new__(E3.V22)
-    V.s = S3.load()
+    V.s = S3.load(s)
     A = {k: np.array([r[j] for r in rows], float) for j, k in enumerate(("open", "high", "low", "close"))}
     A["volume"] = np.full(len(rows), 1.0)
     V.levels = NS(A=A, _known0=[NS(kind=k, price=float(p), bar=b, confirm_bar=c) for k, p, b, c in swings],
@@ -447,7 +448,8 @@ def test_visit_ends_when_a_commitment_after_the_handover_closes_outside(monkeypa
     trade-side candle AFTER the handover. The same candle without a handover present is only a candle that closed outside."""
     rows = [(98.0, 98.6, 97.8, 98.5), (98.5, 100.6, 98.4, 100.4), (100.4, 100.9, 100.1, 100.3), (100.3, 100.5, 97.6, 97.8),   # 3: dominant
             (97.8, 100.7, 97.7, 100.5)]                                                                                         # red, closes out
-    V, lvl = _visit_v(rows)
+    V, lvl = _visit_v(rows, s=LEGACY_K)                                     # Abhi 21 Oct: this end is legacy_k only (the new default: the
+    # same visit continues — tests/test_decision3_entry_models.py)
     monkeypatch.setattr(V, "handover_episode", lambda A, a, t, d, l: {"present": False})
     assert V.visit(4, lvl, DOWN)["start"] == 1                              # no handover ⇒ the same visit
     monkeypatch.setattr(V, "handover_episode", lambda A, a, t, d, l: {"present": True})
@@ -907,12 +909,12 @@ def test_the_approach_leg_runs_across_a_gap_and_an_earlier_visit():
     a session change or the end of an earlier visit (a failed commitment). No such swing known ⇒ the approach is unknown (None)."""
     rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 98.6, 97.4, 98.5), (98.5, 100.6, 98.4, 100.4), (100.4, 100.5, 98.0, 98.2),   # 2 visit; 3 red
             (100.6, 101.5, 100.5, 101.2)]                                                                                    # 4: gap back in
-    V, lvl = _visit_v(rows, swings=[("L", 96.8, 0, 1)])
+    V, lvl = _visit_v(rows, swings=[("L", 96.8, 0, 1)], s=LEGACY_K)        # the commitment end = legacy_k (Abhi 21 Oct)
     V.handover_episode = lambda A, a, t, d, l: {"present": True}            # bar 3 = a failed commitment after a handover ⇒ visit ends
     vi = V.visit(4, lvl, DOWN)
     assert (vi["start"], vi["prev_end"], vi["ended_by"]) == (4, 3, "commitment")
     assert vi["approach_from"] == 1                                         # from the swing low (bar 0) — across the earlier visit and gap
-    V2, _ = _visit_v(rows)
+    V2, _ = _visit_v(rows, s=LEGACY_K)
     V2.handover_episode = lambda A, a, t, d, l: {"present": True}
     assert V2.visit(4, lvl, DOWN)["approach_from"] is None                  # no structure swing known ⇒ approach unknown, never invented
 
@@ -942,7 +944,7 @@ def test_a_swing_on_the_first_visit_candle_starts_the_next_leg_after_a_failed_co
     approach leg starts after that swing, not after the older one."""
     rows = [(97.0, 97.6, 96.8, 97.5), (97.5, 98.6, 97.4, 98.5), (98.5, 100.4, 96.5, 96.9), (96.9, 99.0, 96.8, 98.8),
             (98.8, 99.2, 97.6, 97.8), (97.8, 98.0, 97.0, 97.8), (97.8, 100.5, 97.7, 100.2)]
-    V, lvl = _visit_v(rows, swings=[("L", 96.8, 0, 1), ("L", 96.5, 2, 3)])
+    V, lvl = _visit_v(rows, swings=[("L", 96.8, 0, 1), ("L", 96.5, 2, 3)], s=LEGACY_K)
     V._failed_commit_outside = lambda i, *a: i == 4                         # the visit (from bar 2) ends at bar 4
     vi = V.visit(6, lvl, DOWN)
     assert (vi["start"], vi["prev_end"], vi["ended_by"], vi["approach_from"]) == (6, 4, "commitment", 3)

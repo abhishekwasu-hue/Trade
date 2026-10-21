@@ -22,7 +22,8 @@ from tests import oct12_fixture as F
 # default नियमावर हाच fixture: tests/test_decision3_flip.py::test_oct12_synthetic_fixture_supply_flips_when_the_first_swing_after_the_break_is_confirmed.
 S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False,   # Z-1m आधीचा fixture — pin
           "level_merge": True, "zone_visit_rule": "touch_window",
-          "commit_volume_rule": "opposite", "line_rule": "sigma"}   # Abhi Z-1u / Z-1v आधीचा fixture — legacy pin, असर्ट तसेच
+          "commit_volume_rule": "opposite", "line_rule": "sigma",   # Abhi Z-1u / Z-1v आधीचा fixture — legacy pin, असर्ट तसेच
+          "entry_gate": "legacy_k"}                                   # Abhi 21 Oct: जुना ③ (K) gate — असर्ट तसेच
 S_OLD = {**S_ROLE, "rr_step": True, "entry_first_bar": False}              # Abhi 13 Oct आधीचे नियम (⑦ R:R + 09:15 फक्त पुरावा) — जुने असर्ट pin
 
 
@@ -274,7 +275,7 @@ def test_replay_day_upstox_source_is_read_only_and_writes_json(monkeypatch, tmp_
     out = tmp_path / "out.json"
     rc = RD.main(["--date", "2030-03-04", "--symbol", "NIFTY", "--source", "upstox", "--futures", str(fpath), "--dry-run",
                   "--json", str(out), "--out-dir", str(tmp_path), "--legacy-rr", "--no-first-bar-entry",
-                  "--flip-rule", "acceptance", "--legacy-zone-gates", "--legacy-bands"])                          # rr असर्ट ⇒ जुने नियम (pin); Z-1 flip pin
+                  "--flip-rule", "acceptance", "--legacy-zone-gates", "--legacy-bands", "--entry-gate", "legacy_k"])   # rr असर्ट ⇒ जुने नियम (pin); Z-1 flip pin
     assert rc == 0 and {c[1] for c in calls} == {"15minute", "5minute", "day"}
     j = json.loads(out.read_text(encoding="utf-8"))
     assert j["setup"]["side"] == "bear call" and j["setup"]["rr"] >= 3 and j["bars"][0]["ts"].endswith("09:15:00")
