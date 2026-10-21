@@ -219,3 +219,45 @@ def test_token_is_checked_with_upstox_not_just_present(stored, code, want, monke
     got = PS.IO().token()
     assert got == want and "abc" not in got                              # the token value is never in the output
     assert seen == ([] if not stored else [(PS.PROFILE_URL, "Bearer abc")])
+
+
+@pytest.mark.parametrize("hhmm,trading,blocked", [((8, 29), True, False), ((8, 30), True, True), ((12, 0), True, True),
+                                                  ((15, 35), True, True), ((15, 36), True, False), ((12, 0), False, False)])
+def test_test_card_refuses_in_market_hours(hhmm, trading, blocked, monkeypatch):
+    """Abhi: a TEST card only when the market is closed — never on a trading day from 08:30 to 15:35 IST (cron warm-up to close)."""
+    import datetime as dt
+    import config
+    from scripts import paper_test_card as TC
+    monkeypatch.setattr(config, "is_trading_day", lambda now: trading)
+    assert TC.market_window(dt.datetime(2026, 1, 7, *hhmm)) is blocked
+
+
+def test_test_card_main_stops_before_any_card_in_market_hours(monkeypatch, capsys):
+    import cloud_db
+    from scripts import paper_test_card as TC
+    monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda acc=None: "tok")
+    monkeypatch.setattr(TC, "in_window", lambda wait_min, now=None: True)
+    monkeypatch.setattr(TC, "run", lambda *a, **k: pytest.fail("no TEST card in market hours"))
+    assert TC.main([]) == 3 and "market hours" in capsys.readouterr().out
+    monkeypatch.setattr(TC, "in_window", lambda wait_min, now=None: False)
+    assert TC.main(["--wait-min", "90"]) == 4                           # a long wait could span the window ⇒ refused
+    assert TC.main(["--wait-min", "0.5"]) == 4
+
+
+def test_test_card_unanswered_is_expired_at_the_end_of_the_wait():
+    from scripts import paper_test_card as TC
+    from types import SimpleNamespace as NS
+    sent, expired, t = [], [], iter(range(0, 10**6, 30))
+    out = TC.run("tok", "NIFTY", 1, sent.append, gate_fn=lambda *a, **k: NS(action="HOLD", signal_id="s9", note=""),
+                 status_fn=lambda sid: "PENDING_HUMAN", sleep=lambda s: None, clock=lambda: next(t),
+                 levels_fn=lambda tok, sym: ("2026-10-19", 1.0, 2.0, 1.5, None), settings_fn=lambda k, s: {}, expire_fn=expired.append)
+    assert out == "EXPIRED" and expired == ["s9"] and "EXPIRED" in sent[-1]
+
+
+@pytest.mark.parametrize("hhmm,wait,blocked", [((8, 15), 10, False), ((8, 25), 10, True), ((15, 30), 10, True), ((15, 36), 30, False)])
+def test_test_card_wait_must_end_outside_the_window(hhmm, wait, blocked, monkeypatch):
+    import datetime as dt
+    import config
+    from scripts import paper_test_card as TC
+    monkeypatch.setattr(config, "is_trading_day", lambda now: True)
+    assert TC.in_window(wait, dt.datetime(2026, 1, 7, *hhmm)) is blocked
