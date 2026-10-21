@@ -115,3 +115,35 @@ HOW TO USE IT
   - the mirror cases hold;
   - no numbers or time logic are left in the reading path (a CI check).
  - Report once per layer in plain words, with charts. No question rounds; use the resolution order above.
+
+8. PA STANDARD CONCEPTS (Abhi 21 Oct) — what each one reads, where it is written down
+ Every concept below is EVIDENCE or STATE, read with the bars known at that bar only. None of them enters, blocks or grades a trade on
+ its own; the entry is the entry models (last item). Each track document has the full definition, its states, its evidence wording and
+ what it is not (docs/knowledge/pa_standard/).
+ - Daily leg nature (T1, t1_daily_leg_read.md, t1_legs_compare.md): a leg is an impulse or a correction by comparison with its
+   neighbouring legs of the same degree (bodies, overlap, volume per bar); no wave count and no ratio decides it (`daily_leg_read =
+   compare`; `elliott` = the old reading, what-if only).
+ - Market state per timeframe (T1, t1_mtf_state.md): Weekly to 5M in one vocabulary (trend up / down, range, transition), each from its
+   own swings.
+ - Area base types and departure (T2, t2_area_types.md): how price came into and left the base (reversal or continuation base) and how
+   strongly it departed, compared with the candles before it.
+ - Confluence (T2, t2_confluence.md): higher-timeframe levels, lines and Fibonacci retracements are labels where they land ON an area or
+   resting liquidity; Fibonacci is never read alone (its ratios are the tool's definition, `pa_fib_ratios`, a declared exception).
+ - Liquidity (T2, t2_liquidity.md): obvious swing extremes not yet traded beyond, and inducement (a minor extreme taken just before the
+   area).
+ - Chart patterns (T4, t4_chart_patterns.md): patterns from the structure swings; a break is real only by a close beyond and a swing
+   beyond, otherwise a fakeout; a pattern is context and a retest level, never a breakout entry.
+ - Candle forms (T5, t5_candle_forms.md): a form is read against its neighbouring candles and counts only at a location (area, level
+   or line).
+ - Volume reads (T5, t5_volume_read.md): leg against leg and candle against its neighbours, per-bar averages of the futures volume;
+   missing futures volume is a data problem.
+ - Hidden divergence (T6, t6_rsi_hidden_divergence.md): in a pullback of a trend, price holds a higher low (lower high) while RSI makes
+   a lower low (higher high), read the classic way against the trend's previous swing; continuation evidence only.
+ - Range edges (T7, t7_range_edges.md): in a range the edges are the areas (bull put at the lower edge, bear call at the upper edge),
+   the range itself read from the structure of that timeframe.
+ - Output objects (T8, t8_output_objects.md): one list of drawn objects shared by the approval chart and the review charts, and a
+   short story per timeframe; display only.
+ - Entry models (E1 aggressive, E2 confirmation, E3 structure, E4 sweep-retest): armed while price visits a valid trade-side area;
+   each fires at most once per visit. E2 and E3 never fire while the zone study reads absorption without a handover. Overlapping
+   areas of the same role visited together are one location: one signal per model per visit (lead's provisional choice, Abhi may
+   override). The dashboard's existing limit of trades per zone applies to these entries as it does to every other entry path.

@@ -36,8 +36,11 @@ CREATE TABLE IF NOT EXISTS engine_consumed (
   bot TEXT NOT NULL, symbol TEXT NOT NULL, bar_ts TEXT NOT NULL, status TEXT, at TEXT, PRIMARY KEY (bot, symbol, bar_ts));
 CREATE TABLE IF NOT EXISTS engine_entry_consumed (
   bot TEXT NOT NULL, symbol TEXT NOT NULL, visit_id TEXT NOT NULL, model TEXT NOT NULL, status TEXT, bar_ts TEXT, at TEXT,
+  direction INTEGER, lo REAL, hi REAL,
   PRIMARY KEY (bot, symbol, visit_id, model));
 """
+# columns added after the first entry-models store (an older engine_entry_consumed table gets them on connect, empty for old rows)
+ENTRY_ZONE_COLS = (("direction", "INTEGER"), ("lo", "REAL"), ("hi", "REAL"))
 
 
 def db_path(path=None):
@@ -50,6 +53,10 @@ def connect(path=None, timeout=5):
     c = sqlite3.connect(p, timeout=timeout)
     c.row_factory = sqlite3.Row
     c.executescript(SCHEMA)
+    have = {r[1] for r in c.execute("PRAGMA table_info(engine_entry_consumed)")}
+    for col, typ in ENTRY_ZONE_COLS:                                     # additive migration only (never drops / rewrites)
+        if col not in have:
+            c.execute(f"ALTER TABLE engine_entry_consumed ADD COLUMN {col} {typ}")
     return c
 
 
@@ -532,14 +539,18 @@ def entry_status(bot, symbol, visit_id, model, path=None):
         return "ERROR"
 
 
-def claim_entry(bot, symbol, visit_id, model, status, bar_ts=None, path=None):
+def claim_entry(bot, symbol, visit_id, model, status, bar_ts=None, path=None, zone=None):
     """Idempotency: the first claim of (bot, symbol, visit_id, model) wins (INSERT OR IGNORE, persisted) ⇒ True; already there ⇒ False.
-    Store error ⇒ False (fail closed: no position). Never raises."""
+    zone = (direction, lo, hi) of the entry's area / cluster (`zone_entries_today` counts by it). Store error ⇒ False (fail closed: no
+    position). Never raises."""
     try:
+        dz, lo, hi = zone if zone else (None, None, None)
         with connect(path) as c:
-            cur = c.execute("INSERT OR IGNORE INTO engine_entry_consumed (bot, symbol, visit_id, model, status, bar_ts, at) VALUES (?,?,?,?,?,?,?)",
+            cur = c.execute("INSERT OR IGNORE INTO engine_entry_consumed (bot, symbol, visit_id, model, status, bar_ts, at, direction, lo, hi) "
+                            "VALUES (?,?,?,?,?,?,?,?,?,?)",
                             (bot, str(symbol).upper(), str(visit_id), str(model).upper(), str(status), None if bar_ts is None else str(bar_ts),
-                             str(now_ist())))
+                             str(now_ist()), None if dz is None else int(dz), None if lo is None else float(lo),
+                             None if hi is None else float(hi)))
             return cur.rowcount == 1
     except Exception as exc:                                             # noqa: BLE001
         print(f"⚠️ engine_signal.claim_entry: {exc}")
@@ -554,3 +565,21 @@ def set_entry_status(bot, symbol, visit_id, model, status, path=None):
                       (str(status)[:200], str(now_ist()), bot, str(symbol).upper(), str(visit_id), str(model).upper()))
     except Exception as exc:                                             # noqa: BLE001
         print(f"⚠️ engine_signal.set_entry_status: {exc}")
+
+
+def zone_entries_today(bot, symbol, day, direction, lo, hi, path=None):
+    """The dashboard execution setting `max_hits_per_zone`, applied to engine entries exactly as the touch paths apply it
+    (`cloud_db.get_zone_hits_today`: today's real entry attempts on the same zone and role — every SKIPPED_* / not-entered row left out):
+    today's engine entries of this bot / symbol (claims ENTERING / EXECUTED / OPEN_FAILED — a trade attempt) on the same side (role) whose
+    area / cluster band overlaps [lo, hi]. day = "YYYY-MM-DD" (the entry bar's day). Store error ⇒ None (the caller enters nothing this
+    cycle, consumes nothing). Never raises."""
+    try:
+        lo, hi = sorted((float(lo), float(hi)))
+        with connect(path) as c:
+            rows = c.execute("SELECT status FROM engine_entry_consumed WHERE bot=? AND symbol=? AND direction=? AND lo IS NOT NULL "
+                             "AND hi IS NOT NULL AND lo<=? AND hi>=? AND substr(COALESCE(bar_ts, at), 1, 10)=?",
+                             (bot, str(symbol).upper(), int(direction), hi, lo, str(day)[:10])).fetchall()
+        return sum(1 for r in rows if not (str(r["status"] or "").startswith(("SKIPPED_", "NOT_ENTERED_"))))
+    except Exception as exc:                                             # noqa: BLE001
+        print(f"⚠️ engine_signal.zone_entries_today: {type(exc).__name__}: {exc}")
+        return None

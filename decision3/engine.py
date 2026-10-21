@@ -113,6 +113,8 @@ class V22:
             raise ValueError("decision3 V22: a legacy zone_visit_rule knows no approach leg — pair it with commit_volume_rule = opposite")
         if self.s.get("entry_gate", "models") not in ENTRY_GATES:          # Abhi 21 Oct: fail at start, never a silent gate
             raise ValueError(f"decision3 V22: unknown entry_gate {self.s['entry_gate']!r} (allowed: {', '.join(ENTRY_GATES)})")
+        if self.s.get("entry_cluster_rule", "cluster") not in ("cluster", "area"):
+            raise ValueError(f"decision3 V22: unknown entry_cluster_rule {self.s['entry_cluster_rule']!r} (allowed: cluster, area)")
         bad = [m for m in (self.s.get("entry_models_on") or ()) if m not in MODELS]
         if bad or isinstance(self.s.get("entry_models_on"), str):
             raise ValueError(f"decision3 V22: entry_models_on accepts a list of {', '.join(MODELS)} (got {self.s.get('entry_models_on')!r})")

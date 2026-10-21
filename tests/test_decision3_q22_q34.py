@@ -71,6 +71,7 @@ def _range_then(segs):
     return bars(pre + segs, start=100.0)
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_q28_corrective_b_sets_no_trend_c_impulse_sets_down():
     """RANGE तुटून (A) low; (B) zigzag वर chop candles (corrective) ⇒ UP नाही; (C) चा (1) आवेगी ⇒ DOWN."""
     d = _range_then([(88, 4, "imp"),                                                             # (A): range खाली
@@ -189,6 +190,7 @@ def test_q33_display_start_after_last_sealed():
     assert HI.sealed_fn("BANKNIFTY") is None and HI.is_nifty("NSE:NIFTY 50")
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_q28_structure_uses_lower_degree_inner_pivots_in_warmup():
     """Review 🔴3: त्याच degree चे pivots आलटून पालटून ⇒ (1) मध्ये आतले pivots नसतात; आतली रचना एक degree खालच्या (N − 1) pivots वरून.
     (1) = a-b-c (आतला 1-दिवसाचा dip) ⇒ corrective ⇒ C warm-up असला तरी trend नाही; पुढचा (1) सरळ ⇒ UP."""
@@ -256,6 +258,7 @@ def test_q27_range_needs_close_inside_band():
 
 
 # ------------------------------------------------------------------------------------------------ Q36 flip gate
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_q36_flip_needs_impulse_leg_else_origin_broken():
     """origin close-through + उलट रचना पण (1) आतून 3-wave (corrective) ⇒ flip नाही, origin_broken (Q23 कमाल B); gate off ⇒ जुना flip."""
     segs = [(120, 4, "line"), (100, 4, "line"), (112, 4, "line"), (92, 5, "line"), (96, 2, "line"), (85, 4, "line"),

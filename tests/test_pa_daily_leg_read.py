@@ -1,5 +1,6 @@
 """Track t1 scope addition (Abhi 21 Oct): `daily_leg_read` = compare | elliott — a Daily leg's nature by comparison with its
-neighbouring legs (decision3/legs_compare) instead of Elliott counts + legs2 percentiles; default stays "elliott" (today) until Abhi's ✅.
+neighbouring legs (decision3/legs_compare) instead of Elliott counts + legs2 percentiles; default "compare" (Abhi ✅ 21 Oct deploy),
+"elliott" = the old reading kept as the what-if.
 Plus: the Elliott display pieces are admin diagnostics (off by default)."""
 import ast
 import inspect
@@ -17,18 +18,18 @@ S = {"daily_min_sessions": 3, "daily_sigma_sessions": 3}
 PATH = [100, 120, 110, 130, 118, 140, 125, 150, 120, 135, 110, 128, 100]
 
 
-def test_setting_registered_default_elliott_and_validated():
-    assert S3.DEFAULTS["daily_leg_read"] == "elliott"
+def test_setting_registered_default_compare_and_validated():
+    assert S3.DEFAULTS["daily_leg_read"] == "compare" and S3.REGISTER["daily_leg_read"][0] == "compare"
     reg = S3.REGISTER["daily_leg_read"]
     assert reg[2] == "Abhi नियम" and "Abhi 21 Oct" in reg[3]
     with pytest.raises(ValueError):
         DD.fold(daily_from_path(PATH, legs=5), {**S, "daily_leg_read": "count"})
 
 
-def test_default_fold_is_todays_elliott_reading():
+def test_default_fold_is_the_compare_reading():
     d = daily_from_path(PATH, legs=5)
     a = DD.fold(d, S)
-    b = DD.fold(d, {**S, "daily_leg_read": "elliott"})
+    b = DD.fold(d, {**S, "daily_leg_read": "compare"})
     assert [(x.trend, x.phase, x.why) for x in a] == [(x.trend, x.phase, x.why) for x in b]
 
 

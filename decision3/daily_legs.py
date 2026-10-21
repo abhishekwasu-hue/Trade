@@ -395,8 +395,8 @@ LEG_READS = ("elliott", "compare")
 
 
 def leg_read(s):
-    """`daily_leg_read` (Abhi 21 Oct): "compare" (legs_compare) / "elliott" (today's reading, what-if). Unknown ⇒ ValueError."""
-    r = (s or {}).get("daily_leg_read", "elliott")
+    """`daily_leg_read` (Abhi 21 Oct): "compare" (legs_compare, default) / "elliott" (the old reading, what-if). Unknown ⇒ ValueError."""
+    r = (s or {}).get("daily_leg_read", "compare")
     if r not in LEG_READS:
         raise ValueError(f"daily_leg_read {r!r} — compare / elliott पैकी")
     return r

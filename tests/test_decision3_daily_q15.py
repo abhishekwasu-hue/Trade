@@ -31,6 +31,7 @@ def _idx_first(st, cond):
     return next(i for i, x in enumerate(st) if cond(x))
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_flat_c_five_waves_down_degree_aware():
     d = daily_from_path(FLAT)
     st = DD.fold(d, S)
@@ -157,6 +158,7 @@ def test_weekly_from_daily_known_at_is_last_day():
 FLAT_B_INNER = FLAT[:2] + [75, 68] + FLAT[2:]
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_b_with_inner_swings_same_behaviour_and_no_target_without_a1_correction():
     d = daily_from_path(FLAT_B_INNER)
     st = DD.fold(d, OB)

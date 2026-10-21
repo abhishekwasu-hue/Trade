@@ -311,6 +311,7 @@ def test_daily_trend_side_rule_keeps_a_flipped_zone_out_of_the_opposite_trade(mi
 
 
 # ------------------------------------------------------------------------------------------------ G4 = context only
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull", "bear"])
 def test_approach_shape_and_volume_are_reported_as_context(mirror):
     for name, vp, a_kind, b_low in (("flip_corrective", 600.0, "corrective", True), ("flip_impulsive", 1500.0, "impulse", False)):
@@ -701,6 +702,45 @@ def test_real_13_oct_no_bear_call(real):
     assert nxt and nxt[0]["lo"] > ZONE[1]                                  # Abhi B2: the next seller zones above are already armed
 
 
+@pytest.fixture(scope="module")
+def real_models():
+    """The `real` inputs under the DEFAULT settings (Abhi 21 Oct: entry_gate = models, daily_leg_read = compare)."""
+    from decision3 import history as HI
+    m15, ltf, fut, m1, daily = real_inputs()
+    return m15, ltf, fut, E3.V22(m15, m1, daily, s=None, ltf=ltf, futures=fut, sealed=HI.sealed_fn("NIFTY"))
+
+
+def test_real_13_oct_models_principle_no_e2_e3_while_absorption_shows_no_handover(real_models):
+    """13 Oct NIFTY under the entry models (Abhi 21 Oct, principle level): price entered the seller zone, small red candles on low volume,
+    no fall, a sideways base — while the zone study reads the opposite side still absorbing with no handover, E2 (commitment) and E3
+    (LTF CHoCH) must NOT fire. E1 / E4 are not forced to "no entry" (reported only). Every entry is on the trend side."""
+    m15, ltf, fut, V = real_models
+    ix = _day_bars(V, "2026-10-13")
+    ts = V.levels.ts
+    seen = []
+    for t in ix:
+        r = V.decide(t)
+        for e in r.get("entries") or []:
+            a = e["area"]
+            print(f"\n{r['ts'][11:16]} {e['model']} {e['name']} @ {a.get('id')} {a.get('lo')}–{a.get('hi')} · {e['side']} · "
+                  f"invalidation {e['invalidation']} · label {e['label']}")
+            seen.append(e)
+            assert r["trend_used"] in ("UP", "DOWN", "RANGE")
+            if r["trend_used"] in ("UP", "DOWN"):
+                assert e["direction"] == M._dir(r["trend_used"])              # H1: only the trend side
+            if e["model"] not in ("E2", "E3") or e["object"] != "area":
+                continue
+            start = int(np.flatnonzero(ts.to_numpy() == np.datetime64(pd.Timestamp(e["visit_start"])))[0])
+            lvl = {"id": a["id"], "lo": float(a["lo"]), "hi": float(a["hi"])}
+            Av, _ = V.vol_view(start, t)
+            ho = V.handover_episode(Av, start, t, e["direction"], lvl)
+            a0 = int(ho.get("window_start", start))
+            zs = M.zone_study(Av, a0, t - 1, e["direction"], V.s) if t - 1 >= a0 else {}
+            assert ho.get("present") or not zs.get("absorption"), \
+                f"{e['model']} fired at {r['ts']} while the zone study reads absorption without a handover: {zs.get('line')}"
+    print(f"13 Oct entries under the models: {[(x['trigger_ts'][11:16], x['model']) for x in seen]}")
+
+
 def test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731(real):
     """Abhi Z-1y (a): the far-side swing is the prior STRUCTURAL swing of the same degree beyond the band — the lower high 22,731.8. The
     12 Oct 09:15 wick to 22,651.10 (its candle closed back inside the band) is a sweep, not a structural swing. 13 Oct never traded past
@@ -725,12 +765,22 @@ def test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731(real):
     assert far is not None and far.price == pytest.approx(FAR_UP, abs=0.1)
 
 
-def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmup(real):
+@pytest.fixture(scope="module")
+def real_elliott():
+    """The `real` inputs under daily_leg_read = "elliott" (the what-if path): the 29 Sep expectation was written on the Elliott Daily
+    reading (Abhi 21 Oct: default = compare) ⇒ pinned explicitly, assertions unchanged."""
+    from decision3 import history as HI
+    m15, ltf, fut, m1, daily = real_inputs()
+    return m15, ltf, fut, E3.V22(m15, m1, daily, s={"entry_gate": "legacy_k", "daily_leg_read": "elliott"}, ltf=ltf, futures=fut,
+                                 sealed=HI.sealed_fn("NIFTY"))
+
+
+def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmup(real_elliott):
     """29 Sep NIFTY (Abhi Z-1s / Z-1t): the 22,725–22,810 1H supply is a Q40 prior Daily level — born only with the Daily warm-up. It
     broke at 09:45 (new lows, no swing below it) and FLIPPED at 11:30 when the first swing low after the break (22,569.65) was CONFIRMED
     — never traded through. The 12:00 rally into the zone is the pullback; 12:00 / 12:15 are judged by the in-zone study (reported, not
     forced). 29 Sep has no FUT bar in trade-data ⇒ never a setup without volume (Z-1c / RF-2)."""
-    m15, ltf, fut, V = real
+    m15, ltf, fut, V = real_elliott
     ix = _day_bars(V, "2026-09-29")
     z = [x for x in V.levels.snapshot(ix[0]) if abs(x["lo"] - 22725.45) < 1.0 and abs(x["hi"] - 22809.9) < 1.0]
     assert z and "a:D-prior" in z[0]["births"] and z[0]["tf"] == "D"      # Abhi Z-1u: its own Daily band, no 1H zone over it

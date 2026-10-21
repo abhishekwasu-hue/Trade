@@ -181,3 +181,12 @@ def _no_live_upstox_token_check(monkeypatch):
     except Exception:                                                    # noqa: BLE001
         return
     monkeypatch.setattr(engine_signal, "token_check", lambda token: "ok")
+
+
+@pytest.fixture
+def elliott_leg_read(monkeypatch):
+    """Abhi 21 Oct: `daily_leg_read` default = "compare" (Daily leg nature by comparison with the neighbouring legs). Tests that encode
+    Elliott readings on crafted fixtures test the "elliott" what-if path ⇒ pinned explicitly with
+    `@pytest.mark.usefixtures("elliott_leg_read")` (their assertions unchanged)."""
+    from decision3 import settings as _S3
+    monkeypatch.setitem(_S3.DEFAULTS, "daily_leg_read", "elliott")

@@ -81,6 +81,22 @@ the pieces they call). Each one is in one of three groups:
 | C-24 | Definitions I coded that are not Abhi's words | Two-candle read: "rejected" = push-side wick longer than the body; "swallowed" = body covers body **and** close beyond candle 1's extreme. Far swing: a swing whose own candle closed back inside the zone is a sweep. RSI at a swing = its extreme inside the swing's span. No opposite-side candle in the visit ⇒ volume not compared, grade cap B (fail-safe). Zone study / dominance windows include visit candles that closed beyond the zone. | Implementations of Abhi's words; each needs his yes / no. | OPEN_QUESTIONS Z-1z-a, Z-1z-d; Abhi to confirm the rest. |
 | C-19 | rsi2 `div_degrees` (0, 1, 2) | Which swing degrees are compared | Tied to C-1 (what a "real swing" is). | **Resolved (Abhi L5-a, final, #344):** divergence read between the consecutive pushes INSIDE the move into the zone, at the highest degree showing ≥ 2 pushes; a swing from before the move is never compared; the zone-degree divergence is also reported. |
 
+## PA standard (Abhi 21 Oct) — settings added by the PA tracks and the entry models
+
+| Setting (default) | Class | What it is | Why it is allowed |
+|---|---|---|---|
+| `pa_fib_ratios` (0.382, 0.5, 0.618, 0.786) | व्याख्या — **declared exception** | Fibonacci retracement levels, reported only where a level lands on an area / resting liquidity (`decision3/confluence_pa.fib_on_areas`) | Abhi rule K7: the ratios are the tool's own definition; Fib is a confluence label only, never alone, never a gate or a score |
+| `daily_leg_read` ("compare") | Abhi नियम (✅ deploy) | A Daily leg's nature by comparison with its neighbouring legs (`decision3/legs_compare`) | No number: replaces the Elliott counts + legs2 C percentiles; `elliott` = legacy what-if (pinned in its own tests) |
+| `entry_gate` ("models") | Abhi नियम | The entry models E1–E4 decide; `legacy_k` = the old ③ BOS + K gate | A switch, no number |
+| `entry_models_on` (E1–E4) | Abhi नियम | Replays / what-if only (live on/off = dashboard `engine3_model_eN_on`) | A switch, no number |
+| `entry_cluster_rule` ("cluster") | अंदाज (lead, provisional) | Overlapping same-role areas visited together = one location: one signal per model per cluster per visit | Overlap is a comparison of bands; no number |
+| `range_state_rule` ("overlap") | Abhi नियम | The row's range state from structure per timeframe (`structure`) or the legacy §5.3 overlap measure | A switch; the legacy overlap numbers (C-20) apply only under `overlap` |
+| `chart_objects` ("off") | setting (display) | The T8 object list drawn on the approval / review charts | Display only |
+| dashboard `max_hits_per_zone` (2) | operational (existing) | Now also applied to engine entries (per area / overlapping cluster, per role, per day), exactly as the touch paths apply it | An existing execution setting; no new number |
+
+E2 / E3 never fire while the zone study reads absorption without a handover: the existing `handover_episode` + `zone_study` readers,
+no number.
+
 ## KB / Method Pack
 
 - K4 zone rules from this round now use logic only:

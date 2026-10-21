@@ -476,6 +476,8 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "engine3_verdict_rule": "",
         "engine3_entry_gate": "",            # engine3_live.METHOD_SWITCHES: "" / models = entry models E1–E4 (decision3 default) ·
                                              # legacy_k = जुना ③ BOS + K pullback gate (deploy शिवाय fallback)
+        "engine3_daily_leg_read": "",        # "" / compare = Daily leg स्वभाव शेजारच्या legs शी तुलनेने (Abhi 21 Oct) · elliott = जुनं वाचन
+        "engine3_entry_cluster_rule": "",    # "" / cluster = एकाच visit मधले overlapping areas = एक location (lead, provisional) · area = वेगळे
         # 🎓 Abhi (entry models E1–E4, decision3 `entries`): कोणते models signal देतात (signal switch फक्त — execution ला हात नाही;
         # paper/engine_entry.model_on, चुकीचं / रिकामं ⇒ default ON). OFF ⇒ त्या model चे signals / cards नाहीत. Execution (lots, legs,
         # strikes, SL / target / TSL, एका वेळी एकच position) = याच पानाचे आजचे settings. `entries` नसलेले engine rows ⇒ जुनाच मार्ग.

@@ -2,7 +2,7 @@
 
 Abhi: numbers left in the reading (decision path / evidence) are replaced with comparative logic — no fixed numbers, no wave-ratio
 prediction. Setting `daily_leg_read` = **compare** | **elliott** (register class "Abhi नियम", source "Abhi 21 Oct").
-**Default stays `elliott`** (today's behaviour) — the default flips only with Abhi's ✅ at deploy.
+**Default `compare`** (Abhi ✅ 21 Oct, deploy decision 6): Elliott ratios leave the reading; `elliott` stays as the what-if. Tests on crafted Elliott fixtures pin `daily_leg_read = elliott` explicitly (`@pytest.mark.usefixtures("elliott_leg_read")`).
 
 ## What `compare` replaces
 

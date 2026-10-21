@@ -1,5 +1,6 @@
 """ABC_FIX (Abhi: TRADE_SESSION_BANKNIFTY_ABC_FIX) — rule 3 / 4 / 5 output, provisional completion restore, no lookahead."""
 import numpy as np
+import pytest
 
 from tests import elliott_fixtures as F
 from decision3 import daily as DD
@@ -70,6 +71,7 @@ def test_engine_step1_records_continuation_evidence_after_sharp_zone_completion(
     assert ok and ctx["trend"] == "DOWN" and ctx["evidence"] and any("continuation evidence" in x for x in ctx["notes"])
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_expanded_flat_provisional_completion_is_restored():
     """b makes a new low beyond the impulse end (provisional completion), c then breaks that provisional origin ⇒ the earlier
     correction state comes back (trend stays DOWN) — the restore path."""
@@ -143,6 +145,7 @@ def test_q44_target_is_first_impulse_leg_extreme_and_inside_window():
     assert "target: none (structure incomplete)" in line
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_q44_caption_target_passed_vs_none():
     """Q44 nit (review): a structural target that protected has already moved beyond ⇒ "target passed" (not "none (structure
     incomplete)"); no structure ⇒ "target: none (structure incomplete)"; a live target ⇒ "target <price>"."""

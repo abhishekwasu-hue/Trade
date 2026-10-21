@@ -11,6 +11,8 @@ Armed while price VISITS a valid (alive, not BROKEN / DEAD) trade-side area:
   E2 Confirmation  — the commitment candle (c0, incl. its volume comparison and the FUT-volume data-problem rule) inside the visit.
                      Invalidation: beyond the visit's extreme.
   E3 Structure     — LTF CHoCH by close inside the visit (c1). Invalidation: beyond the visit's extreme.
+  E2 / E3 never fire while the zone study reads absorption without a handover at the trigger bar (Abhi 21 Oct, the 13 Oct principle:
+  `Reader.absorbing` — the existing handover_episode + zone_study readers, no number); E1 / E4 do not read it.
   E4 Sweep-retest  — (a) price goes beyond the area / the visit's extreme, closes back inside, and the next push (a swing of the finest
                      structure, confirmed) fails inside the sweep extreme; (b) a BROKEN line (channel_lines, close beyond + swing beyond)
                      or a BROKEN area (K4, broken in the trade direction) is revisited and a rejection candle (reversal_form) closes away
@@ -138,6 +140,26 @@ class Reader:
         self.memo[key] = (bool(ok), why, cm)
         return self.memo[key]
 
+    def absorbing(self, u, lvl, d, start):
+        """Abhi 21 Oct (13 Oct principle): E2 / E3 never fire while the zone study reads ABSORPTION WITHOUT A HANDOVER at bar u — the
+        existing readers only: V22.handover_episode (sticky per visit; a later absorption cancels it) and method.zone_study's absorption
+        over the episode's window up to the bar before u (exactly the a2 read method.confirm makes before a commitment). Returns the
+        zone study's line when absorbing without a handover, else None. E1 / E4 never read it (no "no entry" forced on them)."""
+        V = self.V
+        key = ("absorb", lvl.get("parent_level", lvl.get("id")), int(u), int(d), float(lvl["lo"]), float(lvl["hi"]), int(start))
+        if key in self.memo:
+            return self.memo[key]
+        Av, _lab = V.vol_view(start, u)
+        ho = V.handover_episode(Av, start, u, d, lvl)
+        out = None
+        a0 = int(ho.get("window_start", start))
+        if not ho.get("present") and u - 1 >= a0:
+            zs = M.zone_study(Av, a0, u - 1, d, V.s)
+            if zs.get("absorption"):
+                out = "absorption without a handover (zone study: " + (zs.get("line") or "the opposite side still absorbing") + ")"
+        self.memo[key] = out
+        return out
+
     def c1(self, u, lvl, d, start):
         """c1 exactly as V22._confirm reads it: LTF CHoCH by close from the arrival in the area (method.ltf_choch), LTF bars ≤ bar u's close."""
         V = self.V
@@ -246,8 +268,10 @@ class Reader:
         fired = []
         conds = {
             "E1": lambda u: (u == start and w0 == start and self.h2_block(u, lvl, d) is None, None),
-            "E2": lambda u: (self.h2_block(u, lvl, d) is None and self.c0(u, lvl, d, start, appr_at(u))[0], None),
-            "E3": lambda u: (self.h2_block(u, lvl, d) is None and bool(self.c1(u, lvl, d, start).get("done")), None),
+            "E2": lambda u: (self.h2_block(u, lvl, d) is None and self.c0(u, lvl, d, start, appr_at(u))[0]
+                             and self.absorbing(u, lvl, d, start) is None, None),
+            "E3": lambda u: (self.h2_block(u, lvl, d) is None and bool(self.c1(u, lvl, d, start).get("done"))
+                             and self.absorbing(u, lvl, d, start) is None, None),
             "E4": lambda u: ((r := self.sweep(u, lvl, d, start)) is not None and self.h2_block(u, lvl, d) is None, r),
         }
         for m in MODELS:
@@ -292,9 +316,14 @@ class Reader:
             return blk
         if m == "E2":
             ok, why, cm = self.c0(t, lvl, d, start, appr_at(t))
+            if ok:
+                return self.absorbing(t, lvl, d, start) or "no commitment"
             return why or "no commitment"
         if m == "E3":
-            return self.c1(t, lvl, d, start).get("line") or "no LTF CHoCH yet"
+            ch = self.c1(t, lvl, d, start)
+            if ch.get("done"):
+                return self.absorbing(t, lvl, d, start) or "no LTF CHoCH yet"
+            return ch.get("line") or "no LTF CHoCH yet"
         F = self.P_far(lvl, d)
         if not any(self.P(i, d) > F for i in range(start, t + 1)):
             return "no sweep yet (price has not gone beyond the area's far edge / the visit's extreme and closed back)"
@@ -501,12 +530,13 @@ def read(V, t, trend, act):
     {entries, armed, waiting (text), best (row area dict), best_eval (6a facts for the row)}."""
     R = Reader(V)
     A = R.A
-    armed, entries = [], []
+    armed, entries, cands = [], [], []
     first_area = None
     for lvl in act:
         d = M._dir(trend, lvl["role"])
         if d == 0:
             continue
+        cands.append((lvl, d))
         a, fired = R.area(t, lvl, d)
         if a is None:
             continue
@@ -514,6 +544,8 @@ def read(V, t, trend, act):
         first_area = first_area or (lvl, d, a)
         for f in fired:
             entries.append((f, lvl, d, a))
+    if str(V.s.get("entry_cluster_rule", "cluster")) == "cluster":         # one location = one overlapping cluster (lead, provisional)
+        entries = clusters(armed, entries, cands)
     if trend in ("UP", "DOWN"):
         d = M._dir(trend)
         b_armed, b_fired = R.broken(t, d)
@@ -544,15 +576,99 @@ def read(V, t, trend, act):
             area = {"id": lvl["id"], "tf": "line", "role": a["role"], "lo": v, "hi": v, "state": "BROKEN", "line": a.get("line")}
         m = f["model"]
         name = NAME[m] + (f" ({f['variant']})" if m == "E4" else "")
+        cl = f.get("cluster")
+        vid, vstart = (cl["visit_id"], cl["visit_start"]) if cl else (a["visit_id"], a["visit_start"])
         out.append({"model": m, "name": name, "direction": int(d), "side": side_of(d), "object": a["object"],
-                    "area": {**area, "object": a["object"]}, "visit_id": a["visit_id"], "visit_start": a["visit_start"],
-                    "key": f"{a['area_id']}|{a['visit_start']}|{m}", "trigger_bar": int(t), "trigger_ts": R.T(t),
+                    "area": {**area, "object": a["object"]}, "visit_id": vid, "visit_start": vstart, "cluster": cl,
+                    "key": f"{vid.split('@')[0]}|{vstart}|{m}", "trigger_bar": int(t), "trigger_ts": R.T(t),
                     "trigger_bar_end": str(V.bar_end[t]), "entry_ref": round(float(A["close"][t]), 2),
                     "invalidation": f["invalidation"], "invalidation_rule": f["invalidation_rule"], "facts": f.get("facts") or {},
                     "label": ev["label"], "evidence": ev["evidence"], "evidence_list": ev["evidence_list"],
                     "channel_evidence": ev["channel_evidence"],
                     "confirming": ev["confirming"], "_eval": ev, "_lvl": lvl})
     return {"entries": out, "armed": armed, "first_area": first_area, "reader": R}
+
+
+def clusters(armed, entries, cands=()):
+    """Lead's provisional rule (Abhi may override; `entry_cluster_rule = cluster`): areas of the same role on the same side whose bands
+    overlap, visited together (all armed at this bar), are ONE location — at most one signal per model per overlapping cluster per visit.
+    Cluster = the connected overlapping bands of one (role, direction) among the armed (visited, not disarmed) areas and the other valid
+    trade-side areas of the watch-list (`cands` = [(lvl, d)] — not visited yet, they still widen the location); its anchor = the visited
+    member whose visit began first (the cluster's visit, so a later-joining area never opens a new one: visit_id = the anchor's). A model already fired
+    on any member earlier in this visit ⇒ a new firing on another member is consumed, not a signal; several members firing the same model
+    at this bar ⇒ one signal (the anchor's if it fired, else the earliest visit). The signal carries every member area; E1's invalidation =
+    beyond the cluster's far edge; E2 / E3's = beyond the cluster's visit extreme (the widest of the members' visits); E4 keeps its own
+    sweep extreme. A single area = a cluster of one (unchanged). Returns the kept (f, lvl, d, a) list; member statuses are annotated."""
+    pool = [a for a in armed if a.get("object") == "area" and not a.get("disarmed")]
+    seen = {(str(a.get("area_id")), int(a["direction"])) for a in armed if a.get("object") == "area"}
+    for lvl, d in cands:                                                   # watch-list areas not visited now: part of the location
+        lid = lvl.get("parent_level", lvl.get("id"))
+        if (str(lid), int(d)) in seen:
+            continue
+        seen.add((str(lid), int(d)))
+        pool.append({"object": "area", "area_id": lid, "tf": lvl.get("tf"), "role": lvl.get("role"), "lo": lvl["lo"], "hi": lvl["hi"],
+                     "state": lvl.get("state"), "direction": int(d), "visit_start_bar": None, "visit_id": None, "_unvisited": True})
+    groups = []
+    for a in sorted(pool, key=lambda x: (str(x.get("role")), int(x["direction"]), float(x["lo"]))):
+        g = groups[-1] if groups else None
+        if g and g["role"] == a.get("role") and g["d"] == int(a["direction"]) and float(a["lo"]) <= g["hi"]:
+            g["m"].append(a)
+            g["hi"] = max(g["hi"], float(a["hi"]))
+        else:
+            groups.append({"role": a.get("role"), "d": int(a["direction"]), "hi": float(a["hi"]), "m": [a]})
+    of = {}
+    for g in groups:
+        mem = g["m"]
+        vis = [x for x in mem if not x.get("_unvisited")]
+        if not vis:
+            continue
+        anchor = min(vis, key=lambda x: (int(x["visit_start_bar"]), str(x["area_id"])))
+        d = g["d"]
+        lo, hi = min(float(x["lo"]) for x in mem), max(float(x["hi"]) for x in mem)
+        ext = [x.get("visit_extreme") for x in vis if x.get("visit_extreme") is not None]
+        info = {"id": f"C{anchor['area_id']}", "anchor": anchor["area_id"], "lo": round(lo, 2), "hi": round(hi, 2),
+                "visit_id": anchor["visit_id"], "visit_start": anchor["visit_start"], "n": len(mem),
+                "members": [{**{k: x.get(k) for k in ("area_id", "tf", "role", "lo", "hi", "state", "visit_id")},
+                             "visited": not x.get("_unvisited")} for x in mem],
+                "far_edge": round(hi if d < 0 else lo, 2),
+                "visit_extreme": None if not ext else round(max(ext) if d < 0 else min(ext), 2)}
+        for x in vis:
+            x["cluster"] = {k: info[k] for k in ("id", "anchor", "lo", "hi", "visit_id", "n")}
+            of[id(x)] = (info, vis, anchor)
+    keep, chosen = {}, {}
+    order = sorted(range(len(entries)), key=lambda i: (0 if of.get(id(entries[i][3])) and entries[i][3] is of[id(entries[i][3])][2]
+                                                       else 1, int(entries[i][3].get("visit_start_bar") or 0),
+                                                       str(entries[i][3].get("area_id"))))
+    for i in order:
+        f, lvl, d, a = entries[i]
+        g = of.get(id(a))
+        if g is None:
+            keep[i] = (f, lvl, d, a)
+            continue
+        info, mem, _anchor = g
+        m = f["model"]
+        earlier = [x for x in mem if (x.get("models") or {}).get(m, {}).get("status") == "fired_earlier"]
+        why = None
+        if earlier:
+            why = (f"{m} already fired in this cluster's visit on area {earlier[0]['area_id']} at "
+                   f"{earlier[0]['models'][m].get('at')} — one location, one signal per model")
+        elif (info["id"], m) in chosen:
+            why = f"{m} fired on overlapping area {chosen[(info['id'], m)]} at this bar — one location, one signal per model"
+        if why:
+            a["models"][m] = {**a["models"][m], "status": "cluster_consumed", "note": why}
+            continue
+        chosen[(info["id"], m)] = a["area_id"]
+        f = dict(f)
+        if info["n"] > 1:
+            word = "above" if d < 0 else "below"
+            if m == "E1":
+                f.update(invalidation=info["far_edge"], invalidation_rule=f"price {word} the cluster's far edge {info['far_edge']:,.2f}")
+            elif m in ("E2", "E3") and info["visit_extreme"] is not None:
+                f.update(invalidation=info["visit_extreme"],
+                         invalidation_rule=f"price {word} the cluster visit's extreme {info['visit_extreme']:,.2f}")
+        f["cluster"] = info
+        keep[i] = (f, lvl, d, a)
+    return [keep[i] for i in range(len(entries)) if i in keep]               # the readers' own order
 
 
 def waiting_text(armed, limit=3):
@@ -571,6 +687,8 @@ def waiting_text(armed, limit=3):
                 ms.append(f"{m} {s}: {str(st.get('waiting'))[:90]}")
             elif s in ("fired_earlier", "fired_outside_hours", "blocked_data_problem"):
                 ms.append(f"{m} {s.replace('_', ' ')} {str(st.get('at'))[11:16]}")
+            elif s == "cluster_consumed":
+                ms.append(f"{m} consumed (overlapping cluster {(a.get('cluster') or {}).get('id')})")
             elif s == "off":
                 ms.append(f"{m} off")
         parts.append(f"{a['object']} {a['area_id']} {a['lo']:,.0f}–{a['hi']:,.0f} (visit {str(a['visit_start'])[:16]}): " + " · ".join(ms))

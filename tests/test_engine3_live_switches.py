@@ -21,7 +21,7 @@ from tests.test_engine3_1m import NOW, PRE, Feed1m, fake_v22_levels  # noqa: F40
 OFF = {"engine3_use_1m": False}
 LEGACY = {"engine3_zone_visit_rule": ("close_away", "touch_window"), "engine3_commit_volume_rule": ("opposite",),
           "engine3_line_rule": ("sigma",), "engine3_div_degree_rule": ("all",), "engine3_verdict_rule": ("score",),
-          "engine3_entry_gate": ("legacy_k",)}
+          "engine3_entry_gate": ("legacy_k",), "engine3_daily_leg_read": ("elliott",), "engine3_entry_cluster_rule": ("area",)}
 
 
 def test_switches_mirror_decision3_settings():

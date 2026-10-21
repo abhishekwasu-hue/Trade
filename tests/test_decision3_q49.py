@@ -24,6 +24,7 @@ def _impulse_end(d, mirror):
     return int(np.argmin(np.abs(ext - _px(F.E, mirror, -F.WICK))))
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("mirror", MIRRORS)
 def test_deep_zigzag_with_5wave_a_stays_a_correction_labelled_A(mirror):
     """very_deep_holds_origin: A = 5-wave, B, C = 5-wave beyond A, parent holds ⇒ trend never flips; the A leg is labelled "A"
@@ -40,6 +41,7 @@ def test_deep_zigzag_with_5wave_a_stays_a_correction_labelled_A(mirror):
     assert any("Q49" in (x.why or "") and "wave A" in x.why for x in st)
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("mirror", MIRRORS)
 def test_negative_control_real_one_two_three_flips_under_b(mirror):
     """Same "1"-"2"-"3" as the deep zigzag, then "4" (holds the end of "1") and "5": the counter-move completes its own same-degree
@@ -58,6 +60,7 @@ def test_negative_control_real_one_two_three_flips_under_b(mirror):
     assert any(x.wave_a is not None and abs(x.wave_a.price - a_end) < 1e-9 for x in st[eb:fl])
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("mirror", MIRRORS)
 def test_abc_fix_shape_5wave_close_beyond_impulse_origin_flips_under_a(mirror):
     """Q49 (a) = ABC_FIX rule 1 (Abhi: BANKNIFTY Feb top ⇒ Mar low is a DOWN impulse): the 5-wave counter-move is "A" only until it
@@ -79,6 +82,7 @@ def test_abc_fix_shape_5wave_close_beyond_impulse_origin_flips_under_a(mirror):
     assert any(x.wave_a is not None for x in st[eb:fl])                    # त्याआधी (origin पलीकडे close नाही) ⇒ "A"
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("mirror", MIRRORS)
 def test_complete_five_does_not_flip_at_the_end_of_3(mirror):
     """Review 🟡3: "1"-"2"-"3" alone (= the deep zigzag's A-B-C) is no flip — the trend holds through the end of "3" and the whole
@@ -104,6 +108,7 @@ def _q49_fixtures():
     return out
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_q49_why_never_claims_a_held_origin_the_close_broke():
     """Review 🟡4: the Q49 text depends on the path — on the Q22 lower-degree path the impulse origin may already be broken, so the
     text names only the parent; any "origin X close ने टिकला" claim must be true on that bar's close. The lower-degree fixture
@@ -154,6 +159,7 @@ def _a_bar(st):
     return next(i for i, x in enumerate(st) if x.wave_a is not None)
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("mirror", MIRRORS)
 def test_chart_label_A_debug_alt_1_and_no_wave_number_on_telegram(mirror):
     """While wave A is open: chart spec carries "A", debug JSON carries alt "1"; trader text (trend line, caption, ① Telegram
@@ -182,6 +188,7 @@ def _q49_render_cases():
              ("lower_degree_a", F.q49_lower_degree_a)) for m in (False, True)]
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("make,mirror", _q49_render_cases())
 def test_chart_draws_A_once_at_the_wave_a_pivot(make, mirror):
     """Review 🟡1 / 🟡2: the rendered chart shows "A" (kind "wave_a") exactly once at the wave-A pivot over the whole wave-A span.
@@ -211,6 +218,7 @@ def test_chart_draws_A_once_at_the_wave_a_pivot(make, mirror):
 
 @pytest.mark.parametrize("make,start", [pytest.param(F.q49_complete_five, 130, id="complete_five"),
                                         pytest.param(F.q49_beyond_impulse_origin, None, id="beyond_impulse_origin")])
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("mirror", MIRRORS)
 def test_wave_a_and_flip_have_no_lookahead(make, start, mirror):
     """Truncation invariance: wave A / alt / trend at bar k are the same with or without later bars (conditions use pivots

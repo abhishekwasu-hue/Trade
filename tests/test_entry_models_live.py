@@ -31,7 +31,7 @@ AREA = {"id": "Z15-7", "tf": "15M", "lo": 25080.0, "hi": 25120.0, "state": "ACTI
 VISIT = "Z15-7@2026-10-06 10:00:00"
 NAMES = {"E1": "Aggressive", "E2": "Confirmation", "E3": "Structure", "E4": "Sweep-retest (a)"}
 ST = {"signal_source": "engine", "trading_mode": "PAPER", "lots": 1, "naked_lots": 0, "naked_enabled": False, "itm_depth_points": 100,
-      "hedge_width_points": 150}
+      "hedge_width_points": 150, "max_hits_per_zone": 4}   # dashboard: these tests use four models on one area (limit tests below)
 CHAIN = [{"underlying_spot_price": 25100.0}]
 
 
@@ -475,3 +475,84 @@ def test_h1_keys_are_stable_across_a_cron_rerun(h1_rows):
         [(e["visit_id"], e["model"], e["key"]) for e in first["entries"]]
     seen = [(e["visit_id"], e["model"]) for r in rows for e in r["entries"]]
     assert len(seen) == len(set(seen))                                               # one fire per (visit, model) over the day
+
+
+# ------------------------------------------------------------------------------------------------ max_hits_per_zone (lead 7 b)
+def test_engine_entries_respect_max_hits_per_zone_like_the_touch_paths(es, opened):
+    """The dashboard execution setting `max_hits_per_zone` (default 2, read as the touch paths read it): today's real entries on the same
+    zone + role ≥ the limit ⇒ SKIPPED_MAX_HITS_PER_ZONE, no card; skipped / rejected claims never count."""
+    st = {k: v for k, v in ST.items() if k != "max_hits_per_zone"}       # default 2 (no key), as srv2 / classic / mcx
+    put(es, [entry("E1"), entry("E2"), entry("E3"), entry("E4")])
+    gate_fn, calls = recorder()
+    msg = run(es, settings={**st, "engine3_model_e1_on": False}, gate_fn=gate_fn)   # E1 OFF ⇒ SKIPPED (never counts)
+    assert [o["tag"] for o in opened] == ["ENGINE_E2", "ENGINE_E3"] and len(calls) == 2
+    assert "max_hits_per_zone" in msg and ES.entry_status(BOT, SYM, VISIT, "E4", es) == "SKIPPED_MAX_HITS_PER_ZONE"
+    assert ES.zone_entries_today(BOT, SYM, BAR[:10], -1, 25000.0, 25100.0, es) == 2   # overlapping band ⇒ same zone
+    assert ES.zone_entries_today(BOT, SYM, BAR[:10], 1, 25000.0, 25100.0, es) == 0    # the other role: its own counter
+    assert ES.zone_entries_today(BOT, SYM, BAR[:10], -1, 25200.0, 25300.0, es) == 0   # another zone
+    assert ES.zone_entries_today(BOT, SYM, "2026-10-07", -1, 25080.0, 25120.0, es) == 0   # per day
+    other = {"id": "Z15-9", "tf": "15M", "lo": 25300.0, "hi": 25340.0, "state": "ACTIVE"}
+    put(es, [entry("E1", visit="Z15-9@2026-10-06 10:15:00", area=other)], bar="2026-10-06 10:45:00")
+    run(es, settings=st, now="2026-10-06 10:47", gate_fn=gate_fn)
+    assert [o["tag"] for o in opened][-1] == "ENGINE_E1" and len(opened) == 3          # a different area: its own count
+    run(es, settings={**st, "max_hits_per_zone": 5}, now="2026-10-06 10:47", gate_fn=gate_fn)
+    assert len(opened) == 3                                                         # E4 stays consumed (skipped once ⇒ never again)
+
+
+def test_max_hits_rechecked_after_approval_and_cluster_band_counts(es, opened):
+    st = {**ST, "max_hits_per_zone": 1}
+    cl = {"id": "CZ15-7", "lo": 25060.0, "hi": 25150.0, "n": 2, "visit_id": VISIT,
+          "members": [{"area_id": "Z15-7", "tf": "15M", "lo": 25080.0, "hi": 25120.0, "state": "ACTIVE"},
+                      {"area_id": "Z1H-3", "tf": "1H", "lo": 25060.0, "hi": 25150.0, "state": "ACTIVE"}]}
+    put(es, [entry("E2", cluster=cl), entry("E3", cluster=cl)])
+    gate_fn, calls = recorder("HOLD")
+    run(es, settings=st, gate_fn=gate_fn)
+    assert len(calls) == 2 and not opened                                           # both cards (nothing entered yet)
+    tags = calls[0]["tags"]
+    assert tags["entry_cluster"] == ["Z15-7", "Z1H-3"] and tags["gate"]["cluster"]["id"] == "CZ15-7"
+    assert [a["id"] for a in tags["gate"]["areas"]][:2] == ["Z15-7", "Z1H-3"] or "Z1H-3" in [a["id"] for a in tags["gate"]["areas"]]
+    gate_fn2, _ = recorder("ENTER")
+    msg = run(es, settings=st, gate_fn=gate_fn2)                                     # both ✅: the first enters, the second hits the limit
+    assert [o["tag"] for o in opened] == ["ENGINE_E2"] and "max_hits_per_zone" in msg
+    assert ES.entry_status(BOT, SYM, VISIT, "E3", es) == "SKIPPED_MAX_HITS_PER_ZONE"
+    assert ES.zone_entries_today(BOT, SYM, BAR[:10], -1, 25140.0, 25145.0, es) == 1   # the cluster's band was recorded
+    # ✅ arrives while another entry used the zone in the meantime ⇒ checked again after the gate, before the position
+    put(es, [entry("E4", cluster=cl)], bar="2026-10-06 10:45:00")
+
+    def gate_meanwhile(*a, **k):
+        ES.claim_entry(BOT, SYM, "other@x", "E1", "EXECUTED", "2026-10-06 10:44:00", es, zone=(-1, 25070.0, 25090.0))
+        return G("ENTER")
+    msg = run(es, settings={**st, "max_hits_per_zone": 2}, now="2026-10-06 10:47", gate_fn=gate_meanwhile)
+    assert "skip (after ✅)" in msg and len(opened) == 1
+
+
+def test_zone_count_store_error_enters_nothing_and_consumes_nothing(es, opened, monkeypatch):
+    put(es, [entry("E1")])
+    monkeypatch.setattr(ES, "zone_entries_today", lambda *a, **k: None)
+    gate_fn, calls = recorder()
+    msg = run(es, gate_fn=gate_fn)
+    assert not opened and not calls and "could not be counted" in msg and ES.entry_status(BOT, SYM, VISIT, "E1", es) is None
+
+
+def test_old_entry_store_gets_the_zone_columns(tmp_path):
+    p = str(tmp_path / "old.db")
+    c = sqlite3.connect(p)
+    c.execute("CREATE TABLE engine_entry_consumed (bot TEXT NOT NULL, symbol TEXT NOT NULL, visit_id TEXT NOT NULL, model TEXT NOT NULL, "
+              "status TEXT, bar_ts TEXT, at TEXT, PRIMARY KEY (bot, symbol, visit_id, model))")
+    c.execute("INSERT INTO engine_entry_consumed VALUES ('b','NIFTY','v','E1','EXECUTED','2026-10-06 10:30:00','x')")
+    c.commit()
+    c.close()
+    assert ES.claim_entry("b", "NIFTY", "v2", "E2", "EXECUTED", "2026-10-06 10:45:00", p, zone=(-1, 1.0, 2.0))
+    assert ES.entry_status("b", "NIFTY", "v", "E1", p) == "EXECUTED"                   # old rows kept
+    assert ES.zone_entries_today("b", "NIFTY", "2026-10-06", -1, 1.5, 1.6, p) == 1      # an old row (no band) never counts
+
+
+def test_human_confirm_disagree_still_asks_and_a_timeout_gives_no_entry():
+    """Abhi (deploy): vision_mode = human_confirm — Vision audits and shows its verdict; a "disagree" never skips the card (PENDING_HUMAN,
+    ✅ asked) and no reply ⇒ the card expires with factor 0 (no entry)."""
+    s = {**VC.BOT_DEFAULTS}
+    for verdict in ("agree", "gray", "disagree", "unavailable"):
+        d = VD.decide("human_confirm", verdict, s)
+        assert d.status == "PENDING_HUMAN" and d.ask_human and d.timeout_status == "REJECTED" and d.timeout_factor == 0.0
+    assert VC.effective_mode({**s, "vision_mode": "human_confirm"}, "PAPER") == "human_confirm"
+    assert VC.effective_mode({**s, "vision_mode": "human_confirm"}, "LIVE") == "off"          # LIVE never

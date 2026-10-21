@@ -519,6 +519,10 @@ METHOD_SWITCHES = {
     # Abhi 21 Oct (PA standard §3): the entry models E1–E4 decide (decision3 default); legacy_k = the old ③ BOS + K pullback gate + the
     # old visit end, exactly as before the models — the no-deploy fallback for the live PAPER engine.
     "engine3_entry_gate": ("entry_gate", ("models", "legacy_k"), "layer 3 entry gate (entry models E1–E4)"),
+    # Abhi 21 Oct (PA standard T1, ✅ deploy): the Daily leg's nature by comparison with its neighbouring legs; elliott = the old reading.
+    "engine3_daily_leg_read": ("daily_leg_read", ("compare", "elliott"), "layer 1 Daily leg nature"),
+    # Lead (provisional): overlapping same-role areas in one visit = one location (one signal per model per cluster); area = per area.
+    "engine3_entry_cluster_rule": ("entry_cluster_rule", ("cluster", "area"), "layer 3 entry models: one location per overlapping cluster"),
 }
 
 
@@ -865,6 +869,22 @@ def _invalidation_of(e):
     return {"price": px if px == px else None, "rule": None if rule is None else str(rule)}
 
 
+def _cluster_of(c):
+    """decision3 `entry_cluster_rule = cluster`: the overlapping cluster an entry stands for ⇒ {id, anchor, lo, hi, visit_id, n,
+    members [{area_id, tf, lo, hi, state}]} (ids as text). Not a dict ⇒ None."""
+    if not isinstance(c, dict):
+        return None
+    txt = lambda v: None if v is None else (v if isinstance(v, (str, int, float)) and not isinstance(v, bool) else str(v))  # noqa: E731
+    num = lambda v: None if v is None else float(v)  # noqa: E731
+    try:
+        return {"id": txt(c.get("id")), "anchor": txt(c.get("anchor")), "lo": num(c.get("lo")), "hi": num(c.get("hi")),
+                "visit_id": None if c.get("visit_id") is None else str(c["visit_id"]), "n": int(c.get("n") or 0),
+                "members": [{"area_id": txt(m.get("area_id")), "tf": m.get("tf"), "lo": num(m.get("lo")), "hi": num(m.get("hi")),
+                             "state": m.get("state")} for m in (c.get("members") or []) if isinstance(m, dict)]}
+    except (TypeError, ValueError):
+        return None
+
+
 def compact_entries(entries):
     """decision3 `entries` (fired entry models of this bar) ⇒ the contract fields only (model, name, direction, side, object, area {id,
     tf, role, lo, hi, state, object}, visit_id, visit_start, key, trigger_ts, trigger_bar_end, entry_ref, invalidation {price, rule},
@@ -877,6 +897,8 @@ def compact_entries(entries):
         x = {k: e.get(k) for k in ENTRY_KEYS}
         x["area"] = _area_of(e.get("area"))
         x["invalidation"] = _invalidation_of(e)
+        if e.get("cluster") is not None:                                 # one location = the overlapping cluster (its member areas)
+            x["cluster"] = _cluster_of(e.get("cluster"))
         for k in ("trigger_ts", "visit_id", "visit_start", "trigger_bar_end", "key"):
             if x.get(k) is not None:
                 x[k] = str(x[k])

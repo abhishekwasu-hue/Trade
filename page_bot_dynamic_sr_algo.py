@@ -1493,6 +1493,10 @@ def render():
                     "engine3_verdict_rule": "Layer 6a verdict: method = required set ⇒ entry, A / B पुराव्याने · score = जुनं score / weights.",
                     "engine3_entry_gate": "Layer 3 entry gate: models = चार entry models E1–E4 (Abhi 21 Oct, method) · legacy_k = जुना ③ "
                                           "(BOS impulse + K pullback) gate — जुनं वर्तन.",
+                    "engine3_daily_leg_read": "Layer 1 Daily leg: compare = शेजारच्या त्याच degree च्या legs शी तुलना (bodies / overlap; Abhi "
+                                              "21 Oct, method) · elliott = जुनं 5-wave / zigzag / flat + percentiles वाचन.",
+                    "engine3_entry_cluster_rule": "Layer 3 entry models: cluster = एकाच visit मधले, एकाच role चे overlapping areas = एक "
+                                                  "location (प्रत्येक model चा एकच signal; lead provisional) · area = प्रत्येक area वेगळा.",
                 }
                 _sw_shown = {k: _L3.switch_choice(k, engine3_switches[k]) for k in _L3.METHOD_SWITCHES}
                 if st.checkbox("Advanced: method layers (legacy fallback)",

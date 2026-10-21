@@ -275,6 +275,40 @@ def entry_area(e):
     return sorted([lo, hi]) if lo is not None and hi is not None else None
 
 
+def entry_zone(e):
+    """The entry's zone for `max_hits_per_zone`: (direction, lo, hi) of its overlapping cluster (decision3 `entry_cluster_rule`), else
+    of its own area; no band ⇒ None (no zone to count on — as a touch path without a level)."""
+    cl = e.get("cluster") if isinstance(e.get("cluster"), dict) else None
+    a = None
+    if cl and _num(cl.get("lo")) is not None and _num(cl.get("hi")) is not None:
+        a = sorted([_num(cl["lo"]), _num(cl["hi"])])
+    a = a or entry_area(e)
+    try:
+        return None if a is None else (int(e["direction"]), a[0], a[1])
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def max_hits(settings):
+    """The bot's dashboard execution setting `max_hits_per_zone` — read exactly as the touch paths read it (default 2)."""
+    return int((settings or {}).get("max_hits_per_zone", 2))
+
+
+def zone_full(bot, symbol, settings, e, bar, path):
+    """`max_hits_per_zone` for an engine entry (as the touch paths: today's real entries on this zone + role ≥ the limit ⇒ no entry).
+    Returns (status | None, message): "full" ⇒ consume as SKIPPED_MAX_HITS_PER_ZONE; "unknown" (store error) ⇒ nothing this cycle."""
+    z = entry_zone(e)
+    if z is None:
+        return None, ""
+    n = ES.zone_entries_today(bot, symbol, str(bar)[:10], z[0], z[1], z[2], path)
+    lim = max_hits(settings)
+    if n is None:
+        return "unknown", "engine store: zone entries could not be counted ⇒ no entry this cycle"
+    if n >= lim:
+        return "full", f"आजच्या या zone साठी (याच role) कमाल {lim} वेळा मर्यादा आधीच गाठलेली ({z[1]:,.0f}–{z[2]:,.0f}, max_hits_per_zone)"
+    return None, ""
+
+
 def entry_level(r, e):
     """Gate level of one entry: the middle of its area; no area ⇒ its entry_ref; else the row's area (as the single-setup path)."""
     a = entry_area(e)
@@ -300,6 +334,17 @@ def entry_gate_tags(r, e, direction, settings=None):
             areas.insert(0, {"id": ar.get("id"), "role": "support" if int(e["direction"]) > 0 else "resistance", "lo": a[0], "hi": a[1],
                              "tf": ar.get("tf"), "state": ar.get("state"), "confluence_label": None})
         g["areas"] = areas
+    cl = e.get("cluster") if isinstance(e.get("cluster"), dict) else None
+    if cl and isinstance(cl.get("members"), list) and len(cl["members"]) > 1:   # one location = the overlapping cluster: every member area
+        areas = list(g.get("areas") or [])
+        for x in cl["members"]:
+            lo, hi = _num((x or {}).get("lo")), _num((x or {}).get("hi"))
+            if lo is None or hi is None or any(isinstance(y, dict) and _num(y.get("lo")) == lo and _num(y.get("hi")) == hi for y in areas):
+                continue
+            areas.append({"id": x.get("area_id"), "role": "support" if int(e["direction"]) > 0 else "resistance", "lo": lo, "hi": hi,
+                          "tf": x.get("tf"), "state": x.get("state"), "confluence_label": "cluster"})
+        g["areas"] = areas
+        g["cluster"] = {k: cl.get(k) for k in ("id", "lo", "hi", "n", "visit_id")}
     g["grade"] = e.get("label") if e.get("label") in ("A", "B") else None   # this entry's own label (none ⇒ no label, never the row's)
     ev = e.get("evidence")
     el = e.get("evidence_list") if isinstance(e.get("evidence_list"), dict) else ev
@@ -309,7 +354,8 @@ def entry_gate_tags(r, e, direction, settings=None):
             "entry_model": str(e["model"]).upper(), "entry_name": e.get("name") or ES.MODEL_NAMES.get(str(e["model"]).upper()),
             "entry_label": ES.model_label(e), "entry_visit": str(e["visit_id"]), "entry_area_id": ar.get("id"),
             "entry_trigger_ts": None if e.get("trigger_ts") is None else str(e["trigger_ts"]), "entry_ref": e.get("entry_ref"),
-            "entry_invalidation": e.get("invalidation"), "entry_evidence": ev}
+            "entry_invalidation": e.get("invalidation"), "entry_evidence": ev,
+            "entry_cluster": None if not cl else [x.get("area_id") for x in cl.get("members") or [] if isinstance(x, dict)]}
 
 
 def _process_models(bot, access_token, symbol, settings, lot_size, source, now, ents, has_open, gate_fn, open_fn, chain, path,
@@ -343,8 +389,10 @@ def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e,
     direction = ES.DIR_TXT[d]
     who = f"{symbol} {ES.model_label(e)} {direction}"
 
+    zone = entry_zone(e)
+
     def done(status):
-        ES.claim_entry(bot, symbol, visit, m, status, bar, path)
+        ES.claim_entry(bot, symbol, visit, m, status, bar, path, zone=zone)
     if not model_on(settings, m):
         done("SKIPPED_MODEL_OFF")
         return f"{who}: model OFF (dashboard) ⇒ skip"
@@ -356,6 +404,12 @@ def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e,
         return f"{who}: त्या दिशेच्या entries बंद"
     if has_open(symbol, source):                                         # today's rule (bot-wide): one position at a time
         return f"{who}: आधीची position उघडी (एका वेळी एकच) ⇒ पुढच्या cycle ला"
+    full, why = zone_full(bot, symbol, settings, e, bar, path)            # dashboard max_hits_per_zone (as the touch paths)
+    if full == "full":
+        done("SKIPPED_MAX_HITS_PER_ZONE")
+        return f"{who}: {why} ⇒ skip"
+    if full == "unknown":
+        return f"{who}: {why}"
     lots = int(settings["lots"]) if settings.get("credit_spread_enabled", True) else 0          # today's dashboard lots / legs
     naked = int(settings.get("naked_lots", settings["lots"])) if settings.get("naked_enabled", True) else 0
     level = entry_level(r, e)
@@ -376,7 +430,13 @@ def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e,
     if g.action != "ENTER":
         done(f"NOT_ENTERED_{g.action}")
         return f"{who}: नाकारला ({g.note}) ⇒ entry नाही"
-    if not ES.claim_entry(bot, symbol, visit, m, "ENTERING", bar, path):   # at most once per visit per model (persisted)
+    full, why = zone_full(bot, symbol, settings, e, bar, path)            # again after ✅: another entry may have used the zone meanwhile
+    if full == "full":
+        done("SKIPPED_MAX_HITS_PER_ZONE")
+        return f"{who}: {why} ⇒ skip (after ✅)"
+    if full == "unknown":
+        return f"{who}: {why}"
+    if not ES.claim_entry(bot, symbol, visit, m, "ENTERING", bar, path, zone=zone):   # at most once per visit per model (persisted)
         return f"{who}: या visit साठी {m} आधीच घेतला ⇒ दुसरी position नाही"
     try:
         msgs, _spot = open_paper(access_token, symbol, settings, direction, level, lot_size, source, "ENGINE", min(lots, g.lots),

@@ -508,3 +508,107 @@ def test_models_invariants_direction_no_breakout_and_no_look_ahead():
         a, b = rows[t], Vt.decide(t)
         assert (a["decision"], [x["key"] for x in a["entries"]], [(x["area_id"], x.get("models")) for x in a["armed"]]) == \
             (b["decision"], [x["key"] for x in b["entries"]], [(x["area_id"], x.get("models")) for x in b["armed"]]), t
+
+
+# Abhi 21 Oct (13 Oct principle): a supply 100–102; the buyers keep coming in small candles and price does not move away (absorption)
+# with no handover — the dominant red at bar 8 is a commitment and the 5M CHoCH is done, yet E2 / E3 must not fire there.
+ABSORB_ROWS = [(97.0, 97.6, 96.8, 97.5, 1.0), (97.5, 98.6, 97.4, 98.5, 1.0), (98.5, 99.4, 98.4, 99.3, 1.0),
+               (99.3, 100.6, 99.2, 100.4, 1.0),        # 3 enters (E1)
+               (100.4, 101.4, 100.3, 101.3, 1.0),      # 4 green
+               (101.3, 101.4, 100.4, 100.45, 1.0),     # 5 red, closes no lower than the earlier part
+               (100.45, 100.8, 100.4, 100.75, 1.0),    # 6 small green
+               (100.75, 100.95, 100.7, 100.9, 1.0),    # 7 small green — absorption, no handover
+               (100.9, 101.0, 99.0, 99.1, 5.0),        # 8 dominant red on volume (c0) + 5M CHoCH (c1)
+               (99.1, 99.2, 98.0, 98.1, 1.0)]          # 9
+ABSORB_SW = [("L", 96.8, 0, 1)]
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put"])
+def test_e2_e3_never_fire_while_absorption_shows_no_handover_e1_unaffected(mirror, monkeypatch):
+    rows = _mirror_rows(ABSORB_ROWS) if mirror else ABSORB_ROWS
+    V, lvl, d = _bare(ABSORB_ROWS, ABSORB_SW, mirror=mirror, ltf=_ltf_from(rows))
+    st = _statuses(V, lvl, d, range(3, len(ABSORB_ROWS)))
+    fired = {t: [f["model"] for f in st[t][1]] for t in st}
+    R = EM.Reader(V)
+    assert fired[3] == ["E1"]                                              # E1 never reads the zone study (no "no entry" forced)
+    for t in st:                                                           # the principle, bar by bar
+        if R.absorbing(t, lvl, d, 3):
+            assert not {"E2", "E3"} & set(fired[t]), (t, fired[t])
+    m8 = st[8][0]["models"]
+    assert R.absorbing(8, lvl, d, 3) and "absorption" in R.absorbing(8, lvl, d, 3)
+    assert m8["E2"]["status"] == "waiting" and "absorption without a handover" in m8["E2"]["waiting"]
+    assert m8["E3"]["status"] == "waiting" and "absorption without a handover" in m8["E3"]["waiting"]
+    # control: without the absorption read the same bar is a commitment and a CHoCH ⇒ E2 and E3 would fire there
+    V2, lvl2, d2 = _bare(ABSORB_ROWS, ABSORB_SW, mirror=mirror, ltf=_ltf_from(rows))
+    monkeypatch.setattr(EM.Reader, "absorbing", lambda self, *a: None)
+    fired2 = {t: [f["model"] for f in EM.Reader(V2).area(t, lvl2, d2)[1]] for t in range(3, len(ABSORB_ROWS))}
+    assert {"E2", "E3"} <= set(fired2[8])
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put"])
+def test_absorption_with_a_handover_present_does_not_stop_e2(mirror, monkeypatch):
+    """The principle is 'absorption WITHOUT a handover': a handover present (sticky, handover_episode) ⇒ the read stays silent."""
+    rows = _mirror_rows(ABSORB_ROWS) if mirror else ABSORB_ROWS
+    V, lvl, d = _bare(ABSORB_ROWS, ABSORB_SW, mirror=mirror, ltf=_ltf_from(rows))
+    orig = V.handover_episode
+    monkeypatch.setattr(V, "handover_episode", lambda A, a, t, dd, l: {**orig(A, a, t, dd, l), "present": True}, raising=False)
+    assert EM.Reader(V).absorbing(8, lvl, d, 3) is None
+
+
+# Lead's provisional rule (entry_cluster_rule = cluster): overlapping same-role areas visited together = ONE location.
+def _two_areas(mirror):
+    L1 = NS(id=1, born_bar=0, state_at=lambda u: "ACTIVE", events=[], dead_bar=None)
+    V, lvl0, d = _bare(BEAR, SWINGS, mirror=mirror, extra_L=(L1,))
+    b1 = (2 * MID - 103.0, 2 * MID - 101.0) if mirror else (101.0, 103.0)       # overlaps 100–102 (mirror 100–102 as well)
+    lvl1 = {**lvl0, "id": 1, "lo": b1[0], "hi": b1[1], "tf": "15M"}
+    return V, lvl0, lvl1, d
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put"])
+def test_overlapping_areas_in_one_visit_give_one_signal_per_model(mirror):
+    V, lvl0, lvl1, d = _two_areas(mirror)
+    per_area, per_cluster = {}, {}
+    for t in range(3, len(BEAR)):
+        R = EM.Reader(V)
+        armed, ents = [], []
+        for lv in (lvl0, lvl1):
+            a, f = R.area(t, lv, d)
+            if a is not None:
+                armed.append(a)
+                ents += [(x, lv, d, a) for x in f]
+        per_area[t] = [(e[0]["model"], e[3]["area_id"]) for e in ents]
+        kept = EM.clusters(armed, ents, [(lvl0, d), (lvl1, d)])
+        per_cluster[t] = kept
+        for a in armed:                                                   # a consumed firing is listed on the member, never lost
+            for m, st in a["models"].items():
+                if st["status"] == "cluster_consumed":
+                    assert "one location" in st["note"]
+    assert per_area[3] == [("E1", 0)] and per_area[4] == [("E1", 1)]           # per area: E1 twice (old reading)
+    assert per_area[6] == [("E2", 0), ("E2", 1)]                               # per area: E2 twice at the same bar
+    got = {t: [(e[0]["model"], e[3]["area_id"]) for e in k] for t, k in per_cluster.items()}
+    assert got[3] == [("E1", 0)] and got[4] == [] and got[6] == [("E2", 0)]    # one signal per model per cluster
+    e1 = per_cluster[3][0][0]
+    far = 2 * MID - 103.0 if mirror else 103.0
+    assert e1["invalidation"] == pytest.approx(far) and "cluster's far edge" in e1["invalidation_rule"]   # beyond the cluster's far edge
+    cl = per_cluster[6][0][0]["cluster"]
+    assert cl["n"] == 2 and {m["area_id"] for m in cl["members"]} == {0, 1} and cl["visit_id"].startswith("0@")   # the card lists both
+    assert per_cluster[6][0][0]["invalidation"] == pytest.approx(2 * MID - 102.8 if mirror else 102.8)
+
+
+def test_separate_areas_and_the_other_side_are_never_merged():
+    a = {"object": "area", "area_id": 0, "role": "resistance", "direction": -1, "lo": 100.0, "hi": 102.0, "visit_start_bar": 3,
+         "visit_id": "0@x", "visit_start": "x", "models": {"E1": {"status": "fired"}}}
+    b = {**a, "area_id": 1, "lo": 103.0, "hi": 104.0, "visit_id": "1@y", "models": {"E1": {"status": "fired"}}}   # no overlap
+    c = {**a, "area_id": 2, "role": "support", "direction": 1, "models": {"E1": {"status": "fired"}}}            # other side
+    f = {"model": "E1", "invalidation": 1.0, "invalidation_rule": "r"}
+    kept = EM.clusters([a, b, c], [(dict(f), None, -1, a), (dict(f), None, -1, b), (dict(f), None, 1, c)])
+    assert [k[3]["area_id"] for k in kept] == [0, 1, 2] and all(k[0]["cluster"]["n"] == 1 for k in kept)
+    assert all(k[0]["invalidation"] == 1.0 for k in kept)                       # a cluster of one: unchanged
+
+
+def test_entry_cluster_rule_registered_and_validated():
+    assert S3.DEFAULTS["entry_cluster_rule"] == "cluster" and S3.REGISTER["entry_cluster_rule"][1] == "cluster / area"
+    from tests import oct12_fixture as F
+    m15, fut, ltf = F.build(mirror=False)
+    with pytest.raises(ValueError, match="entry_cluster_rule"):
+        E3.V22(m15, s={"entry_cluster_rule": "x"}, ltf=ltf, futures=fut)

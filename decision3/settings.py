@@ -11,9 +11,9 @@ DEFAULTS = {
     "corr_degree_rule": "internal_pullback", # Q22 (Abhi): correction त्याच degree ची ⇔ impulse च्या सर्वात मोठ्या आतल्या pullback पलीकडे
     "corr_degree_frac": 0.5,                 # फक्त corr_degree_rule = "ratio" (जुना, what-if): मागच्या same-degree correction चा भाग
     "daily_start_nature_gate": True,         # Q28 (Abhi): 3-wave / corrective रचना trend लावत नाही — impulse-स्वभावाचा पाय लागतो
-    "daily_leg_read": "elliott",             # Abhi 21 Oct: a Daily leg's nature — "compare" (legs_compare: bodies / overlap vs the
-                                             # neighbouring legs of the same degree) or "elliott" (5-wave / zigzag / flat rules + legs2 C
-                                             # percentiles; today's reading, kept as the what-if). Default flips only with Abhi's ✅.
+    "daily_leg_read": "compare",             # Abhi 21 Oct (✅ deploy): a Daily leg's nature — "compare" (legs_compare: bodies / overlap vs
+                                             # the neighbouring legs of the same degree; Elliott ratios leave the reading) or "elliott"
+                                             # (5-wave / zigzag / flat rules + legs2 C percentiles; the old reading, kept as the what-if)
     "daily_parent_gate": True,               # A1 (Abhi review): counter impulse trend उलटवत नाही जोपर्यंत trend च्या सुरुवातीचा origin close ने तुटत नाही
     "q49_impulse_origin": "complete_impulse",  # Q49 (a) origin: "complete_impulse" = चालू leg पूर्ण 5-wave चा wave 5 असेल तर त्या
                                              # impulse ची सुरुवात (Abhi मंजुरी बाकी); "leg" = साधं वाचन (चालू impulse leg चा origin)
@@ -105,6 +105,8 @@ DEFAULTS = {
                                              # sweep-retest), फक्त आधीच्या थरांच्या outputs वरून (engine.entry_models). "legacy_k" = जुना ③
                                              # (BOS impulse + K pullback) gate + जुना visit शेवट — exact जुनं वर्तन (golden reproduce)
     "entry_models_on": ("E1", "E2", "E3", "E4"),   # replays / what-if: कोणते models चालू (live on/off live थरात, इथे नाही)
+    "entry_cluster_rule": "cluster",         # lead (provisional, Abhi may override): एकाच visit मधले, एकाच role / बाजूचे overlapping areas = एक
+                                             # location ⇒ प्रत्येक model चा एकच signal प्रति cluster प्रति visit. "area" = प्रत्येक area वेगळा (what-if)
     "sharp_reversal_handover": True,         # Abhi Z-1z: zone मध्ये push नाकारला + dominant उलट candle ने गिळला = handover (तुलना, आकडा नाही)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
     "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.
@@ -167,10 +169,10 @@ REGISTER = {
     "corr_degree_frac": (0.5, "0.382/0.5/0.618", "व्याख्या", "फक्त ratio what-if (Q22 आधीचा नियम)"),
     "daily_start_nature_gate": (True, "True / False", "Abhi नियम", "Q28: trend सुरुवात फक्त impulse-स्वभावाच्या पायाने (decision3/daily_legs, Q32 adapter)"),
     "q49_impulse_origin": ("complete_impulse", "complete_impulse / leg", "व्याख्या", "Q49 (a): counter-move correct करत असलेल्या impulse चा origin — विस्तार Abhi मंजूर (OPEN_QUESTIONS Q49)"),
-    "daily_leg_read": ("elliott", "compare / elliott", "Abhi नियम",
+    "daily_leg_read": ("compare", "compare / elliott", "Abhi नियम",
                        "Abhi 21 Oct: Daily leg nature (Q28 / Q36 nature gate, A1 counter-move, Q49 origin, continuation start, G4 approach) "
                        "by comparison with the neighbouring legs (decision3/legs_compare) instead of Elliott counts + legs2 percentiles; "
-                       "elliott = today's reading (what-if). Default stays elliott until Abhi's ✅ at deploy"),
+                       "elliott = the old reading (what-if; tests on crafted Elliott fixtures pin it). Default compare (Abhi ✅ deploy)"),
     "daily_parent_gate": (True, "True / False", "Abhi नियम", "A1: impulse origin तुटला पण parent (trend सुरुवातीचा origin) टिकला ⇒ same-degree correction, flip नाही"),
     "range_after_trend": (True, "True / False", "Abhi नियम", "Q27: origin_broken + दोन समान H / L ⇒ RANGE; पट्टा ② / ③ ला"),
     "weekly_min_bars": (10, "—", "Abhi नियम", "daily_min_sessions सारखाच — weekly data अपुरा ⇒ UNKNOWN"),
@@ -203,6 +205,10 @@ REGISTER = {
                    "(exact old behaviour, golden reproduce)"),
     "entry_models_on": (("E1", "E2", "E3", "E4"), "subset of E1 / E2 / E3 / E4", "Abhi नियम", "Abhi 21 Oct: replays / what-if only — "
                         "per-model on / off for live sits in the live layer"),
+    "entry_cluster_rule": ("cluster", "cluster / area", "अंदाज", "Lead's provisional choice (Abhi may override): overlapping areas of "
+                           "the same role on the same side visited together = ONE location — at most one signal per model per overlapping "
+                           "cluster per visit (the card lists every member area; E1 invalidation = beyond the cluster's far edge); "
+                           "area = each area on its own (the 6852bfc reading, what-if)"),
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
     "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),

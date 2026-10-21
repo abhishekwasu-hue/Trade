@@ -47,6 +47,7 @@ def _bars(d, info, mirror):
     return eb, tb
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("name,mirror", _params("trend"))
 def test_trend_stays_with_prior_impulse_through_the_correction(name, mirror):
     d, info = F.correction_fixture(name, mirror)
@@ -58,6 +59,7 @@ def test_trend_stays_with_prior_impulse_through_the_correction(name, mirror):
     assert not bad, f"{name}: trend left {want} {len(bad)} bars, first {bad[0]} bars after the impulse end"
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("name,mirror", _params("origin"))
 def test_origin_moves_to_the_correction_end_after_continuation(name, mirror):
     """Q45 / ABC_FIX rule 4: once the continuation confirms, protected = the correction's END (not its extreme, not a swing inside
@@ -71,6 +73,7 @@ def test_origin_moves_to_the_correction_end_after_continuation(name, mirror):
     assert st[hit[0]].protected.price == px and st[hit[0]].phase != "origin_broken"
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("name,mirror", _params("family"))
 def test_correction_is_boxed_with_its_family(name, mirror):
     d, info = F.correction_fixture(name, mirror)
@@ -83,6 +86,7 @@ def test_correction_is_boxed_with_its_family(name, mirror):
 
 @pytest.mark.parametrize("name,mirror", [pytest.param(nm, mir, id=f"{nm}-{dn}", marks=_mark(nm, "control", dn))
                                          for nm in F.IMPULSES for dn, mir in DIRS])
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_negative_control_counter_impulse_flips_the_trend(name, mirror):
     """A real 5-wave impulse against the trend (incl. extended 3rd / 5th, leading / ending diagonal) MUST flip it."""
     d, info = F.impulse_control(name, mirror)
@@ -97,6 +101,7 @@ def test_negative_control_counter_impulse_flips_the_trend(name, mirror):
         assert not ((C < org) if mirror else (C > org)).any()
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 def test_acceptance_nifty_wave4_correction_then_wave5():
     """Abhi's NIFTY count: (4) rally breaks the minor origin, not the C start ⇒ DOWN throughout; (5) origin = (4) top."""
     d, info = F.acceptance_nifty()

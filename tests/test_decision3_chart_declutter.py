@@ -723,6 +723,7 @@ def test_accepted_leg_is_solid_impulse_and_default_has_no_not_verified_text(mirr
     assert "dashed = trend leg" in f and "not verified" not in VA.DAILY_SYSTEM_PROMPT
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("mirror", MIRRORS)
 def test_unaccepted_unverified_leg_is_dashed_trend_leg_with_neutral_legend(mirror):
     v = _head(mirror)
@@ -774,6 +775,7 @@ def test_accepted_running_leg_reads_impulse_in_title_caption_and_label(mirror):
     assert "impulse not verified (structure vote:" in dbg and "accepted by Abhi as impulse" in dbg
 
 
+@pytest.mark.usefixtures("elliott_leg_read")   # Abhi 21 Oct: Elliott what-if path (daily_leg_read = compare default)
 @pytest.mark.parametrize("mirror", MIRRORS)
 def test_debug_view_keeps_full_verification_detail(mirror, monkeypatch):
     v0 = _head(mirror)
