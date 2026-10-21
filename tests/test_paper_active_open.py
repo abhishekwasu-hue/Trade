@@ -219,3 +219,23 @@ def test_token_is_checked_with_upstox_not_just_present(stored, code, want, monke
     got = PS.IO().token()
     assert got == want and "abc" not in got                              # the token value is never in the output
     assert seen == ([] if not stored else [(PS.PROFILE_URL, "Bearer abc")])
+
+
+@pytest.mark.parametrize("hhmm,trading,blocked", [((8, 29), True, False), ((8, 30), True, True), ((12, 0), True, True),
+                                                  ((15, 35), True, True), ((15, 36), True, False), ((12, 0), False, False)])
+def test_test_card_refuses_in_market_hours(hhmm, trading, blocked, monkeypatch):
+    """Abhi: a TEST card only when the market is closed — never on a trading day from 08:30 to 15:35 IST (cron warm-up to close)."""
+    import datetime as dt
+    import config
+    from scripts import paper_test_card as TC
+    monkeypatch.setattr(config, "is_trading_day", lambda now: trading)
+    assert TC.market_window(dt.datetime(2026, 1, 7, *hhmm)) is blocked
+
+
+def test_test_card_main_stops_before_any_card_in_market_hours(monkeypatch, capsys):
+    import cloud_db
+    from scripts import paper_test_card as TC
+    monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda acc=None: "tok")
+    monkeypatch.setattr(TC, "market_window", lambda now=None: True)
+    monkeypatch.setattr(TC, "run", lambda *a, **k: pytest.fail("no TEST card in market hours"))
+    assert TC.main([]) == 3 and "market hours" in capsys.readouterr().out
