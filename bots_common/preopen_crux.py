@@ -124,8 +124,14 @@ def facts(ctx, last, areas, levels=None, line_tags=None):
         by_edge = sorted(out["watched"], key=lambda a: (a["dist"], a["lo"] if a["side"] == LR.BEAR else -a["hi"]))
         out["nearest"] = by_edge[0]
         side = out["nearest"]["side"]
-        same = [a for a in by_edge[1:] if a["side"] == side]
-        out["next"] = same[0] if same else None
+        # next = a same-side band that reaches PAST the nearest band's far edge (a band nested inside it is not "next"), ranked by
+        # its distance from that far edge (0 = it overlaps and continues beyond); none ⇒ None (the clause is omitted)
+        n = out["nearest"]
+        if side == LR.BEAR:
+            beyond = [(max(0.0, a["lo"] - n["hi"]), a["hi"], a) for a in by_edge[1:] if a["side"] == side and a["hi"] > n["hi"]]
+        else:
+            beyond = [(max(0.0, n["lo"] - a["hi"]), -a["lo"], a) for a in by_edge[1:] if a["side"] == side and a["lo"] < n["lo"]]
+        out["next"] = min(beyond, key=lambda z: z[:2])[2] if beyond else None
         opp_role = "support" if side == LR.BEAR else "resistance"
         cands = []
         for x in levels or ():
@@ -196,6 +202,6 @@ def lines(sym, ctx, weekly, last, f=None, na=None, chart_ok=True):
     tgt += " · SL / target = dashboard"
     nx = f.get("next")
     if nx:
-        tgt += f" · if it breaks, next: {_kind(nx['side'])} {_rng(nx['lo'], nx['hi'])}" + (f" ({_esc(nx['tf'])})" if nx["tf"] else "")
+        tgt += f" · if the nearest area breaks, next: {_kind(nx['side'])} {_rng(nx['lo'], nx['hi'])}" + (f" ({_esc(nx['tf'])})" if nx["tf"] else "")
     out.append(tgt + ".")
     return out[:5]

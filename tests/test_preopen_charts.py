@@ -94,7 +94,7 @@ def test_crux_from_fake_reader_state_nearest_sequence_invalidation_target():
                         "23,456 (protected).")                                                # engine rule: close + swing beyond
     # target = विरुद्ध बाजूचा सर्वात जवळचा जिवंत support (BROKEN 22,400 tradeable_levels ने वगळला); पुढचा supply = 1H 23,119
     assert nifty[4] == ("Next opposite area (engine): demand 22,610–22,655 (1H, ≈234 pts below) · SL / target = dashboard · "
-                        "if it breaks, next: supply 23,119–23,172 (1H).")
+                        "if the nearest area breaks, next: supply 23,119–23,172 (1H).")
     assert bank[1] == ("Nearest: supply 55,699–55,970 (1H, ≈211 pts above last close 55,488) · flipped (reader role now supply, was demand), "
                        "tested 1× · "
                        "confluence: Daily")
@@ -313,11 +313,11 @@ def test_nearest_is_by_edge_distance_not_midpoint_order():
     assert (ordered[0][1], ordered[0][2]) == (22570.0, 22579.0)                                # the message's own order: midpoint
     f = PC.facts(NIFTY, last, ordered, levels)
     assert (f["nearest"]["lo"], f["nearest"]["hi"], f["nearest"]["dist"]) == (22544.0, 22622.0, 181.0)
-    assert (f["next"]["lo"], f["next"]["hi"]) == (22570.0, 22579.0)
+    assert (f["next"]["lo"], f["next"]["hi"]) == (22723.0, 22732.0)                            # 22,570–22,579 sits inside: not "next"
     out = PC.lines("NIFTY", NIFTY, "UP", last, f)
     assert out[1] == "Nearest: supply 22,544–22,622 (1H, ≈181 pts above last close 22,363) · tested 5× · confluence: none"
     assert out[3].startswith("Invalid: close above 22,622 + a swing beyond it (area broken)")
-    assert out[4].endswith("if it breaks, next: supply 22,570–22,579 (1H).")
+    assert out[4].endswith("if the nearest area breaks, next: supply 22,723–22,732 (1H).")
     assert [(a["lo"], a["hi"]) for a in f["watched"]] == [(x[1], x[2]) for x in ordered]       # everything else unchanged
 
 
@@ -363,3 +363,28 @@ def test_media_group_no_duplicate_on_read_timeout_and_log_never_raises(monkeypat
     assert N.send_telegram_media_group([(b"a", "x"), (b"b", "y")]) is False and calls == ["sendMediaGroup"]   # album कदाचित गेला ⇒ पुन्हा नाही
     monkeypatch.setattr(N.os, "makedirs", lambda *a, **k: (_ for _ in ()).throw(PermissionError("ro")))
     N._log_locally("x")                                                                         # raise नाही
+
+
+def _area(side, lo, hi):
+    return (side, lo, hi, "ENGINE_LEVEL_1H")
+
+
+def test_next_area_must_reach_past_the_nearest_far_edge():
+    """Re-review: "next" = a same-side band extending PAST the nearest band's far edge, ranked from that edge; nested ⇒ never."""
+    last = 22363.0
+    nested = PC.facts(NIFTY, last, [_area(LR.BEAR, 22570.0, 22579.0), _area(LR.BEAR, 22544.0, 22622.0)])
+    assert (nested["nearest"]["lo"], nested["nearest"]["hi"]) == (22544.0, 22622.0) and nested["next"] is None
+    out = PC.lines("NIFTY", NIFTY, "UP", last, nested)
+    assert "if the nearest area breaks" not in out[4] and out[4].endswith("SL / target = dashboard.")   # none ⇒ clause omitted
+    # partly overlapping, its hi beyond the far edge ⇒ allowed (BANKNIFTY-like 55,699–55,970 vs 55,947–56,066)
+    bank = PC.facts(BANK, 55488.0, [_area(LR.BEAR, 55699.0, 55970.0), _area(LR.BEAR, 55947.0, 56066.0),
+                                    _area(LR.BEAR, 56038.0, 56125.0)])
+    assert (bank["next"]["lo"], bank["next"]["hi"]) == (55947.0, 56066.0)                     # overlaps ⇒ distance 0, first
+    # ranked by distance from the far edge, not from the last close
+    far = PC.facts(NIFTY, last, [_area(LR.BEAR, 22500.0, 22600.0), _area(LR.BEAR, 22700.0, 22720.0),
+                                 _area(LR.BEAR, 22520.0, 22590.0), _area(LR.BEAR, 22640.0, 22900.0)])
+    assert (far["next"]["lo"], far["next"]["hi"]) == (22640.0, 22900.0)
+    # demand mirror: below the nearest band's low only
+    up = {"ok": True, "trend": "UP", "sides": {LR.BULL}, "band": None, "protected": None}
+    dem = PC.facts(up, 23000.0, [_area(LR.BULL, 22800.0, 22900.0), _area(LR.BULL, 22820.0, 22880.0), _area(LR.BULL, 22700.0, 22780.0)])
+    assert (dem["nearest"]["lo"], dem["next"]["lo"]) == (22800.0, 22700.0)
