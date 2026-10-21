@@ -106,11 +106,12 @@ def nearest_area(ctx, zones, rng):
     return None
 
 
-def symbol_line(sym, ctx, gate, zones, rng, areas_na=None, warn_pts=None):
+def symbol_line(sym, ctx, gate, zones, rng, areas_na=None, warn_pts=None, warn_rule=None):
     """एका symbol ची साधी ओळ (Abhi चं उदाहरण: "NIFTY: no setup today. Trend DOWN (daily), but price never reached a supply area. Nearest
     supply 22,715–22,776 (≈150 pts above the high). Daily move: mature (context only), near target 22,183.").
     ctx = trend cache (None ⇒ नाही) · gate = LV.summarize निकाल (None ⇒ bot नोंदी वाचता आल्या नाहीत) · rng = {"high", "low"} (None ⇒ नाही).
-    warn_pts = `approval_band_warn_pts` (None ⇒ default 150): पट्ट्याची रुंदी दाखवतो, त्यापेक्षा रुंद ⇒ "⚠️ merged band — check" (Abhi)."""
+    warn_pts = `approval_band_warn_pts` (None ⇒ default 150): पट्ट्याची रुंदी दाखवतो, त्यापेक्षा रुंद ⇒ "⚠️ merged band — check" (Abhi).
+    warn_rule = `approval_band_warn_rule` (layer 6b; None ⇒ "points" = आजचं): "method" ⇒ engine area (ENGINE_LEVEL_…) ला line नाही."""
     from bots_common import level_reaction as LR
     from bots_common import plain_text as PT
     if ctx is None and gate is None and rng is None:
@@ -143,13 +144,15 @@ def symbol_line(sym, ctx, gate, zones, rng, areas_na=None, warn_pts=None):
             if near is None:
                 s.append(f"No {kind} area on the list near today's range.")
             elif near[0] == "inside":
-                wide = "" if round(near[2]) == round(near[3]) else PT.band_wide_words(near[2], near[3], warn_pts)
+                wide = "" if round(near[2]) == round(near[3]) else PT.band_wide_words(near[2], near[3], warn_pts, warn_rule,
+                                                                                             engine_area=str(near[4] or "").startswith("ENGINE_LEVEL"))
                 s.append(f"Price traded into {near[1]} {_band(*near[2:5])} today" + (f", {wide}" if wide else "") + ".")
             else:
                 where = "below the low" if near[1] == "demand" else "above the high"
                 tf = PT.tf_word(near[4])
                 note = PT.zone_note(near[4])                                       # Abhi Z-1u: "confluence: Daily …" label
-                wide = "" if round(near[2]) == round(near[3]) else PT.band_wide_words(near[2], near[3], warn_pts)
+                wide = "" if round(near[2]) == round(near[3]) else PT.band_wide_words(near[2], near[3], warn_pts, warn_rule,
+                                                                                             engine_area=str(near[4] or "").startswith("ENGINE_LEVEL"))
                 s.append(f"Nearest {near[1]} {_band(near[2], near[3], '')} ({(tf + ', ') if tf else ''}{PT.pts(near[5])} {where}"
                          + (f"; {note})" if note else ")")
                          + (f", {wide}" if wide else "") + ".")
@@ -230,7 +233,17 @@ def default_warn_pts(sym):
         return PT.band_warn_pts(None)
 
 
-def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None, range_fn=None, warn_fn=None):
+def default_warn_rule(sym):
+    """Layer 6b: 15M SRv2 settings चा `approval_band_warn_rule`; वाचता नाही ⇒ "points" (आजचं, कधीच raise नाही)."""
+    from bots_common import plain_text as PT
+    try:
+        import cloud_db
+        return PT.band_warn_rule(cloud_db.get_strategy_settings("15m_dynamic_sr", sym) or {})
+    except Exception:                                                      # noqa: BLE001 — फक्त दाखवणं
+        return PT.band_warn_rule(None)
+
+
+def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None, range_fn=None, warn_fn=None, rule_fn=None):
     """symbol-निहाय साध्या ओळी. प्रत्येक dependency injectable (tests — network नाही); कुठलीही चूक ⇒ त्या भागासाठी "not available".
     symbols None ⇒ dashboard चे `signal_symbols` (default NIFTY, BANKNIFTY — SENSEX ची ओळ नाही).
     rows_fn(sym, day) ⇒ (rows, err) — LV.fetch_rows सारखं; rows रिकामे ⇒ आज कुठलाही area armed नाही (armed 0)."""
@@ -243,6 +256,7 @@ def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None,
     zones_fn = zones_fn or default_zones
     range_fn = range_fn or default_range
     warn_fn = warn_fn or default_warn_pts
+    rule_fn = rule_fn or default_warn_rule
     out = []
     for sym in symbols:
         ctx = _safe(ctx_fn, sym, day)
@@ -255,7 +269,8 @@ def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None,
             except Exception as exc:                                       # noqa: BLE001 — areas NA + कारण (तपशील log मध्ये)
                 print(f"⚠️ {sym} areas: {type(exc).__name__}: {exc}")
                 zerr = html.escape(str(exc)[:60] or type(exc).__name__, quote=False)
-        out.append(symbol_line(sym, ctx, gate, zones, _safe(range_fn, sym, day), areas_na=zerr, warn_pts=_safe(warn_fn, sym)))
+        out.append(symbol_line(sym, ctx, gate, zones, _safe(range_fn, sym, day), areas_na=zerr, warn_pts=_safe(warn_fn, sym),
+                               warn_rule=_safe(rule_fn, sym)))
     return "\n".join(out)
 
 

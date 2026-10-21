@@ -132,7 +132,7 @@ def _first(dicts, *keys):
     return None
 
 
-def normalize_info(info):
+def normalize_info(info, words=None):
     """Engine output (level_reaction.evaluate result, vision gate tags, V22 row, किंवा confirmation branch चा a2 / c0 / c1 dict) ⇒
     {arm_bar, arm_ts, commit_bar, commit_ts, d, area, vol_mult, ltf_bar, ltf_ts}. नसलेले keys ⇒ None."""
     info = info or {}
@@ -159,7 +159,8 @@ def normalize_info(info):
     if d is None and lv:
         d = direction_of(lv.get("role"))
     vm = _first(subs, "vol_mult", "commit_vol_mult")
-    return {"arm_bar": arm_bar, "arm_ts": _first(subs, "arm_ts", "study_start_ts", "window_start_ts", "visit_start"),   # V22: the visit
+    arm_keys = ("arm_ts", "study_start_ts", "window_start_ts") + (("visit_start",) if words_of(words) == "method" else ())   # layer 6b:
+    return {"arm_bar": arm_bar, "arm_ts": _first(subs, *arm_keys),       # V22's visit start only with the method's words (live card default)
 
             "commit_bar": commit_bar,
             "commit_ts": _first(subs, "confirm_ts", "commit_ts", "commitment_ts"),
@@ -222,7 +223,7 @@ def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, s
         vol = own_volume(bars) if "volume" in bars.columns and not is_index(symbol) else np.full(n, np.nan)
     vol = np.asarray(vol, dtype=float)
     vol = np.where(vol > 0, vol, np.nan)
-    ni = normalize_info(info)
+    ni = normalize_info(info, words)
     times = bars["timestamp"] if "timestamp" in bars.columns else bars.get("start")
     computed = []
     d = direction_of(d) if d is not None else ni["d"]

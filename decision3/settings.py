@@ -259,7 +259,7 @@ REGISTER = {
 OUTPUT = {
     "approval_band_warn_rule": ("points", ("points", "method"),
                                 "bots_common.plain_text.band_flag / band_wide_words ⇐ vision.approval (ticket), vision.worker (caption), "
-                                "paper.engine_entry (gate tags), scripts.level_gate_preopen (pre-open)"),
+                                "paper.engine_entry (gate tags), scripts.level_gate_preopen (pre-open), scripts.paper_daily_summary (15:45)"),
     "vision_chart_band_finder": ("validity", ("validity", "method"),
                                  "vision.chart.render (only with vision_chart_bands ON) + vision.signal_audit chart note; vision/config.py"),
     "vision_volume_words": ("legacy", ("legacy", "method"),
@@ -277,9 +277,9 @@ REGISTER.update({
     "vision_volume_words": ("legacy", "legacy / method", "setting",
                             "layer 6b display: legacy = 'volume: NA (grade cap B)' + chart window average (today); method = FUT missing "
                             "= data problem (no entry), nothing to compare = no commitment, no chart-side average"),
-    "display_finder (facts dossier)": ("method", "method / validity (legacy R1a)", "setting",
-                                       "layer 6b: the Vision facts dossier reads the decision's own areas / lines / visits; validity = the "
-                                       "R1a facts.validity finder (golden comparison only); not wired live"),
+    "display_finder": ("method", "method / validity (legacy R1a)", "setting",
+                                       "facts/dossier.py DEFAULTS (dossier config, not a V22 setting) — layer 6b: the Vision facts dossier reads the "
+                                       "decision's own areas / lines / visits; validity = the R1a facts.validity finder (golden only); not live"),
 })
 
 TRENDS = ("UP", "DOWN", "RANGE", "NEUTRAL", "UNKNOWN")

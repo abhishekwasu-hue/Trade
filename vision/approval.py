@@ -152,6 +152,7 @@ def ticket_text(row, t, deadline, exec_min):
         g = _tags(row).get("gate") or {}
     except Exception:                                                    # noqa: BLE001 — फक्त माहिती
         g = {}
+    g = g if isinstance(g, dict) else {}                                 # a non-dict gate tag never raises here (review #355)
     flag = PT.band_flag(min(t["area"]), max(t["area"]), g.get("band_warn_pts"), g.get("band_warn_rule"),   # layer 6b: setting
                         engine_area=g.get("mode") == "engine") if t.get("area") else ""                     # (default = points)
     show_rr = bool(t.get("show_rr", True))                               # engine signal + R:R gate बंद ⇒ R:R कुठेच नाही (Abhi)

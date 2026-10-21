@@ -112,3 +112,53 @@ def test_setup_chart_footer_is_the_method_story():
     short, longst = SC.trend_first_status(None, {**r, "trade_side": ["bear_call"], "trend_used": "DOWN", "ts": "2030-03-04 09:30"})
     assert short == "trend side OK" and "%" not in longst
     assert SC.trend_first_status(None, {**r, "trade_side": ["bull_put"], "trend_used": "UP"})[0] == "against the trend side"
+
+
+def test_engine_areas_never_breaks_the_gate_tags():
+    """Review #355: `engine_areas` is display only — a malformed watch list (unhashable id, not a list) ⇒ areas None, tags still built."""
+    base = {"level_lo": 22600.0, "level_hi": 22650.0, "grade": "A"}
+    for wl in ([{"id": [1, 2], "lo": 1.0, "hi": 2.0}], 5, "junk", [None, {"lo": None}]):
+        g = EE.engine_gate_tags({**base, "payload": json.dumps({"watch_list": wl})}, "BEARISH")
+        assert g["mode"] == "engine" and g["area"] == [22600.0, 22650.0] and g["band_warn_rule"] == "points"
+        assert g["areas"] is None or isinstance(g["areas"], list)
+    assert EE.engine_areas({"watch_list": 5}) is None
+
+
+def test_ticket_text_with_a_non_dict_gate_tag():
+    from vision import approval as AP
+    base = {"side": "BEARISH", "entry": 22700.0, "sl": 22790.0, "target": 22400.0, "rr": 3.33, "engine_entry": 22677.0,
+            "src": "engine", "warnings": [], "area": [22300.0, 22750.0]}
+    for gate in ("junk", 5, [1, 2], None):
+        row = {"signal_id": "s1", "symbol": "NIFTY", "setup_tf": "15M", "setup_json": json.dumps({"tags": {"gate": gate}})}
+        txt = AP.ticket_text(row, base, "2026-10-09T12:40:00", 10)
+        assert "area 22,300–22,750 (450 pts)" in txt
+
+
+def test_visit_start_arms_the_pane_only_with_the_method_words():
+    """Review #355: the live card (legacy words) never picks the V22 visit start, even if a tag carried it."""
+    from decision3 import volume_pane as VP
+    info = {"commit": {"visit_start": "2030-01-02 09:45:00"}}
+    assert VP.normalize_info(info)["arm_ts"] is None and VP.normalize_info(info, "legacy")["arm_ts"] is None
+    assert VP.normalize_info(info, "method")["arm_ts"] == "2030-01-02 09:45:00"
+
+
+def test_daily_summary_follows_the_band_rule():
+    import importlib.util
+    import os
+    import pandas as pd
+    spec = importlib.util.spec_from_file_location("pds_l6b", os.path.join(os.path.dirname(__file__), "..", "scripts", "paper_daily_summary.py"))
+    S = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(S)
+    from bots_common import level_reaction as LR
+    ctx = {"ok": True, "trend": "DOWN", "sides": {LR.BEAR}, "band": None, "reason": "Daily DOWN", "protected": 24774.0}
+    zones = pd.DataFrame([{"zone_type": "ENGINE_LEVEL_1H", "zone_low": 22700.0, "zone_high": 23000.0, "status": "ACTIVE"}])
+    gate = {"confirmed": 0, "armed": 0, "ignored": {}}
+    rng = {"high": 22650.0, "low": 22500.0}
+    assert "merged band" in S.symbol_line("NIFTY", ctx, gate, zones, rng)                       # default = today (points)
+    m = S.symbol_line("NIFTY", ctx, gate, zones, rng, warn_rule="method")
+    assert "merged band" not in m and "300 pts wide" in m
+    own = zones.assign(zone_type="DYNAMIC_SR_RESISTANCE_15M")                                  # not an engine area ⇒ points
+    assert "merged band" in S.symbol_line("NIFTY", ctx, gate, own, rng, warn_rule="method")
+    txt = S.symbols_section("2026-10-14", symbols=("NIFTY",), ctx_fn=lambda s, d: ctx, rows_fn=lambda s, d: ([], None),
+                            zones_fn=lambda s: zones, range_fn=lambda s, d: rng, warn_fn=lambda s: 150, rule_fn=lambda s: "method")
+    assert "merged band" not in txt

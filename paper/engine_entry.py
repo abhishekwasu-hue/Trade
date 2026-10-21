@@ -107,17 +107,27 @@ def engine_areas(pay):
     """Layer 6b: the decision's own areas for the Vision chart (`vision_chart_band_finder = method`, off by default): the traded area +
     the watch list from the engine row payload — {role, lo, hi, tf, state, confluence_label}, one base each, nothing re-found. None when
     the payload carries neither (dropped by the payload size cap, or an older row)."""
-    keep = ("id", "role", "lo", "hi", "tf", "state", "confluence_label")
-    rows = [x for x in [pay.get("level")] + list(pay.get("watch_list") or []) if isinstance(x, dict) and x.get("lo") is not None]
-    if not rows:
+    try:                                                                  # a display field must never block an entry (review #355)
+        keep = ("id", "role", "lo", "hi", "tf", "state", "confluence_label")
+        rows = [x for x in [pay.get("level")] + list(pay.get("watch_list") or []) if isinstance(x, dict) and x.get("lo") is not None]
+        if not rows:
+            return None
+        out, seen = [], set()
+        for x in rows:
+            k = repr((x.get("id"), x.get("lo"), x.get("hi")))                 # repr: an unhashable id cannot raise
+            if k not in seen:
+                seen.add(k)
+                out.append({k2: x.get(k2) for k2 in keep})
+        return out
+    except Exception as exc:                                               # noqa: BLE001 — display only ⇒ NA, logged once
+        global _AREAS_WARNED
+        if not _AREAS_WARNED:
+            _AREAS_WARNED = True
+            print(f"⚠️ engine_areas (display only, ignored): {type(exc).__name__}: {str(exc)[:120]}")
         return None
-    out, seen = [], set()
-    for x in rows:
-        k = (x.get("id"), x.get("lo"), x.get("hi"))
-        if k not in seen:
-            seen.add(k)
-            out.append({k2: x.get(k2) for k2 in keep})
-    return out
+
+
+_AREAS_WARNED = False
 
 
 def process(bot, access_token, symbol, settings, lot_size, source, now=None, has_open=None, gate_fn=None, open_fn=None, chain=None,
