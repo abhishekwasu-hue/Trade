@@ -87,3 +87,11 @@ def test_pnl_report_tab_shows_which_mode_filter_is_applied():
     at = _run("NIFTY", mode="फक्त LIVE")
     captions = " ".join(c.value for c in at.caption)
     assert "दाखवलेला Mode: **फक्त LIVE**" in captions
+
+
+def test_vision_shadow_section_is_shown_apart_from_real_totals():
+    """T-1 (DECISIONS 29): "Shadow trades (rejected / no reply)" section (summary line + explanation) — kept apart from the totals."""
+    at = _run("NIFTY")
+    md = " ".join(m.value for m in at.markdown)
+    assert "Shadow trades (rejected / no reply)" in md and "Rejected / no-reply signals:" in md
+    assert any("never include it" in c.value for c in at.caption)

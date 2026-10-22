@@ -80,7 +80,7 @@ def _fail_skip(bot, trading_mode, path=None):
     return False
 
 
-def _shadow(s, trading_mode, g, row, symbol, direction, level, setup_tf):
+def _shadow(s, trading_mode, g, row, symbol, direction, level, setup_tf, path=None):
     """नाकारलेला / ✅ नसलेला / drift / ½ ⇒ 0 lots signal. Abhi (Monday PAPER, approval_required): **shadow PAPER position नाही** — फक्त
     journal / signal log मध्ये "would-have" नोंद (lots 0) आणि HOLD (final). approval बंद (जुनं V1) ⇒ आधीसारखं SHADOW (bot shadow trade)."""
     if not VC.approval_required(s, trading_mode):
@@ -92,6 +92,8 @@ def _shadow(s, trading_mode, g, row, symbol, direction, level, setup_tf):
                        "orig_lots": g.lots, "orig_naked_lots": g.naked_lots, "dry_run": bool(_row_tags(row or {}).get("dry_run"))})
     except Exception as exc:
         print(f"⚠️ would-have नोंद: {exc}")
+    from . import notify as VN                                           # T-1: "shadow नाही — फक्त would-have" हे Telegram वर साध्या शब्दांत
+    VN.record_shadow(g.signal_id, False, g.note, path, approval_mode=True)   # (फक्त DB; worker संदेश पाठवतो)
     return Gate("HOLD", 0, 0, g.factor, g.status, g.signal_id, f"{g.note} ⇒ PAPER position नाही (would-have नोंद, lots 0)", g.drift, True)
 
 
@@ -249,7 +251,7 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
     if row["status"] == "REJECTED":
         if VS.transition(sid, "REJECTED", "SHADOWED", path, DB_TIMEOUT, executed_at=ts, exec_note="shadow (rejected)"):
             return _shadow(s, trading_mode, Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_VISION_REJECTED", sid, row.get("decision_reason") or "rejected"),
-                           row, symbol, direction, level, setup_tf)
+                           row, symbol, direction, level, setup_tf, path)
         return _stale("race") if forced else _hold(sid, "race")
     # APPROVED
     if VC.approval_required(s, trading_mode) and not str(row.get("decided_by") or "").startswith("telegram:"):
@@ -257,7 +259,7 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
         if VS.transition(sid, "APPROVED", "SHADOWED", path, DB_TIMEOUT, executed_at=ts,
                          exec_note=f"✅ तुमचं approval नाही (decided_by {row.get('decided_by')}) ⇒ entry नाही"):
             return _shadow(s, trading_mode, Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_NO_HUMAN_APPROVAL", sid, "✅ तुमचं approval नाही ⇒ entry नाही"),
-                           row, symbol, direction, level, setup_tf)
+                           row, symbol, direction, level, setup_tf, path)
         return _stale("race") if forced else _hold(sid, "race")
     lim = row.get("mod_entry")
     if lim is not None and not limit_reached(row.get("direction"), spot, lim):    # ✏️ limit entry अजून नाही ⇒ HOLD (exec window पर्यंत)
@@ -267,7 +269,7 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
     if drift:
         if VS.transition(sid, "APPROVED", "DRIFT_REJECTED", path, DB_TIMEOUT, executed_at=ts, drift_result="; ".join(drift)):
             return _shadow(s, trading_mode, Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_VISION_DRIFT", sid, "; ".join(drift), drift),
-                           row, symbol, direction, level, setup_tf)
+                           row, symbol, direction, level, setup_tf, path)
         return _stale("race") if forced else _hold(sid, "race")
     f = float(row.get("factor") or 0.0)
     l1, l2 = VD.scaled_lots(lots, f), VD.scaled_lots(naked_lots, f)
@@ -276,7 +278,7 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
         if VS.transition(sid, "APPROVED", "SHADOWED", path, DB_TIMEOUT, executed_at=ts, drift_result="ok",
                          exec_note=f"factor {f} ⇒ lots {l1}/{l2} ⇒ shadow"):
             return _shadow(s, trading_mode, Gate("SHADOW", lots, naked_lots, f, "SKIPPED_VISION_HALF_ZERO", sid, f"factor {f} ⇒ एका leg चे 0 lots"),
-                           row, symbol, direction, level, setup_tf)
+                           row, symbol, direction, level, setup_tf, path)
         return _stale("race") if forced else _hold(sid, "race")
     if VS.transition(sid, "APPROVED", "EXECUTED", path, DB_TIMEOUT, executed_at=ts, drift_result="ok", exec_note=f"lots {l1}/{l2}"):
         return Gate("ENTER", l1, l2, f, "", sid, f"approved ×{f}")
@@ -333,11 +335,15 @@ def forced_direction(forced, level, setup_tf, tol_pct=0.05):
     return None
 
 
-def note_execution(signal_id, text, path=None):
-    """Bot चा प्रत्यक्ष निकाल (OPENED / FAILED / shadow) — best effort."""
+def note_execution(signal_id, text, path=None, shadow_opened=None):
+    """Bot चा प्रत्यक्ष निकाल (OPENED / FAILED / shadow) — best effort. shadow_opened (True / False, फक्त SHADOW मार्ग) ⇒ T-1: worker
+    card ला "Shadow trade opened (comparison only …)" / "No shadow: …" संदेश पाठवतो (इथे network नाही)."""
     if not signal_id:
         return
     try:
         VS.update(signal_id, path, exec_note=str(text)[:300])
     except Exception:
         pass
+    if shadow_opened is not None:
+        from . import notify as VN
+        VN.record_shadow(signal_id, shadow_opened, text, path)

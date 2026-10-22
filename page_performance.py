@@ -56,6 +56,9 @@ _SOURCE_LABELS = {
     "dynamic_sr_instant_srv3_shadow": "5-Min Instant Trader — SR V3 Levels Shadow (PAPER)",
     "mcx_futures_srv3_shadow": "MCX Futures — SR V3 Levels Shadow (PAPER)",
     "dynamic_sr_instant_min_hold_shadow": "1-Min Instant Trader — Min-Hold Shadow (PAPER, Confirmed Entry)",
+    # T-1 (Abhi, DECISIONS 29): Vision ने / तुम्ही नाकारलेल्या (❌ / उत्तर नाही / drift) signals चे PAPER shadow trades — तुलनेसाठीच.
+    "srv2_momentum_reversal_vision_shadow": "15M Dynamic SR: shadow (rejected / no reply — comparison only, not counted in results)",
+    "dynamic_sr_instant_vision_shadow": "5-Min Instant: shadow (rejected / no reply — comparison only, not counted in results)",
     "srv2_momentum_reversal": "SRv2 Momentum Reversal (15/30/60M)",
     # 🎓 bug-review -- या दोन bots चे trades Strategy-wise tables / charts / PDF मध्ये कच्च्या internal कोडसह (classic_sr_reversal / mcx_futures) दिसायचे.
     "classic_sr_reversal": "Classical S/R Reversal (5M+15M)",
@@ -446,6 +449,11 @@ def render():
             with tacol2:
                 _sub_header("⏱️ आज — टाईमफ्रेमनुसार", _HDR_TEAL)
                 _render_group_breakdown(perf_symbol, "entry_timeframe", perf_mode_f, today_d, today_d, "आजचं Timeframe-wise P&L")
+
+        st.markdown("---")
+        # T-1 (Abhi, DECISIONS 29): नाकारलेल्या / उत्तर न दिलेल्या Vision signals चे shadow trades — वेगळे, खऱ्या PAPER totals / kill switch मध्ये नाहीत
+        from vision import shadow_view as _VSV
+        _VSV.render(st, start=_ALL_TIME_SUMMARY_START, end=today_d, header=lambda t: _mid_header(t, _HDR_CYAN))
 
         st.markdown("---")
         _mid_header("📊 एकूण (All-Time) कामगिरी", _HDR_PINK)

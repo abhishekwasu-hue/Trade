@@ -72,15 +72,19 @@ def test_naked_settings_missing_never_breaks_the_card(tmp_path, monkeypatch):
 def test_naked_periodic_update_has_no_zero_target(tmp_path, monkeypatch):
     sent, dbp, jp, cfg, t0 = _run(tmp_path, monkeypatch)
     PW.run_cycle("tok", now=t0 + pd.Timedelta(minutes=31), db_path=dbp, send=sent.append, jpath=jp, cfg=cfg,
-                 ltp_fn=lambda tok, keys: {"K1": 130.0})
+                 ltp_fn=lambda tok, keys: {"K1": 130.0}, settings_fn=lambda b, s: SS)
     upd = [x for x in sent if "⏱ P&L" in x]
-    assert upd and "target ₹0" not in upd[-1] and "exits: dashboard" in upd[-1]
+    assert upd and "target ₹0" not in upd[-1] and "SL ₹-1,950" not in upd[-1]               # T-6: the real exits instead
+    assert "premium −30 pts (₹-1,950) पर्यंत ₹2,600" in upd[-1]                              # P&L ₹650 (10 pts × 65)
+    assert "premium +60 pts (₹+3,900) पर्यंत ₹3,250" in upd[-1] and "TSL not active" in upd[-1]
 
 
-def test_spread_card_unchanged(tmp_path, monkeypatch):
-    sent, _, jp, *_ = _run(tmp_path, monkeypatch, strategy="Bull Put", net_credit=70.0, sl=-4550.0, tg=4550.0)
-    assert "net credit ₹4,550" in sent[0] and "target ₹4,550" in sent[0] and "R:R 1.0" in sent[0] and "premium paid" not in sent[0]
-    assert PJ.get("PAPER_N", jp)["rr"] == 1.0
+def test_bot_spread_card_never_shows_the_stored_levels(tmp_path, monkeypatch):
+    """T-6: a bot spread card shows the settings exits (here the naked-only SS ⇒ NA), never the stored 100%-credit SL / target."""
+    sent, _, jp, *_ = _run(tmp_path, monkeypatch, strategy="BULL_PUT_SPREAD", net_credit=70.0, sl=-4550.0, tg=4550.0)
+    assert "net credit ₹4,550" in sent[0] and "premium paid" not in sent[0]
+    assert "SL ₹-4,550" not in sent[0] and "target ₹4,550" not in sent[0] and "exits: dashboard settings (NA:" in sent[0]
+    assert PJ.get("PAPER_N", jp)["rr"] == 1.0                                              # journal keeps the raw stored levels
 
 
 def test_exit_logic_not_touched():

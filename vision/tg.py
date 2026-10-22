@@ -2,10 +2,13 @@
 कधीच print / log नाही. सगळी functions कधीच raise करत नाहीत (network चूक ⇒ None / False).
 """
 import json
+import re
 
 import requests
 
 API = "https://api.telegram.org/bot{token}/{method}"
+CAPTION_LIMIT = 1024                                                    # photo caption (Telegram, UTF-16 units)
+TEXT_LIMIT = 4096                                                       # text message (chart नसताना पाठवलेला card / ticket)
 
 
 def _creds():
@@ -80,8 +83,74 @@ def edit_caption(message_id, caption, chat_id=None, has_photo=True):
 
 
 def edit_any(message_id, caption, chat_id=None):
-    """Photo caption किंवा (chart नसताना पाठवलेला) text — दोन्ही प्रयत्न."""
+    """Photo caption किंवा (chart नसताना पाठवलेला) text — दोन्ही प्रयत्न. ⚠️ हा पूर्ण caption **बदलतो** — Vision outcome साठी कधीच नाही
+    (T-1: `append_outcome` वापरा)."""
     return edit_caption(message_id, caption, chat_id, True) or edit_caption(message_id, caption, chat_id, False)
+
+
+def _cut_html_safe(s, units):
+    """Tags काढलेला मजकूर ≤ units (UTF-16) — शेवटचा अर्धवट entity (&am…) काढतो ⇒ HTML parse चूक नाही."""
+    from bots_common import plain_text as PT
+    return re.sub(r"&[#\w]*$", "", PT.tg_cut(re.sub(r"<[^>]+>", "", str(s or "")), max(0, units)))
+
+
+def compose_outcome(original, line, limit=CAPTION_LIMIT):
+    """T-1 (Abhi, DECISIONS 29): मूळ caption + "\n" + outcome ओळ(ी) ≤ limit. Outcome ओळ कधीच कापत नाही — जागा लागली तर **जुना** भाग
+    लहान: शेवटून पूर्ण ओळी गाळतो ("…" खूण, पहिली ओळ टिकते; HTML tag अर्धवट नाही); तरीही मोठं ⇒ tags काढून जुना भाग कापतो."""
+    from bots_common import plain_text as PT
+    line = str(line or "").strip()
+    limit = limit - PT.MARGIN
+    if PT.tg_len(line) >= limit:                                         # outcome एकटीच मर्यादेपेक्षा मोठी (प्रत्यक्षात होत नाही)
+        return _cut_html_safe(line, limit)
+    old = str(original or "").rstrip()
+    if not old:
+        return line
+    room = limit - PT.tg_len(line) - 1
+    if PT.tg_len(old) <= room:
+        return f"{old}\n{line}"
+    lines = old.split("\n")
+    while len(lines) > 1 and PT.tg_len("\n".join(lines + ["…"])) > room:
+        lines.pop()
+    s = "\n".join(lines + ["…"])
+    if PT.tg_len(s) > room:
+        s = _cut_html_safe(old, room - 1) + "…"
+    return f"{s}\n{line}"
+
+
+def append_outcome(message_id, original_caption, line, chat_id=None):
+    """T-1: card कधीच पुसत नाही — मूळ caption तसाच ठेवून outcome ओळ जोडतो (`compose_outcome`), आणि बटणं काढतो (हे फक्त निर्णयानंतरच
+    बोलावलं जातं). Photo caption (1024) ⇒ नाही जमलं तर text message (4096) ⇒ HTML चूक असेल तर tags काढून एकदा. कधीच raise नाही."""
+    if not message_id:
+        return False
+    try:
+        if edit_caption(message_id, compose_outcome(original_caption, line, CAPTION_LIMIT), chat_id, True):
+            return True
+        if edit_caption(message_id, compose_outcome(original_caption, line, TEXT_LIMIT), chat_id, False):
+            return True
+        plain = re.sub(r"<[^>]+>", "", str(original_caption or ""))
+        return bool(edit_caption(message_id, compose_outcome(plain, line, CAPTION_LIMIT), chat_id, True))
+    except Exception:                                                    # noqa: BLE001 — display only
+        return False
+
+
+def reply(message_id, text, chat_id=None):
+    """T-1: प्रत्येक outcome ला card ला उत्तर म्हणून **नवा** छोटा संदेश (edit ला Telegram notification देत नाही). message_id नाही ⇒ साधा
+    संदेश. रिटर्न नव्या संदेशाचा id किंवा None; कधीच raise नाही."""
+    try:
+        cid = chat_id or _creds()[1]
+        if not cid:
+            return None
+        data = {"chat_id": cid, "text": str(text)[:TEXT_LIMIT], "parse_mode": "HTML"}
+        if message_id:
+            data.update(reply_to_message_id=int(message_id), allow_sending_without_reply="true")
+        j = _call("sendMessage", data)
+        if j is None:                                                    # HTML चूक ⇒ साध्या मजकुराने एकदा
+            data.pop("parse_mode", None)
+            data["text"] = re.sub(r"<[^>]+>", "", str(text))[:TEXT_LIMIT]
+            j = _call("sendMessage", data)
+        return (j or {}).get("result", {}).get("message_id")
+    except Exception:                                                    # noqa: BLE001
+        return None
 
 
 def answer_callback(callback_id, text):

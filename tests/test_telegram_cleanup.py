@@ -412,7 +412,7 @@ def test_v1_caption_worst_case_keeps_deadline_and_no_buttons_warning(monkeypatch
     cap = VW.v1_caption(row, res, d, "2026-10-09T12:25:00", buttons=False, why="no approver")
     assert PT.tg_len(cap) <= 1024 and cap.count("<b>") == cap.count("</b>")
     det = cap.split(PT.SEP + "\n", 1)[1].splitlines()
-    assert det[1].startswith("⏱") and det[2].startswith("⚠️ बटणं नाहीत")
+    assert det[1].startswith("⏱") and det[2] == "⚠️ Buttons unavailable: no approver; this signal will be skipped."
     v0 = VW.caption({**row, "tags": {}}, {"verdict": "agree", "audits": [], "error": "📈" * 600}, "notify")
     assert PT.tg_len(v0) <= 1024 and v0.count("<b>") == v0.count("</b>")
 
