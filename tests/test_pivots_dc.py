@@ -415,6 +415,9 @@ def test_cas_candle_kept_in_data_day_completes_only_at_its_close():
     pd.testing.assert_frame_equal(cut, full.iloc[:1].reset_index(drop=True))
     cut2 = PC.daily_from_15m(m15.iloc[:i + 2], pd.Timestamp(m15["bar_end"].iloc[i + 1]))
     pd.testing.assert_frame_equal(cut2, full.iloc[:2].reset_index(drop=True))     # CAS candle बंद ⇒ पूर्ण, full सारखीच
+    mixed = m15[~(cas & (np.arange(len(m15)) < i))].reset_index(drop=True)          # mixed data: पहिल्या दिवसाची CAS candle नाही
+    md = PC.daily_from_15m(mixed, pd.Timestamp(mixed["bar_end"].iloc[-1]))
+    assert len(md) == len(full)                                                     # कोणताही पूर्ण दिवस गळत नाही
 
 
 def test_display_only_history_drawn_but_never_in_engine(tmp_path):
