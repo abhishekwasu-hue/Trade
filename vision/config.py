@@ -77,6 +77,9 @@ BOT_DEFAULTS = {
                                            # "method" = FUT missing = data problem, no chart-side average (the method's comparison only)
     "chart_objects": "off",                # PA standard §4 (T8): "on" ⇒ the approval chart draws the signal's object list (decision3.
                                            # draw_objects, carried in the signal's gate tags); "off" (default) ⇒ image exactly as today
+    "chart_max_lines": 6,                  # P8 clean charts (Abhi 21 Oct, display only): the most lines the chart draws (with chart_objects
+                                           # on): evidence lines + the channel price is in + the next line in the path + respected
+                                           # higher-degree lines; the rest listed as "hidden: N" (decision3/chart_lines.py)
     "approval_card_layout": "classic",     # Abhi (simple card): "classic" = today's card byte-for-byte; "summary" = 5 short lines on top
                                            # (what / where · reader ✓✗ · Vision in one line · what you do) + the same details below
 }
@@ -87,7 +90,7 @@ RULE_IDS = {"v2_disagree_rules": ("breakout", "reversal_invalid", "weak_level", 
             "v2_gray_rules": ("unclear", "correction_incomplete", "tight_room", "middle_close", "impulse_running", "gap_undecided_early",
                               "line_conflict", "event_day", "gap_c_alone")}
 CTX_KEYS = ("line_lookback_sessions", "inv_buffer_mr", "gap_g0_atr", "gap_large_atr", "gap_stretch_atr", "gap_max_age_sessions",
-            "vision_chart_bands", "vision_chart_band_finder", "vision_volume_words", "chart_objects")
+            "vision_chart_bands", "vision_chart_band_finder", "vision_volume_words", "chart_objects", "chart_max_lines")
 GLOBAL_DEFAULTS = {
     "vision_daily_budget_usd": 2.0,         # Abhi: दैनिक Vision cap $2.00 (hard stop तसाच; बाकी मर्यादा बदल नाही)
     "vision_monthly_budget_usd": 60.0,      # Abhi: मासिक $60 ($2/दिवस शी सुसंगत). Dashboard / DB मधली value code default वर मात करते
@@ -113,7 +116,7 @@ ENUMS = {
 RANGES = {"approve_window_min": (1, 60), "max_drift_mr": (0.05, 5.0), "vision_timeout_sec": (5, 120), "second_audit_below_conf": (0.0, 1.0),
           "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240),
           "line_lookback_sessions": (2, 15), "inv_buffer_mr": (0.1, 3.0), "gap_g0_atr": (0.0, 3.0), "gap_large_atr": (0.1, 5.0), "gap_stretch_atr": (0.5, 20.0),
-          "gap_max_age_sessions": (0, 30), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 100.0),
+          "gap_max_age_sessions": (0, 30), "chart_max_lines": (1, 20), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 100.0),
           "visual_audit_daily_cap": (0.0, 2.0), "signals_daily_reserve_usd": (0.0, 5.0), "vision_v4_daily_cap": (0.0, 2.0)}
 
 

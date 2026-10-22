@@ -9,7 +9,8 @@ def chart(key="E1@a", drop=None, story="line one\nline two"):
     layers["story"]["note"] = story
     if drop:
         layers.pop(drop)
-    return {"entry_key": key, "layers": layers}
+    return {"entry_key": key, "layers": layers,
+            "lines_view": {"max_lines": 6, "shown": ["ev", "ch"], "evidence": ["ev"], "legend": ["ev", "ch"], "hidden": 3}}
 
 
 def card(key="E1@a", **kw):
@@ -84,6 +85,49 @@ def test_claude_md_and_standard_exist_with_key_rules():
     std = (root / "docs" / "reader" / "REPORT_STANDARD.md").read_text(encoding="utf-8")
     for k in RS.REQUIRED_LAYERS:
         assert f"`{k}`" in std, k
+
+
+# ------------------------------------------------------------------------------------------------ P8 clean charts (legend cap, evidence)
+def test_legend_cap_follows_the_display_setting():
+    from decision3 import settings as S3
+    m = chart()
+    m["lines_view"].update(shown=[f"l{i}" for i in range(7)], legend=[f"l{i}" for i in range(7)], evidence=["l0"], max_lines=7)
+    with pytest.raises(RS.ReportStandardError, match="max_lines 7 > chart_max_lines 6"):
+        RS.validate_chart(m)
+    assert RS.validate_chart(m, chart_max_lines=7)                       # Abhi set the dashboard value higher
+    assert S3.OUTPUT["chart_max_lines"][0] == RS.chart_max_lines_default() == 6
+    m["lines_view"]["max_lines"] = 6
+    with pytest.raises(RS.ReportStandardError, match="legend lists 7 lines > chart_max_lines 6"):
+        RS.validate_chart(m)
+
+
+def test_evidence_lines_must_be_shown_and_legend_only_shown_lines():
+    m = chart()
+    m["lines_view"]["evidence"] = ["ev", "gone"]
+    with pytest.raises(RS.ReportStandardError, match="evidence line"):
+        RS.validate_chart(m)
+    m = chart()
+    m["lines_view"]["legend"] = ["ev", "ch", "a hidden line"]
+    with pytest.raises(RS.ReportStandardError, match="only the shown lines"):
+        RS.validate_chart(m)
+    m = chart()
+    m.pop("lines_view")
+    with pytest.raises(RS.ReportStandardError, match="lines_view"):
+        RS.validate_chart(m)
+
+
+# ------------------------------------------------------------------------------------------------ RC5: the pre-replay data check
+def test_group_is_testable_only_with_fut_volume_on_every_spot_session():
+    spot = ["2026-10-07", "2026-10-08", "2026-10-09"]
+    ok = RS.group_data_status(spot, spot + ["2026-10-10"])
+    assert ok["status"] == "testable" and ok["missing"] == []
+    bad = RS.group_data_status(spot, ["2026-10-07", "2026-10-09"])
+    assert bad["status"] == RS.NOT_TESTABLE == "not testable — FUT volume missing" and bad["missing"] == ["2026-10-08"]
+    assert bad["line"].startswith("not testable — FUT volume missing") and "2026-10-08" in bad["line"]
+    assert RS.group_data_status([], [])["status"] == RS.NOT_TESTABLE
+    with pytest.raises(RS.ReportStandardError, match="not testable"):   # a not-testable group never ships a report
+        RS.validate_report(report(data_status=bad))
+    assert RS.validate_report(report(data_status=ok))
 
 
 @pytest.mark.parametrize("text", ["close beyond invalidation; update on new swing", "next opposite area; candidate area",

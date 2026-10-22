@@ -21,7 +21,12 @@ HOW TO USE IT
  P5 Patience, no prediction. Nobody knows where a correction ends; it can extend. Do not predict the end of a wave and do not block on wave count or maturity. Arm every valid area ahead in the trend direction and read each one when price arrives. If an area fails, the next one is already armed.
  P6 Areas are references until price proves them. An area is not confirmed by being touched and not killed by being entered or poked. It is confirmed only by what price does inside it, and it dies only by structure.
  P7 Probabilistic. A valid read can lose. Never change a rule to turn a losing case into a win; check only that the read followed the method.
- P8 Clean charts. Draw only what is significant and tradeable. Fewer, truer lines and areas.
+ P8 Clean charts. Draw only what is significant and tradeable. Fewer, truer lines and areas. (Display only — the reader reads every
+    line.) Shown: the evidence lines (the line in confluence with the entry area that price touched in this visit; for E4 (b) the broken
+    line being retested), the channel price is in now, the next line in price's path above and below, and the higher-degree lines price
+    respects in the current move. Hidden behind "Show all lines": dead lines, lines outside the trade's path, a lower-degree line nearly
+    parallel and close to a higher-degree one, and lines that ended before the current leg's start swing. The number shown is the
+    display setting chart_max_lines. Areas: the refined base, the target and the invalidation strong; the context area faint.
  P9 Settings are Abhi's. R:R, SL, target, lots and exits come from the dashboard. The reader never filters on them.
 
 2. READING ORDER (top-down, every read)
@@ -44,6 +49,8 @@ HOW TO USE IT
  Areas
  - An area is built from ONE base or reaction: the candles where buyers or sellers acted (wick to body). Never join separate bases or timeframes into one area. A higher-timeframe area at the same place is labelled confluence; the trade area is the lower-timeframe one.
  - Kinds: demand, supply, a flipped area (old support now resistance, or the reverse), the origin of a sharp fall or sharp rise.
+ - The origin of a break of structure is the base the impulse left — the candle where buyers or sellers acted before the breakout —
+   never the breakout candle itself. Its band is wick to body; no wick on the area side ⇒ the body (never the whole candle).
  - Lines: a trendline or a horizontal level is drawn from two separate reactions; price left it between them. The third touch is the trade location. A line is valid only when it follows the structure's own swings. Where a line and an area meet, that is the strongest location (confluence). They also meet when a reaction rises out of (falls out of) the area and turns at the line: the turn is the closest approach to the line since its previous touch, no candle closes beyond the line, and the move then goes away from it; that turn is a touch and the area is labelled "confluence: line". Touches are counted by reactions, not contacts: contacts with no real opposite swing of the line's structure between them are one touch. From the third touch on, every touch is a trade location while the line is unbroken; the touch number is information. A reaction's touch point is its own turn (the swing it forms at the line); a later turn that stays away from the line does not remove the confluence label for that visit.
  Area lifecycle
  - Visit: begins when price enters the area. It ends only by structure: price moves away and builds a swing away from the area, or the area breaks or flips, or a commitment fails and closes outside (then the move is gone; no chasing). Candles that close just outside and come back are the same visit. Time never ends a visit.
@@ -145,5 +152,23 @@ HOW TO USE IT
    short story per timeframe; display only.
  - Entry models (E1 aggressive, E2 confirmation, E3 structure, E4 sweep-retest): armed while price visits a valid trade-side area;
    each fires at most once per visit. E2 and E3 never fire while the zone study reads absorption without a handover. Overlapping
-   areas of the same role visited together are one location: one signal per model per visit (lead's provisional choice, Abhi may
-   override). The dashboard's existing limit of trades per zone applies to these entries as it does to every other entry path.
+   areas of the same role visited together count as one place: one signal per model per visit — a counter only, never one area (see
+   the Z-1u bullet below: edges, trigger and invalidation come from the area price is visiting). The dashboard's existing limit of trades per zone applies to these entries as it does to every other entry path.
+ - Trigger inside the area (Abhi, §3 models / C lifecycle): a model fires only while price is inside the visited area and not beyond
+   its invalidation — the trigger candle closes inside the area and not beyond the model's invalidation (E4 (b): the rejection form is
+   at the retested object and closes on its trade side). A candle that gaps or closes through the area, or a commitment that closes
+   outside it, is the area being broken or left (lifecycle), not an entry.
+   CORRECTED by Abhi (22 Oct; code in the follow-up to #364): the trigger candle must have TRADED inside the (refined) area, and
+   price must not be beyond the INVALIDATION side. A close outside the area on the trade-direction side is the confirmation and is
+   allowed (a commitment / rejection candle trades into the area and closes away from it). Only a move through the invalidation side
+   is the area breaking.
+ - Trades per zone: the dashboard `max_hits_per_zone` is 4 (Abhi 22 Oct: up to four model entries per visit); a dashboard setting.
+ - Overlapping areas are never one area (Z-1u): the cluster only counts one signal per model per place. The area's edges, the trigger
+   check and the invalidation always come from the actual area price is visiting, never from the union of the cluster.
+ - Refined base (RESEARCH DEFAULT — review after the replay): the 1H / Daily area is the context (where). Inside it, the refined base on
+   the setup timeframe (15M) by the same base rule: the newest 15M turn of the area's side inside the band (the swing candle's wick to
+   body), from the area's own birth turn on. It gives the trigger proximity (price has reached it in this visit), the E1 entry (the
+   visit's first candle at the refined base) and the invalidation (E1: beyond the base's far side; E2 / E3: beyond the farther of the
+   base's far side and the visit's extreme). No refined base yet: the models wait.
+ - E4 (b) revisit: a broken line or area is being revisited only while price is actually back at it; the revisit ends when price leaves
+   it by structure (a new swing that does not reach it).

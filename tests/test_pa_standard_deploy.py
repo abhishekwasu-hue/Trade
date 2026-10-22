@@ -99,6 +99,7 @@ def test_save_apply_revert_restores_exactly(tmp_path):
     for sym in ("NIFTY", "BANKNIFTY"):
         raw = io.raw(BOT, sym)
         assert raw["engine3_entry_gate"] == "" and all(raw[k] is True for k in PS.MODEL_KEYS)
+        assert raw["max_hits_per_zone"] == 4                                        # Abhi 22 Oct: up to four model entries per visit
     assert io.symbols == ["NIFTY", "BANKNIFTY"] and io.applied == (["NIFTY"], ["NIFTY", "BANKNIFTY"])
     io.vision["vision_mode"] = "human_confirm"                                      # the deploy script's vision.config set
     io.save(BOT, "NIFTY", {"lots": 3})                                              # an unrelated key changed meanwhile: kept

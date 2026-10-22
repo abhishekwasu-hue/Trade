@@ -235,7 +235,7 @@ def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None,
     shown = [x for x in lv.snapshot(t) if x["dist"] <= lim or x["id"] in act]   # दूरची levels chart वर लपवा (snapshot मध्ये आहेत)
     if chart_objects == "on":
         _objects_panel(ax, lv.h1["timestamp"].iloc[:j_end + 1], j0, frame, _objects_at(lv, t, trend, objects, sessions),
-                       min_degree=int(lv.s.get("level_degree", 2)))
+                       min_degree=int(lv.s.get("level_degree", 2)), ctx={"setup_tf": "1H"})
         view = []
     elif finder == "method":
         _h1_method(ax, lv, t, trend, frame, j0, shown, act, debug)
@@ -284,16 +284,22 @@ def _objects_at(V, t, trend, objects, sessions=8):
     return DO.collect(V, t, trend=trend, since=DO.window_start(V, t, sessions))
 
 
-def _objects_panel(ax, starts, j0, frame, objects, min_degree=None, ylim=None, exclude=None):
+def _objects_panel(ax, starts, j0, frame, objects, min_degree=None, ylim=None, exclude=None, ctx=None, max_lines=None):
     """PA §4: draw the object list on one matplotlib price panel (decision3.draw_render: the same geometry as the Telegram chart).
-    starts = the bar start times of this panel's timeframe up to its last bar; j0 = index of the first bar shown."""
+    starts = the bar start times of this panel's timeframe up to its last bar; j0 = index of the first bar shown. P8 clean charts:
+    decision3.chart_lines.select picks the lines shown (cap = `chart_max_lines`, display); the rest are listed as "hidden: N"."""
+    from . import chart_lines as CL
     from . import draw_render as DR
     objs = [o for o in objects if not (exclude and exclude(o))]
+    n_max = int(max_lines if max_lines is not None else CL.max_lines_default())
+    bars = frame[["timestamp", "high", "low", "close"]] if "timestamp" in frame.columns else None
+    sel = CL.select(objs, {**(ctx or {}), "bars": bars}, max_lines=n_max)
+    objs = sel["shown"]
     if ylim is None:
         ylim = DR.y_range(frame["low"].min(), frame["high"].max(), objs)
         ax.set_ylim(*ylim)
     xm = DR.XMap(starts, j0, n=len(frame))
-    DR.draw_mpl(ax, DR.geometry(objs, xm, ylim=ylim, min_degree=min_degree))
+    DR.draw_mpl(ax, DR.geometry(objs, xm, ylim=ylim, min_degree=min_degree, max_lines=n_max, hidden_n=len(sel["hidden"])))
     ax.set_xlim(-1, len(frame))
     return objs
 
@@ -387,7 +393,8 @@ def m15_png(V, t, title, bars=60, r=None, debug=False, vol=None, symbol=None, ch
     if chart_objects == "on":
         from . import draw_objects as DO
         objs = DO.clean(objects)[0] if objects is not None else DO.collect(V, t, r=r, since=i0)
-        _objects_panel(ax, V.m15["timestamp"].iloc[:t + 1], i0, m, objs)
+        from . import chart_lines as CL
+        _objects_panel(ax, V.m15["timestamp"].iloc[:t + 1], i0, m, objs, ctx=CL.ctx_of_row(r))
     elif r and r.get("level"):
         lv = r["level"]
         ax.axhspan(lv["lo"], lv["hi"], color="#2f9e44" if lv["role"] == LV.SUP else "#e03131", alpha=0.18)

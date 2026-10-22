@@ -29,7 +29,8 @@ DEFAULT_FILE = "/root/pa_standard_prev_settings.json"
 BOT_KEY = OB.ON_KEY                                                       # 15m_dynamic_sr
 VISION_BOT = OB.VISION_BOT                                                # srv2_momentum_reversal
 MODEL_KEYS = tuple(f"engine3_model_e{i}_on" for i in range(1, 5))
-WANT = {"engine3_entry_gate": "", **{k: True for k in MODEL_KEYS}}      # "" = the method = entry models (engine3_live.METHOD_SWITCHES)
+WANT = {"engine3_entry_gate": "", **{k: True for k in MODEL_KEYS},      # "" = the method = entry models (engine3_live.METHOD_SWITCHES)
+        "max_hits_per_zone": 4}                                          # Abhi 22 Oct: up to four model entries per visit (dashboard setting)
 NEED_SYMBOLS = ("NIFTY", "BANKNIFTY")
 ABSENT = OB.ABSENT
 

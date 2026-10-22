@@ -13,9 +13,23 @@ First line of every report to Abhi: `Rules re-read: CLAUDE.md, REPORT_STANDARD.m
   Golden cases are examples, not targets; never tune to pass one day; never edit golden expectations.
 - Entry framework: trend side + proven area, then four independent models E1–E4, each at most once per visit. Evidence is listed
   and never blocks. The old v2.2 BOS / K gate (`legacy_k_gate`) is a logged diagnostic and never decides.
+- Trigger reading (Abhi 22 Oct): the trigger candle must have traded INSIDE the (refined) area, and price must not be beyond the
+  INVALIDATION side. A close outside the area on the trade-direction side is the confirmation and is allowed (a commitment /
+  rejection candle trades into the area and closes away from it). Code: follow-up PR to #364 (#364 still requires the close inside).
+- `max_hits_per_zone` = 4 on the dashboard (Abhi 22 Oct: up to four model entries per visit). It stays a dashboard setting.
 - The engine only generates signals. Lots, legs, strikes, SL, target, max trades: the existing dashboard settings. Never add new
   execution settings.
 - Never add a trading rule (R:R filter, gate, threshold) that Abhi didn't state.
+- A model fires only while price is inside the visited area and not beyond its invalidation (the trigger bar's close; E4 (b): the
+  rejection form at the retested object). Beyond it the area is being broken (lifecycle), not entered — never an entry
+  (`entry_trigger_rule = inside`).
+- Clusters only count one signal per model per place — edges, trigger and invalidation come from the actual area, never the union
+  (Z-1u). No union band in any entry, payload or card; `max_hits_per_zone` counts the visited area.
+- Refined base (RC2, RESEARCH DEFAULT, review after the replay — `entry_area_refine = setup_tf`): the 1H / Daily area is the context;
+  the refined 15M base inside it (TA4) gives trigger proximity, the E1 entry and the invalidation; no refined base yet ⇒ the models wait.
+- A BOS-origin area is the base the impulse left (never the breakout candle); every area band is wick to body, no wick ⇒ the body.
+- E4 (b): a broken line / area is being revisited only while price is actually back at it; the revisit ends when price leaves it by
+  structure (a new swing that does not reach it).
 - FUT (near-month) volume for indices; spot for structure / areas / RSI. RSI divergence is the only indicator.
 - The NIFTY holdout stays sealed (Daily bars only as level history, Z-1t). Never read it for results.
 
@@ -35,3 +49,9 @@ First line of every report to Abhi: `Rules re-read: CLAUDE.md, REPORT_STANDARD.m
 - Self-review every diff before pushing; an independent review before merge; merge only on green CI.
 - Keep everything already built; extend, never rewrite approved layers (STABLE register, `docs/reader/STABLE.md`).
 - Every reading / replay report follows `docs/reader/REPORT_STANDARD.md` and is validated by `reader_report/standard.py`.
+- A replay group is tested only when every spot session in it has near-month FUT volume (`group_data_status`); otherwise it emits one
+  line "not testable — FUT volume missing" with the days — no charts, no blocked-trigger cards, never spot volume, never filled gaps.
+- Charts are clean (P8): evidence lines + the current channel + the next lines in the path + respected higher-degree lines; everything
+  else behind "Show all lines"; cap = the display setting `chart_max_lines`; the legend lists only shown lines. Display only — the
+  reader still reads ALL lines. Areas: refined base, target and invalidation strong; context area faint; the rest faded; dead hidden.
+- Every provisional decision is first checked against CLAUDE.md and CHART_READER_METHOD.md, and the check is listed in the hand-back.

@@ -119,9 +119,10 @@ only), MCX confirmation (LB12–LB17).
 
 **Provisional (lead, from the method + research defaults; Abhi may override):**
 - Overlapping areas of the same role visited together = one location: at most one signal per model per overlapping cluster per visit
-  (`entry_cluster_rule = cluster`; the card lists every member area; E1 invalidation = beyond the cluster's far edge).
-- Engine entries respect the existing dashboard setting `max_hits_per_zone`, as every other entry path does (per area / cluster, per
-  role, per day).
+  (`entry_cluster_rule = cluster`; the card lists every member area; ~~E1 invalidation = beyond the cluster's far edge~~ —
+  **SUPERSEDED by RC1 (Abhi 21 Oct, Z-1u): the cluster only counts; edges, trigger and invalidation come from the visited area**).
+- Engine entries respect the existing dashboard setting `max_hits_per_zone`, as every other entry path does (~~per area / cluster~~
+  **SUPERSEDED by RC1: per visited area**, per role, per day).
 - E4a kept as is, observed in the PAPER stats.
 - Hidden divergence = the classic reading (the pullback low vs the trend's previous higher low across the impulse; mirror for highs);
   the inside-the-move read is kept as a second, labelled read.
@@ -788,11 +789,11 @@ Walk-forward replay of the reader as merged (layers 1–4, 5, 6a; default settin
 
 ## BANKNIFTY replay reading checks (deployed code da7cbbc; report in private trade-data `review/replay_banknifty_6m/da7cbbc/checks/`)
 Misreads are bugs against a named concept of the Price Action Standard (never one-chart rules). Not fixed yet — fix in a separate PR.
-- **BUG — concept C (area base), BOS-origin area (birth "b").** A 1H support area was built from the BOS breakout candle itself
+- **FIXED (branch `claude/models-inside-area-clean-charts`, `levels._base`, tests/test_levels_bos_base.py) — BUG — concept C (area base), BOS-origin area (birth "b").** Now: the first trend-direction 1H candle after the origin that is complete before the BOS bar's hour; none ⇒ the origin's own candle (the base the impulse left); never the breakout candle. A 1H support area was built from the BOS breakout candle itself
   (the base 1H candle cut at the BOS bar = the breakout 15M candle), not from the candles where buyers acted. Method §3 Areas: "An
   area is built from ONE base or reaction: the candles where buyers or sellers acted (wick to body)". Owner: `decision3/levels.py`
   (BOS base selection).
-- **BUG — concept C (area band), Z-1x.** When the base candle has no wick on the area side, the code takes the whole candle
+- **FIXED (same branch, `levels.bos_band` = `_band_swing`'s rule) — BUG — concept C (area band), Z-1x.** When the base candle has no wick on the area side, the code takes the whole candle
   (`decision3/levels.py` ~503–505) instead of the body (Z-1x: wick-to-body; no wick ⇒ body).
 - **Checked, matches the method — concept C:** a swing-born 1H area (birth "a") ~300 points wide is one 1H candle's wick-to-body
   after a sharp first-hour push; no merge of bases or timeframes (Z-1u holds).
@@ -802,3 +803,41 @@ Misreads are bugs against a named concept of the Price Action Standard (never on
   chase")? No such rule exists in the method today.
 - **Info — same-bar entries (two models on one bar):** 5 bars / 10 entries over 30 Sep → 19 Oct. `max_hits_per_zone` = 2 does not
   choose between them; the one-position-at-a-time rule moves the second to the next cycle. Abhi decides (provisional: no change).
+
+## Abhi's root-cause order RC1–RC6 (BANKNIFTY 07–21 Oct review; branch `claude/models-inside-area-clean-charts`)
+Implemented (rules recorded in CLAUDE.md, CHART_READER_METHOD.md §1 P8 / §8, REPORT_STANDARD.md §0 / §3a; tests named per item):
+- **RC1 (Z-1u, §3 models):** `entry_models.clusters()` only counts one signal per model per place; trigger, edges and invalidation come
+  from the visited area. The cluster carries no band (payload / card); `max_hits_per_zone` counts the visited area
+  (tests/test_entry_models_inside_area.py::test_no_union_field_reaches_an_entry_the_payload_or_the_card).
+- **RC3 (§3 models / C lifecycle):** `entry_trigger_rule = inside` (default; `legacy` = da7cbbc, what-if). This answers the earlier
+  question above ("should a commitment that closes far beyond the area be skipped?"): yes — it never fires.
+- **RC2 (research default, review after the replay):** `entry_area_refine = setup_tf` (default; `area` = the context area itself).
+- **RC4 (§3 E4 b):** a broken line is "at" price only while a bar's range holds the line; the revisit ends at a swing that does not
+  reach it (either side). Before: the touch was one-sided (any bar above a broken support line "touched" it), so a line far away stayed
+  "revisit in progress" (04 Aug).
+- **RC5:** `reader_report.standard.group_data_status` — a group without near-month FUT volume on every spot session is "not testable".
+- **RC6 / P8:** `decision3/chart_lines.py` + display setting `chart_max_lines` (6).
+
+Provisional choices (assumed — no answer needed unless Abhi objects). Each was checked against CLAUDE.md and CHART_READER_METHOD.md:
+- **Refined base = the NEWEST 15M swing (finest structure) of the area's side whose extreme is inside the context band, from the area's
+  birth turn on; band = that candle's wick to body (levels._band_swing), clipped to the context band.** Method §3 Areas "built from ONE
+  base … the candles where buyers or sellers acted (wick to body)" + "the trade area is the lower-timeframe one"; P1 no numbers (none).
+- **Proximity = price reached the refined base in this visit; the close must be inside the CONTEXT area** (not inside the narrow
+  refined band — a commitment closes away from the base by its nature). RC3 "inside its (refined) area" read as: at the refined base,
+  closing inside the area; method §3 Commitment (the dominant candle after the handover) would otherwise never fire.
+- **E1 with a refined base = the visit's first candle that reaches the refined base** (was: the visit's first candle). Invalidation
+  beyond the base's far side. **E2 / E3 invalidation = the farther of the base's far side and the visit's extreme** (an invalidation is
+  never inside a price already traded in the visit).
+- **E4 (b) "at the object" = a candle of the rejection form touches it** (one-candle forms: the trigger candle; two-candle forms: the
+  trigger or the one before). Method §3 Lines: "the third touch is the trade location".
+- **E4 (a) sweep keeps the context area's far edge** (the sweep is of the area; the refined base only adds the proximity check).
+
+Effects to review (07–21 Oct, trade-data `review/replay_banknifty_6m/<sha>/groups/2026-10-07_2026-10-21/`):
+- **E2 5 → 0 in this group under the inside rule:** every E2 commitment here closed outside its area. RC3 as ordered; flagged.
+- **CONFLICT to ask Abhi with the other contradictions (method "ask only when two of his rules contradict"):** the synthetic 12 Oct
+  bear-call fixture (tests/oct12_fixture — "the structure Abhi described") triggers on a candle that spikes through the area and
+  closes below it; under RC3 it is no entry. The real 12 Oct golden test stays pinned to `legacy_k` (unchanged). Provisional: RC3 wins
+  (his newer explicit rule); the row-shape tests read that fixture with `entry_trigger_rule = legacy`.
+- Wide single areas (~300 pts, 3.5–4× the median): not a cluster effect. The BOS-origin one (Abhi's 300, births b + c) came from the
+  two concept-C bugs above — fixed here (C-1 / C-2); the swing-born ones (a:D2, one sharp 1H candle wick to body) match the method and
+  stay; the refined 15M base now bounds the trade location inside them.

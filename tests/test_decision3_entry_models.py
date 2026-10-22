@@ -29,6 +29,12 @@ from tests.test_decision3 import P, m15_from, res_of
 
 UP, DOWN = M.UP, M.DOWN
 MID = 101.0
+# The model mechanics below read ONE area as the trade location (`entry_area_refine = area`); the RC2 refined 15M base (research default
+# `setup_tf`) and the inside-the-area rule have their own tests in tests/test_entry_models_inside_area.py.
+AREA = {"entry_area_refine": "area"}
+# The oct12 fixture's trigger bar spikes through the whole area and closes below it: under the inside-the-area rule (Abhi 21 Oct RC3,
+# default) it is not an entry (tests/test_entry_models_inside_area.py); the row-shape tests below read it with the da7cbbc trigger.
+LEGACY = {**AREA, "entry_trigger_rule": "legacy"}
 
 # A supply 100–102 (bear call). (open, high, low, close, volume)
 BEAR = [(97.0, 97.6, 96.8, 97.5, 1.0),       # 0  swing low (built away from the area) — the approach leg starts after it
@@ -40,7 +46,8 @@ BEAR = [(97.0, 97.6, 96.8, 97.5, 1.0),       # 0  swing low (built away from the
         (101.6, 101.7, 100.0, 100.1, 5.0),   # 6  dominant red engulf on higher volume ⇒ commitment (E2)
         (100.1, 101.3, 100.0, 101.2, 1.0),   # 7  push up again
         (101.2, 101.9, 100.8, 100.9, 1.0),   # 8  the push fails below 102.8 (swing high, confirmed at 9)
-        (100.9, 101.0, 99.5, 99.6, 1.0),     # 9  ⇒ E4 (a) at the swing's confirmation
+        (100.9, 101.0, 100.05, 100.1, 1.0),  # 9  ⇒ E4 (a) at the swing's confirmation (closes inside the area: the models fire
+                                             #    only while price is inside it, Abhi 21 Oct)
         (99.6, 99.7, 98.0, 98.1, 1.0)]       # 10
 SWINGS = [("L", 96.8, 0, 1), ("H", 102.8, 5, 6), ("H", 101.9, 8, 9)]
 
@@ -60,7 +67,7 @@ def _bare(rows, swings=(), band=(100.0, 102.0), mirror=False, events=(), s=None,
         rows, swings = _mirror_rows(rows), _mirror_sw(swings)
         band = (2 * MID - band[1], 2 * MID - band[0])
     V = E3.V22.__new__(E3.V22)
-    V.s = S3.load(s)
+    V.s = S3.load({**AREA, **(s or {})})
     A = {k: np.array([r[j] for r in rows], float) for j, k in enumerate(("open", "high", "low", "close"))}
     A["volume"] = np.array([r[4] for r in rows], float)
     A["volume_raw"] = A["volume"].copy()
@@ -105,7 +112,8 @@ def test_each_model_fires_once_per_visit_with_its_invalidation(mirror):
     assert e4["facts"]["sweep_bar"] == 5 and e4["facts"]["push_bar"] == 8 and e4["facts"]["push_known_bar"] == 9
     last = st[10][0]["models"]
     assert last["E1"]["status"] == "fired_earlier" and last["E2"]["status"] == "fired_earlier" and last["E4"]["status"] == "fired_earlier"
-    assert last["E3"]["status"] == "waiting" and "LTF data missing" in last["E3"]["waiting"]
+    assert st[9][0]["models"]["E3"]["status"] == "waiting" and "LTF data missing" in st[9][0]["models"]["E3"]["waiting"]
+    assert last["E3"]["status"] == "waiting" and "price has left the area" in last["E3"]["waiting"]   # bar 10 closes below the area
     assert st[10][0]["visit_id"].startswith("0@2030-01-07 10:00") and st[10][0]["side"] == ("bull_put" if mirror else "bear_call")
 
 
@@ -365,7 +373,7 @@ def test_entry_gate_settings_are_registered_and_validated():
 def oct12(request):
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=request.param)
-    s = {"level_death_side": "role"}
+    s = {"level_death_side": "role", **LEGACY}
     V = E3.V22(m15, s=s, ltf=ltf, futures=fut)
     Vk = E3.V22(m15, s={**s, "entry_gate": "legacy_k"}, ltf=ltf, futures=fut)
     ts = V.levels.ts
@@ -409,7 +417,7 @@ def test_21_oct_like_no_bos_k_blocks_the_old_gate_the_models_still_read_the_visi
     mirror, V, Vk, bars = oct12
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=mirror)
-    s = {"level_death_side": "role"}
+    s = {"level_death_side": "role", **LEGACY}
     V2 = E3.V22(m15, s=s, ltf=ltf, futures=fut)
     Vk2 = E3.V22(m15, s={**s, "entry_gate": "legacy_k"}, ltf=ltf, futures=fut)
     for x in (V2, Vk2):
@@ -526,7 +534,7 @@ ABSORB_SW = [("L", 96.8, 0, 1)]
 @pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put"])
 def test_e2_e3_never_fire_while_absorption_shows_no_handover_e1_unaffected(mirror, monkeypatch):
     rows = _mirror_rows(ABSORB_ROWS) if mirror else ABSORB_ROWS
-    V, lvl, d = _bare(ABSORB_ROWS, ABSORB_SW, mirror=mirror, ltf=_ltf_from(rows))
+    V, lvl, d = _bare(ABSORB_ROWS, ABSORB_SW, mirror=mirror, ltf=_ltf_from(rows), s=LEGACY)   # bar 8 closes below the area
     st = _statuses(V, lvl, d, range(3, len(ABSORB_ROWS)))
     fired = {t: [f["model"] for f in st[t][1]] for t in st}
     R = EM.Reader(V)
@@ -539,7 +547,7 @@ def test_e2_e3_never_fire_while_absorption_shows_no_handover_e1_unaffected(mirro
     assert m8["E2"]["status"] == "waiting" and "absorption without a handover" in m8["E2"]["waiting"]
     assert m8["E3"]["status"] == "waiting" and "absorption without a handover" in m8["E3"]["waiting"]
     # control: without the absorption read the same bar is a commitment and a CHoCH ⇒ E2 and E3 would fire there
-    V2, lvl2, d2 = _bare(ABSORB_ROWS, ABSORB_SW, mirror=mirror, ltf=_ltf_from(rows))
+    V2, lvl2, d2 = _bare(ABSORB_ROWS, ABSORB_SW, mirror=mirror, ltf=_ltf_from(rows), s=LEGACY)
     monkeypatch.setattr(EM.Reader, "absorbing", lambda self, *a: None)
     fired2 = {t: [f["model"] for f in EM.Reader(V2).area(t, lvl2, d2)[1]] for t in range(3, len(ABSORB_ROWS))}
     assert {"E2", "E3"} <= set(fired2[8])
@@ -582,17 +590,21 @@ def test_overlapping_areas_in_one_visit_give_one_signal_per_model(mirror):
         for a in armed:                                                   # a consumed firing is listed on the member, never lost
             for m, st in a["models"].items():
                 if st["status"] == "cluster_consumed":
-                    assert "one location" in st["note"]
+                    assert "one place, one signal per model" in st["note"]
     assert per_area[3] == [("E1", 0)] and per_area[4] == [("E1", 1)]           # per area: E1 twice (old reading)
-    assert per_area[6] == [("E2", 0), ("E2", 1)]                               # per area: E2 twice at the same bar
+    assert per_area[6] == [("E2", 0)]           # the commitment closes inside area 0 but below area 1 ⇒ only area 0's trigger holds
+                                                # (the trigger check reads the ACTUAL area, never the cluster's union — Z-1u)
     got = {t: [(e[0]["model"], e[3]["area_id"]) for e in k] for t, k in per_cluster.items()}
     assert got[3] == [("E1", 0)] and got[4] == [] and got[6] == [("E2", 0)]    # one signal per model per cluster
     e1 = per_cluster[3][0][0]
-    far = 2 * MID - 103.0 if mirror else 103.0
-    assert e1["invalidation"] == pytest.approx(far) and "cluster's far edge" in e1["invalidation_rule"]   # beyond the cluster's far edge
+    far = 2 * MID - 102.0 if mirror else 102.0                                # Abhi 21 Oct (Z-1u): the cluster only COUNTS — E1's
+    assert e1["invalidation"] == pytest.approx(far) and "the area's far edge" in e1["invalidation_rule"]   # invalidation = its OWN area
+    assert "cluster" not in e1["invalidation_rule"]
     cl = per_cluster[6][0][0]["cluster"]
     assert cl["n"] == 2 and {m["area_id"] for m in cl["members"]} == {0, 1} and cl["visit_id"].startswith("0@")   # the card lists both
-    assert per_cluster[6][0][0]["invalidation"] == pytest.approx(2 * MID - 102.8 if mirror else 102.8)
+    assert "lo" not in cl and "hi" not in cl and "far_edge" not in cl and "visit_extreme" not in cl   # no union band anywhere
+    own = next(f for f in EM.Reader(V).area(6, lvl0, d)[1] if f["model"] == "E2")
+    assert per_cluster[6][0][0]["invalidation"] == pytest.approx(own["invalidation"])   # E2: area 0's own visit extreme
 
 
 def test_separate_areas_and_the_other_side_are_never_merged():

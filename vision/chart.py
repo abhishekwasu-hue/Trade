@@ -315,7 +315,7 @@ def _line_panel(fig, line, ctx, sig, row=3, hide_majors=False):
                      showgrid=False, color="#b0bec5", row=row, col=1)
 
 
-def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None, bands=None, objects=None, xmaps=None):
+def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None, bands=None, objects=None, xmaps=None, errors=None):
     """objects (PA standard §4, setting `chart_objects` = on) = the signal's object list (decision3.draw_objects, already validated),
     drawn by decision3.draw_render — the same geometry and labels as the verification charts; xmaps = (setup XMap, higher XMap) over
     the full signal-time bars (lines anchored before the window keep their slope). None (default) ⇒ the image exactly as today.
@@ -394,7 +394,7 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None, bands=
                     fig.add_shape(type="rect", x0=comp[0] - 0.45, x1=comp[1] + 0.45, y0=float(seg["low"].min()), y1=float(seg["high"].max()),
                                   line=dict(color="#ffd54f", width=1, dash="dot"), fillcolor="rgba(255,213,79,0.05)", row=1, col=c)
         if objects:
-            _objects(fig, objects, df, lo, hi, c, (xmaps or (None, None))[c - 1])
+            _objects(fig, objects, df, lo, hi, c, (xmaps or (None, None))[c - 1], sig=sig, inv=inv, errors=errors)
         if level is not None:
             fig.add_shape(type="line", x0=-0.5, x1=n - 0.5, y0=level, y1=level, line=dict(color=col, width=2), row=1, col=c)
             lo_ = next((o for o in (ctx or {}).get("overlays") or [] if "L" in o["kinds"]), None)
@@ -441,12 +441,42 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None, bands=
     return fig
 
 
-def _objects(fig, objects, df, lo, hi, c, xm=None):
+def clean_ctx(sig, df, inv=None):
+    """P8 clean charts: the trade context of a signal for decision3.chart_lines.select — direction, the entry area (gate tags), the
+    refined base and evidence line ids (entry tags, when the engine sent them), the invalidation, the setup bars. Display only."""
+    tags = (sig.get("tags") or {}) if isinstance(sig.get("tags"), dict) else {}
+    g = tags.get("gate") or {}
+    a = g.get("area") or [None, None]
+    rb = g.get("refined") or {}
+    d = 1 if str(sig.get("direction", "")).upper().startswith("BULL") else -1
+    inv = tags.get("entry_invalidation", inv)
+    inv = inv.get("price") if isinstance(inv, dict) else inv
+    bars = df.rename(columns={"start": "timestamp"})[["timestamp", "high", "low", "close"]] if df is not None and len(df) else None
+    return {"t": None if bars is None else bars["timestamp"].iloc[-1], "d": d, "bars": bars,
+            "area": (float(a[0]), float(a[1])) if a[0] is not None and a[1] is not None else None,
+            "refined": (float(rb["lo"]), float(rb["hi"])) if rb.get("lo") is not None and rb.get("hi") is not None else None,
+            "invalidation": None if inv is None else float(inv), "evidence_ids": g.get("evidence_lines") or [],
+            "entry_ref": tags.get("entry_ref"), "setup_tf": "15M"}
+
+
+def _objects(fig, objects, df, lo, hi, c, xm=None, sig=None, inv=None, errors=None):
     """PA §4: the object list on one price panel (decision3.draw_render primitives). Setup panel: shapes + labels; higher panel:
-    shapes only (it is narrow). The panel's price range is kept — an object outside it becomes an ▲ / ▼ note."""
-    from decision3 import draw_render as DR
-    xm = xm or DR.XMap(df["start"], 0)
-    DR.draw_plotly(fig, DR.geometry(objects, xm, ylim=(lo, hi), short=True), row=1, col=c, label=c == 1)
+    shapes only (it is narrow). The panel's price range is kept — an object outside it becomes an ▲ / ▼ note. P8 clean charts:
+    decision3.chart_lines.select picks the lines shown (cap = the display setting `chart_max_lines`); the rest are listed as
+    "hidden: N" (the PNG has no toggle). Display only: any failure here leaves the chart without its objects (noted in `errors`,
+    render's meta["objects_error"]) — never no PNG."""
+    try:
+        from decision3 import chart_lines as CL
+        from decision3 import draw_render as DR
+        xm = xm or DR.XMap(df["start"], 0)
+        n = int(((sig or {}).get("ctx_settings") or {}).get("chart_max_lines") or CL.max_lines_default())
+        sel = CL.select(objects, clean_ctx(sig or {}, df, inv), max_lines=n)
+        prims = DR.geometry(sel["shown"], xm, ylim=(lo, hi), short=True, max_lines=n, hidden_n=len(sel["hidden"]) if c == 1 else None)
+    except Exception as exc:                                             # noqa: BLE001 — display only
+        if errors is not None:
+            errors.append(f"panel {c}: {type(exc).__name__}: {str(exc)[:120]}")
+        return
+    DR.draw_plotly(fig, prims, row=1, col=c, label=c == 1)
 
 
 def chart_objects_of(sig):
@@ -562,7 +592,10 @@ def render(df1m, sig, daily=None, fut=None):
                     meta["objects_dropped"] = dropped[:10]
             except Exception as exc:                                     # objects are display only ⇒ the chart without them, noted
                 objs, xmaps, meta["objects_error"] = None, None, f"{type(exc).__name__}: {str(exc)[:120]}"
-        fig = build_figure(setup, higher, sig, tfs, ctx, line, vols, bands, objs or None, xmaps)
+        obj_errors = []
+        fig = build_figure(setup, higher, sig, tfs, ctx, line, vols, bands, objs or None, xmaps, errors=obj_errors)
+        if obj_errors:                                                   # objects are display only ⇒ the chart without them, noted
+            meta["objects_error"] = "; ".join(obj_errors)[:240]
         meta["volume_line"] = _volume_line(setup, sig, vols)
         png = fig.to_image(format="png", width=WIDTH, height=int(fig.layout.height or HEIGHT), scale=1)
         return png, meta

@@ -436,7 +436,9 @@ def h1_rows():
     from decision3 import engine as E3
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=False)
-    V = E3.V22(m15, s={"level_death_side": "role"}, ltf=ltf, futures=fut)
+    # the fixture's trigger bar spikes through the area and closes below it ⇒ no entry under the inside-the-area rule (Abhi 21 Oct RC3,
+    # the default); the contract shape is checked on the da7cbbc trigger reading
+    V = E3.V22(m15, s={"level_death_side": "role", "entry_trigger_rule": "legacy", "entry_area_refine": "area"}, ltf=ltf, futures=fut)
     ts = V.levels.ts
     last = ts.dt.normalize().iloc[-1]
     bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == last]
@@ -479,7 +481,8 @@ def test_h1_keys_are_stable_across_a_cron_rerun(h1_rows):
     from decision3 import engine as E3
     m15, fut, ltf, bars, rows = h1_rows
     t = next(b for b, r in zip(bars, rows) if r["entries"])
-    V2 = E3.V22(m15.iloc[:t + 1].reset_index(drop=True), s={"level_death_side": "role"}, ltf=ltf, futures=fut)
+    V2 = E3.V22(m15.iloc[:t + 1].reset_index(drop=True), s={"level_death_side": "role", "entry_trigger_rule": "legacy",
+                                                             "entry_area_refine": "area"}, ltf=ltf, futures=fut)
     again = V2.decide(t)
     first = next(r for b, r in zip(bars, rows) if b == t)
     assert [(e["visit_id"], e["model"], e["key"]) for e in again["entries"]] == \
@@ -510,7 +513,7 @@ def test_engine_entries_respect_max_hits_per_zone_like_the_touch_paths(es, opene
     assert len(opened) == 3                                                         # E4 stays consumed (skipped once ⇒ never again)
 
 
-def test_max_hits_rechecked_after_approval_and_cluster_band_counts(es, opened):
+def test_max_hits_rechecked_after_approval_and_the_visited_area_counts(es, opened):
     st = {**ST, "max_hits_per_zone": 1}
     cl = {"id": "CZ15-7", "lo": 25060.0, "hi": 25150.0, "n": 2, "visit_id": VISIT,
           "members": [{"area_id": "Z15-7", "tf": "15M", "lo": 25080.0, "hi": 25120.0, "state": "ACTIVE"},
@@ -526,7 +529,12 @@ def test_max_hits_rechecked_after_approval_and_cluster_band_counts(es, opened):
     msg = run(es, settings=st, gate_fn=gate_fn2)                                     # both ✅: the first enters, the second hits the limit
     assert [o["tag"] for o in opened] == ["ENGINE_E2"] and "max_hits_per_zone" in msg
     assert ES.entry_status(BOT, SYM, VISIT, "E3", es) == "SKIPPED_MAX_HITS_PER_ZONE"
-    assert ES.zone_entries_today(BOT, SYM, BAR[:10], -1, 25140.0, 25145.0, es) == 1   # the cluster's band was recorded
+    # Abhi 21 Oct (Z-1u): the zone recorded = the entry's own visited area — never the cluster's union (the cluster only counts one
+    # signal per model per place); a band touching only the union's outer part is not this zone
+    a_lo, a_hi = sorted((AREA["lo"], AREA["hi"]))
+    assert ES.zone_entries_today(BOT, SYM, BAR[:10], -1, a_lo, a_hi, es) == 1
+    assert ES.zone_entries_today(BOT, SYM, BAR[:10], -1, 25140.0, 25145.0, es) == (1 if a_hi >= 25140.0 else 0)
+    assert "lo" not in tags["gate"]["cluster"] and "hi" not in tags["gate"]["cluster"]           # no union band on the card
     # ✅ arrives while another entry used the zone in the meantime ⇒ checked again after the gate, before the position
     put(es, [entry("E4", cluster=cl)], bar="2026-10-06 10:45:00")
 
