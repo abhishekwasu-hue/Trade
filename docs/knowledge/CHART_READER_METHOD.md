@@ -154,22 +154,23 @@ HOW TO USE IT
    each fires at most once per visit. E2 and E3 never fire while the zone study reads absorption without a handover. Overlapping
    areas of the same role visited together count as one place: one signal per model per visit — a counter only, never one area (see
    the Z-1u bullet below: edges, trigger and invalidation come from the area price is visiting). The dashboard's existing limit of trades per zone applies to these entries as it does to every other entry path.
- - Trigger inside the area (Abhi 22 Oct, correcting the 21 Oct wording; §3 models / C lifecycle): the trigger candle must have TRADED
-   inside the visited (refined) area — its range reaches the area AND (E1 / E2 / E3 / E4 a) its own range trades into the refined
-   15M base (Abhi 22 Oct: the refined base exists so entry and invalidation come from the narrow base; a candle that touches only the
-   wider context area would bring back the wide invalidation; with `entry_area_refine = area` the visited area is the base) — and
-   price must not be beyond the INVALIDATION side: no close beyond the area's far edge or the model's invalidation, and (E1) the refined base not already
-   closed through in the visit. A close outside the area on the trade-direction side is the confirmation and is allowed (a commitment /
-   rejection candle trades into the area and closes away from it). E4 (b): the rejection form trades at the retested object and closes
-   on its trade side. A candle that gaps or closes through the invalidation side is the area being broken (lifecycle), not an entry;
-   a candle that never traded inside the area is not an entry. (The 21 Oct wording — the close inside the area — stays only as a
-   what-if.)
+ - Trigger at the refined base (Abhi 22 Oct, correcting the 21 Oct wording; §3 models / C lifecycle): the trigger candle ITSELF must
+   trade INTO the 15M refined base — its range overlaps the base band — for E1 / E2 / E3 / E4 (a); touching only the wider context
+   area is not enough (the refined base exists so entry and invalidation come from the narrow base; a candle that never touches it
+   would bring back the wide invalidation). With `entry_area_refine = area` (what-if) the visited area plays the base's role. E4 (b):
+   the rejection form trades at the retested object and closes on its trade side. A close outside the area on the trade-direction
+   side is the confirmation and is allowed (a commitment / rejection candle trades into the base and closes away from it). Price must
+   never be beyond the INVALIDATION side: no close beyond the area's far edge or the model's invalidation, and (E1) the refined base
+   not already closed through in the visit. A candle that gaps or closes through the invalidation side is the area being broken
+   (lifecycle), not an entry. (The 21 Oct wording — the close inside the area — and the 22 Oct first reading — the base only reached
+   somewhere in the visit — stay only as what-ifs: `entry_trigger_rule = inside`.)
  - Sweep / fakeout inside a visit (Abhi 22 Oct; C lifecycle, §3 models): a close beyond the area WITHOUT a swing formed beyond, then
    back inside, is a sweep — the area stays alive and the visit continues. E4 (a) is its model (the next push fails inside the sweep
    extreme; invalidation beyond the sweep extreme); E2 / E3 may still fire later in the same visit (the trigger candle trading into the
    refined base) with an invalidation that includes the sweep extreme; E1 does not come back (the first touch, once per visit). A close
    beyond + a swing formed beyond is the area broken (flip); a later return from the other side is the retest of the flipped area ⇒
-   E4 (b). A single close beyond the refined base (inside the area) ends only E1 — the area is not broken and E2 / E3 / E4 still read.
+   E4 (b). A single close beyond the refined base ends only E1 and is not by itself a break of the area; E2 / E3 / E4 are each judged
+   against their own invalidation at their own trigger.
  - Trades per zone: the dashboard `max_hits_per_zone` is 4 (Abhi 22 Oct: up to four model entries per visit); a dashboard setting.
  - Overlapping areas are never one area (Z-1u): the cluster only counts one signal per model per place. The area's edges, the trigger
    check and the invalidation always come from the actual area price is visiting, never from the union of the cluster.
