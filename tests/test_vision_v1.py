@@ -24,12 +24,13 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setenv("VISION_IMAGE_DIR", str(tmp_path / "visual_audit"))
     monkeypatch.setenv("VISION_CALLBACK_SECRET", KEY)
     monkeypatch.setenv("TELEGRAM_APPROVER_IDS", str(ME))
-    sent = {"photos": [], "edits": [], "texts": [], "answers": []}
+    sent = {"photos": [], "edits": [], "texts": [], "answers": [], "replies": []}
     from vision import tg as TG
     monkeypatch.setattr(TG, "send_photo", lambda png, cap, buttons=None, chat_id=None: (sent["photos"].append((cap, buttons)), 777)[1])
     monkeypatch.setattr(TG, "edit_caption", lambda mid, cap, chat_id=None, has_photo=True: sent["edits"].append((mid, cap)) or True)
     monkeypatch.setattr(TG, "send_text", lambda t, chat_id=None: sent["texts"].append(t) or True)
     monkeypatch.setattr(TG, "answer_callback", lambda cid, t: sent["answers"].append(t) or True)
+    monkeypatch.setattr(TG, "reply", lambda mid, t, chat_id=None: sent["replies"].append((mid, t)) or 999)   # T-1: card ला नवा संदेश
     monkeypatch.setattr(TG, "_creds", lambda: ("tok-not-real", str(ME)))          # बटणांचा chat = approver (खाजगी chat)
     sent["clock"] = [NOW]                                                          # IST घड्याळ — tests पुढे सरकवतात
     monkeypatch.setattr(VS, "now_ist", lambda: sent["clock"][0])
@@ -358,7 +359,7 @@ def test_worker_veto_then_confirm_agree_asks_with_hmac_buttons(db, monkeypatch):
     r = VS.get_signal(sid)
     assert r["status"] == "PENDING_HUMAN" and r["deadline"] and r["tg_message_id"] == 777 and r["factor"] == 1.0
     cap, buttons = db["photos"][-1]
-    assert [b[0] for b in buttons] == ["✅ Approve", "❌ Reject", "📝 Correct marking"] and "पर्यंत" in cap   # §10: ✏️ फक्त engine SL / T असताना
+    assert [b[0] for b in buttons] == ["✅ Approve", "❌ Reject", "📝 Correct marking"] and "Decide by" in cap   # §10: ✏️ फक्त engine SL / T असताना
     assert VD.parse_callback(buttons[0][1]) == (sid, "A") and VD.parse_callback(buttons[1][1]) == (sid, "R")
 
 
@@ -464,7 +465,9 @@ def test_timeout_applies_mode_rule_and_restart_expires_pending(db, monkeypatch):
     VW.v1_housekeeping(now=dt.datetime(2026, 10, 6, 11, 30))
     r = VS.get_signal(sid)
     assert (r["status"], r["factor"], r["decided_by"]) == ("APPROVED", 1.0, "timeout")             # veto_then_confirm agree ⇒ auto_veto पूर्ण
-    assert any("उत्तर आलं नाही" in e[1] for e in db["edits"])
+    card = VS.get_signal(sid)["tg_caption"]                                                       # T-1: card पुसत नाही
+    assert any(e[1].startswith(card) and "No reply by" in e[1] for e in db["edits"])
+    assert any(m == 777 and "No reply by" in t for m, t in db["replies"])                       # + नवा संदेश (card ला reply)
     sid2 = _queue_v1("human_confirm", level=25300.0)
     run(None, [msg(GOOD)], monkeypatch)
     VW.v1_housekeeping(now=dt.datetime(2026, 10, 6, 11, 30))
@@ -482,7 +485,7 @@ def test_unused_decisions_expire_after_exec_window(db, monkeypatch):
     r = VS.get_signal(sid)
     assert r["status"] == "EXPIRED" and "पोहोचला नाही" in r["exec_note"]
     VW.v1_housekeeping(now=dt.datetime(2026, 10, 6, 11, 31))
-    assert len([t for t in db["texts"] if "⌛" in t]) == 1                                       # माहिती एकदाच
+    assert len([t for _, t in db["replies"] if "⌛" in t]) == 1                                  # माहिती एकदाच (T-1: card ला reply)
 
 
 def test_commands_only_for_approver_and_live_guard(db, monkeypatch):
@@ -593,3 +596,260 @@ def test_shadow_report_lists_decisions_and_trades(db, monkeypatch, tmp_path):
     VW.shadow_report(str(VS.get_signal(sid)["signal_ts"])[:10], trades_db=tdb, out=lines.append)
     assert "V1 signals 1" in lines[0] and "SHADOWED" in lines[1] and "P&L -1,200" in lines[1] and "L25,000.00" in lines[1]
     assert "नाकारलेले-shadow 1 (P&L -1,200)" in lines[-1]
+
+
+# ------------------------------------------------------------------------------------------------ T-1 (DECISIONS 29): card कधीच पुसत नाही
+LATE = dt.datetime(2026, 10, 6, 11, 30)
+
+
+def _card(sid):
+    r = VS.get_signal(sid)
+    assert r["tg_caption"], "card caption stored on the row when the card is sent"
+    return r["tg_caption"]
+
+
+def _kept(db, sid, needle, mid=777):
+    """शेवटचा edit = मूळ caption + सगळ्या outcome ओळी (append, replace नाही): caption ची वरची (प्रश्न + निर्णय) ओळी तशाच, 1024 मर्यादेसाठी
+    फक्त जुना भाग (details) लहान, outcome ओळी कधीच कापत नाही."""
+    from vision import tg as TG
+    e = [c for m, c in db["edits"] if m == mid]
+    assert e, "no edit"
+    card, block = _card(sid), VS.get_signal(sid)["tg_outcome"]
+    assert needle in block and e[-1] == TG.compose_outcome(card, block) and e[-1].endswith("\n" + block), e[-1][-300:]
+    assert e[-1].startswith("\n".join(card.split("\n")[:3]) + "\n")
+    return e[-1]
+
+
+def _no_bare_shadow(texts):
+    for t in texts:
+        if "shadow" in t.lower():
+            assert "comparison" in t.lower(), t
+
+
+def test_t1_compose_outcome_keeps_outcome_line_and_shortens_old_part():
+    from bots_common import plain_text as PT
+    from vision import tg as TG
+    assert TG.compose_outcome("<b>Q</b>\nline", "⏱ outcome") == "<b>Q</b>\nline\n⏱ outcome"
+    assert TG.compose_outcome(None, "only") == "only"
+    old = "<b>head line</b>\n" + "\n".join(f"detail {i} 📈 <b>x</b> &amp; y" for i in range(120))
+    line = "⏱ No reply by 10:52 ⇒ trade NOT taken. A comparison-only shadow trade will be recorded if the setup is still valid."
+    out = TG.compose_outcome(old, line)
+    assert PT.tg_len(out) <= TG.CAPTION_LIMIT and out.endswith("\n" + line) and out.startswith("<b>head line</b>\n")
+    assert "…" in out and out.count("<b>") == out.count("</b>")                                    # whole lines dropped, tags intact
+    one = "🟡" * 2000                                                                               # one huge line ⇒ tags-free cut, line kept
+    out = TG.compose_outcome(one + " &amp;", line)
+    assert PT.tg_len(out) <= TG.CAPTION_LIMIT and out.endswith("\n" + line)
+    assert PT.tg_len(TG.compose_outcome(old, line, TG.TEXT_LIMIT)) <= TG.TEXT_LIMIT
+
+
+def test_t1_card_stores_caption_and_says_decide_by(db, monkeypatch):
+    sid, _ = _pending(monkeypatch, db)
+    cap, dl = _card(sid), VS.get_signal(sid)["deadline"]
+    assert cap == db["photos"][-1][0] and f"Decide by {dl[11:16]}" in cap and "✅ take · ❌ skip. No reply ⇒ taken (full size)." in cap
+    VC.save("dynamic_sr_instant", {"vision_mode": "human_confirm"}, "t", trading_mode_fn=paper)
+    sid2 = gate(level=25300.0).signal_id
+    run(None, [msg(GOOD)], monkeypatch)
+    assert "✅ take · ❌ skip. No reply ⇒ skipped." in _card(sid2)
+    assert "skip (shadow)" not in cap                                                              # Abhi: never the bare word
+
+
+def test_t1_approve_appends_and_sends_new_message(db, monkeypatch):
+    sid, buttons = _pending(monkeypatch, db)
+    ok, _ = TB.handle_callback(_cq(buttons[0][1]), now=dt.datetime(2026, 10, 6, 10, 44))
+    assert ok
+    _kept(db, sid, "✅ Approved 10:44")
+    assert [t for m, t in db["replies"] if m == 777 and "✅ Approved 10:44" in t]
+
+
+def test_t1_reject_appends_plain_words_and_new_message(db, monkeypatch):
+    sid, buttons = _pending(monkeypatch, db)
+    ok, _ = TB.handle_callback(_cq(buttons[1][1]), now=dt.datetime(2026, 10, 6, 10, 44))
+    assert ok
+    e = _kept(db, sid, "❌ Rejected by you 10:44 ⇒ trade NOT taken. A comparison-only shadow trade will be recorded")
+    rep = [t for m, t in db["replies"] if m == 777]
+    assert len(rep) == 1 and "trade NOT taken" in rep[0]
+    _no_bare_shadow([e] + rep + db["answers"])
+
+
+def test_t1_timeout_by_worker_or_bot_appends_once_and_replies_once(db, monkeypatch):
+    VC.save("dynamic_sr_instant", {"vision_mode": "human_confirm"}, "t", trading_mode_fn=paper)
+    sid = gate().signal_id
+    run(None, [msg(GOOD)], monkeypatch)
+    dl = VS.get_signal(sid)["deadline"][11:16]
+    monkeypatch.setattr(VS, "now_ist", lambda: LATE)
+    gate()                                                                                         # the BOT applies the timeout (resolve_due)
+    assert VS.get_signal(sid)["decided_by"] == "timeout"
+    VW.v1_housekeeping(now=LATE)
+    VW.v1_housekeeping(now=LATE)
+    e = _kept(db, sid, f"⏱ No reply by {dl} ⇒ trade NOT taken. A comparison-only shadow trade will be recorded if the setup is still "
+                       "valid on the next check.")
+    assert len([t for m, t in db["replies"] if f"No reply by {dl}" in t]) == 1                     # new message, once
+    _no_bare_shadow([e] + [t for _, t in db["replies"]])
+
+
+def test_t1_approval_mode_shadow_result_is_told_in_plain_words(db, monkeypatch):
+    monkeypatch.setitem(VC.BOT_DEFAULTS, "approval_required", True)                                # production default
+    sid, buttons = _pending(monkeypatch, db)
+    TB.handle_callback(_cq(buttons[1][1]), now=dt.datetime(2026, 10, 6, 10, 44))                    # ❌
+    g = gate()                                                                                     # REJECTED → SHADOWED (approval ⇒ would-have)
+    assert g.action == "HOLD" and g.final and VS.get_signal(sid)["status"] == "SHADOWED"
+    VW.v1_housekeeping(now=dt.datetime(2026, 10, 6, 10, 45))
+    e = _kept(db, sid, "No shadow trade: approval mode keeps only a would-have note (lots 0; comparison only, not counted in results)")
+    assert "❌ Rejected by you" in e                                                               # earlier outcome line kept too
+    assert any("would-have" in t for _, t in db["replies"])
+    _no_bare_shadow([e] + [t for _, t in db["replies"]])
+
+
+def test_t1_bot_shadow_opened_and_closed_messages(db, monkeypatch, tmp_path):
+    import sqlite3
+    from vision import outcome as VO
+    VC.save("dynamic_sr_instant", {"approval_required": False}, "t", trading_mode_fn=paper)
+    sid, buttons = _pending(monkeypatch, db)
+    TB.handle_callback(_cq(buttons[1][1]), now=dt.datetime(2026, 10, 6, 10, 44))
+    g = gate()
+    assert g.action == "SHADOW"
+    VG.note_execution(g.signal_id, "shadow: OPENED T9", shadow_opened=True)                          # the bot's SHADOW path
+    VW.v1_housekeeping(now=dt.datetime(2026, 10, 6, 10, 45))
+    _kept(db, sid, "📒 Shadow trade opened (comparison only, not counted in results)")
+    assert sum("Shadow trade opened" in t for _, t in db["replies"]) == 1
+    VS.update(sid, executed_at="2026-10-06T10:45:00")
+    tdb = str(tmp_path / "t.db")
+    c = sqlite3.connect(tdb)
+    c.execute("CREATE TABLE live_trades (trade_id TEXT, symbol TEXT, entry_time TEXT, exit_time TEXT, mode TEXT, source TEXT, status TEXT, "
+              "realized_pnl REAL, exit_reason TEXT)")
+    c.execute("INSERT INTO live_trades VALUES ('T9','NIFTY','2026-10-06 10:45:30','2026-10-06 13:00:00','PAPER',"
+              "'dynamic_sr_instant_vision_shadow','CLOSED',-640.0,'SL')")
+    c.commit()
+    c.close()
+
+    def no_chart(sym):
+        raise RuntimeError("no candles in test")
+    for _ in range(2):                                                                             # chart fails ⇒ retried, message once
+        VO.run(fetch_fn=no_chart, trades_db=tdb, now=dt.datetime(2026, 10, 6, 13, 30))
+    closed = [t for _, t in db["replies"] if "Shadow trade closed" in t]
+    assert len(closed) == 1 and "P&L ₹-640" in closed[0] and "comparison only, not counted in results" in closed[0]
+    _kept(db, sid, "📒 Shadow trade closed (comparison only, not counted in results): P&L ₹-640 · SL")
+
+
+def test_t1_no_shadow_reason_from_engine_path(db, monkeypatch):
+    VC.save("dynamic_sr_instant", {"approval_required": False}, "t", trading_mode_fn=paper)
+    sid, buttons = _pending(monkeypatch, db)
+    TB.handle_callback(_cq(buttons[1][1]), now=dt.datetime(2026, 10, 6, 10, 44))
+    g = gate()
+    from paper import engine_entry as EE
+    EE._no_shadow(g)                                                                               # engine path: no shadow position
+    VW.v1_housekeeping(now=dt.datetime(2026, 10, 6, 10, 45))
+    _kept(db, sid, "No shadow: the setup was no longer valid (the engine entry path opens no shadow position)")
+
+
+def test_t1_drift_expired_restart_append_and_reply(db, monkeypatch):
+    VC.save("dynamic_sr_instant", {"approval_required": False}, "t", trading_mode_fn=paper)
+    sid, buttons = _pending(monkeypatch, db)
+    TB.handle_callback(_cq(buttons[0][1]), now=dt.datetime(2026, 10, 6, 10, 44))                    # ✅ then price ran away
+    VS.update(sid, median_range=20.0)
+    assert gate(spot=25200.0).action == "SHADOW" and VS.get_signal(sid)["status"] == "DRIFT_REJECTED"
+    VW.v1_housekeeping(now=dt.datetime(2026, 10, 6, 10, 45))
+    e = _kept(db, sid, "❌ Not entered: price moved too far after the approval (drift guard:")
+    assert "✅ Approved 10:44" in e and any("drift guard" in t for _, t in db["replies"])
+    sid2 = _queue_v1("veto_then_confirm", level=25300.0)                                          # ✅ but the bot never came back ⇒ EXPIRED
+    run(None, [msg(GOOD)], monkeypatch)
+    TB.handle_callback(_cq(db["photos"][-1][1][0][1]), now=dt.datetime(2026, 10, 6, 10, 46))
+    VW.v1_housekeeping(now=LATE)
+    VW.v1_housekeeping(now=LATE)
+    assert VS.get_signal(sid2)["status"] == "EXPIRED"
+    _kept(db, sid2, "⌛ Expired: approved, but the bot did not reach the entry in time")
+    assert sum("⌛ Expired" in t for _, t in db["replies"]) == 1
+    sid3 = _queue_v1("veto_then_confirm", level=25500.0)
+    run(None, [msg(GOOD)], monkeypatch)
+    n = len(db["replies"])
+    assert TB.expire_on_restart() == 1
+    _kept(db, sid3, "♻️ Service restart ⇒ this signal is cancelled")
+    VW.v1_housekeeping(now=LATE)                                                                   # worker does not repeat it
+    assert len(db["replies"]) == n + 1 and "Service restart" in db["replies"][-1][1]
+
+
+def test_t1_modify_and_reason_edits_append(db, monkeypatch):
+    from vision import approval as AP
+    sid, buttons = _pending(monkeypatch, db)
+    old = _card(sid)
+    row = VS.get_signal(sid)
+    monkeypatch.setattr(AP, "base_levels", lambda r: {"side": "BULLISH", "sl": 24950.0, "target": 25200.0, "entry": 25010.0, "area": None,
+                                                    "src": "engine", "show_rr": False})
+    sent = []
+    AP.state_set(str(ME), "entry", sid)
+    ok, _ = AP.apply_entry(str(ME), sid, "entry 25005", send=sent.append, send_buttons=lambda p, c, b: (sent.append(c), 4242)[1])
+    assert ok and db["edits"][-1][0] == 777 and db["edits"][-1][1].startswith(old + "\n") and "ही बटणं बंद" in db["edits"][-1][1]
+    r = VS.get_signal(sid)
+    assert r["tg_message_id"] == 4242 and r["tg_caption"] == sent[-1]                               # outcomes now go to the new ticket card
+    VS.update(sid, status="REJECTED", human_decision="reject")
+    ok, _ = AP.set_reason({**row, "human_decision": "reject"}, "RT", str(ME), lambda *a: None, "cb", msg_id=888)
+    assert ok and db["edits"][-1][0] == 888 and db["edits"][-1][1].startswith(AP.reason_prompt_text(row) + "\n")
+
+
+def test_t1_no_buttons_card_text_and_one_alert_a_day(db, monkeypatch):
+    from vision import tg as TG
+    monkeypatch.setattr(TG, "_creds", lambda: ("tok-not-real", "-100555"))                         # chat not an approver ⇒ no buttons
+    VC.save("dynamic_sr_instant", {"vision_mode": "human_confirm"}, "t", trading_mode_fn=paper)
+    for lv in (25000.0, 25300.0):
+        gate(level=lv)
+        run(None, [msg(GOOD)], monkeypatch)
+        cap, b = db["photos"][-1]
+        assert b is None and "⚠️ Buttons unavailable: Telegram chat id" in cap and "this signal will be skipped." in cap
+    assert len([t for t in db["texts"] if "Vision approval buttons unavailable" in t]) == 1           # one alert a day
+
+
+def test_t1_health_line_shows_buttons_and_listener(db, monkeypatch):
+    from vision import notify as VN
+    assert "buttons ✅ OK" in VN.health_line() and "listener ❌ never seen" in VN.health_line()
+    monkeypatch.setattr(TB.TG, "get_updates", lambda off, timeout: [])
+    TB.poll_once(0)
+    assert f"listener ✅ seen {NOW:%H:%M}" in VN.health_line()
+    assert "listener ❌ silent since" in VN.health_line(now=NOW + dt.timedelta(minutes=10))
+    assert "buttons ❌ unavailable (x)" in VN.health_line(can_ask=lambda: (False, "x"))
+    from paper import commands as PCMD
+    txt = PCMD.status_text(token_fn=lambda: None, market_fn=lambda: False, kill_fn=lambda: (True, None), pause_fn=lambda: {},
+                           settings_fn=lambda k, s: {}, trades_fn=lambda: [])
+    assert "Vision approval: buttons" in txt
+
+
+def test_t1_shadow_section_lists_vision_shadow_and_real_totals_exclude_them(db, monkeypatch, tmp_path):
+    import sqlite3
+    import database
+    import page_performance as pp
+    from tests.test_database import seed_closed_trade
+    from vision import shadow_view as SV
+    tdb = str(tmp_path / "trades.db")
+    monkeypatch.setattr(database, "DB_PATH", tdb)
+    database.init_sqlite_db()
+    monkeypatch.setattr(database, "get_ist_today", lambda: dt.date(2026, 10, 6))
+    sid, buttons = _pending(monkeypatch, db)
+    TB.handle_callback(_cq(buttons[1][1]), now=dt.datetime(2026, 10, 6, 10, 44))
+    VS.update(sid, status="SHADOWED", executed_at="2026-10-06T10:45:00", reject_reason="wrong zone")
+    seed_closed_trade(tdb, "REAL1", -100.0, "SL", "2026-10-06", mode="PAPER", source="srv2_momentum_reversal")
+    seed_closed_trade(tdb, "SH1", -5000.0, "SL", "2026-10-06", mode="PAPER", source="dynamic_sr_instant_vision_shadow")
+    seed_closed_trade(tdb, "SH2", 700.0, "TARGET", "2026-10-06", mode="PAPER", source="srv2_momentum_reversal_vision_shadow")
+    seed_closed_trade(tdb, "OTM", 50.0, "SL", "2026-10-06", mode="PAPER", source="dynamic_sr_instant_otm_shadow")
+    c = sqlite3.connect(tdb)
+    c.execute("UPDATE live_trades SET entry_time='2026-10-06 10:45:30' WHERE trade_id='SH1'")
+    c.commit()
+    c.close()
+    rows, summ = SV.build(start="2026-10-01", end="2026-10-06")
+    assert sorted(r["trade_id"] for r in rows) == ["SH1", "SH2"]                                     # only *_vision_shadow
+    sh1 = [r for r in rows if r["trade_id"] == "SH1"][0]
+    assert sh1["label"] == "5-Min Instant: shadow" and sh1["signal_id"] == sid and sh1["why rejected"] == "Abhi ❌ (wrong zone)"
+    assert sh1["state"] == "closed" and sh1["P&L"] == -5000.0
+    assert [r["label"] for r in rows if r["trade_id"] == "SH2"] == ["15M Dynamic SR: shadow"]
+    assert summ["line"].startswith("Rejected / no-reply signals: 1 · shadow trades opened 2 · their P&L ₹-4,300")
+    assert "comparison only, not counted in results" in summ["line"]
+    assert database.get_todays_pnl_for_mode("PAPER") == -100.0                                      # real PAPER totals / kill switch
+    assert database.get_todays_trade_count_for_mode("PAPER") == 1
+    assert database.get_performance_summary("NIFTY", mode_filter="PAPER")["total_pnl"] == -100.0
+    assert "comparison only" in pp._SOURCE_LABELS["srv2_momentum_reversal_vision_shadow"]
+
+
+def test_t1_card_sent_before_t1_is_never_erased_only_replied(db, monkeypatch):
+    sid, buttons = _pending(monkeypatch, db)
+    VS.update(sid, tg_caption=None)                                                                # a card sent before this change
+    n = len(db["edits"])
+    TB.handle_callback(_cq(buttons[1][1]), now=dt.datetime(2026, 10, 6, 10, 44))
+    assert len(db["edits"]) == n and any("Rejected by you" in t for _, t in db["replies"])

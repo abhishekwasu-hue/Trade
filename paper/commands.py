@@ -70,11 +70,17 @@ def status_text(token_fn=None, market_fn=None, kill_fn=None, pause_fn=None, sett
     for bot, key, sk in BOT_KEYS:
         lines.append(f"{PW.BOT_LABEL.get(bot, bot)}: signal_source = {_try(lambda: ES.source_of(settings_fn(key, symbol), sk))}")
     lines.append(f"✋ manual_profile (/paper strikes न दिल्यास): {_try(_manual_profile)} · /help")
+    lines.append(_try(_vision_health))                                   # T-1: approval बटणं (can_ask) + listener
     lines.append(_try(lambda: ES.opinion(symbol)))
     tr = _try(trades_fn, default=[])
     lines.append(f"उघडे trades: {len(tr) if isinstance(tr, list) else tr}")
     lines.append("Exits (SL / target / वेळ) नेहमी चालू — pause / kill-switch फक्त नवे entries थांबवतात.")
     return "\n".join(lines)
+
+
+def _vision_health():
+    from vision import notify as VN
+    return VN.health_line()
 
 
 def _manual_profile():

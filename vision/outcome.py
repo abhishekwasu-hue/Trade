@@ -185,6 +185,10 @@ def run(since_days=3, fetch_fn=None, trades_db=None, path=None, now=None):
             if str(tr.get("status")).upper() != "CLOSED" or not tr.get("exit_time"):
                 out.append((row["signal_id"], "open"))
                 continue
+            if row.get("status") in ("SHADOWED", "DRIFT_REJECTED") and row.get("mode") in VS.V1_MODES:   # T-1: card ला "shadow closed"
+                from . import notify as VN                               # (एकदाच; chart अपयशी झाला तरी) — exit मार्गात नाही, cron
+                line = VN.shadow_closed_line(tr.get("realized_pnl"), tr.get("exit_reason"))
+                VN.post(row, "shadow_closed", line, f"{VN.where(row)}: {line}", path)
             if row["symbol"] not in cache:
                 fetch = fetch_fn or (lambda s: __import__("vision.worker", fromlist=["default_fetch"]).default_fetch(s, False)[0])
                 cache[row["symbol"]] = fetch(row["symbol"])

@@ -67,6 +67,7 @@ V1_COLUMNS = {
     "exec_note": "TEXT", "transition_notified": "INTEGER DEFAULT 0",
     "mod_entry": "REAL", "mod_json": "TEXT", "reject_reason": "TEXT",     # Abhi §10: ✏️ limit entry (spot) + सुधारित ticket; ❌ चं कारण
     "pack_version": "TEXT", "v4_json": "TEXT",                           # R0 (design §12): V4 checklist audit (audit-only) + Method Pack version
+    "tg_caption": "TEXT", "tg_outcome": "TEXT",                          # T-1 (DECISIONS 29): card चा मूळ caption + जोडलेल्या outcome ओळी (card कधीच पुसत नाही)
 }
 USAGE_COLUMNS = {"pack_version": "TEXT"}                                  # R0: प्रत्येक V4 call ला कोणता Method Pack होता
 V1_MODES = ("auto_veto", "human_confirm", "veto_then_confirm")
@@ -413,6 +414,14 @@ def rows_with_status(statuses, path=None, timeout=10, bot=None, symbol=None):
         args.append(symbol)
     with connect(path, timeout) as c:
         return [dict(r) for r in c.execute(q + " ORDER BY created_at", args)]
+
+
+def last_transition(signal_id, to=None, path=None):
+    """त्या signal चं शेवटचं status बदल event ("APPROVED→EXPIRED" …; to दिलं ⇒ फक्त त्या status कडे) किंवा None. फक्त वाचन."""
+    q, a = "SELECT event FROM vision_events WHERE signal_id=? AND event LIKE ?", [signal_id, f"%→{to}" if to else "%→%"]
+    with connect(path) as c:
+        r = c.execute(q + " ORDER BY ts DESC, rowid DESC LIMIT 1", a).fetchone()
+    return r[0] if r else None
 
 
 def update(signal_id, path=None, **fields):

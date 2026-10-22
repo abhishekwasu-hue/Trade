@@ -215,6 +215,11 @@ def render():
     except Exception as exc:
         st.error(f"vision DB वाचता आली नाही: {exc}")
         return
+    try:                                                                 # T-1: approval बटणं (can_ask) + listener — एका ओळीत
+        from vision import notify as VN
+        st.caption(VN.health_line())
+    except Exception as exc:                                             # noqa: BLE001 — display only
+        st.caption(f"Vision approval health: NA ({type(exc).__name__})")
     render_settings()
     render_spend()
     pct, mb = disk_usage(IM.base_dir())
@@ -239,6 +244,8 @@ def render():
     values = f7.multiselect("मूल्य", sorted(df[field].dropna().unique()) if field else [])
     start, end = (rng if isinstance(rng, (list, tuple)) and len(rng) == 2 else (None, None))
     v = apply_filters(df, start, end, bots, verdicts, results, versions, field or None, values)
+    from vision import shadow_view as VSV                                # T-1: shadow trades (❌ / no reply / drift) — खऱ्या आकड्यांपासून वेगळे
+    VSV.render(st, start=start, end=end)
     if not v.empty and v["prompt_version"].notna().any():               # prompt_version नुसार गट (evaluation v1 / v2 वेगळे)
         g = v.groupby(v["prompt_version"].fillna("—")).agg(signals=("signal_id", "count"),
                                                           agree=("verdict", lambda s: int((s == "agree").sum())),

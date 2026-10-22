@@ -220,6 +220,7 @@ def _process(bot, access_token, symbol, settings, lot_size, source, now, has_ope
         return f"{symbol}: engine setup {direction} — Vision / ✅ ची वाट ({getattr(g, 'note', 'gate नाही')})"
     if g.action != "ENTER":
         ES.mark_consumed(bot, symbol, r["bar_ts"], f"NOT_ENTERED_{g.action}", path)
+        _no_shadow(g, vpath)
         return f"{symbol}: engine setup {direction} — नाकारला ({g.note}) ⇒ entry नाही"
     msgs, _spot = open_paper(access_token, symbol, settings, direction, level, lot_size, source, "ENGINE", min(lots, g.lots),
                              min(naked, g.naked_lots), chain=chain, open_fn=open_fn, now=now)
@@ -230,6 +231,18 @@ def _process(bot, access_token, symbol, settings, lot_size, source, now, has_ope
     except Exception:
         pass
     return f"{symbol}: engine setup {direction} ⇒ " + "; ".join(msgs)
+
+
+def _no_shadow(g, vpath=None):
+    """T-1: gate SHADOW ⇒ engine मार्ग shadow position उघडत नाही — Telegram card ला साध्या शब्दांत सांगण्यासाठी नोंद (फक्त DB, network नाही).
+    Entry / order ला हात नाही; कधीच raise नाही."""
+    if getattr(g, "action", None) != "SHADOW":
+        return
+    try:
+        from vision import notify as VN
+        VN.record_shadow(g.signal_id, False, "the engine entry path opens no shadow position", vpath)
+    except Exception:                                                    # noqa: BLE001 — display only
+        pass
 
 
 # ------------------------------------------------------------------------------------------------ entry models E1–E4 (decision3 `entries`)
@@ -433,6 +446,7 @@ def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e,
         return f"{who}: Vision / ✅ ची वाट ({getattr(g, 'note', 'gate नाही')})"
     if g.action != "ENTER":
         done(f"NOT_ENTERED_{g.action}")
+        _no_shadow(g, vpath)
         return f"{who}: नाकारला ({g.note}) ⇒ entry नाही"
     full, why = zone_full(bot, symbol, settings, e, bar, path)            # again after ✅: another entry may have used the zone meanwhile
     if full == "full":
