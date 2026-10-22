@@ -811,6 +811,8 @@ def band_flip_facts(df, t, x, s=None, start=None):
     Returns {flip_state, broken_at, far_swing (+ source), flipped_at, dead_at, sweeps} (bars + ts; bars ≤ t only)."""
     from facts import validity as FV
     rule = (s or {}).get("flip_dead_rule") or S3.DEFAULTS.get("flip_dead_rule", "broken_again")   # mirrors Levels._dead_on_break
+    if rule not in ("broken_again", "far_swing"):
+        raise ValueError(f"flip_dead_rule {rule!r} — broken_again / far_swing पैकी")
     s = FV.load(s)
     B = FV.bars_of(df)
     brs = sorted((br for br in (x.get("breaks") or []) if int(br["bar"]) <= t), key=lambda br: int(br["bar"]))

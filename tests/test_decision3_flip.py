@@ -1344,4 +1344,6 @@ def test_band_flip_facts_default_flipped_band_broken_again_is_dead_like_the_engi
     assert f["flip_state"] == FL.DEAD and f["flipped_at"]["bar"] == 26 and f.get("dead_rule") == "broken_again"
     assert 36 < f["dead_at"]["bar"] < 42 and f["sweeps"] == []
     assert LV.band_flip_facts(B, 36, x, start=0)["flip_state"] == FL.BROKEN          # the close beyond alone is not yet DEAD
-
+    import pytest
+    with pytest.raises(ValueError):
+        LV.band_flip_facts(B, len(hi) - 1, x, start=0, s={"flip_dead_rule": "twice"})

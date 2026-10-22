@@ -901,7 +901,8 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
   Now DEAD at the second break. The earlier reading stays as the what-if `flip_dead_rule = far_swing`.
 - ~~Open (display only): `levels.band_flip_facts` still marked DEAD only past the far-side swing~~ — FIXED: it mirrors
   `flip_dead_rule` (default `broken_again`: DEAD at the first confirmed swing beyond the band after the second break; `far_swing` what-if
-  kept and pinned in the older band tests).
+  kept and pinned in the older band tests). Note (review, low): the chart callers pass facts settings, so a dashboard
+  `flip_dead_rule = far_swing` override reaches the engine but not the band labels (they stay on the default); carry it over if ever used.
 
 ## Handover pack (new account) — questions with provisional defaults (checked against DECISIONS / CLAUDE.md)
 - **Where OPEN_QUESTIONS lives.** The pack names `docs/OPEN_QUESTIONS.md`; the repo's file is this one. Provisional: keep this file
