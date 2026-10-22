@@ -15,3 +15,4 @@ Decisions taken from orders go to DECISIONS.md (append only).
 | 8 | Memory protocol (CLAUDE.md + owner-orders) | this PR | docs/owner-orders |
 | 9 | Older BANKNIFTY FUT volume | not available: VPS collector starts 30 Sep; Upstox expired-instruments = paid (Plus), needs Abhi's approval | — |
 | 10 | BANKNIFTY 6-month reading galleries (no FUT before 30 Sep) | done, 12 batches on bf98040 (trade-data review/replay_banknifty_6m/reading/bf98040) | reading-only validator: branch claude/reading-only-reports |
+| 11 | Flipped area broken again ⇒ DEAD (no E4b on it) + one E4b per place (duplicate E4b) | code + tests + 07–21 Oct before / after done; merges with #367 after close | branch claude/trigger-touches-refined-base |

@@ -46,3 +46,8 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     (22 Oct consolidated, item 4)
 26. Reading galleries are allowed for batches without FUT volume: price-based reading and E1 / E3 / E4 shown; every volume item marked
     "FUT volume missing"; never spot volume; labelled "without volume evidence"; superseded when FUT volume arrives. (22 Oct)
+27. An area flips only once. A flipped area broken again (a close beyond it and a swing formed beyond it) is DEAD: no second flip;
+    a dead area is never armed, and no E4 (b) retest may use it. (C lifecycle; code `flip_dead_rule = broken_again`)
+28. One signal per model per place applies to E4 (b) too: overlapping BROKEN areas (and a BROKEN line lying on them) of the same role
+    and break direction, revisited together, give ONE E4 (b) per visit; the signal keeps its own object, retest extreme and
+    invalidation (counter only, never a union band — as decision 9).

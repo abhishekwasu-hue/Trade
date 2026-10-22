@@ -881,7 +881,8 @@ Effects to review (07–21 Oct, trade-data `review/replay_banknifty_6m/<sha>/gro
 
 ## BANKNIFTY 6-month reading galleries (code bf98040; trade-data `review/replay_banknifty_6m/reading/bf98040/`) — possible misreads
 Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
-- **Z-1u / RC1 counter not applied to E4b broken areas:** two E4b entries at one place — 25 Sep 14:00 (1H 276 + D 277, identical band
+- ~~**Z-1u / RC1 counter not applied to E4b broken areas**~~ — FIXED (owner-orders DECISIONS 28): `entry_models.read` runs the
+  place count over E4 (b)'s broken areas and broken lines (`clusters(obj=("broken_area", "broken_line"))`). Was: two E4b entries at one place — 25 Sep 14:00 (1H 276 + D 277, identical band
   55,699–55,970), 01 Jul 12:15 (D 295 + 1H 296), 20 Jul 14:15 (area 295 + a broken line at the same bar). The one-signal-per-model-
   per-place counter must include E4b's broken objects.
 - **RC2 refined base (§2C):** the 26 May 09:30 down move (2,415 pts) had no entry — D area 97 waited "no refined base yet: no 15M
@@ -893,3 +894,10 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
 - **§1 MTF agreement / E3 CHoCH:** 09–11 Jun visits of areas 280 / 288 gave 6 stops out of 6 while the 15M read "trending up".
 - **For Abhi's eye (§1 / §2B, not logged as a bug):** all 69 entries are bear calls — Daily DOWN for six months (protected LH 58,706
   never taken); the 52,877 → 58,673 up leg read as "correction in progress"; the largest move with no entry is up 3,961 pts.
+
+## C lifecycle — a flipped area broken again (owner-orders DECISIONS 27; code `flip_dead_rule = broken_again`)
+- Was: a FLIPPED area broken again stayed BROKEN until that break's far-side swing was reached, and E4 (b) used it as a retest
+  object (07–21 Oct: E4b on 282 / 283 / 282 / 287 — all four flipped once and broken back by close + swing beyond before the retest).
+  Now DEAD at the second break. The earlier reading stays as the what-if `flip_dead_rule = far_swing`.
+- Open (display only, not the decision): `levels.band_flip_facts` (the Vision approval chart's band labels, `display_bands`) still
+  marks DEAD only past the far-side swing; it should mirror `flip_dead_rule`. Logged; no engine effect.
