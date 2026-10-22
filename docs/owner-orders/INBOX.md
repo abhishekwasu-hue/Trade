@@ -44,3 +44,15 @@ From Abhi — consolidated decisions (record every item in docs/owner-orders/DEC
  - back-fill them from the method doc, the Price Action Standard, REPORT_STANDARD and these decisions: entry models E1–E4, human_confirm, max_hits_per_zone 4, the E2 rule above, never merge areas (Z-1u), clean charts, zone refinement, the sweep behaviour above;
  - any provisional decision of yours is first checked against DECISIONS.md and listed in the report.
 Trade's private method stays in the repo as it is now; nothing goes into the public ATP repo.
+
+---
+## 22 Oct — BANKNIFTY 6-month galleries
+Abhi — the BANKNIFTY 6-month galleries (15-day batches) are still missing. Two tracks, in parallel:
+1. FUT volume for the months before 30 Sep: report NOW what you found per source: (a) the VPS collector history, (b) trade-data, (c) Upstox's expired-instruments historical data (docs + whether Abhi's plan includes it). If (a) has it, give Abhi ONE read-only export block to run after today's close (the VPS is small; never during market hours). If no source exists, say so plainly.
+2. Meanwhile, a READING GALLERY for every 15-day batch of the 6 months, so Abhi can verify the chart reading now. Everything price-based is shown, per REPORT_STANDARD:
+ - the areas (refined bases), lines, channels, patterns, swings, the trend per timeframe, RSI divergence, the setups;
+ - the E1 / E3 / E4 entries with their outcomes.
+ Every volume-dependent item (commitment volume, E2, volume evidence) is marked "FUT volume missing", never filled with spot volume.
+ Same code as deployed (record the commit); one HTML gallery per batch, newest first; a running per-model table marked "without volume evidence".
+ When the FUT volume arrives, re-run those batches in full and mark the old gallery superseded.
+Send each batch as it is ready (one message per batch, no "still waiting" messages). इट्स अर्जंट

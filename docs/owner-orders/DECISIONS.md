@@ -42,3 +42,5 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
 24. #365 deploys only AFTER the market close: merge on green CI + the independent review, then ONE VPS block with --revert. (22 Oct)
 25. Memory protocol: CLAUDE.md + docs/owner-orders/ re-read at every start and after compaction; INBOX first; DECISIONS append only.
     (22 Oct consolidated, item 4)
+26. Reading galleries are allowed for batches without FUT volume: price-based reading and E1 / E3 / E4 shown; every volume item marked
+    "FUT volume missing"; never spot volume; labelled "without volume evidence"; superseded when FUT volume arrives. (22 Oct)
