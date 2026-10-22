@@ -11,7 +11,7 @@ blocked-trigger cards, never spot volume as a substitute, never filled gaps. `va
 not testable.
 
 ## 1. First line
-`Rules re-read: CLAUDE.md, REPORT_STANDARD.md`
+`Rules re-read: CLAUDE.md, REPORT_STANDARD.md, owner-orders`
 
 ## 2. Plain Marathi summary on top
 Numbers and what the checks found. No opinions, no proposals unless asked.
