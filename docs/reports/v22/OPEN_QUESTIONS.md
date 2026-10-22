@@ -809,8 +809,12 @@ Implemented (rules recorded in CLAUDE.md, CHART_READER_METHOD.md §1 P8 / §8, R
 - **RC1 (Z-1u, §3 models):** `entry_models.clusters()` only counts one signal per model per place; trigger, edges and invalidation come
   from the visited area. The cluster carries no band (payload / card); `max_hits_per_zone` counts the visited area
   (tests/test_entry_models_inside_area.py::test_no_union_field_reaches_an_entry_the_payload_or_the_card).
-- **RC3 (§3 models / C lifecycle):** `entry_trigger_rule = inside` (default; `legacy` = da7cbbc, what-if). This answers the earlier
-  question above ("should a commitment that closes far beyond the area be skipped?"): yes — it never fires.
+- **RC3 (§3 models / C lifecycle):** `entry_trigger_rule = inside` (#364; `legacy` = da7cbbc, what-if). **Superseded by Abhi 22 Oct
+  (RC3 wording fix, branch `claude/trigger-traded-inside`): default `entry_trigger_rule = traded_inside`** — the trigger candle traded
+  inside the visited area (refined base reached in the visit) and price is not beyond the INVALIDATION side; a close outside on the
+  TRADE side is the confirmation and fires. `inside` / `legacy` stay as what-ifs. The earlier question above ("should a commitment that
+  closes far beyond the area be skipped?") is answered by Abhi: a commitment that traded in and closes away on the trade side is an
+  entry (invalidation = the visit's extreme); one that closes beyond the far edge / never traded inside is not.
 - **RC2 (research default, review after the replay):** `entry_area_refine = setup_tf` (default; `area` = the context area itself).
 - **RC4 (§3 E4 b):** a broken line is "at" price only while a bar's range holds the line; the revisit ends at a swing that does not
   reach it (either side). Before: the touch was one-sided (any bar above a broken support line "touched" it), so a line far away stayed
@@ -831,13 +835,33 @@ Provisional choices (assumed — no answer needed unless Abhi objects). Each was
 - **E4 (b) "at the object" = a candle of the rejection form touches it** (one-candle forms: the trigger candle; two-candle forms: the
   trigger or the one before). Method §3 Lines: "the third touch is the trade location".
 - **E4 (a) sweep keeps the context area's far edge** (the sweep is of the area; the refined base only adds the proximity check).
+- **`traded_inside` (Abhi 22 Oct) — "traded inside the (refined) area" = the trigger candle's range reaches the VISITED area's own band
+  (the band #364 checked the close against) and the refined base was reached earlier in this visit** — not that the trigger candle
+  itself reaches the narrow refined band. Method §8 "Refined base … gives the trigger proximity (price has reached it in this visit)";
+  the 07 Oct 09:15 E2 Abhi corrected trades into the area but not into the refined base (55,112–55,193). In the 07–21 Oct replay 3
+  of the 19 triggers (07 Oct 09:15 E2, 07 Oct 12:15 E3, 08 Oct 09:15 E3) did not touch the refined base themselves — listed in the
+  gallery so the stricter reading can be seen.
+- **The invalidation side = a close beyond the area's far edge (H2, unchanged) or beyond the model's invalidation; E1 keeps the RC3
+  base-closed-through lifecycle check; E2 / E3 do not add it** (their invalidation is already the farther of the base's far edge and
+  the visit's extreme — no new rule). A wick beyond the far edge with a close back on the trade side is a sweep (method §3), not the
+  invalidation side.
+- **E4 (b) is unchanged by `traded_inside`:** the rejection form (one-candle: the trigger; two-candle: the trigger or the one before)
+  trades at the retested object and closes on its trade side — #364 already read it so.
 
 Effects to review (07–21 Oct, trade-data `review/replay_banknifty_6m/<sha>/groups/2026-10-07_2026-10-21/`):
 - **E2 5 → 0 in this group under the inside rule:** every E2 commitment here closed outside its area. RC3 as ordered; flagged.
-- **CONFLICT to ask Abhi with the other contradictions (method "ask only when two of his rules contradict"):** the synthetic 12 Oct
-  bear-call fixture (tests/oct12_fixture — "the structure Abhi described") triggers on a candle that spikes through the area and
-  closes below it; under RC3 it is no entry. The real 12 Oct golden test stays pinned to `legacy_k` (unchanged). Provisional: RC3 wins
-  (his newer explicit rule); the row-shape tests read that fixture with `entry_trigger_rule = legacy`.
+  **Abhi 22 Oct: a wording bug — fixed by `traded_inside`.** Replay 8423bd5 (trade-data
+  `review/replay_banknifty_6m/8423bd5/groups/2026-10-07_2026-10-21/`, before = #364 7b29a70 `inside`, both max_hits_per_zone 4):
+  entries 16 → 19 (next area first 10 → 12, invalidation first 6 → 7); E1 4 → 4, E2 0 → 3, E3 5 → 5 (three move to an earlier
+  bar of the same visit / cluster — the CHoCH bar's trade-side close), E4a 0 → 0, E4b 7 → 7. E2: 07 Oct 09:15 (286, closed 149 below the area,
+  invalidation 55,201 = the visit's extreme; invalidation first, MAE 539), 16 Oct 09:15 (270; next area first), 19 Oct 09:15 (268;
+  next area first).
+- **RESOLVED (Abhi 22 Oct) — the 12 Oct fixture conflict:** the synthetic 12 Oct bear-call fixture's trigger candle trades up through
+  the area and closes below it (the trade side): under `traded_inside` it is an entry again (E1 / E3 on it;
+  tests/test_entry_models_inside_area.py::test_oct12_fixture_spike_trading_through_and_closing_away_fires_under_traded_inside), so
+  the row-shape / live-contract tests read that fixture on the default again. Its next, dominant candle never traded inside the area
+  ⇒ no E2 there (the facts-dossier parity test keeps `legacy` for that bar only). The real 12 Oct golden test stays pinned to
+  `legacy_k` (unchanged). Nothing left to ask.
 - Wide single areas (~300 pts, 3.5–4× the median): not a cluster effect. The BOS-origin one (Abhi's 300, births b + c) came from the
   two concept-C bugs above — fixed here (C-1 / C-2); the swing-born ones (a:D2, one sharp 1H candle wick to body) match the method and
   stay; the refined 15M base now bounds the trade location inside them.
