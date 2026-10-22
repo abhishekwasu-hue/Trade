@@ -917,3 +917,24 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
 - **T-4 INTRADAY vs two-day holding.** Abhi's decision; the current dashboard setting stays. Replay numbers for both are not
   available yet (the replay measures outcomes by structure, not by holding style).
 - **T-4 Fyers `fno_historical_data` probe.** Needs Abhi's own Fyers account / token; not run. Forward FUT collection continues.
+
+## T-5 — Vision audit of engine signals (owner-orders DECISIONS 31, PROVISIONAL; checked against CLAUDE.md / DECISIONS 4, 8, 22, 23 / method §1 P1–P2, §6)
+- **Root cause (confirmed in code).** `signal_source = engine` entries (paper/engine_entry.py, tags `engine: True`) went through the
+  level-bot audit: vision/chart.render drew the old card (thick L line "L RESISTANCE · held R / reclaimed", PDH / PDL / PDC, PWH / PWL,
+  OPEN + the opening-range band, gap bands, session separators) and vision/signal_audit.audit (`signal_check_v2_2`) sent the level-bot
+  playbook + signal text (L line approach / today's role, "Time: N minutes since the open", gap class G0–G5, fill %, event day).
+  `code_verdict` takes the stricter of Vision's verdict and a code floor from DISAGREE_RULES / GRAY_RULES; the code-fact rules
+  (`opening`, `gap_chase`, `gap_b_pdc_accept`, `wrong_approach`, `role_conflict`; gray `event_day`, `gap_undecided_early`) fire from
+  the context alone, so a session / gap / clock fact could floor an engine signal to "disagree" whatever its engine reading.
+- **Provisional default (built).** Vision setting `vision_engine_audit = engine` (`legacy` = the old audit, what-if): engine signals get
+  the engine card (vision/engine_card.py: area faint / broken object dashed, refined base strong, trigger "T", INV, NEXT, HTF strip;
+  no L line / reference levels / opening / gap / separators), the engine facts text and the method's concept checklist (trend side,
+  area lifecycle, visit, trigger in the refined base, invalidation side, model rule, evidence — evidence never decides); the floor is
+  only Vision's own checklist; the old rules are stored and shown as "Context only (old level-bot rules, not in the verdict)".
+  Level-bot signals are byte-identical (pinned test). Vision stays advisory (human_confirm, reduce-only). Assumed — no answer needed
+  unless Abhi objects; reviewed with the "Vision agreed / disagreed / gray × result" table (Vision page).
+- **Next area.** The engine row carries only trade-side areas (watch list), so the engine's opposite "next area" is often absent.
+  Provisional: next area = the nearest alive opposite-role engine area beyond the entry; none ⇒ the chart band finder
+  (decision3.levels.display_bands at signal time, labelled "chart band finder"); none ⇒ "none known" and the outcome follows the
+  invalidation only. Open (display / measurement only): the engine payload could carry its own next opposite area.
+- **Report of the L22,747 card** still needs the VPS export (vision_signals / vision_events); written when it arrives.

@@ -189,6 +189,9 @@ def run(since_days=3, fetch_fn=None, trades_db=None, path=None, now=None):
                 fetch = fetch_fn or (lambda s: __import__("vision.worker", fromlist=["default_fetch"]).default_fetch(s, False)[0])
                 cache[row["symbol"]] = fetch(row["symbol"])
             fig, meta = build_outcome_figure(cache[row["symbol"]], row, tr)
+            st = _structure(cache[row["symbol"]], row, tr)
+            if st is not None:                                           # T-5: engine signal ⇒ the outcome by structure as well
+                meta["structure"] = st
             png = fig.to_image(format="png", width=WIDTH, height=HEIGHT, scale=1)
             p, sha = IM.save_exclusive(IM.signal_path(row, IM.OUTCOME), png)
             pnl = tr.get("realized_pnl")
@@ -199,7 +202,28 @@ def run(since_days=3, fetch_fn=None, trades_db=None, path=None, now=None):
             out.append((row["signal_id"], "outcome"))
         except Exception as exc:                                         # एकाचं अपयश बाकीच्यांना थांबवत नाही; पुढच्या run ला पुन्हा
             out.append((row["signal_id"], f"error: {type(exc).__name__}: {str(exc)[:120]}"))
+    try:                                                                 # T-5: engine trades still open by structure ⇒ followed forward
+        from . import engine_measure as EM
+        fetch = fetch_fn or (lambda s: __import__("vision.worker", fromlist=["default_fetch"]).default_fetch(s, False)[0])
+        out += [(sid, f"structure {res}") for sid, res in
+                EM.refresh_open(lambda s: cache[s] if s in cache else fetch(s), path, (now - pd.Timedelta(days=STRUCTURE_DAYS)).date())]
+    except Exception as exc:                                             # noqa: BLE001 — measurement only
+        out.append((None, f"structure error: {type(exc).__name__}: {str(exc)[:120]}"))
     return out
+
+
+STRUCTURE_DAYS = 20                     # operational: how far back open engine outcomes are re-followed (within the 1m fetch window)
+
+
+def _structure(df1m, row, trade):
+    """T-5: an engine signal's outcome by structure (vision/engine_measure); any other signal / any error ⇒ None (outcome as today)."""
+    try:
+        from . import engine_measure as EM
+        if not EM.is_engine_row(row):
+            return None
+        return EM.structure_outcome(df1m, row, trade.get("entry_time"))
+    except Exception:                                                    # noqa: BLE001 — measurement only, never the outcome chart
+        return None
 
 
 def main(argv=None):

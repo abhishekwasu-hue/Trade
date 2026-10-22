@@ -571,7 +571,10 @@ def render(df1m, sig, daily=None, fut=None):
             vols = panel_volumes(setup, higher, sig, asof, df1m, fut)
         except Exception as exc:                                         # volume पूरक ⇒ NA pane, chart तरी
             vols, meta["vol_error"] = None, f"{type(exc).__name__}: {str(exc)[:120]}"
-        bands = None                                                     # default (setting OFF) ⇒ जुनं drawing, ctx तसाच
+        from . import engine_audit as EA
+        if EA.use_engine(sig):                                           # T-5: an engine signal ⇒ the engine's own card
+            return _render_engine(cut, setup, higher, tfs, sig, ctx, vols, meta)
+        bands = None                                                    # default (setting OFF) ⇒ जुनं drawing, ctx तसाच
         if ctx is not None and (sig.get("ctx_settings") or {}).get("vision_chart_bands"):
             try:
                 finder = (sig.get("ctx_settings") or {}).get("vision_chart_band_finder") or "validity"   # layer 6b setting
@@ -602,3 +605,42 @@ def render(df1m, sig, daily=None, fut=None):
     except Exception as exc:                                             # kaleido/Chrome नाही, डेटा विचित्र — worker ने unavailable नोंदवावं
         meta["error"] = f"{type(exc).__name__}: {str(exc)[:160]}"
         return None, meta
+
+
+def engine_figure(cut, setup, higher, tfs, sig, ctx, vols, meta):
+    """T-5: the engine card's figure + the context marked for the engine audit (ctx["signal_source"] = "engine", ctx["engine"] = the
+    engine's reading). The old context (levels, l_line, gap_ctx …) stays in ctx for the record / context lines only. The next area
+    comes from the engine's areas; only when the engine row carries no opposite area, from the chart band finder (no look-ahead)."""
+    from . import engine_audit as EA
+    from . import engine_card as EC
+    try:
+        fb = chart_bands(cut)
+    except Exception:                                                    # noqa: BLE001 — display only
+        fb = []
+    rd = EA.reading(sig, fallback_areas=fb)
+    ctx = dict(ctx or {})
+    ctx.update(signal_source="engine", engine=rd)
+    meta["ctx"] = ctx
+    objs, xmaps = None, None
+    if (sig.get("ctx_settings") or {}).get("chart_objects") == "on":
+        try:
+            objs, dropped = chart_objects_of(sig)
+            xmaps = _xmaps(cut, setup, higher, tfs)
+            meta["objects"] = len(objs)
+            if dropped:
+                meta["objects_dropped"] = dropped[:10]
+        except Exception as exc:                                         # noqa: BLE001 — display only
+            objs, xmaps, meta["objects_error"] = None, None, f"{type(exc).__name__}: {str(exc)[:120]}"
+    errors = []
+    fig = EC.build_figure(setup, higher, sig, tfs, rd, vols, objs or None, xmaps, errors=errors)
+    if errors:
+        meta["objects_error"] = "; ".join(errors)[:240]
+    meta["volume_line"] = _volume_line(setup, sig, vols)
+    meta["card"] = "engine"
+    return fig
+
+
+def _render_engine(cut, setup, higher, tfs, sig, ctx, vols, meta):
+    fig = engine_figure(cut, setup, higher, tfs, sig, ctx, vols, meta)
+    png = fig.to_image(format="png", width=WIDTH, height=int(fig.layout.height or HEIGHT), scale=1)
+    return png, meta
