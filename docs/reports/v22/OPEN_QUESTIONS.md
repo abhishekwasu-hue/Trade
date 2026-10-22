@@ -923,7 +923,9 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
   09–10 Jun the 15M read "range 53,843.30–54,865.50" (D1: LH 54,455.20 + HL 53,949.90) while price closed above 54,865.50 on 09 Jun
   and traded 600 pts above it with no D1 swing formed beyond. The state stays "range" (no confirmed break), but the detail now says
   "closed above its high 54,865.50 since the last swing — no swing formed beyond it yet (not a confirmed break)"
-  (`mtf_state._range_left`, wording only; entries unchanged; tests/test_pa_mtf_state.py).
+  (`mtf_state._range_left`, wording only; entries unchanged; tests/test_pa_mtf_state.py). Note (review of #373): the wording
+  applies to the range detail of EVERY timeframe (it runs inside `swing_state`), not only the 15M — the commit message of 0720c16
+  says "15M range detail"; that is the case it was found on, the change is per timeframe.
 - **For Abhi's eye (§1 / §2B, not logged as a bug):** all 69 entries are bear calls — Daily DOWN for six months (protected LH 58,706
   never taken); the 52,877 → 58,673 up leg read as "correction in progress"; the largest move with no entry is up 3,961 pts.
 
@@ -950,10 +952,13 @@ by structure across sessions (next opposite area first vs a close beyond the inv
 - **FIXED — C lifecycle / K6.5 mirror for a BROKEN LINE (E4 b object; DECISIONS 23 + 27).** Was: a broken line (main line or channel
   parallel) stayed an E4 (b) retest object whatever price did after its break — the lines had no lifecycle (areas have reclaim /
   dead). E4 (b) reads a broken line as a flipped object ("close beyond + swing beyond = broken (flip)"), so a broken line that price
-  closes back through on its ORIGINAL side AND builds a swing (of the line's degree) beyond it there is broken again ⇒ dead as a
-  flipped area broken again is (an area flips only once) — never an E4 (b) object again (`trendline.broken_back_at`, read in
-  `Reader.broken_objects` for every E4 (b) line object — model C's C-b / C-d / C-f lines too, model C stays OFF; a close back
-  WITHOUT a swing there = a sweep, the line stays broken). No new setting, no number. The two
+  closes back through on its ORIGINAL side AND builds a swing (of the line's degree) beyond it there has its break undone — the
+  mirror of a BROKEN area's reclaim (levels: a close back on the role side + a swing formed there), read the same way as Levels: the
+  closes back must hold until that swing is CONFIRMED (the confirming bar may itself close back); a close not back before the
+  confirmation ends the attempt (a sweep of the retest — the line stays broken). Once undone, never an E4 (b) object again
+  (`trendline.broken_back_at`, read in `Reader.broken_objects` for every E4 (b) line object — model C's C-b / C-d / C-f lines too,
+  model C stays OFF). No new setting, no number. (Review of #373: the first version counted a run of closes back that only reached
+  the swing's bar, not its confirmation — fixed, with the sweep-retest case as a test in both mirrors.) The two
   replayed worst losses were this: 13 Jul 09:15 (1H parallel D2:H+:1025-1123|par, broken down 23 Jun 14:45, closed back above from
   24 Jun 09:15 with the swing high 58,706.10 (25 Jun) — broken back the next day; the "retest" 3 weeks later was the rising line
   catching up with price, entry 57,596.30 after a gap, 449 pts from the line, MAE 919) and 02 Sep 11:15 (falling line of lows
@@ -968,6 +973,13 @@ by structure across sessions (next opposite area first vs a close beyond the inv
   53,385.45 of 13 May 15:15 confirmed by the gap-up bar that closed at 53,924.40, swing high 53,968.65 there) — now reclaimed at 09:45,
   so no E4 (b) bear call from above at 10:30 (was MAE 684). Only this entry changed across all groups (E1 / E2 / E3 identical);
   the chart band labels (`levels.band_flip_facts`, facts.validity breaks) are a separate reader — not checked for the same case.
+- **Process — STABLE layer 2 (docs/reader/STABLE.md).** The K4 reclaim fix is in the layer-2 lifecycle (`reader-layer2-stable-v1`).
+  The trade-data parity snapshot (`parity/layer2/reader-layer2-stable-v1/`) was NOT re-exported (a fix = a new tag, `-v2`, only after
+  Abhi's ✅). Read-only check (outputs kept in scratch, nothing written to trade-data): the layer-2 output on the four parity cases
+  (NIFTY / BANKNIFTY, real + mirror; 1,776 / 1,575 bars) is IDENTICAL before (0720c16) and after this fix — 0 records differ; the
+  fix can still change other charts (it did on 14 May BANKNIFTY). Found while checking: the stored stable-v1 outputs already differ
+  from the pre-fix code on every record (band lo / hi / width / anchor / lineage — later band changes merged after the tag), so the
+  layer-2 parity fixtures are stale independent of this fix; a `-v2` export needs Abhi's ✅.
 - **Before / after (same data, same outcome rule).** Per model, all 13 groups — entries (next first / invalidation first):
 
   | model | before | after |

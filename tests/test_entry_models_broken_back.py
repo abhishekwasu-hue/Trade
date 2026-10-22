@@ -33,10 +33,17 @@ ROWS = [(96.0, 96.4, 95.2, 96.2, 1.0), (96.2, 96.4, 95.6, 96.1, 1.0), (96.1, 96.
         (99.0, 99.1, 98.0, 98.2, 1.0), (98.2, 99.6, 98.1, 98.3, 1.0)]
 
 
-def _line_case(mirror, monkeypatch, swing_back=True):
+# The same break, but on the retest only ONE bar closes above the line (bar 5); bar 6 makes the high 100.2 and itself closes back
+# BELOW the line, all later closes below; the swing high (bar 6) is confirmed at bar 8 — after the close back ⇒ a sweep (as Levels
+# reads an area's reclaim attempt), the line stays broken; bar 9 touches it and rejects.
+SWEEP_ROWS = ROWS[:5] + [(94.5, 97.8, 94.4, 97.7, 1.0), (97.7, 100.2, 96.9, 97.0, 1.0), (97.0, 97.5, 96.0, 96.2, 1.0),
+                         (96.2, 96.5, 95.5, 95.8, 1.0), (95.8, 99.6, 95.7, 95.9, 1.0)]
+
+
+def _line_case(mirror, monkeypatch, swing_back=True, rows=None):
     import decision3.method as M
     monkeypatch.setattr(M, "reversal_form", lambda A, t, dd, s, tss=None: ("engulf", 1) if t == REJECT else None)
-    rows = ROWS
+    rows = rows or ROWS
     ln = {"family": "rising line of lows", "kind": "L", "slope_dir": "rising", "degree": 2, "p1": [0, 95.0], "p2": [1, 95.5],
           "slope": 0.5, "touches": 2, "touch_groups": [[0], [1]], "value_t": 0.0, "broken": True, "break_bar": 2,
           "break_side": "down", "state": "BROKEN", "id": "L+:0-1"}
@@ -76,6 +83,18 @@ def test_a_broken_line_swept_back_without_a_swing_still_fires_its_e4b(mirror, mo
     assert [t for t, _ in fired] == [REJECT]
     f = fired[0][1]
     assert f["obj"]["area_id"] == "line:" + ln["id"] and f["invalidation"] == pytest.approx(2 * MID - 100.2 if mirror else 100.2)
+
+
+@MIRRORS
+def test_one_close_back_then_back_below_before_the_swing_confirms_is_a_sweep(mirror, monkeypatch):
+    """K4 mirror (as Levels): the close back must hold until the swing formed there is confirmed; here bar 6 (the swing's own bar)
+    closes back below the line before the swing is confirmed (bar 8) ⇒ the attempt ended, a sweep of the retest: still an E4 (b)
+    object, the rejection at bar 9 fires."""
+    V, ln, d = _line_case(mirror, monkeypatch, rows=SWEEP_ROWS)
+    assert all(TL.broken_back_at(V, ln, t) is None for t in range(len(SWEEP_ROWS)))
+    fired = [(t, f) for t in range(4, len(SWEEP_ROWS)) for f in EM.Reader(V).broken(t, d)[1]]
+    assert [t for t, _ in fired] == [REJECT]
+    assert fired[0][1]["invalidation"] == pytest.approx(2 * MID - 100.2 if mirror else 100.2)
 
 
 def test_broken_back_needs_a_broken_line():
