@@ -107,6 +107,46 @@ def rr_of(t):
         return None
 
 
+NAKED = ("NAKED_CALL", "NAKED_PUT")
+
+
+def is_naked(t):
+    return str(t.get("strategy") or "").upper() in NAKED
+
+
+def _num(x):
+    return f"{float(x):g}"
+
+
+def naked_exit_text(t, bot, ss):
+    """Naked leg (Abhi T-1, display only): exits ₹ level वर नाहीत — dashboard चे spot % / premium points / TSL / EOD नियम
+    (`trading_engine.manage_open_trades` तेच वापरतो). ते शब्दांत, त्यांच्या dashboard मूल्यांसह. Exit logic इथे नाही; कधीच raise नाही."""
+    try:
+        if not ss:
+            return "exits: dashboard settings unavailable"
+        sl = f"SL: spot {_num(ss['naked_sl_spot_pct'])}% against or premium −{_num(ss['naked_sl_premium_points'])} pts"
+        tsl = (f"TSL: spot {_num(ss['naked_tsl_spot_pct'])}% in favour or premium +{_num(ss['naked_tsl_premium_points'])} pts "
+               f"⇒ SL to entry")
+        if ss.get("naked_trailing_sl_enabled"):
+            tsl += f", then trail {_num(ss['naked_trailing_distance_points'])} pts"
+        tg = f"target: spot {_num(ss['naked_target_spot_pct'])}% in favour or premium +{_num(ss['naked_target_premium_points'])} pts"
+        if str(t.get("trade_style") or "INTRADAY").upper() != "INTRADAY":
+            eod = "EOD exit: none (not intraday)"
+        elif bot == "srv2_momentum_reversal":
+            eod = f"EOD exit {int(ss['naked_eod_hour'])}:{int(ss['naked_eod_minute']):02d}"
+        else:
+            import trading_engine as TE
+            h, m = ((TE.CLASSIC_SR_EOD_HOUR, TE.CLASSIC_SR_EOD_MINUTE) if bot == "classic_sr"
+                    else (TE.DYNAMIC_SR_EOD_HOUR, TE.DYNAMIC_SR_EOD_MINUTE))
+            eod = f"EOD exit {h}:{m:02d}"
+        rules = [sl, tsl, tg]
+        if bot in ("dynamic_sr_instant", "srv3_instant") and str(t.get("entry_timeframe") or "").upper() == "5M":
+            rules.append("next 5M level reached ⇒ exit")
+        return " · ".join(rules + [eod]) + " (whichever first)"
+    except Exception as exc:                                             # noqa: BLE001
+        return f"exits: dashboard settings (NA: {exc})"
+
+
 def _qty(t):
     return int(t.get("lots") or 0) * int(t.get("lot_size") or 0)
 
@@ -176,10 +216,15 @@ def on_entry(t, orders, send=None, jpath=None, tag="", ss_settings=None, engine_
     PJ.upsert(row, jpath)
     v = link.get("vision_verdict") or "—"
     ml = f" · {_model_label(model)}" if model else ""                 # engine entry model ("E1 — Aggressive")
+    if is_naked(t) and bot != "manual":                                  # naked: ₹ target / R:R नाहीत ⇒ premium paid + dashboard नियम
+        risk = (f"premium paid ₹{abs(net_credit_total):,.0f}\n"
+                f"{naked_exit_text(t, bot, ss_settings)}\n")
+    else:
+        risk = (f"net credit ₹{net_credit_total:,.0f} · max loss ₹{max_loss_total:,.0f} · SL ₹{t.get('sl_pnl_level') or 0:,.0f} · "
+                f"target ₹{t.get('target_pnl_level') or 0:,.0f} · R:R {row['rr'] if row['rr'] is not None else 'NA'}\n")
     _say(send, f"🟢 <b>PAPER entry</b> · {BOT_LABEL.get(bot, bot)}{ml} · {t['symbol']} {t.get('strategy') or ''}\n"
                f"legs: {_legs_text(t, epx)}\n"
-               f"net credit ₹{net_credit_total:,.0f} · max loss ₹{max_loss_total:,.0f} · SL ₹{t.get('sl_pnl_level') or 0:,.0f} · "
-               f"target ₹{t.get('target_pnl_level') or 0:,.0f} · R:R {row['rr'] if row['rr'] is not None else 'NA'}\n"
+               f"{risk}"
                f"entry charges ₹{ech:,.0f} · Vision: {v} · approver: {link.get('approver') or '—'} · signal_source: {src}\n"
                f"{engine_opinion}", tag)
     return row
@@ -256,8 +301,11 @@ def on_open(t, orders, j, access_token, now, cfg, send=None, jpath=None, tag="",
     upd = {"trade_id": t["trade_id"], "near_alerts": json.dumps(alerts)}
     if due:
         upd["last_update_at"] = str(now)
-        msgs.append(f"⏱ P&L ₹{p:,.0f} · SL ₹{float(sl or 0):,.0f} पर्यंत ₹{p - float(sl or 0):,.0f} · target ₹{float(tg or 0):,.0f} पर्यंत "
-                    f"₹{float(tg or 0) - p:,.0f}")
+        if is_naked(t) and j.get("bot") != "manual":                     # naked: exits dashboard नियमांवर (entry card) ⇒ ₹0 target नाही
+            msgs.append(f"⏱ P&L ₹{p:,.0f} · exits: dashboard spot % / premium points / TSL / EOD (entry card)")
+        else:
+            msgs.append(f"⏱ P&L ₹{p:,.0f} · SL ₹{float(sl or 0):,.0f} पर्यंत ₹{p - float(sl or 0):,.0f} · target ₹{float(tg or 0):,.0f} पर्यंत "
+                        f"₹{float(tg or 0) - p:,.0f}")
     PJ.upsert(upd, jpath)
     if msgs:
         _say(send, f"📊 {BOT_LABEL.get(j['bot'], j['bot'])} · {t['symbol']} {t.get('strategy') or ''}\n" + "\n".join(msgs), tag)

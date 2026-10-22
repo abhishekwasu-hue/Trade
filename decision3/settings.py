@@ -66,6 +66,10 @@ DEFAULTS = {
                                              # गाठला (पार / नसेल ⇒ break नंतरचा पहिला swing confirm) ⇒ DEAD (दुसरा flip नाही,
                                              # Z-1f). "acceptance" = जुना spec §5.4 (acceptance ⇒ लगेच flip) — फक्त जुने tests / what-if;
                                              # level_death_side फक्त "acceptance" सोबत लागू
+    "flip_dead_rule": "broken_again",        # Abhi (C lifecycle): an area flips only once — a FLIPPED area broken again (a close beyond + a
+                                             # swing formed beyond, break_rule) ⇒ DEAD at once (no second flip; never armed, no E4 (b) retest).
+                                             # "far_swing" = the earlier reading (DEAD only when that break's far-side swing is also reached;
+                                             # until then BROKEN) — what-if only
     "flip_pullback_inner_degree": 1,         # G4 context (a): pullback ची आतली रचना या swings2 degree च्या pivots वर (level_degree च्या एक खाली)
     "flip_pullback_vol_ratio": 1.0,          # G4 context (b): pullback ची सरासरी (normalised) FUT volume < हे × flip impulse ची ⇒ "lower" (फक्त fact)
     "flip_vol_min_coverage": 1.0,            # G4 context (b): impulse / pullback bars पैकी इतक्या bars ला volume हवा; कमी ⇒ (b) NA (फक्त fact)
@@ -112,10 +116,11 @@ DEFAULTS = {
                                              # location ⇒ प्रत्येक model चा एकच signal प्रति cluster प्रति visit. "area" = प्रत्येक area वेगळा (what-if)
     "entry_trigger_rule": "traded_inside",   # Abhi 22 Oct: the trigger candle TRADED inside the visited (refined) area and price is not
                                              # beyond the invalidation side; a close outside on the trade side = the confirmation (allowed).
+                                             # E1 / E2 / E3 / E4 a: the trigger candle itself trades into the refined 15M base (Abhi 22 Oct).
                                              # "inside" = the 21 Oct RC3 reading (#364: the close inside the area, what-if); "legacy" = the
                                              # da7cbbc trigger (what-if / old fixtures)
     "entry_area_refine": "setup_tf",         # Abhi 21 Oct RC2 (RESEARCH DEFAULT, review after replay): 1H / Daily area = context; the
-                                             # refined 15M base inside it (TA4) = trigger proximity, E1 and invalidation. "area" = the context
+                                             # refined 15M base inside it (TA4) = trigger location (the trigger candle trades into it), E1 and invalidation. "area" = the context
                                              # area itself (the da7cbbc reading, what-if)
     "sharp_reversal_handover": True,         # Abhi Z-1z: zone मध्ये push नाकारला + dominant उलट candle ने गिळला = handover (तुलना, आकडा नाही)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
@@ -226,7 +231,8 @@ REGISTER = {
                            "area = each area on its own (the 6852bfc reading, what-if)"),
     "entry_trigger_rule": ("traded_inside", "traded_inside / inside / legacy", "Abhi नियम", "Abhi 22 Oct (corrects the 21 Oct RC3 "
                            "wording, §3 models / C lifecycle): the trigger candle must have TRADED inside the visited (refined) area — "
-                           "its range overlaps the area's own band, the refined base reached in this visit — and price must not be beyond "
+                           "its range overlaps the area's own band and (E1 / E2 / E3 / E4 a, refined base on) its own range trades into the "
+                           "refined 15M base, not only the wider context area (Abhi 22 Oct) — and price must not be beyond "
                            "the INVALIDATION side (no close beyond the far edge / the model's invalidation; E1: the refined base not already "
                            "closed through in the visit). A close outside the area on the TRADE-DIRECTION side is the confirmation and is "
                            "allowed (a commitment / rejection candle trades into the area and closes away from it); E4 (b): the rejection "
@@ -235,7 +241,7 @@ REGISTER = {
     "entry_area_refine": ("setup_tf", "setup_tf / area", "Abhi नियम", "Abhi 21 Oct RC2 — RESEARCH DEFAULT, review after the replay: "
                           "the 1H / Daily area (levels' TA4 band) is the context (where); inside it the refined base on the setup TF "
                           "(the newest 15M turn of the area's side inside the band, wick to body by the same TA4 rule) gives the trigger "
-                          "proximity, the E1 entry and the invalidation; no refined base yet ⇒ the models wait. area = the context area "
+                          "location (the trigger candle trades into it), the E1 entry and the invalidation; no refined base yet ⇒ the models wait. area = the context area "
                           "itself (what-if / the da7cbbc reading)"),
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
     "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),
@@ -249,6 +255,7 @@ REGISTER = {
     "watch_levels_max": (3, "—", "Abhi नियम", "Abhi B2 watch-list (final) + KB K4 chart display (≤ 3 bands above / below price)"),
     "wave_gates": (False, "False / True", "Abhi नियम", "Abhi B1: no wave prediction — wave / maturity / C = a context only; True फक्त जुने tests"),
     "level_flip_rule": ("far_swing", "far_swing / acceptance", "Abhi नियम", "KB K4 / G4 (Abhi final, Z-1): flip = पलीकडे + पलीकडचा swing पार (swing नसेल ⇒ break नंतरचा पहिला swing confirm होताच — Z-1s, तोडायची गरज नाही); नाहीतर BROKEN; flipped zone दुसऱ्यांदा ⇒ DEAD"),
+    "flip_dead_rule": ("broken_again", "broken_again / far_swing (what-if)", "Abhi नियम", "C lifecycle (Abhi): an area flips only once; a FLIPPED area broken again (close beyond + swing beyond) ⇒ DEAD — never armed, no E4 (b) retest. far_swing = the earlier reading (DEAD only past that break's far-side swing)"),
     "flip_pullback_inner_degree": (1, "0 / 1", "व्याख्या", "KB G4 context (a): pullback ची रचना एक degree खालच्या pivots वर (daily_legs.classify inner_seq) — फक्त fact"),
     "flip_pullback_vol_ratio": (1.0, "—", "setting", "KB G4 context (b) 'lower FUT volume than the impulse' ⇒ ratio < 1.0 — फक्त fact, gate नाही (Abhi Z-1)"),
     "flip_vol_min_coverage": (1.0, "—", "setting", "KB G4 context (b): volume NA कधीच शांत 'lower' नाही — सगळ्या bars ला volume हवा"),

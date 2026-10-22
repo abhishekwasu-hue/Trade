@@ -24,7 +24,9 @@ KB K4 flip rule (Abhi, final — `level_flip_rule` = "far_swing", default; decis
   failed, role kept; logged as a sweep ★)
   beyond and back inside before any swing forms beyond, far swing not reached ⇒ sweep ★ (old role).
   (`break_rule = closes` = the legacy `accept_closes` count for both, what-if only.)
-  FLIPPED ──broken again and ITS far-side swing reached──▶ DEAD (Abhi Z-1f: once flipped the old role is over; no second flip, logged).
+  FLIPPED ──broken again (a close beyond AND a swing formed beyond, as BROKEN above)──▶ DEAD at once (Abhi, C lifecycle: an area flips
+  only once; no second flip; never armed, no E4 (b) retest — `flip_dead_rule = broken_again`; "far_swing" = the earlier reading, DEAD
+  only when that break's far-side swing is also reached, BROKEN until then — what-if only).
   Far-side swing (`flip.far_swing`): the nearest confirmed D`level_degree` pivot beyond the band on the break side that formed before the
   excursion began — reached when price trades past it; none (new highs / lows) ⇒ the first swing formed after the break, reached when it
   is CONFIRMED (Abhi Z-1s, the corrected Z-1a wording; it need not be broken — `flip.reached`). Known = confirm_bar ≤ t. Only STRUCTURAL
@@ -593,6 +595,9 @@ class Levels:
             sw = self._swing_beyond(L, st["start"], up, t)
             if sw is not None:
                 fs = FL.far_swing(known, L.lo, L.hi, up, st["start"], C)
+                if self._dead_on_break(L, t):                              # C lifecycle: flipped once, broken again ⇒ DEAD (no 2nd flip)
+                    self._dead(L, t, f"closed beyond the band and a swing formed beyond it ({sw.price:,.2f})", fs, excursion)
+                    return
                 L.events.append((t, "broken", f"closed beyond the band and a swing formed beyond it ({sw.price:,.2f}); " +
                                  (f"far-side swing {fs.price:,.2f} not reached" if fs is not None else "no far-side swing known")))
                 L.flip_facts.append((t, {**hist, "broken_at": t, "break_dir": 1 if up else -1, "exc_start": st["start"],
@@ -604,6 +609,9 @@ class Levels:
             exc += 1
             if not structural and exc >= acc:                              # legacy what-if: acceptance ⇒ BROKEN (flip फक्त far swing ने)
                 fs = FL.far_swing(known, L.lo, L.hi, up, st["start"], C)
+                if self._dead_on_break(L, t):                              # C lifecycle: flipped once, broken again ⇒ DEAD (no 2nd flip)
+                    self._dead(L, t, f"{acc} closes beyond the band", fs, excursion)
+                    return
                 L.events.append((t, "broken", f"{acc} closes beyond the band; " +
                                  (f"far-side swing {fs.price:,.2f} not reached" if fs is not None else "no far-side swing known")))
                 L.flip_facts.append((t, {**hist, "broken_at": t, "break_dir": 1 if up else -1, "exc_start": st["start"],
@@ -615,6 +623,23 @@ class Levels:
             exc = 0
             st["start"] = None
         excursion[L.id] = exc
+
+    def _dead_on_break(self, L, t):
+        """C lifecycle (Abhi, `flip_dead_rule = broken_again`): an area flips only once ⇒ a FLIPPED area broken again is DEAD at that
+        break. "far_swing" (what-if) = the earlier reading: BROKEN until that break's far-side swing is reached."""
+        rule = self.s.get("flip_dead_rule", "broken_again")
+        if rule not in ("broken_again", "far_swing"):
+            raise ValueError(f"flip_dead_rule {rule!r} — broken_again / far_swing पैकी")
+        return rule == "broken_again" and L.count("flip", t - 1) > 0
+
+    def _dead(self, L, t, how, fs, excursion):
+        """The flipped area broken again ⇒ "broken" + "dead" events at bar t (no second flip, never armed again)."""
+        L.events.append((t, "broken", f"{how} — the flipped area broken again"))
+        L.events.append((t, "dead", "flipped area broken again ⇒ dead (an area flips only once; no second flip)"))
+        L.flip_facts.append((t, {**L.facts_at(t), "broken_at": t, "dead_at": t, "dead_rule": "broken_again",
+                                 "far_swing": self._swing_fact(fs)}))
+        L.dead_bar = t
+        excursion[L.id] = 0
 
     def _structural_break(self):
         """Abhi's method §3: broken = a close beyond AND a swing formed beyond (default). "closes" = the legacy `accept_closes` count."""

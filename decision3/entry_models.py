@@ -21,14 +21,19 @@ Armed while price VISITS a valid (alive, not BROKEN / DEAD) trade-side area:
                      or a BROKEN area (K4, broken in the trade direction) is revisited and a rejection candle (reversal_form) closes away
                      from it. Invalidation: beyond the sweep / retest extreme.
 Trigger reading (Abhi 22 Oct, corrects the 21 Oct RC3 wording; §3 models / C lifecycle) — `entry_trigger_rule = traded_inside`: the
-trigger candle has TRADED inside the visited area (its range overlaps the area's own band; the refined base reached in this visit) and
+trigger candle has TRADED inside the visited area (its range overlaps the area's own band) AND — E1 / E2 / E3 / E4 (a), refined base on —
+its own range trades into the refined 15M base (Abhi 22 Oct: the refined base exists so entry and invalidation come from the narrow
+base; a candle that never touches it brings back the wide invalidation; with `entry_area_refine = area` the visited area is the base) and
 price is not beyond the INVALIDATION side (no close beyond the far edge / the model's invalidation; E1: the refined base not already
 closed through in the visit). A close OUTSIDE the area on the TRADE-DIRECTION side is allowed — that close is the confirmation (a
 commitment / rejection candle trades into the area and closes away from it). E4 (b): the rejection form trades at the retested object
 and closes on its trade side. A gap / large candle through the INVALIDATION side is the area being broken (lifecycle), never an entry;
 a candle that never traded inside the area never fires. What-ifs: `inside` = the 21 Oct RC3 reading (#364: the close inside the area's
 own band), `legacy` = the da7cbbc trigger (no inside check). Edges, trigger and invalidation always come from the actual area being
-visited (Z-1u): the overlapping cluster (`entry_cluster_rule = cluster`) only counts one signal per model per place.
+visited (Z-1u): the overlapping cluster (`entry_cluster_rule = cluster`) only counts one signal per model per place — for E4 (b)
+too: overlapping BROKEN areas (and a BROKEN line lying on them) of the same role and break direction revisited together are one
+place (one E4 (b) per visit).
+A DEAD area (flipped once, broken again — `levels.flip_dead_rule`) is never armed and never an E4 (b) object.
 Each model fires at most ONCE per visit (key = area id + visit start + model; the live layer prefixes the symbol): a model fires at bar
 t when its condition holds at t and held at no earlier bar of the same visit (each earlier bar read only with what was known at it).
 A stop-out never blocks the other models ⇒ up to four entries per visit. Models disarm when the area breaks (K4 "broken" / dead inside
@@ -145,6 +150,16 @@ class Reader:
         if lo <= c <= hi:
             return None
         return "close outside the area on the trade side — price has left the area (a model fires only while price is inside it)"
+
+    def off_base(self, i, rb):
+        """Abhi 22 Oct (`traded_inside`, refined base on — E1 / E2 / E3 / E4 a): the trigger candle ITSELF must trade into the refined
+        15M base (its range overlaps the base's band), not only into the wider context area — the refined base exists so entry and
+        invalidation come from the narrow base. None ⇒ ok (or no refined base in use / another trigger rule), else the reason (a wait
+        text). `inside` / `legacy` (what-ifs) are unchanged: the base reached in the visit is enough there."""
+        if rb is None or self.trigger_rule() != "traded_inside" or self.touches(i, rb):
+            return None
+        return (f"the candle did not trade into the refined 15M base {float(rb['lo']):,.2f}–{float(rb['hi']):,.2f} (only the wider "
+                f"context area) — the trigger candle must trade into the refined base (Abhi 22 Oct)")
 
     def beyond(self, i, inv, d):
         """Bar i's close beyond the model's invalidation price (bear call: above; bull put: below) ⇒ the reason, else None."""
@@ -423,7 +438,7 @@ class Reader:
             if not at_area(u):
                 return False, None
             ok, rb = rb_ok(u)
-            if not ok:
+            if not ok or self.off_base(u, rb) is not None:                 # Abhi 22 Oct: the trigger candle trades into the base itself
                 return False, None
             inv = self.farther(ext_at(u), self.rb_far(rb, d), d) if rb else ext_at(u)
             if self.beyond(u, inv, d) is not None:                         # guard only: inv includes this visit's extreme up to u,
@@ -441,6 +456,8 @@ class Reader:
                                                                            # already requires no bar beyond its extreme)
                 return False, None
             ok, rb = rb_ok(u)
+            if not ok or self.off_base(u, rb) is not None:                 # Abhi 22 Oct: the trigger candle trades into the base itself
+                return False, None
             return ok, ({**r, "refined": rb} if rb else r)
 
         conds = {"E1": e1, "E2": lambda u: e23(u, "E2"), "E3": lambda u: e23(u, "E3"), "E4": e4}
@@ -512,6 +529,9 @@ class Reader:
                 return ("no refined base yet: no 15M turn of the area's side inside its band (RC2) — the models wait")
             if not any(self.touches(i, rb) for i in range(start, t + 1)):
                 return f"price has not reached the refined 15M base {rb['lo']:,.2f}–{rb['hi']:,.2f} in this visit yet"
+            off = self.off_base(t, rb)
+            if off:
+                return off
         if m == "E2":
             ok, why, cm = self.c0(t, lvl, d, start, appr_at(t))
             if ok:
@@ -765,8 +785,10 @@ def read(V, t, trend, act):
         d = M._dir(trend)
         b_armed, b_fired = R.broken(t, d)
         armed.extend(b_armed)
-        for f in b_fired:
-            entries.append((f, None, d, f["obj"]))
+        b_entries = [(f, None, d, f["obj"]) for f in b_fired]
+        if str(V.s.get("entry_cluster_rule", "cluster")) == "cluster":     # Z-1u for E4 (b) too: overlapping broken areas = one place
+            b_entries = clusters(b_armed, b_entries, obj=("broken_area", "broken_line"), prefix="CB")
+        entries.extend(b_entries)
     out = []
     for f, lvl, d, a in entries:
         if f["model"] != "E4" or f["variant"] == "a":
@@ -805,7 +827,7 @@ def read(V, t, trend, act):
     return {"entries": out, "armed": armed, "first_area": first_area, "reader": R}
 
 
-def clusters(armed, entries, cands=()):
+def clusters(armed, entries, cands=(), obj="area", prefix="C"):
     """Lead's provisional rule (Abhi may override; `entry_cluster_rule = cluster`): areas of the same role on the same side whose bands
     overlap, visited together (all armed at this bar), are ONE place — at most one signal per model per overlapping cluster per visit.
 
@@ -819,9 +841,14 @@ def clusters(armed, entries, cands=()):
     counting key). A model already fired on any member earlier in this visit ⇒ a new firing on another member is consumed, not a signal;
     several members firing the same model at this bar ⇒ one signal (the anchor's if it fired, else the earliest visit). The signal keeps
     its own area, its own trigger and its own invalidation; the cluster lists its member areas (ids + their own bands) for the card. A
-    single area = a cluster of one (unchanged). Returns the kept (f, lvl, d, a) list; member statuses are annotated."""
-    pool = [a for a in armed if a.get("object") == "area" and not a.get("disarmed")]
-    seen = {(str(a.get("area_id")), int(a["direction"])) for a in armed if a.get("object") == "area"}
+    single area = a cluster of one (unchanged). Returns the kept (f, lvl, d, a) list; member statuses are annotated.
+
+    `obj = ("broken_area", "broken_line")` (prefix "CB"): the same count for E4 (b) — BROKEN areas and BROKEN lines of the same role and
+    break direction revisited together whose bands overlap (a line = its value at this bar) are one place ⇒ one E4 (b) per place per
+    visit (Abhi: one signal per model per place). Each signal keeps its own object, retest extreme and invalidation."""
+    objs = (obj,) if isinstance(obj, str) else tuple(obj)
+    pool = [a for a in armed if a.get("object") in objs and not a.get("disarmed")]
+    seen = {(str(a.get("area_id")), int(a["direction"])) for a in armed if a.get("object") in objs}
     for lvl, d in cands:                                                   # watch-list areas not visited now: part of the place
         lid = lvl.get("parent_level", lvl.get("id"))
         if (str(lid), int(d)) in seen:
@@ -844,7 +871,7 @@ def clusters(armed, entries, cands=()):
         if not vis:
             continue
         anchor = min(vis, key=lambda x: (int(x["visit_start_bar"]), str(x["area_id"])))
-        info = {"id": f"C{anchor['area_id']}", "anchor": anchor["area_id"], "visit_id": anchor["visit_id"],
+        info = {"id": f"{prefix}{anchor['area_id']}", "anchor": anchor["area_id"], "visit_id": anchor["visit_id"],
                 "visit_start": anchor["visit_start"], "n": len(mem),
                 "members": [{**{k: x.get(k) for k in ("area_id", "tf", "role", "lo", "hi", "state", "visit_id")},
                              "visited": not x.get("_unvisited")} for x in mem],

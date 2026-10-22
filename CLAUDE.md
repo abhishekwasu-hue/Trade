@@ -42,7 +42,10 @@
   large candle that closes through the invalidation side is the area being broken (lifecycle), not entered — never an entry; a candle
   that never traded inside the area never fires.
 - Clusters only count one signal per model per place — edges, trigger and invalidation come from the actual area, never the union
-  (Z-1u). No union band in any entry, payload or card; `max_hits_per_zone` counts the visited area.
+  (Z-1u). No union band in any entry, payload or card; `max_hits_per_zone` counts the visited area. The same count applies to E4 (b):
+  overlapping broken areas (and a broken line lying on them) of one role and break direction = one place, one E4 (b) per visit.
+- An area flips only once: a flipped area broken again (close beyond + swing beyond) is DEAD — never armed, never an E4 (b) object
+  (`flip_dead_rule = broken_again`; `far_swing` = the earlier reading, what-if only).
 - Refined base (RC2, RESEARCH DEFAULT, review after the replay — `entry_area_refine = setup_tf`): the 1H / Daily area is the context;
   the refined 15M base inside it (TA4) gives the trigger (the trigger candle must trade into it, see Trigger reading), the E1 entry
   and the invalidation; no refined base yet ⇒ the models wait.

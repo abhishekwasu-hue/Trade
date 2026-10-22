@@ -826,21 +826,34 @@ Provisional choices (assumed — no answer needed unless Abhi objects). Each was
 - **Refined base = the NEWEST 15M swing (finest structure) of the area's side whose extreme is inside the context band, from the area's
   birth turn on; band = that candle's wick to body (levels._band_swing), clipped to the context band.** Method §3 Areas "built from ONE
   base … the candles where buyers or sellers acted (wick to body)" + "the trade area is the lower-timeframe one"; P1 no numbers (none).
-- **Proximity = price reached the refined base in this visit; the close must be inside the CONTEXT area** (not inside the narrow
+- ~~**Proximity = price reached the refined base in this visit; the close must be inside the CONTEXT area** (not inside the narrow
   refined band — a commitment closes away from the base by its nature). RC3 "inside its (refined) area" read as: at the refined base,
-  closing inside the area; method §3 Commitment (the dominant candle after the handover) would otherwise never fire.
+  closing inside the area; method §3 Commitment (the dominant candle after the handover) would otherwise never fire.~~ **Superseded
+  by Abhi 22 Oct (`traded_inside`, then the refined-base trigger decision): the trigger candle itself trades into the refined base; its close may be
+  outside the area on the trade side (never beyond the invalidation side).**
 - **E1 with a refined base = the visit's first candle that reaches the refined base** (was: the visit's first candle). Invalidation
   beyond the base's far side. **E2 / E3 invalidation = the farther of the base's far side and the visit's extreme** (an invalidation is
   never inside a price already traded in the visit).
 - **E4 (b) "at the object" = a candle of the rejection form touches it** (one-candle forms: the trigger candle; two-candle forms: the
   trigger or the one before). Method §3 Lines: "the third touch is the trade location".
-- **E4 (a) sweep keeps the context area's far edge** (the sweep is of the area; the refined base only adds the proximity check).
-- **`traded_inside` (Abhi 22 Oct) — "traded inside the (refined) area" = the trigger candle's range reaches the VISITED area's own band
+- **E4 (a) sweep keeps the context area's far edge** (the sweep is of the area; the refined base gives the trigger location: the trigger candle trades into it).
+- ~~**`traded_inside` (Abhi 22 Oct) — "traded inside the (refined) area" = the trigger candle's range reaches the VISITED area's own band
   (the band #364 checked the close against) and the refined base was reached earlier in this visit** — not that the trigger candle
-  itself reaches the narrow refined band. Method §8 "Refined base … gives the trigger proximity (price has reached it in this visit)";
-  the 07 Oct 09:15 E2 Abhi corrected trades into the area but not into the refined base (55,112–55,193). In the 07–21 Oct replay 3
-  of the 19 triggers (07 Oct 09:15 E2, 07 Oct 12:15 E3, 08 Oct 09:15 E3) did not touch the refined base themselves — listed in the
-  gallery so the stricter reading can be seen.
+  itself reaches the narrow refined band.~~ **DECIDED by Abhi (22 Oct; branch
+  `claude/trigger-touches-refined-base`): the trigger candle ITSELF must trade into the 15M refined base (its range overlaps the base
+  band) for E1 / E2 / E3 / E4 a — the refined base exists so entry and invalidation come from the narrow base; a candle that never
+  touches it brings back the wide invalidation.** Kept: a close outside the area on the trade side is allowed; never a close beyond the
+  invalidation side; E1 base_broken; `entry_area_refine = area` ⇒ the visited area is the base; E4 b keeps "at the retested object";
+  `inside` / `legacy` what-ifs unchanged (`Reader.off_base`; tests/test_entry_models_inside_area.py `*_only_into_the_context_area_*`,
+  tests/test_entry_models_real_bn_oct07.py::test_oct07_0915_e2_commitment_not_trading_into_the_refined_base_no_longer_fires). Before
+  this, in the 07–21 Oct replay 3 of the 19 triggers (07 Oct 09:15 E2, 07 Oct 12:15 E3, 08 Oct 09:15 E3) did not touch the refined
+  base themselves.
+- **Sweep / fakeout behaviour (Abhi 22 Oct, confirmed — method §8):** a close beyond without a swing beyond, then back inside = sweep
+  (area alive, visit continues); E4 a on the failed next push (invalidation beyond the sweep extreme); E2 / E3 later in the visit
+  (candle in the refined base; invalidation includes the sweep extreme); E1 never comes back; close beyond + swing beyond = broken
+  (flip) ⇒ the area's models disarm, a return from the other side ⇒ E4 b; a close beyond the refined base ends only E1. The code already
+  read it so — no code change; pinned by tests/test_entry_models_sweep_fakeout.py (both mirrors; two tests feed the real K4 reader,
+  decision3/levels.py, into the models).
 - **The invalidation side = a close beyond the area's far edge (H2, unchanged) or beyond the model's invalidation; E1 keeps the RC3
   base-closed-through lifecycle check; E2 / E3 do not add it** (their invalidation is already the farther of the base's far edge and
   the visit's extreme — no new rule). A wick beyond the far edge with a close back on the trade side is a sweep (method §3), not the
@@ -868,7 +881,8 @@ Effects to review (07–21 Oct, trade-data `review/replay_banknifty_6m/<sha>/gro
 
 ## BANKNIFTY 6-month reading galleries (code bf98040; trade-data `review/replay_banknifty_6m/reading/bf98040/`) — possible misreads
 Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
-- **Z-1u / RC1 counter not applied to E4b broken areas:** two E4b entries at one place — 25 Sep 14:00 (1H 276 + D 277, identical band
+- ~~**Z-1u / RC1 counter not applied to E4b broken areas**~~ — FIXED (owner-orders DECISIONS 28): `entry_models.read` runs the
+  place count over E4 (b)'s broken areas and broken lines (`clusters(obj=("broken_area", "broken_line"))`). Was: two E4b entries at one place — 25 Sep 14:00 (1H 276 + D 277, identical band
   55,699–55,970), 01 Jul 12:15 (D 295 + 1H 296), 20 Jul 14:15 (area 295 + a broken line at the same bar). The one-signal-per-model-
   per-place counter must include E4b's broken objects.
 - **RC2 refined base (§2C):** the 26 May 09:30 down move (2,415 pts) had no entry — D area 97 waited "no refined base yet: no 15M
@@ -880,3 +894,26 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
 - **§1 MTF agreement / E3 CHoCH:** 09–11 Jun visits of areas 280 / 288 gave 6 stops out of 6 while the 15M read "trending up".
 - **For Abhi's eye (§1 / §2B, not logged as a bug):** all 69 entries are bear calls — Daily DOWN for six months (protected LH 58,706
   never taken); the 52,877 → 58,673 up leg read as "correction in progress"; the largest move with no entry is up 3,961 pts.
+
+## C lifecycle — a flipped area broken again (owner-orders DECISIONS 27; code `flip_dead_rule = broken_again`)
+- Was: a FLIPPED area broken again stayed BROKEN until that break's far-side swing was reached, and E4 (b) used it as a retest
+  object (07–21 Oct: E4b on 282 / 283 / 282 / 287 — all four flipped once and broken back by close + swing beyond before the retest).
+  Now DEAD at the second break. The earlier reading stays as the what-if `flip_dead_rule = far_swing`.
+- Open (display only, not the decision): `levels.band_flip_facts` (the Vision approval chart's band labels, `display_bands`) still
+  marks DEAD only past the far-side swing; it should mirror `flip_dead_rule`. Logged; no engine effect.
+
+## Handover pack (new account) — questions with provisional defaults (checked against DECISIONS / CLAUDE.md)
+- **Where OPEN_QUESTIONS lives.** The pack names `docs/OPEN_QUESTIONS.md`; the repo's file is this one. Provisional: keep this file
+  (no second list). Assumed — no answer needed unless Abhi objects.
+- **PR order vs one working branch.** The session pushes only to `claude/hopeful-gates-hf186c`, which already carries #367 (T-2 + the
+  trigger follow-up, T-4) + its CI fix + the naked-card part of T-6. Abhi wrote "Merge". Provisional: the STEP 0 docs ride in that
+  same PR (order 1 + 3 together), merged on green CI + independent review (DECISIONS 24); T-1 / T-5 / T-6 follow as the next PR
+  from the same branch restarted on main. Nothing is lost; the order only joins two PRs.
+- **VPS commit.** Last status Abhi pasted (per the earlier handoff): `bf98040` (#365), ✅ clean. #367 has never been deployed.
+  Provisional: treat bf98040 as live until Abhi pastes `./deploy status`.
+- **T-1 / T-5 reports need the VPS database** (vision_signals / vision_events, Telegram message ids, the chart image Vision got). The
+  session cannot read the VPS (CLAUDE.md). Provisional: one read-only export block for Abhi (after close); the fixes are built and
+  tested meanwhile; the reports are written when the export arrives.
+- **T-4 INTRADAY vs two-day holding.** Abhi's decision; the current dashboard setting stays. Replay numbers for both are not
+  available yet (the replay measures outcomes by structure, not by holding style).
+- **T-4 Fyers `fno_historical_data` probe.** Needs Abhi's own Fyers account / token; not run. Forward FUT collection continues.

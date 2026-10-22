@@ -75,6 +75,7 @@ def _build(name, mirror=False, vol_pullback=600.0, vol_impulse=1000.0, vol_start
 # far-swing mechanics under the legacy break rule; the method's structural break (a close beyond + a swing formed beyond) has its own
 # tests (test_structural_break_*).
 LEGACY_BREAK = {"break_rule": "closes"}
+FAR_SWING_DEAD = {"flip_dead_rule": "far_swing"}                         # the earlier DEAD reading (what-if); default = broken_again
 
 
 def _levels(m, p2, p1, s=None):
@@ -178,8 +179,9 @@ def test_first_swing_after_the_break_flips_on_its_confirmation_when_no_swing_lie
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull", "bear"])
 def test_flipped_zone_broken_again_with_no_swing_beyond_dies_when_the_first_swing_after_that_break_confirms(mirror):
-    """Abhi Z-1s, the DEAD rule: a FLIPPED zone broken again, with no swing beyond it on the new break side ⇒ DEAD as soon as the first
-    swing formed after that break is CONFIRMED (not traded through) — never a second flip."""
+    """Abhi Z-1s, the earlier DEAD reading (now the what-if `flip_dead_rule = far_swing`; the default `broken_again` kills a flipped
+    area at its second break — tests/test_entry_models_flip_dead.py): a FLIPPED zone broken again, with no swing beyond it on the new
+    break side ⇒ DEAD as soon as the first swing formed after that break is CONFIRMED (not traded through) — never a second flip."""
     f = (lambda x: 2 * MID - x) if mirror else (lambda x: float(x))
     sw = (lambda k: ("L" if k == "H" else "H")) if mirror else (lambda k: k)
     anchors = [(0, 100), (8, 118), (16, 110), (26, 126), (31, 121), (38, 125), (46, 112), (50, 116)]
@@ -188,7 +190,7 @@ def test_flipped_zone_broken_again_with_no_swing_beyond_dies_when_the_first_swin
         closes += list(np.linspace(p0, p1, b1 - b0 + 1)[1:])
     m = m15_from([f(c) for c in closes], wick=0.3)
     p2 = [P(sw("H"), f(118), 8, 10), P(sw("H"), f(126), 26, 29), P(sw("L"), f(112), 46, 48)]   # no swing low below the zone before
-    lv = _levels(m, p2, [])
+    lv = _levels(m, p2, [], s=FAR_SWING_DEAD)
     Z = [L for L in lv.L if abs(L.anchor - f(118)) < 1e-6][0]
     kinds = [(b, k) for b, k, _ in Z.events if k in ("broken", "flip", "dead")]
     assert [k for _, k in kinds] == ["broken", "flip", "broken", "dead"]
@@ -217,9 +219,10 @@ def test_a_prior_swing_beyond_the_zone_must_still_be_passed_not_just_confirmed(m
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull", "bear"])
 def test_flipped_zone_broken_again_past_its_far_swing_is_dead_no_second_flip(mirror):
-    """Abhi Z-1f: once flipped the old role ends; broken again (acceptance) ⇒ BROKEN; past ITS far-side swing ⇒ DEAD, logged."""
+    """Abhi Z-1f, the earlier DEAD reading (what-if `flip_dead_rule = far_swing`): once flipped the old role ends; broken again
+    (acceptance) ⇒ BROKEN; past ITS far-side swing ⇒ DEAD, logged."""
     m, p2, p1, _ = _build("flip_then_dead", mirror)
-    lv = _levels(m, p2, p1)
+    lv = _levels(m, p2, p1, s=FAR_SWING_DEAD)
     Z = _zone(lv, mirror)
     kinds = [k for _, k, _ in Z.events if k in ("broken", "flip", "dead")]
     assert kinds == ["broken", "flip", "broken", "dead"]
@@ -878,7 +881,8 @@ def test_zone_broken_the_next_zone_is_already_armed(mirror):
     assert len(before) >= 2
     t_brk = next(b for b, k, _ in R1.events if k == "broken" and b > 40)
     after = [x["id"] for x in lv.active(t_brk, trend)]
-    assert R1.id not in after and R1.state_at(t_brk) in (FL.BROKEN, FL.DEAD)   # (a flipped zone may die on that bar, Z-1f)
+    # the nearest zone breaks: BROKEN, or broken and flipped on one excursion, or (flipped once already) DEAD — out of the list either way
+    assert R1.id not in after and R1.state_at(t_brk) in (FL.BROKEN, FL.FLIPPED, FL.DEAD)
     R2 = lv.L[after[0]]
     assert R2.id in before and (R2.lo > R1.lo if not mirror else R2.hi < R1.hi)
     assert all(R2.id in [x["id"] for x in lv.active(t, trend)] for t in range(40, len(m)))   # no gap in watching R2
@@ -1310,3 +1314,16 @@ def test_real_12_oct_method_verdict_and_label(real):
     assert r930["evidence_list"]["required"] == "present" and r930["conviction"] == "A"
     assert r930["confirming"]["rsi_divergence"] is True and r930["confirming"]["confluence"] is True
     assert r915["decision"] == "wait" and r915["conviction"] is None
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bull", "bear"])
+def test_flipped_zone_broken_again_is_dead_at_that_break_by_default(mirror):
+    """Abhi (C lifecycle): an area flips only once ⇒ the same fixture under the default `flip_dead_rule = broken_again` dies at its
+    second break (no BROKEN state after the flip, no wait for the far-side swing)."""
+    m, p2, p1, _ = _build("flip_then_dead", mirror)
+    Z = _zone(_levels(m, p2, p1), mirror)
+    old = _zone(_levels(m, p2, p1, s=FAR_SWING_DEAD), mirror)
+    brk2 = [b for b, k, _ in Z.events if k == "broken"][1]
+    assert [k for _, k, _ in Z.events if k in ("broken", "flip", "dead")] == ["broken", "flip", "broken", "dead"]
+    assert Z.dead_bar == brk2 and Z.state_at(brk2 - 1) == FL.FLIPPED and Z.state_at(brk2) == FL.DEAD
+    assert brk2 == [b for b, k, _ in old.events if k == "broken"][1] and old.dead_bar > brk2   # the what-if dies later, past the far swing

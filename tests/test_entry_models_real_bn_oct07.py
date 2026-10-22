@@ -1,13 +1,15 @@
 """Abhi's BANKNIFTY 07–21 Oct review (deployed da7cbbc) — the two real cases, read live-equivalently on the private trade-data export
 (skips cleanly without it; nothing from it is stored in this repo):
 
-  • 07 Oct 09:15 E2 (bear call, the 1H supply 54,886–55,193): the commitment candle traded INTO the area and closed BELOW it — on the
-    trade side. Abhi 22 Oct (`entry_trigger_rule = traded_inside`, default): that close is the confirmation ⇒ E2 fires, invalidation
-    beyond the visit's extreme (the invalidation side); under the 21 Oct RC3 wording (`inside`, #364, what-if) it did not fire;
+  • 07 Oct 09:15 E2 (bear call, the 1H supply 54,886–55,193): the commitment candle traded INTO the context area and closed BELOW it
+    (the trade side) but never traded into the area's refined 15M base. Abhi 22 Oct (second decision): the trigger candle ITSELF must
+    trade into the refined base ⇒ no E2 there (#365 fired it, invalidation the wide visit extreme); with `entry_area_refine = area`
+    (what-if, the visited area plays the base's role) it is still an entry; under the 21 Oct RC3 wording (`inside`, #364, what-if) it
+    did not fire;
   • 07 Oct 10:00 E1 on that area: its invalidation was the cluster's far edge 55,201 (the union of overlapping areas) — the invalidation
     must come from the area itself (RC1); with the refined 15M base (RC2, research default) it waits for price to reach the base;
-  • every entry that day: the trigger candle traded inside its own area, no close beyond its far edge or its invalidation, and no
-    invalidation from a cluster's union.
+  • every entry that day: the trigger candle traded inside its own area (and into its refined base when one is used), no close beyond
+    its far edge or its invalidation, and no invalidation from a cluster's union.
 The day's inputs are cut exactly as engine3_live cuts them at that session's close (15M / Daily / 5M / FUT windows)."""
 import glob
 import os
@@ -104,17 +106,29 @@ def _on_band(e):
     return a.get("lo") is not None and abs(float(a["lo"]) - BAND[0]) < 0.01 and abs(float(a["hi"]) - BAND[1]) < 0.01
 
 
-def test_oct07_0915_e2_commitment_traded_in_and_closed_below_the_area_fires(day_rows):
+def test_oct07_0915_e2_commitment_not_trading_into_the_refined_base_no_longer_fires(day_rows):
     V, ts, rows = day_rows
     r = rows["09:15"]
     i = int(np.flatnonzero(ts.astype(str).str.startswith(f"{DAY} 09:15"))[0])
     A = V.levels.A
     assert float(A["high"][i]) >= BAND[0] and float(A["close"][i]) < BAND[0]   # traded into the area, closed below it (trade side)
-    e2 = [e for e in r["entries"] if e["model"] == "E2" and _on_band(e)]
-    assert len(e2) == 1 and e2[0]["direction"] < 0                           # traded_inside (default): the close away = confirmation
-    inv = float(e2[0]["invalidation"])
-    assert inv >= BAND[1] and "cluster" not in str(e2[0]["invalidation_rule"])  # the invalidation side: beyond the area's far edge
-    assert inv >= float(A["high"][i])                                        # the trigger is not beyond its invalidation
+    assert not [e for e in r["entries"] if e["model"] == "E2" and _on_band(e)]   # Abhi 22 Oct: it never traded into the refined base
+    arm = [a for a in r["armed"] if a.get("lo") is not None and abs(float(a["lo"]) - BAND[0]) < 0.01]
+    assert arm and not arm[0].get("disarmed")
+    w = str(arm[0]["models"]["E2"].get("waiting"))
+    assert "did not trade into the refined 15M base" in w, w
+    from decision3 import entry_models as EM
+    lvl = {"id": arm[0]["area_id"], "tf": arm[0]["tf"], "role": arm[0]["role"], "lo": arm[0]["lo"], "hi": arm[0]["hi"]}
+    rb = EM.Reader(V).refined(i, lvl, -1)
+    assert rb is not None and float(A["high"][i]) < float(rb["lo"])         # the candle's high stays below the base
+
+
+def test_oct07_0915_e2_with_the_context_area_as_the_base_still_fires():
+    V, ts, rows = _build({"entry_area_refine": "area"}, only={"09:15"})       # what-if: the visited area plays the base's role
+    i = int(np.flatnonzero(ts.astype(str).str.startswith(f"{DAY} 09:15"))[0])
+    e2 = [e for e in rows["09:15"]["entries"] if e["model"] == "E2" and _on_band(e)]
+    assert len(e2) == 1 and e2[0]["direction"] < 0
+    assert float(e2[0]["invalidation"]) >= max(BAND[1], float(V.levels.A["high"][i]))   # the invalidation side, never the union
 
 
 def test_oct07_0915_e2_under_the_21_oct_inside_reading_does_not_fire():
@@ -151,3 +165,6 @@ def test_oct07_every_entry_trades_inside_its_own_area(day_rows):
                 assert (c - (hi if d < 0 else lo)) * d >= 0, (hm, e["model"], c)   # no close beyond the far edge
                 inv = float(e["invalidation"])
                 assert (c - inv) * d >= 0, (hm, e["model"], c, inv)   # not beyond its invalidation
+                rb = e.get("refined_base")
+                if rb and e["model"] in ("E1", "E2", "E3", "E4"):           # Abhi 22 Oct: the trigger candle trades into the base
+                    assert float(A["low"][b]) <= float(rb["hi"]) and float(A["high"][b]) >= float(rb["lo"]), (hm, e["model"], rb)

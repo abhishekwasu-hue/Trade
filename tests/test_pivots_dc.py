@@ -402,6 +402,24 @@ def test_daily_candle_complete_on_cas_days_and_markers_not_clamped():
     assert PC._x_of(daily, asof + pd.Timedelta(days=1)) is None                     # शेवटच्या candle नंतरची खूण मागे दाबत नाही
 
 
+def test_cas_candle_kept_in_data_day_completes_only_at_its_close():
+    from opportunity_engine import cas as CAS
+    start = pd.Timestamp(CAS.load_cas_window()["effective_from"]) + pd.Timedelta(days=7)
+    m15 = m15_from(walk(25 * 4, 3), start=start - pd.Timedelta(days=start.dayofweek))   # CAS candle सकट (15:15–15:30)
+    cas = CAS.cas_mask(m15["timestamp"]).to_numpy()
+    assert cas.any()
+    i = int(np.flatnonzero(cas)[1]) - 1                                             # दुसऱ्या दिवसाची CAS आधीची candle
+    full = PC.daily_from_15m(m15, pd.Timestamp(m15["bar_end"].iloc[-1]))
+    cut = PC.daily_from_15m(m15.iloc[:i + 1], pd.Timestamp(m15["bar_end"].iloc[i]))
+    assert len(cut) == 1                                                            # दुसरा दिवस अजून पूर्ण नाही (CAS candle बाकी)
+    pd.testing.assert_frame_equal(cut, full.iloc[:1].reset_index(drop=True))
+    cut2 = PC.daily_from_15m(m15.iloc[:i + 2], pd.Timestamp(m15["bar_end"].iloc[i + 1]))
+    pd.testing.assert_frame_equal(cut2, full.iloc[:2].reset_index(drop=True))     # CAS candle बंद ⇒ पूर्ण, full सारखीच
+    mixed = m15[~(cas & (np.arange(len(m15)) < i))].reset_index(drop=True)          # mixed data: पहिल्या दिवसाची CAS candle नाही
+    md = PC.daily_from_15m(mixed, pd.Timestamp(mixed["bar_end"].iloc[-1]))
+    assert len(md) == len(full)                                                     # कोणताही पूर्ण दिवस गळत नाही
+
+
 def test_display_only_history_drawn_but_never_in_engine(tmp_path):
     m15 = m15_from(walk(25 * 30, 6, 5.0))
     res = PE.build(m15)

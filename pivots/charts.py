@@ -38,12 +38,20 @@ def agg_1h(m15):
 
 def daily_from_15m(m15, asof):
     """15M ⇒ daily; फक्त पूर्ण sessions (त्या दिवसाचा शेवटचा अपेक्षित 15M bar — CAS असेल तर 15:15 ला संपणारा — asof पर्यंत बंद).
-    अर्धवट दिवसाची candle नाही."""
+    अर्धवट दिवसाची candle नाही. कापलेला असू शकतो तो फक्त frame चा शेवटचा दिवस: आधीच्या दिवसांत CAS candle ठेवलेली असेल ⇒ हा data
+    CAS candle ठेवतो ⇒ शेवटचा CAS दिवस त्या candle च्या close ला पूर्ण (`session_complete(cas_kept=True)`) ⇒ कापलेल्या आणि पूर्ण
+    data वर तीच Daily candle. आधीचे दिवस पूर्ण data चे ⇒ जुनाच नियम (mixed data — काही दिवस CAS सकट, काही नाही — चे दिवस गळत नाहीत)."""
+    from opportunity_engine import cas as CAS
     m = m15[pd.to_datetime(m15["bar_end"]) <= pd.Timestamp(asof)]
     t = pd.to_datetime(m["timestamp"])
     g = m.assign(timestamp=t.dt.normalize()).groupby("timestamp").agg(open=("open", "first"), high=("high", "max"), low=("low", "min"),
                                                                    close=("close", "last"), bar_end=("bar_end", "max")).reset_index()
-    ok = [PE.session_complete(d, e) for d, e in zip(g["timestamp"], g["bar_end"])]
+    kept = False
+    if len(g):
+        before = (t.dt.normalize() < g["timestamp"].iloc[-1]).to_numpy()
+        kept = bool((CAS.cas_mask(m["timestamp"]).to_numpy() & before).any())
+    last = len(g) - 1
+    ok = [PE.session_complete(d, e, cas_kept=kept and i == last) for i, (d, e) in enumerate(zip(g["timestamp"], g["bar_end"]))]
     return g[ok].reset_index(drop=True)
 
 
