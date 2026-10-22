@@ -195,6 +195,9 @@ def _body(row, res, mode, reused=False):
             s.append("<b>कारण:</b> " + html.escape(a["reason"]))
         if "level_kind" in a:                                           # signal_check_v2
             s += v2_lines(a, (res.get("rule_hits") or [None])[0])
+        elif a.get("engine_check"):                                     # T-5: engine signal — the method's checklist (vision/engine_audit)
+            from . import engine_audit as EA
+            s += EA.caption_lines(a, (res.get("rule_hits") or [None])[0])
         else:
             s.append(f"level {a.get('level_real')} · trend {a.get('trend_context')} · reversal {a.get('reversal_valid')} · "
                      f"breakout {a.get('is_breakout_entry')} · false-break {a.get('false_break_risk')}")
@@ -788,7 +791,7 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
                                                                                "context": meta.get("ctx")},
                   audits=len(res.get("audits") or []), confidence=res.get("confidence"), latency_ms=res.get("latency_ms"),
                   cost_usd=res.get("cost_usd") or 0.0, model=model, image_path=img_path, image_sha256=img_sha, error=res.get("error"),
-                  prompt_version=SA.PROMPT_VERSION if res.get("audits") or res.get("verdicts") else None,
+                  prompt_version=(res.get("prompt_version") or SA.PROMPT_VERSION) if res.get("audits") or res.get("verdicts") else None,
                   final_decision=extra.pop("final", final), **extra)
         if not ok:
             return res

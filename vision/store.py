@@ -272,6 +272,15 @@ def _reuse_tags(setup_json):
     return tuple(bool(t.get(k)) for k in REUSE_TAGS) + (t.get(MODEL_TAG),)
 
 
+def _engine_tag(setup_json):
+    """T-5: tags["engine"] is True (paper/engine_entry) — the engine audit's signals; every other signal False."""
+    try:
+        t = json.loads(setup_json or "{}").get("tags") or {}
+    except (ValueError, TypeError, AttributeError):
+        t = {}
+    return isinstance(t, dict) and t.get("engine") is True
+
+
 def find_reusable(row, window_min, tol_pct=0.05, path=None, prompt_version=None):
     """तोच bot / symbol / दिशा / role / TF / setup प्रकार (breakout / directional tags), level ±tol_pct %, आधीच्या `window_min` मिनिटांत DONE
     (unavailable नाही, स्वतः reuse नाही) ⇒ ती row. Role किंवा breakout प्रकार वेगळा ⇒ नवा audit (verdict नियम वेगळे लागतात)."""
@@ -285,8 +294,11 @@ def find_reusable(row, window_min, tol_pct=0.05, path=None, prompt_version=None)
                          (row["bot"], row["symbol"], row.get("direction"), row.get("role"), row.get("setup_tf"), t0, t1,
                           row.get("signal_id") or "")).fetchall()
     want = _reuse_tags(row.get("setup_json"))
+    eng = _engine_tag(row.get("setup_json"))
     for r in rows:
         if _reuse_tags(r["setup_json"]) != want:
+            continue
+        if _engine_tag(r["setup_json"]) != eng:                          # T-5: an engine signal never reuses a level-bot audit (or back)
             continue
         if prompt_version and r["prompt_version"] != prompt_version:       # v1 चं मत v2 signal ला नाही
             continue
