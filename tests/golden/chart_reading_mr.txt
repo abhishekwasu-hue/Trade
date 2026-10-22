@@ -1,0 +1,49 @@
+📘 NIFTY — chart वाचन (पुढच्या session साठी)
+━━━━━━━━━━━━━━━━
+शेवटचा close 22,720
+
+🧭 मोठं चित्र
+• Weekly: up-trend मधलं correction
+• Daily: DOWN · correction · protected high 23,180
+• 1H: range 22,600–22,950 · 15M: down-trend मधलं correction
+
+🏗 रचना (A, B)
+• 1H वरचा शेवटचा event: CHoCH ↓ (22,790 च्या खाली close)
+• Legs (1H): खालचा leg impulsive (मोठे bodies, कमी overlap, प्रति bar जास्त FUT volume); वरचा leg (आतापर्यंत) corrective (लहान bodies, overlapping candles, प्रति bar कमी FUT volume)
+
+🧱 Areas (C) — engine काय पाहतो
+• 🔴 1H supply 22,760–22,820 · FLIPPED (आधी support) · 1× tested [#11]
+• विरुद्ध बाजूचा पुढचा area: 🟢 1H demand 22,560–22,610 · FRESH [#21]
+• 🔴 Daily supply 23,050–23,200 · TESTED 2× [#31]
+• वाचन तपासणी: दाखवलेल्या जागी duplicate area नाही
+
+💧 Liquidity (D)
+• वर: equal highs ≈ 22,950 (अजून घेतलेली नाही) · खाली: swing low 22,600 (अजून घेतलेली नाही)
+• शेवटचा sweep: किंमत 22,600 च्या खाली 22,580 पर्यंत गेली आणि परत आत close
+
+📐 रेषा · patterns (E, H) · confluence (F)
+• 1H खाली जाणारा channel (किंमत आत): वरची रेषा 22,830 · खालची 22,590 · मुख्य रेषेला 3× touch
+• Confluence: supply 22,760–22,820 वर रेषा (touch point)
+
+📊 Volume (I) · RSI (J)
+• Pullback खाली जाणाऱ्या impulse पेक्षा कमी FUT volume वर आला (प्रति bar 900 विरुद्ध 1,500)
+• RSI: regular bullish divergence 22,650 → 22,600 (confirmed, फक्त पुरावा)
+
+🔀 Breakout / range (K, L)
+• Range (1H, रचनेवरून): कडा 22,600–22,610 / 22,940–22,950
+• चालू pattern वर स्वीकारलेला breakout नाही
+
+🌊 Wave context
+• Weekly: same-degree correction candidate (leg b) · Daily leg L4 · correction · correction b
+
+🎯 Engine कशाची वाट पाहतो (plan, signal नाही)
+• Bear-call बाजू: 22,760–22,820 ला visit → handover → FUT volume सह commitment → 5-min CHoCH ⇒ E1–E4
+• Refined 15M base 22,790–22,815: trigger candle त्यात trade झाली पाहिजे; E1 invalidation 22,815 च्या पलीकडे
+• Idea रद्द जर: 22,820 च्या वर close + वर swing (area BROKEN) → पुढचा: 22,900–22,950
+• Bull-put बाजू: फक्त model C मधून (OFF)
+• Execution = तुमची dashboard settings
+
+👁 Vision चं दुसरं मत (फक्त माहिती)
+• चालवलं नाही (dashboard chart_reading_vision = off) — वरचं engine वाचनच
+
+पूर्ण report → https://dash.example/chart-reading

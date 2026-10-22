@@ -1326,6 +1326,85 @@ def save_signal_symbols(symbols):
                                   {"signal_symbols": clean_signal_symbols(symbols)})
 
 
+# Abhi (Chart Reading Report order, owner-orders DECISIONS 35): the daily chart-reading report's dashboard settings — one global row
+# (strategy_settings, the same pattern as signal_symbols; no migration: no row ⇒ these defaults). Display / operational only: none of
+# them is a reading rule or an execution setting. Readers: scripts/chart_reading_report.py, page_chart_reading.py, run_visual_audit.py.
+#   chart_reading_report       on / off — the report (charts + reading) after the close + the pre-open refresh. Default OFF until Abhi
+#                              approves the sample (provisional, OPEN_QUESTIONS CRR-1).
+#   chart_reading_symbols      [] = follow signal_symbols; else a subset of SIGNAL_SYMBOLS_CHOICES.
+#   chart_reading_language     mr (default, the order) / en.
+#   chart_reading_detail       short (default: each section's main lines) / full (every line, still one Telegram message).
+#   chart_reading_vision       off (default: no new Vision spend until Abhi says so, provisional CRR-3) / on — the Dual-Eye audit on the
+#                              reader's alive areas, information only, inside the existing Vision budget caps.
+#   chart_reading_page_url     the dashboard page link printed at the end of the message ("" ⇒ "dashboard → Chart Reading").
+#   visual_audit_level_message off (default, the order) / on — the OLD bare level-count Telegram message of run_visual_audit.py; its
+#                              data stays stored and is shown on the Chart Reading page.
+CHART_READING_STRATEGY_KEY = "__chart_reading_report__"
+CHART_READING_SYMBOL_KEY = "ALL"
+CHART_READING_DEFAULTS = {"chart_reading_report": "off", "chart_reading_symbols": [], "chart_reading_language": "mr",
+                          "chart_reading_detail": "short", "chart_reading_vision": "off", "chart_reading_page_url": "",
+                          "visual_audit_level_message": "off"}
+CHART_READING_CHOICES = {"chart_reading_report": ("off", "on"), "chart_reading_language": ("mr", "en"),
+                         "chart_reading_detail": ("short", "full"), "chart_reading_vision": ("off", "on"),
+                         "visual_audit_level_message": ("off", "on")}
+
+
+def clean_chart_reading_settings(changes):
+    """Validate a partial dict of chart-reading settings ⇒ the clean dict (unknown key / bad value ⇒ ValueError)."""
+    out = {}
+    for k, v in dict(changes or {}).items():
+        if k not in CHART_READING_DEFAULTS:
+            raise ValueError(f"unknown chart-reading setting: {k}")
+        if k in CHART_READING_CHOICES:
+            v = str(v).strip().lower()
+            if v in ("true", "1", "yes"):
+                v = "on"
+            elif v in ("false", "0", "no"):
+                v = "off"
+            if v not in CHART_READING_CHOICES[k]:
+                raise ValueError(f"{k} = {v!r} — {CHART_READING_CHOICES[k]}")
+        elif k == "chart_reading_symbols":
+            items = v.split(",") if isinstance(v, str) else list(v or [])
+            v = list(dict.fromkeys(str(x).strip().upper() for x in items if str(x).strip()))
+            bad = [x for x in v if x not in SIGNAL_SYMBOLS_CHOICES]
+            if bad:
+                raise ValueError(f"chart_reading_symbols: {bad} — {SIGNAL_SYMBOLS_CHOICES}")
+        elif k == "chart_reading_page_url":
+            v = str(v or "").strip()
+            if v and not v.startswith(("http://", "https://")):
+                raise ValueError("chart_reading_page_url: an http(s) link or empty")
+        out[k] = v
+    return out
+
+
+def get_chart_reading_settings(raw_fn=None):
+    """The chart-reading settings (defaults ⊕ the stored row). No row / DB unreachable ⇒ defaults; a bad stored value ⇒ that key's
+    default (never raises)."""
+    out = dict(CHART_READING_DEFAULTS)
+    try:
+        stored = (raw_fn or get_strategy_settings)(CHART_READING_STRATEGY_KEY, CHART_READING_SYMBOL_KEY) or {}
+    except Exception:                                                     # noqa: BLE001
+        stored = {}
+    for k in CHART_READING_DEFAULTS:
+        if k in stored:
+            try:
+                out.update(clean_chart_reading_settings({k: stored[k]}))
+            except ValueError:
+                pass
+    return out
+
+
+def chart_reading_symbols(settings=None):
+    """The report's symbols: the setting, or (empty) the signal_symbols dashboard setting."""
+    s = settings if settings is not None else get_chart_reading_settings()
+    return list(s.get("chart_reading_symbols") or []) or get_signal_symbols()
+
+
+def save_chart_reading_settings(changes):
+    """Dashboard: save chart-reading settings (validated, partial merge). Returns bool (no DB ⇒ False)."""
+    return save_strategy_settings(CHART_READING_STRATEGY_KEY, CHART_READING_SYMBOL_KEY, clean_chart_reading_settings(changes))
+
+
 # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% क्रॉस केली तर
 # त्या दिवशी bot ने automatic trading थांबवावी") — India VIX हा एकच, मार्केट-व्यापी अस्थिरता निर्देशांक
 # असल्याने एकच daily निकाल NIFTY/BANKNIFTY/SENSEX तिन्हींना लागू होतो (MCX वगळून) — फक्त plain bullish

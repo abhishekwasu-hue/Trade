@@ -1102,3 +1102,40 @@ Logged as reading differences against named concepts — never tuned:
   tested as support; base 05 Oct, before A); Abhi reads a TESTED 1H demand. Provisional: a flipped area is not a C area (Q6).
 - Holds: B on lower FUT volume than A (12,863 vs 25,882 per bar); C ended just under the top of the Weekly area 54,891–56,099; the
   earlier up move (07 Oct) has no model C entry (inside the older cycle, window closed — not by the C-4 death).
+
+## Chart Reading Report (owner-orders DECISIONS 35; branch `chart-reading-report`) — provisional choices, checked against DECISIONS / CLAUDE.md
+Checked against: DECISIONS 1, 2 (no reading number — every value in the message is a reader fact; the only constants are the Telegram
+platform limit and display windows), 4 / 8 (Vision information only, never a gate), 9 (Z-1u: overlapping areas counted once, never
+merged — said as a reading check), 13 / 26 (FUT volume missing is said, never spot volume), 14 (P8 clean charts, `chart_max_lines`),
+27 (dead areas never drawn), 32 / 34 (model C stays OFF; the other side says "only via model C (OFF)"), 35 (the order), CLAUDE.md
+(no day / date / session framing in the reading; no paid call without approval; PAPER untouched; private charts never in this repo).
+- **CRR-1 report default OFF.** `chart_reading_report = off` until Abhi approves the sample (DECISIONS 35: sample before deploy). The cron
+  lines exit at once while it is off.
+- **CRR-2 detail.** `short` (default) = each section's main lines (≈ the order's layout); `full` = every line, still one Telegram
+  message (extra lines dropped bottom-up when too long, then whole sections; the plan and the link always stay). Length counted in
+  Telegram's UTF-16 units. The full detail (every armed area, every overlap group, every pattern, every concept's facts) is the page.
+- **CRR-3 Vision default OFF.** `chart_reading_vision = off`: no new Vision spend without Abhi's word (CLAUDE.md). When on: the existing
+  Dual-Eye auditor (prompts / schemas unchanged), timeframes Daily + 1H (run_visual_audit's default), the same budget gate
+  (`make_allow`) and cost record (`record_usage`, task visual_audit) — the caps are unchanged.
+- **CRR-4 duplicates.** The auditor's JSON schema has no duplicate field (kept unchanged for the old audit), so the duplicate check is
+  the reader's own comparison (alive areas of one timeframe and role whose bands overlap = one place), reported in Vision's section
+  and in the Areas section as a concept C / Z-1u reading check.
+- **CRR-5 selection words.** The message names: the nearest and the next trade-side area (the engine's watch list), the next opposite
+  area, the nearest Daily / Weekly area above and below (and any one price is inside), the overlap groups at those places, the
+  channel price is in, the next line above / below, the latest pattern (full: + the patterns whose boundary is next in the path),
+  the latest RSI pair per side. "Nearest / next / latest" are comparisons; everything else is on the page.
+- **CRR-6 Daily candle after the close.** At the close run the day's completed Daily candle is included (the next session's engine
+  reads it); the pre-open refresh reads the same bars (nothing new overnight) and lists what changed against the stored close facts.
+- **CRR-7 schedule (operational).** 15:50 IST close run, 09:05 IST pre-open refresh (`scripts/install_chart_reading_schedule.sh`). The
+  old `run_visual_audit.py` cron (16:20 IST) is unchanged: it still audits the old Opportunity Engine levels (its message is now off
+  by default, the data is on the page). Whether to stop that old audit (cost) is Abhi's decision.
+- **CRR-8 charts.** Weekly + Daily in one PNG (two columns); the RSI panes use the reader's RSI period (display); divergence pairs come
+  only from the reader (rsi2 15M D1 / D2 pairs, drawn on the 15M and, by time, on the 1H chart) — no Daily / Weekly divergence reader
+  exists, the pane says so. P8 on these charts: the channel price is in (the one through the latest swing), the next line above /
+  below, the latest pattern's boundaries, capped at `chart_max_lines` (no entry ⇒ no evidence line).
+Reading checks seen in the sample (19 Oct close; never tuned — misread candidates against named concepts):
+- **§1 MTF vs L range.** BANKNIFTY 1H: `mtf_state` reads "correction in progress (UP)" while `range_edges.range_state` reads the 1H in
+  a range 53,786–56,624 (structure). The report shows both (different concepts). Question: which word should lead? Provisional: both.
+- **C / Z-1u overlaps.** Overlapping same-role 1H areas at the named places — BANKNIFTY demand #341 / #342 / #345 (55,283–55,419),
+  supply #324 / #346; NIFTY supply #271 / #273 / #274 (23,116–23,178). Counted once by the engine; listed as reading checks.
+- **C width (Z-1x).** NIFTY Weekly demand #247 21,281–23,290 spans most of the recent swing range — a base-width reading check.
