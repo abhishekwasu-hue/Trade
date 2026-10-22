@@ -13,6 +13,10 @@ First line of every report to Abhi: `Rules re-read: CLAUDE.md, REPORT_STANDARD.m
   Golden cases are examples, not targets; never tune to pass one day; never edit golden expectations.
 - Entry framework: trend side + proven area, then four independent models E1–E4, each at most once per visit. Evidence is listed
   and never blocks. The old v2.2 BOS / K gate (`legacy_k_gate`) is a logged diagnostic and never decides.
+- Trigger reading (Abhi 22 Oct): the trigger candle must have traded INSIDE the (refined) area, and price must not be beyond the
+  INVALIDATION side. A close outside the area on the trade-direction side is the confirmation and is allowed (a commitment /
+  rejection candle trades into the area and closes away from it). Code: follow-up PR to #364 (#364 still requires the close inside).
+- `max_hits_per_zone` = 4 on the dashboard (Abhi 22 Oct: up to four model entries per visit). It stays a dashboard setting.
 - The engine only generates signals. Lots, legs, strikes, SL, target, max trades: the existing dashboard settings. Never add new
   execution settings.
 - Never add a trading rule (R:R filter, gate, threshold) that Abhi didn't state.
