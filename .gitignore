@@ -66,6 +66,7 @@ data/oe_index_5min_*.parquet
 
 # Opportunity Engine PR-V: visual audit images, JSONL cache, few-shot उदाहरणं, batch state
 data/visual_audit/
+data/chart_reading/
 data/visual_fewshot/
 data/oe_visual_*.jsonl
 data/oe_visual_*.jsonl.batches.json
