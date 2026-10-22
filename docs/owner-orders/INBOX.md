@@ -479,3 +479,7 @@ Merge and continue
 ---
 ## 22 Oct — merge and continue (2)
 Merge and continue
+
+---
+## 22 Oct — VPS block
+Vps block dya
