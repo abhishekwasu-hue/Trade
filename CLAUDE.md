@@ -1,7 +1,6 @@
 # CLAUDE.md — Abhi's standing rules (read at the start of every task and after every compaction)
 
 First line of every report to Abhi: `Rules re-read: CLAUDE.md, REPORT_STANDARD.md`.
-Abhi's explicit decisions, one line each, newest last: `docs/owner/DECISIONS.md` (append every new one there).
 
 ## Trading / reading
 - Abhi is a price-action trader, not an intraday trader; trades run about two days. Read the chart as one continuous unit by
@@ -15,25 +14,21 @@ Abhi's explicit decisions, one line each, newest last: `docs/owner/DECISIONS.md`
 - Entry framework: trend side + proven area, then four independent models E1–E4, each at most once per visit. Evidence is listed
   and never blocks. The old v2.2 BOS / K gate (`legacy_k_gate`) is a logged diagnostic and never decides.
 - Trigger reading (Abhi 22 Oct, `entry_trigger_rule = traded_inside`): the trigger candle must have traded INSIDE the (refined) area,
-  and price must not be beyond the INVALIDATION side. E1 / E2 / E3 / E4 a: the trigger candle ITSELF trades into the 15M refined base
-  (its range overlaps the base band), not only the wider context area (Abhi 22 Oct: the base gives entry and invalidation; a candle
-  that never touches it brings back the wide invalidation); `entry_area_refine = area` ⇒ the visited area is the base; E4 b keeps
-  "at the retested object". A close outside the area on the trade-direction side is the confirmation and is
+  and price must not be beyond the INVALIDATION side. A close outside the area on the trade-direction side is the confirmation and is
   allowed (a commitment / rejection candle trades into the area and closes away from it). `inside` (the close inside, #364) and
   `legacy` (da7cbbc) are what-ifs only.
 - `max_hits_per_zone` = 4 on the dashboard (Abhi 22 Oct: up to four model entries per visit). It stays a dashboard setting.
 - The engine only generates signals. Lots, legs, strikes, SL, target, max trades: the existing dashboard settings. Never add new
   execution settings.
 - Never add a trading rule (R:R filter, gate, threshold) that Abhi didn't state.
-- A model fires only when its trigger candle traded inside the visited area (E1–E4 a: into its refined base) and price is not beyond
-  its invalidation side (no close beyond the far edge / the invalidation; E4 (b): the rejection form at the retested object, closing
-  on its trade side). A gap or a large candle that closes through the invalidation side is the area being broken (lifecycle), not
-  entered — never an entry; a candle that never traded inside the area (or its refined base) never fires.
+- A model fires only when its trigger candle traded inside the visited area and price is not beyond its invalidation side (no close
+  beyond the far edge / the invalidation; E4 (b): the rejection form at the retested object, closing on its trade side). A gap or a
+  large candle that closes through the invalidation side is the area being broken (lifecycle), not entered — never an entry; a candle
+  that never traded inside the area never fires.
 - Clusters only count one signal per model per place — edges, trigger and invalidation come from the actual area, never the union
   (Z-1u). No union band in any entry, payload or card; `max_hits_per_zone` counts the visited area.
 - Refined base (RC2, RESEARCH DEFAULT, review after the replay — `entry_area_refine = setup_tf`): the 1H / Daily area is the context;
-  the refined 15M base inside it (TA4) gives the trigger location (the trigger candle trades into it), the E1 entry and the
-  invalidation; no refined base yet ⇒ the models wait.
+  the refined 15M base inside it (TA4) gives trigger proximity, the E1 entry and the invalidation; no refined base yet ⇒ the models wait.
 - A BOS-origin area is the base the impulse left (never the breakout candle); every area band is wick to body, no wick ⇒ the body.
 - E4 (b): a broken line / area is being revisited only while price is actually back at it; the revisit ends when price leaves it by
   structure (a new swing that does not reach it).

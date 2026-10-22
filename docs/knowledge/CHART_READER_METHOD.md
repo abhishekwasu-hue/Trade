@@ -164,6 +164,12 @@ HOW TO USE IT
    on its trade side. A candle that gaps or closes through the invalidation side is the area being broken (lifecycle), not an entry;
    a candle that never traded inside the area is not an entry. (The 21 Oct wording — the close inside the area — stays only as a
    what-if.)
+ - Sweep / fakeout inside a visit (Abhi 22 Oct; C lifecycle, §3 models): a close beyond the area WITHOUT a swing formed beyond, then
+   back inside, is a sweep — the area stays alive and the visit continues. E4 (a) is its model (the next push fails inside the sweep
+   extreme; invalidation beyond the sweep extreme); E2 / E3 may still fire later in the same visit (the trigger candle trading into the
+   refined base) with an invalidation that includes the sweep extreme; E1 does not come back (the first touch, once per visit). A close
+   beyond + a swing formed beyond is the area broken (flip); a later return from the other side is the retest of the flipped area ⇒
+   E4 (b). A single close beyond the refined base (inside the area) ends only E1 — the area is not broken and E2 / E3 / E4 still read.
  - Trades per zone: the dashboard `max_hits_per_zone` is 4 (Abhi 22 Oct: up to four model entries per visit); a dashboard setting.
  - Overlapping areas are never one area (Z-1u): the cluster only counts one signal per model per place. The area's edges, the trigger
    check and the invalidation always come from the actual area price is visiting, never from the union of the cluster.
