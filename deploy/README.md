@@ -900,7 +900,8 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
 - Settings (dashboard → Chart Reading → ⚙️; strategy_settings row `__chart_reading_report__`, migration नाही): `chart_reading_report` (default
   **off** — Abhi sample मंजूर करेपर्यंत), `chart_reading_symbols` (रिकामं ⇒ signal_symbols), `chart_reading_language` (mr), `chart_reading_detail`
   (short), `chart_reading_vision` (default **off** — on ⇒ Dual-Eye audit decision3 च्या alive areas वर, visual audit चीच budget मर्यादा),
-  `chart_reading_page_url`, `visual_audit_level_message` (default **off** — `run_visual_audit.py` चा जुना level-count संदेश; data साठवणं तसंच).
+  `chart_reading_page_url`, `visual_audit_level_message` (default **off** — `run_visual_audit.py` चा जुना level-count संदेश आणि त्याचे review chart photos;
+  audit आणि data साठवणं तसंच). `--dry-run` ⇒ Vision call नाही (खर्च नाही).
 - Cron: `bash scripts/install_chart_reading_schedule.sh` (idempotent; `--revert` फक्त त्याच्या दोन ओळी काढतो). Setting off असताना script लगेच
   बाहेर पडतो. Data: `data/chart_reading/` (git मध्ये नाही). Restart: Streamlit (`streamlit_dashboard.service`) — नवं पान दिसण्यासाठी.
 

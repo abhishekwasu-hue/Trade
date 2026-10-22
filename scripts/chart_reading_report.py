@@ -254,7 +254,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--mode", choices=("close", "preopen"), default="close")
     ap.add_argument("--symbols", default=None)
-    ap.add_argument("--dry-run", action="store_true", help="build + store, no Telegram")
+    ap.add_argument("--dry-run", action="store_true", help="build + store, no Telegram, no Vision call (no spend)")
     ap.add_argument("--no-telegram", action="store_true")
     ap.add_argument("--force", action="store_true", help="run even when chart_reading_report = off (review / sample)")
     ap.add_argument("--out", default=None, help="also write the PNGs + texts here")
@@ -290,7 +290,7 @@ def main(argv=None):
             V = build_v(sym, m15, m1, daily, ltf, fut, s3)
             prev = load_latest(sym, "close", a.store) if a.mode == "preopen" else None
             rec, items = report_symbol(sym, V, settings, a.mode, lang=a.lang, detail=a.detail, deadline=deadline, prev=prev,
-                                       vision_fn=lambda facts, V=V, sym=sym: vision_part(V, sym, facts, settings))
+                                       vision_fn=None if a.dry_run else (lambda facts, V=V, sym=sym: vision_part(V, sym, facts, settings)))
             del V
         except Exception as exc:                                           # noqa: BLE001 — one symbol never stops the others
             print(f"❌ {sym}: {type(exc).__name__}: {exc}")
