@@ -118,7 +118,7 @@ def test_overlapping_broken_areas_give_one_e4b_per_place(mirror, monkeypatch):
     V, d = _two_broken(mirror, monkeypatch)
     armed, fired = EM.Reader(V).broken(7, d)
     assert sorted(f["obj"]["area_id"] for f in fired) == [1, 2]          # the reader alone: both members fire (the replayed duplicate)
-    kept = EM.clusters(armed, [(f, None, d, f["obj"]) for f in fired], obj="broken_area", prefix="CB")
+    kept = EM.clusters(armed, [(f, None, d, f["obj"]) for f in fired], obj=("broken_area", "broken_line"), prefix="CB")
     assert len(kept) == 1                                                  # one place ⇒ one E4 (b)
     f, _lvl, _d, a = kept[0]
     assert f["cluster"]["id"].startswith("CB") and f["cluster"]["n"] == 2 and f["cluster"]["visit_id"] == a["visit_id"]
@@ -131,7 +131,7 @@ def test_overlapping_broken_areas_give_one_e4b_per_place(mirror, monkeypatch):
 def test_separate_broken_areas_still_fire_their_own_e4b(mirror, monkeypatch):
     V, d = _two_broken(mirror, monkeypatch, bands=((100.0, 104.0), (90.0, 92.0)))   # not overlapping ⇒ two places
     armed, fired = EM.Reader(V).broken(7, d)
-    kept = EM.clusters(armed, [(f, None, d, f["obj"]) for f in fired], obj="broken_area", prefix="CB")
+    kept = EM.clusters(armed, [(f, None, d, f["obj"]) for f in fired], obj=("broken_area", "broken_line"), prefix="CB")
     assert [k[0]["obj"]["area_id"] for k in kept] == [f["obj"]["area_id"] for f in fired]
 
 
@@ -145,8 +145,24 @@ def test_read_applies_the_e4b_place_count(monkeypatch):
     monkeypatch.setattr(EM, "Reader", lambda V: fake)
     V = NS(s={"entry_cluster_rule": "cluster"})
     EM.read(V, 5, "DOWN", [])
-    assert calls == ["area", "broken_area"]
+    assert calls == ["area", ("broken_area", "broken_line")]
     calls.clear()
     V = NS(s={"entry_cluster_rule": "area"})
     EM.read(V, 5, "DOWN", [])
     assert calls == []
+
+
+def test_a_broken_line_at_the_broken_area_is_the_same_place():
+    """A BROKEN line whose value at the bar lies on a BROKEN area (same role, same break direction), both firing E4 (b) at that bar ⇒
+    one signal (the earlier revisit's object); a line away from the area stays its own place."""
+    def armed(oid, kind, lo, hi, start):
+        return {"object": "broken_" + kind, "area_id": oid, "tf": "1H" if kind == "area" else "line", "role": LV.SUP, "lo": lo,
+                "hi": hi, "state": "BROKEN", "direction": -1, "visit_id": f"{oid}@{start}", "visit_start": str(start),
+                "visit_start_bar": start, "models": {"E4": {"status": "fired", "at": "x"}}}
+    for line_at, n_kept in ((101.5, 1), (95.0, 2)):
+        a, ln = armed(7, "area", 100.0, 102.0, 3), armed("line:D2:L+:1-2", "line", line_at, line_at, 4)
+        fired = [({"model": "E4", "variant": "b", "obj": x}, None, -1, x) for x in (a, ln)]
+        kept = EM.clusters([a, ln], fired, obj=("broken_area", "broken_line"), prefix="CB")
+        assert len(kept) == n_kept
+        if n_kept == 1:
+            assert kept[0][3] is a and ln["models"]["E4"]["status"] == "cluster_consumed"

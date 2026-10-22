@@ -786,7 +786,7 @@ def read(V, t, trend, act):
         armed.extend(b_armed)
         b_entries = [(f, None, d, f["obj"]) for f in b_fired]
         if str(V.s.get("entry_cluster_rule", "cluster")) == "cluster":     # Z-1u for E4 (b) too: overlapping broken areas = one place
-            b_entries = clusters(b_armed, b_entries, obj="broken_area", prefix="CB")
+            b_entries = clusters(b_armed, b_entries, obj=("broken_area", "broken_line"), prefix="CB")
         entries.extend(b_entries)
     out = []
     for f, lvl, d, a in entries:
@@ -842,11 +842,12 @@ def clusters(armed, entries, cands=(), obj="area", prefix="C"):
     its own area, its own trigger and its own invalidation; the cluster lists its member areas (ids + their own bands) for the card. A
     single area = a cluster of one (unchanged). Returns the kept (f, lvl, d, a) list; member statuses are annotated.
 
-    `obj = "broken_area"` (prefix "CB"): the same count for E4 (b) on BROKEN areas — overlapping broken areas of the same role and break
-    direction revisited together are one place ⇒ one E4 (b) per place per visit (Abhi: one signal per model per place); lines stay
-    their own place."""
-    pool = [a for a in armed if a.get("object") == obj and not a.get("disarmed")]
-    seen = {(str(a.get("area_id")), int(a["direction"])) for a in armed if a.get("object") == obj}
+    `obj = ("broken_area", "broken_line")` (prefix "CB"): the same count for E4 (b) — BROKEN areas and BROKEN lines of the same role and
+    break direction revisited together whose bands overlap (a line = its value at this bar) are one place ⇒ one E4 (b) per place per
+    visit (Abhi: one signal per model per place). Each signal keeps its own object, retest extreme and invalidation."""
+    objs = (obj,) if isinstance(obj, str) else tuple(obj)
+    pool = [a for a in armed if a.get("object") in objs and not a.get("disarmed")]
+    seen = {(str(a.get("area_id")), int(a["direction"])) for a in armed if a.get("object") in objs}
     for lvl, d in cands:                                                   # watch-list areas not visited now: part of the place
         lid = lvl.get("parent_level", lvl.get("id"))
         if (str(lid), int(d)) in seen:
