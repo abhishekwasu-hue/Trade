@@ -16,12 +16,14 @@ from vision import decide as VD
 from vision import worker as VW
 
 CLASSIC_MAIN = {  # captured from origin/main (16203b2) for the fake rows below — classic must stay byte-identical
+    # (T-1, DECISIONS 29: only the deadline / no-buttons / rejected lines changed to Abhi's plain words; the longer rejected line
+    #  trims one detail line of own_rejected under the 1024 limit)
     'engine_a_pending': (
         'NIFTY: a bear call (bearish) trade at supply area 22,544–22,622 (78 pts) (15M chart). Look at the area and the last candle: did sellers really take over there?\n'
         '<b>Decision needed: approve / reject</b> by 09:55\n'
         '── details ──\n'
         '👁 <b>Vision V1 — veto_then_confirm</b> · NIFTY 15M Dynamic SR\n'
-        '⏱ <b>09:55 पर्यंत</b> निर्णय: ✅ ⇒ पूर्ण size · ❌ ⇒ skip (shadow). उत्तर नाही ⇒ पूर्ण size.\n'
+        '⏱ <b>Decide by 09:55</b>. ✅ take · ❌ skip. No reply ⇒ taken (full size).\n'
         '🎯 Confirmation: supply 22,544–22,622 · grade A · trend: DOWN\n'
         'NIFTY · Bearish · Reversal (touch)\n'
         'engine: NA (ताजा engine निर्णय नाही)\n'
@@ -39,7 +41,7 @@ CLASSIC_MAIN = {  # captured from origin/main (16203b2) for the fake rows below 
         '<b>Decision needed: approve / reject</b> by 09:55\n'
         '── details ──\n'
         '👁 <b>Vision V1 — veto_then_confirm</b> · NIFTY 15M Dynamic SR\n'
-        '⏱ <b>09:55 पर्यंत</b> निर्णय: ✅ ⇒ पूर्ण size · ❌ ⇒ skip (shadow). उत्तर नाही ⇒ पूर्ण size.\n'
+        '⏱ <b>Decide by 09:55</b>. ✅ take · ❌ skip. No reply ⇒ taken (full size).\n'
         '🎯 Confirmation: supply 22,544–22,622 · grade B · trend: DOWN\n'
         'NIFTY · Bearish · Reversal (touch)\n'
         'engine: NA (ताजा engine निर्णय नाही)\n'
@@ -57,7 +59,7 @@ CLASSIC_MAIN = {  # captured from origin/main (16203b2) for the fake rows below 
         'Decision needed: none — information (entry rejected automatically)\n'
         '── details ──\n'
         '👁 <b>Vision V1 — veto_then_confirm</b> · NIFTY 5-Min Instant\n'
-        '<b>❌ ENTRY नाकारली</b> — veto_then_confirm: vision disagree ⇒ आपोआप skip. खरा trade नाही; तुलनेसाठी PAPER shadow trade.\n'
+        '<b>❌ ENTRY नाकारली</b> — veto_then_confirm: vision disagree ⇒ आपोआप skip. Trade NOT taken; a comparison-only shadow trade may follow (not counted in results).\n'
         'NIFTY · Bearish · Reversal (touch)\n'
         'engine: NA (ताजा engine निर्णय नाही)\n'
         'Level 23,175 (Resistance, 5M) · signal 11:30\n'
@@ -66,7 +68,6 @@ CLASSIC_MAIN = {  # captured from origin/main (16203b2) for the fake rows below 
         'Trend: HTF up · setup unclear (against)\n'
         'Level: reference · real yes · confluence yes\n'
         'Wave: unclear · correction पूर्ण no\n'
-        'Reversal: touch ✗ reclaim ✗ strength ✗ close ✗ ⇒ no\n'
         'SL / target / exits: bot चे नेहमीचे नियम (automatic).'
     ),
     'test_rejected': (
@@ -74,7 +75,7 @@ CLASSIC_MAIN = {  # captured from origin/main (16203b2) for the fake rows below 
         'Decision needed: none — information (entry rejected automatically)\n'
         '── details ──\n'
         '👁 <b>Vision V1 — veto_then_confirm</b> · NIFTY 15M Dynamic SR\n'
-        '<b>❌ ENTRY नाकारली</b> — veto_then_confirm: vision disagree ⇒ आपोआप skip. खरा trade नाही; तुलनेसाठी PAPER shadow trade.\n'
+        '<b>❌ ENTRY नाकारली</b> — veto_then_confirm: vision disagree ⇒ आपोआप skip. Trade NOT taken; a comparison-only shadow trade may follow (not counted in results).\n'
         'NIFTY · Bearish · Reversal (touch)\n'
         'engine: NA (ताजा engine निर्णय नाही)\n'
         'Level 23,175 (Resistance, 15M) · signal 00:09\n'
@@ -90,8 +91,8 @@ CLASSIC_MAIN = {  # captured from origin/main (16203b2) for the fake rows below 
         '<b>Decision needed: approve / reject</b> by 09:55\n'
         '── details ──\n'
         '👁 <b>Vision V1 — veto_then_confirm</b> · NIFTY Classic SR\n'
-        '⏱ <b>09:55 पर्यंत</b> निर्णय: ✅ ⇒ पूर्ण size · ❌ ⇒ skip (shadow). उत्तर नाही ⇒ पूर्ण size.\n'
-        '⚠️ बटणं नाहीत (no approver) ⇒ timeout नियम लागू.\n'
+        '⏱ <b>Decide by 09:55</b>. ✅ take · ❌ skip. No reply ⇒ taken (full size).\n'
+        '⚠️ Buttons unavailable: no approver; the no-reply rule decides this signal.\n'
         'Vision: NA (budget संपलं) — बटणं तरीही चालतात\n'
         '🎯 Confirmation: supply 22,715–22,776 · grade B · trend: Daily DOWN\n'
         'inside supply: sellers growing\n'

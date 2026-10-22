@@ -267,6 +267,9 @@ def _warn_budget_once(day, month, g, send_text, path=None):
 FACTOR_MR = {1.0: "पूर्ण size", 0.5: "अर्धा size", 0.0: "skip"}
 
 
+NO_BUTTONS_MARK = "approver नाही"                                       # v1_status ची खूण (बटणं नसल्यामुळे timeout नियम लगेच) — v1_notify ओळखतो
+
+
 def _fmr(f):
     return FACTOR_MR.get(round(float(f or 0), 2), f"×{f}")
 
@@ -285,7 +288,7 @@ def v1_status(row, verdict, s, meta):
         if not can:                                                     # approver / बटणं नाहीत ⇒ 10 मिनिटं थांबून तोच नियम नको — लगेच
             st = d.timeout_status or "REJECTED"
             d = VD.Decision(st, float(d.timeout_factor or 0.0) if st == "APPROVED" else 0.0,
-                            f"{d.reason} · approver नाही ({why}) ⇒ timeout नियम लगेच")
+                            f"{d.reason} · {NO_BUTTONS_MARK} ({why}) ⇒ timeout नियम लगेच")
     now = VS.now_ist()
     extra = {"factor": d.factor, "decision_reason": d.reason, "timeout_status": d.timeout_status, "timeout_factor": d.timeout_factor,
              "median_range": (meta or {}).get("median_range")}
@@ -297,10 +300,31 @@ def v1_status(row, verdict, s, meta):
     return d.status, extra, d
 
 
-def v1_caption(row, res, d, deadline=None, buttons=True, why="", layout=None, window_min=None, modify=True):
+def deadline_text(d, deadline, approval=False):
+    """T-1 (Abhi, plain words): "⏱ Decide by HH:MM. ✅ take · ❌ skip. No reply ⇒ skipped." (operational deadline). approval (PAPER
+    `approval_required`) ⇒ the gate never enters without your ✅ ⇒ no reply is always "skipped"."""
+    from . import notify as VN
+    take = "✅ take" + ("" if float(d.factor or 0) >= 1 else f" ({VN.size_en(d.factor)})")
+    return f"⏱ <b>Decide by {VN.hm(deadline)}</b>. {take} · ❌ skip. No reply ⇒ " + \
+        ("skipped." if _skipped_on_timeout(d, approval) else f"taken ({VN.size_en(d.timeout_factor)}).")
+
+
+def _skipped_on_timeout(d, approval=False):
+    return bool(approval) or d.timeout_status != "APPROVED" or not d.timeout_factor
+
+
+def no_buttons_text(why, skipped=True):
+    return (f"⚠️ Buttons unavailable: {html.escape(why or 'VISION_CALLBACK_SECRET / TELEGRAM_APPROVER_IDS नाही')}; "
+            + ("this signal will be skipped." if skipped else "the no-reply rule decides this signal."))
+
+
+def v1_caption(row, res, d, deadline=None, buttons=True, why="", layout=None, window_min=None, modify=True, approval=False,
+               no_buttons=False):
     """V1 card. layout (setting `approval_card_layout`): "classic" (default) = today's card; "summary" = the five summary lines on top
     (window_min = the approve window the deadline came from; modify = the ✏️ button is on the card) — the details below the SEP are
-    the same lines, trimmed only when the 1024 caption limit needs it (the summary itself is never cut)."""
+    the same lines, trimmed only when the 1024 caption limit needs it (the summary itself is never cut).
+    T-1: approval = PAPER `approval_required` (no reply / no buttons ⇒ always skipped); no_buttons = `TG.can_ask()` failed so the
+    no-reply rule was applied at once (why = its reason) ⇒ "Buttons unavailable: <why>; this signal will be skipped"."""
     from bots_common import plain_text as PT
     from . import card_summary as CS
     s = _body(row, res, row["mode"]).replace("👁 <b>Vision V0 — फक्त माहिती</b>", f"👁 <b>Vision V1 — {row['mode']}</b>")
@@ -326,15 +350,18 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why="", layout=None, wi
     lines = [x for x in s.split("\n") if x]
     s = ""
     if d.status == "PENDING_HUMAN":
-        to = "skip" if d.timeout_status == "REJECTED" else _fmr(d.timeout_factor)
-        dl = pd.Timestamp(deadline).strftime("%H:%M") if deadline else "?"
-        s += f"\n⏱ <b>{dl} पर्यंत</b> निर्णय: ✅ ⇒ {_fmr(d.factor)} · ❌ ⇒ skip (shadow). उत्तर नाही ⇒ {to}."
+        s += "\n" + deadline_text(d, deadline, approval)
         if not buttons:
-            s += f"\n⚠️ बटणं नाहीत ({html.escape(why or 'VISION_CALLBACK_SECRET / TELEGRAM_APPROVER_IDS नाही')}) ⇒ timeout नियम लागू."
+            s += "\n" + no_buttons_text(why, _skipped_on_timeout(d, approval))
     elif d.status == "APPROVED":
+        if no_buttons:
+            s += "\n" + no_buttons_text(why, approval)
         s += f"\n<b>✅ ENTRY मंजूर</b> ({_fmr(d.factor)}) — {html.escape(d.reason)}. Bot पुढच्या मिनिटाला drift guard नंतर entry घेईल (त्याचा trade संदेश येईल)."
     else:
-        s += f"\n<b>❌ ENTRY नाकारली</b> — {html.escape(d.reason)}. खरा trade नाही; तुलनेसाठी PAPER shadow trade."
+        from . import notify as VN
+        if no_buttons:
+            s += "\n" + no_buttons_text(why, True)
+        s += f"\n<b>❌ ENTRY नाकारली</b> — {html.escape(d.reason)}. {VN.NOT_TAKEN_SHORT}"
     extra = []
     if manual:                                                          # ✋ /paper: तुमचे strikes / SL / T / R:R (HTML आधीच escape केलेलं)
         extra.append(manual)
@@ -404,11 +431,24 @@ def v1_notify(row, res, d, png, path, reused=False):
         from . import approval as AP
         modify = AP.base_levels({**row, **r}) is not None
         btn = AP.buttons(sid, modify)
+    no_btn = not can and (d.ask_human or NO_BUTTONS_MARK in str(d.reason or ""))   # T-1: बटणं नाहीत ⇒ card वर साध्या शब्दांत + दिवसातून एक इशारा
+    if no_btn:
+        from . import notify as VN
+        VN.can_ask_alert(why, path)
     lay, win = card_settings(row.get("bot"), path)
-    mid = TG.send_photo(png, v1_caption({**row, **r}, res, d, r.get("deadline"), buttons=bool(btn) or not d.ask_human, why=why,
-                                        layout=lay, window_min=win, modify=modify), btn)
-    VS.update(sid, path, tg_message_id=mid, notified=1 if mid else 0)
+    cap = v1_caption({**row, **r}, res, d, r.get("deadline"), buttons=bool(btn) or not d.ask_human, why=why, layout=lay, window_min=win,
+                     modify=modify, approval=_approval(row, path), no_buttons=no_btn)
+    mid = TG.send_photo(png, cap, btn)
+    VS.update(sid, path, tg_message_id=mid, notified=1 if mid else 0, tg_caption=cap)   # T-1: मूळ caption ⇒ outcome जोडून, कधीच पुसून नाही
     return mid
+
+
+def _approval(row, path=None):
+    """PAPER `approval_required` (✅ शिवाय entry नाही)? वाचता आलं नाही ⇒ True (gate सारखंच गृहीत). फक्त card च्या शब्दांसाठी."""
+    try:
+        return VC.approval_required(VC.load(row.get("bot"), path), row.get("trading_mode") or "PAPER")
+    except Exception:                                                    # noqa: BLE001 — display only
+        return True
 
 
 def card_settings(bot, path=None):
@@ -433,7 +473,6 @@ def v1_housekeeping(path=None, now=None):
     """Timeouts (PENDING_HUMAN; worker उशीर ⇒ जुने QUEUED / RUNNING), न वापरलेले निर्णय (exec_window नंतर) ⇒ EXPIRED, drift / expiry ची माहिती.
     नियम `gate.resolve_due` चेच (bot सुद्धा तेच लावतो — worker बंद असला तरी). रिटर्न बदललेल्या rows."""
     from . import gate as VG
-    from . import tg as TG
     now = pd.Timestamp(now or VS.now_ist())
     changed = []
     today = now.strftime("%Y-%m-%d")
@@ -444,13 +483,9 @@ def v1_housekeeping(path=None, now=None):
             if VS.transition(r["signal_id"], r["status"], "EXPIRED", path, exec_note="मागच्या दिवसाचा न ठरलेला signal", transition_notified=1):
                 changed.append((r["signal_id"], "EXPIRED"))
             continue
-        r2, to = VG.resolve_due(r, VC.load(r["bot"], path), now, path)
+        _, to = VG.resolve_due(r, VC.load(r["bot"], path), now, path)
         if to:
-            changed.append((r["signal_id"], to))
-            if r["status"] == "PENDING_HUMAN":
-                f = float(r2.get("factor") or 0.0)
-                TG.edit_any(r.get("tg_message_id"), f"⏱ उत्तर आलं नाही ⇒ <b>{'skip (shadow)' if to == 'REJECTED' else _fmr(f)}</b> "
-                            f"· {r['symbol']} {r['direction']} L{float(r['level'] or 0):,.0f}")
+            changed.append((r["signal_id"], to))                        # card वरचा "No reply" संदेश: खालचा outcome pass (bot ने timeout लावला तरी)
     for r in VS.rows_with_status(("APPROVED", "REJECTED"), path):
         s = VC.load(r["bot"], path)
         if r.get("decided_at") and pd.Timestamp(r["decided_at"]) + pd.Timedelta(minutes=int(s["exec_window_min"])) <= now:
@@ -461,14 +496,39 @@ def v1_housekeeping(path=None, now=None):
                 changed.append((r["signal_id"], "EXPIRED"))
                 if lim:
                     VG.limit_expired(r, s, path=path)
+    outcome_messages(today, path)
+    return changed
+
+
+def outcome_messages(day, path=None):
+    """T-1 (Abhi, DECISIONS 29): प्रत्येक outcome ⇒ card वर एक ओळ जोडून (कधीच पुसून नाही) + card ला उत्तर म्हणून नवा संदेश, एकदाच, या क्रमाने:
+    no reply (timeout — worker वा bot कुणीही लावला) → drift-rejected / expired → shadow opened / no shadow. ✅ / ❌ चे संदेश
+    telegram_bot लगेच पाठवतो; shadow closed = vision/outcome.py. फक्त संदेश — status / order ला हात नाही; कधीच raise नाही."""
+    from . import notify as VN
+    try:
+        rows = [r for r in VS.list_signals(day, path) if r.get("mode") in VC.V1_MODES]
+    except Exception as exc:                                             # noqa: BLE001 — display only
+        print(f"⚠️ outcome संदेश: {type(exc).__name__}: {exc}")
+        return
+    for r in rows:
+        if r.get("decided_by") == "timeout" and r.get("tg_message_id") and not VN.posted(r["signal_id"], "no_reply", path):
+            taken = 0.0 if _approval(r, path) or r.get("timeout_status") != "APPROVED" else float(r.get("factor") or 0.0)
+            line = VN.no_reply_line(r.get("deadline") or r.get("decided_at"), taken)
+            VN.post(r, "no_reply", line, f"{VN.where(r)}: {line}", path)
     for r in VS.rows_with_status(("DRIFT_REJECTED", "EXPIRED"), path):
         if not r.get("transition_notified") and r.get("mode") in VC.V1_MODES and r.get("decided_at"):
-            msg = (f"❌ <b>ENTRY नाकारली (drift guard)</b>: {r['symbol']} {r['direction']} L{float(r['level'] or 0):,.0f} — {r.get('drift_result')} ⇒ PAPER shadow"
-                   if r["status"] == "DRIFT_REJECTED" else
-                   f"⌛ {r['symbol']} {r['direction']} L{float(r['level'] or 0):,.0f}: {r.get('exec_note') or 'expired'}")
-            TG.send_text(msg)
+            if r["status"] == "DRIFT_REJECTED":
+                kind, line = "drift", VN.drift_line(r.get("drift_result"))
+            else:
+                kind, line = "expired", VN.expired_line(r, VS.last_transition(r["signal_id"], "EXPIRED", path))
+            VN.post(r, kind, line, f"{VN.where(r)}: {line}", path)
             VS.update(r["signal_id"], path, transition_notified=1)
-    return changed
+    for r in rows:
+        if r["status"] in ("SHADOWED", "DRIFT_REJECTED") and not VN.posted(r["signal_id"], "shadow", path):
+            res = VN.shadow_result(r["signal_id"], path)
+            if res is not None:
+                line = VN.shadow_result_text(res)
+                VN.post(r, "shadow", line, f"{VN.where(r)}: {line}", path)
 
 
 BAR_WAIT = True                                                          # tests / scripts साठी master switch (setting सोबत)

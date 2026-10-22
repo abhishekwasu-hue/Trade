@@ -531,6 +531,7 @@ def process_symbol(access_token, symbol, lot_size=None):
         # Vision V1: नाकारलेला / drift ⇒ मूळ lots ने PAPER shadow (credit spread, तेच exit नियम), source वेगळा. खरा trade नाही.
         if _vg is not None and _vg.action == "SHADOW":
             shadow_status = "shadow: strike-निवड अयशस्वी"
+            _shadow_ok = False                                       # T-1: उघडला का ⇒ Telegram वर साधे शब्द (worker पाठवतो; इथे network नाही)
             try:
                 _sr = select_credit_spread_itm(raw_chain, direction, atm_strike, step=strike_step,
                                                itm_depth_points=settings["itm_depth_points"], hedge_width_points=settings["hedge_width_points"])
@@ -544,9 +545,10 @@ def process_symbol(access_token, symbol, lot_size=None):
                         entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price, direction=direction,
                     )
                     shadow_status = "shadow: " + format_trade_result(_ok, _resp)
+                    _shadow_ok = bool(_ok)
             except Exception as exc:
                 shadow_status = f"shadow त्रुटी: {exc}"
-            _vision_note(_vg.signal_id, shadow_status)
+            _vision_note(_vg.signal_id, shadow_status, shadow_opened=_shadow_ok)
             log_entry["trade_status"] = _vg.status
             log_entry["reason"] = f"Vision: {_vg.note} — {shadow_status} ({timeframe_suffix})"
             cloud_db.save_signal_log(log_entry)
