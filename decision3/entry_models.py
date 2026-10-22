@@ -21,7 +21,9 @@ Armed while price VISITS a valid (alive, not BROKEN / DEAD) trade-side area:
                      or a BROKEN area (K4, broken in the trade direction) is revisited and a rejection candle (reversal_form) closes away
                      from it. Invalidation: beyond the sweep / retest extreme.
 Trigger reading (Abhi 22 Oct, corrects the 21 Oct RC3 wording; §3 models / C lifecycle) — `entry_trigger_rule = traded_inside`: the
-trigger candle has TRADED inside the visited area (its range overlaps the area's own band; the refined base reached in this visit) and
+trigger candle has TRADED inside the visited area (its range overlaps the area's own band) AND — E1 / E2 / E3 / E4 (a), refined base on —
+its own range trades into the refined 15M base (Abhi 22 Oct: the refined base exists so entry and invalidation come from the narrow
+base; a candle that never touches it brings back the wide invalidation; with `entry_area_refine = area` the visited area is the base) and
 price is not beyond the INVALIDATION side (no close beyond the far edge / the model's invalidation; E1: the refined base not already
 closed through in the visit). A close OUTSIDE the area on the TRADE-DIRECTION side is allowed — that close is the confirmation (a
 commitment / rejection candle trades into the area and closes away from it). E4 (b): the rejection form trades at the retested object
@@ -145,6 +147,16 @@ class Reader:
         if lo <= c <= hi:
             return None
         return "close outside the area on the trade side — price has left the area (a model fires only while price is inside it)"
+
+    def off_base(self, i, rb):
+        """Abhi 22 Oct (`traded_inside`, refined base on — E1 / E2 / E3 / E4 a): the trigger candle ITSELF must trade into the refined
+        15M base (its range overlaps the base's band), not only into the wider context area — the refined base exists so entry and
+        invalidation come from the narrow base. None ⇒ ok (or no refined base in use / another trigger rule), else the reason (a wait
+        text). `inside` / `legacy` (what-ifs) are unchanged: the base reached in the visit is enough there."""
+        if rb is None or self.trigger_rule() != "traded_inside" or self.touches(i, rb):
+            return None
+        return (f"the candle did not trade into the refined 15M base {float(rb['lo']):,.2f}–{float(rb['hi']):,.2f} (only the wider "
+                f"context area) — the trigger candle must trade into the refined base (Abhi 22 Oct)")
 
     def beyond(self, i, inv, d):
         """Bar i's close beyond the model's invalidation price (bear call: above; bull put: below) ⇒ the reason, else None."""
@@ -423,7 +435,7 @@ class Reader:
             if not at_area(u):
                 return False, None
             ok, rb = rb_ok(u)
-            if not ok:
+            if not ok or self.off_base(u, rb) is not None:                 # Abhi 22 Oct: the trigger candle trades into the base itself
                 return False, None
             inv = self.farther(ext_at(u), self.rb_far(rb, d), d) if rb else ext_at(u)
             if self.beyond(u, inv, d) is not None:                         # guard only: inv includes this visit's extreme up to u,
@@ -441,6 +453,8 @@ class Reader:
                                                                            # already requires no bar beyond its extreme)
                 return False, None
             ok, rb = rb_ok(u)
+            if not ok or self.off_base(u, rb) is not None:                 # Abhi 22 Oct: the trigger candle trades into the base itself
+                return False, None
             return ok, ({**r, "refined": rb} if rb else r)
 
         conds = {"E1": e1, "E2": lambda u: e23(u, "E2"), "E3": lambda u: e23(u, "E3"), "E4": e4}
@@ -512,6 +526,9 @@ class Reader:
                 return ("no refined base yet: no 15M turn of the area's side inside its band (RC2) — the models wait")
             if not any(self.touches(i, rb) for i in range(start, t + 1)):
                 return f"price has not reached the refined 15M base {rb['lo']:,.2f}–{rb['hi']:,.2f} in this visit yet"
+            off = self.off_base(t, rb)
+            if off:
+                return off
         if m == "E2":
             ok, why, cm = self.c0(t, lvl, d, start, appr_at(t))
             if ok:

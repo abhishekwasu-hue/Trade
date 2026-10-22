@@ -112,6 +112,7 @@ DEFAULTS = {
                                              # location ⇒ प्रत्येक model चा एकच signal प्रति cluster प्रति visit. "area" = प्रत्येक area वेगळा (what-if)
     "entry_trigger_rule": "traded_inside",   # Abhi 22 Oct: the trigger candle TRADED inside the visited (refined) area and price is not
                                              # beyond the invalidation side; a close outside on the trade side = the confirmation (allowed).
+                                             # E1 / E2 / E3 / E4 a: the trigger candle itself trades into the refined 15M base (Abhi 22 Oct).
                                              # "inside" = the 21 Oct RC3 reading (#364: the close inside the area, what-if); "legacy" = the
                                              # da7cbbc trigger (what-if / old fixtures)
     "entry_area_refine": "setup_tf",         # Abhi 21 Oct RC2 (RESEARCH DEFAULT, review after replay): 1H / Daily area = context; the
@@ -226,7 +227,8 @@ REGISTER = {
                            "area = each area on its own (the 6852bfc reading, what-if)"),
     "entry_trigger_rule": ("traded_inside", "traded_inside / inside / legacy", "Abhi नियम", "Abhi 22 Oct (corrects the 21 Oct RC3 "
                            "wording, §3 models / C lifecycle): the trigger candle must have TRADED inside the visited (refined) area — "
-                           "its range overlaps the area's own band, the refined base reached in this visit — and price must not be beyond "
+                           "its range overlaps the area's own band and (E1 / E2 / E3 / E4 a, refined base on) its own range trades into the "
+                           "refined 15M base, not only the wider context area (Abhi 22 Oct) — and price must not be beyond "
                            "the INVALIDATION side (no close beyond the far edge / the model's invalidation; E1: the refined base not already "
                            "closed through in the visit). A close outside the area on the TRADE-DIRECTION side is the confirmation and is "
                            "allowed (a commitment / rejection candle trades into the area and closes away from it); E4 (b): the rejection "

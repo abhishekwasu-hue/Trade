@@ -475,3 +475,72 @@ def test_oct12_fixture_spike_trading_through_and_closing_away_fires_under_traded
     assert not (float(A["low"][t1]) <= hi and float(A["high"][t1]) >= lo)                # the dominant candle never traded inside
     assert entries("inside")[1] == {t: [] for t in got}
     assert "E2" in entries("legacy")[1][t1]
+
+
+# ------------------------------------------------------------------------------------------------ Abhi 22 Oct: the trigger candle
+# trades into the REFINED BASE itself (E1 / E2 / E3 / E4 a; E4 b keeps "at the retested object"). The REF / FULL context is 100–104,
+# the refined base 103.0–103.5 (reached at bar 8, E1 there). Each "no" has a `legacy` control where the model's own read holds at that
+# bar (so the "no" comes from the trigger reading alone); the `inside` what-if keeps the base-reached-in-the-visit reading.
+def _models(V, lvl, d, bars):
+    return {t: [f["model"] for f in EM.Reader(V).area(t, lvl, d)[1]] for t in bars}
+
+
+@MIRRORS
+def test_e1_candle_trading_only_into_the_context_area_not_the_base_never_fires(mirror):
+    only_area = REF[:8] + [(102.0, 102.9, 99.4, 99.6, 1.0)]                # trades into the context, not into the base; closes below
+    V, lvl, d = _ref_rows(only_area, mirror)
+    a8, f8 = EM.Reader(V).area(8, lvl, d)
+    assert f8 == [] and "waiting for price to reach" in a8["models"]["E1"]["waiting"]
+    at_base = REF[:8] + [(102.0, 103.2, 99.5, 99.8, 1.0)]                  # trades into the base, closes outside on the trade side
+    V, lvl, d = _ref_rows(at_base, mirror)
+    assert _models(V, lvl, d, [8])[8] == ["E1"]
+
+
+@MIRRORS
+def test_e2_commitment_trading_only_into_the_context_area_not_the_base_never_fires(mirror):
+    only_area = FULL[:9] + [(102.8, 102.9, 99.4, 99.6, 5.0)] + FULL[10:]  # base reached at bar 8; bar 9 trades into the context only
+    V, lvl, d = _ref_rows(only_area, mirror, ltf=True)
+    assert "E2" not in _models(V, lvl, d, [9])[9]
+    a9 = EM.Reader(V).area(9, lvl, d)[0]
+    assert "did not trade into the refined 15M base" in a9["models"]["E2"]["waiting"]
+    V0, lvl0, d0 = _ref_rows(only_area, mirror, ltf=True, rule="legacy")  # control: the commitment read holds at bar 9
+    assert "E2" in _models(V0, lvl0, d0, [9])[9]
+    Va, lvla, da = _bare(only_area, REF_SW + [("H", 103.6, 13, 14)], band=(100.0, 104.0), mirror=mirror, s=AREA,
+                         ltf=_ltf_from(_mirror_rows(only_area) if mirror else only_area))
+    assert "E2" in _models(Va, lvla, da, [9])[9]                          # entry_area_refine = area: the visited area is the base
+    at_base = FULL[:9] + [(103.1, 103.3, 99.4, 99.6, 5.0)] + FULL[10:]    # trades into the base, closes below the area (trade side)
+    V, lvl, d = _ref_rows(at_base, mirror, ltf=True)
+    assert "E2" in _models(V, lvl, d, [9])[9]
+    inside_close = FULL[:9] + [(102.8, 102.9, 100.2, 100.4, 5.0)] + FULL[10:]   # context only, closes inside the area
+    Vi, lvli, di = _ref_rows(inside_close, mirror, ltf=True, rule="inside")      # `inside` what-if unchanged: base reached in the visit
+    assert "E2" in _models(Vi, lvli, di, [9])[9]
+
+
+@MIRRORS
+def test_e3_choch_candle_trading_only_into_the_context_area_not_the_base_never_fires(mirror, monkeypatch):
+    monkeypatch.setattr(EM.Reader, "c1", lambda self, u, l, dd, st: {"done": u >= 9, "line": "LTF CHoCH (test)"})
+    monkeypatch.setattr(EM.Reader, "c0", lambda self, *a: (False, "no commitment", {}))
+    only_area = FULL[:9] + [(102.8, 102.9, 99.4, 99.6, 1.0), (99.6, 100.4, 99.5, 100.2, 1.0)] + FULL[11:]
+    V, lvl, d = _ref_rows(only_area, mirror)
+    fired = _models(V, lvl, d, [9, 10])
+    assert "E3" not in fired[9] and "E3" not in fired[10]                  # neither candle trades into the base
+    assert "did not trade into the refined 15M base" in EM.Reader(V).area(10, lvl, d)[0]["models"]["E3"]["waiting"]
+    V0, lvl0, d0 = _ref_rows(only_area, mirror, rule="legacy")            # control: the CHoCH read holds at bar 9
+    assert "E3" in _models(V0, lvl0, d0, [9])[9]
+    at_base = FULL[:9] + [(103.1, 103.3, 99.4, 99.6, 1.0)] + FULL[10:]    # trades into the base, closes below the area (trade side)
+    V, lvl, d = _ref_rows(at_base, mirror)
+    assert "E3" in _models(V, lvl, d, [9])[9]
+
+
+@MIRRORS
+def test_e4a_confirmation_candle_trading_only_into_the_context_area_not_the_base_never_fires(mirror):
+    only_area = FULL[:14] + [(102.95, 102.98, 101.0, 101.1, 1.0), (101.1, 101.2, 100.5, 100.6, 1.0)]
+    V, lvl, d = _ref_rows(only_area, mirror, ltf=True)
+    fired = _models(V, lvl, d, [14, 15])
+    assert "E4" not in fired[14] and "E4" not in fired[15]
+    V0, lvl0, d0 = _ref_rows(only_area, mirror, ltf=True, rule="legacy")  # control: the sweep read holds at bar 14
+    assert "E4" in _models(V0, lvl0, d0, [14])[14]
+    at_base = FULL[:14] + [(103.4, 103.45, 99.5, 99.6, 1.0)] + FULL[15:]   # trades into the base, closes below the area (trade side)
+    V, lvl, d = _ref_rows(at_base, mirror, ltf=True)
+    f14 = {f["model"]: f for f in EM.Reader(V).area(14, lvl, d)[1]}
+    assert "E4" in f14 and f14["E4"]["invalidation"] == pytest.approx(2 * MID - 104.4 if mirror else 104.4)

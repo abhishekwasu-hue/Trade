@@ -117,6 +117,8 @@ only), MCX confirmation (LB12–LB17).
 5. The range comes from structure (not the C-13 equal-highs / equal-lows reading).
 6. `daily_leg_read` = compare (Elliott ratios leave the reading; `elliott` stays as the what-if).
 
+Every explicit decision of Abhi is also listed, one line each, in `docs/owner/DECISIONS.md` (newest last).
+
 **Provisional (lead, from the method + research defaults; Abhi may override):**
 - Overlapping areas of the same role visited together = one location: at most one signal per model per overlapping cluster per visit
   (`entry_cluster_rule = cluster`; the card lists every member area; ~~E1 invalidation = beyond the cluster's far edge~~ —
@@ -826,21 +828,28 @@ Provisional choices (assumed — no answer needed unless Abhi objects). Each was
 - **Refined base = the NEWEST 15M swing (finest structure) of the area's side whose extreme is inside the context band, from the area's
   birth turn on; band = that candle's wick to body (levels._band_swing), clipped to the context band.** Method §3 Areas "built from ONE
   base … the candles where buyers or sellers acted (wick to body)" + "the trade area is the lower-timeframe one"; P1 no numbers (none).
-- **Proximity = price reached the refined base in this visit; the close must be inside the CONTEXT area** (not inside the narrow
+- ~~**Proximity = price reached the refined base in this visit; the close must be inside the CONTEXT area** (not inside the narrow
   refined band — a commitment closes away from the base by its nature). RC3 "inside its (refined) area" read as: at the refined base,
-  closing inside the area; method §3 Commitment (the dominant candle after the handover) would otherwise never fire.
+  closing inside the area; method §3 Commitment (the dominant candle after the handover) would otherwise never fire.~~ **Superseded
+  by Abhi 22 Oct (`traded_inside`, then DECISIONS #29): the trigger candle itself trades into the refined base; its close may be
+  outside the area on the trade side (never beyond the invalidation side).**
 - **E1 with a refined base = the visit's first candle that reaches the refined base** (was: the visit's first candle). Invalidation
   beyond the base's far side. **E2 / E3 invalidation = the farther of the base's far side and the visit's extreme** (an invalidation is
   never inside a price already traded in the visit).
 - **E4 (b) "at the object" = a candle of the rejection form touches it** (one-candle forms: the trigger candle; two-candle forms: the
   trigger or the one before). Method §3 Lines: "the third touch is the trade location".
 - **E4 (a) sweep keeps the context area's far edge** (the sweep is of the area; the refined base only adds the proximity check).
-- **`traded_inside` (Abhi 22 Oct) — "traded inside the (refined) area" = the trigger candle's range reaches the VISITED area's own band
+- ~~**`traded_inside` (Abhi 22 Oct) — "traded inside the (refined) area" = the trigger candle's range reaches the VISITED area's own band
   (the band #364 checked the close against) and the refined base was reached earlier in this visit** — not that the trigger candle
-  itself reaches the narrow refined band. Method §8 "Refined base … gives the trigger proximity (price has reached it in this visit)";
-  the 07 Oct 09:15 E2 Abhi corrected trades into the area but not into the refined base (55,112–55,193). In the 07–21 Oct replay 3
-  of the 19 triggers (07 Oct 09:15 E2, 07 Oct 12:15 E3, 08 Oct 09:15 E3) did not touch the refined base themselves — listed in the
-  gallery so the stricter reading can be seen.
+  itself reaches the narrow refined band.~~ **DECIDED by Abhi (22 Oct, `docs/owner/DECISIONS.md` #29; branch
+  `claude/trigger-touches-refined-base`): the trigger candle ITSELF must trade into the 15M refined base (its range overlaps the base
+  band) for E1 / E2 / E3 / E4 a — the refined base exists so entry and invalidation come from the narrow base; a candle that never
+  touches it brings back the wide invalidation.** Kept: a close outside the area on the trade side is allowed; never a close beyond the
+  invalidation side; E1 base_broken; `entry_area_refine = area` ⇒ the visited area is the base; E4 b keeps "at the retested object";
+  `inside` / `legacy` what-ifs unchanged (`Reader.off_base`; tests/test_entry_models_inside_area.py `*_only_into_the_context_area_*`,
+  tests/test_entry_models_real_bn_oct07.py::test_oct07_0915_e2_commitment_not_trading_into_the_refined_base_no_longer_fires). Before
+  this, in the 07–21 Oct replay 3 of the 19 triggers (07 Oct 09:15 E2, 07 Oct 12:15 E3, 08 Oct 09:15 E3) did not touch the refined
+  base themselves.
 - **The invalidation side = a close beyond the area's far edge (H2, unchanged) or beyond the model's invalidation; E1 keeps the RC3
   base-closed-through lifecycle check; E2 / E3 do not add it** (their invalidation is already the farther of the base's far edge and
   the visit's extreme — no new rule). A wick beyond the far edge with a close back on the trade side is a sweep (method §3), not the
