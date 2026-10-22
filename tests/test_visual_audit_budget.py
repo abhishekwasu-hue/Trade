@@ -133,6 +133,7 @@ def test_main_reports_failed_charts_in_error_and_records_cost(vdb, monkeypatch, 
     monkeypatch.setattr(RVA.cloud_db, "get_effective_upstox_token", lambda t: "tok")
     monkeypatch.setattr(RVA, "send_telegram_message", lambda m: sent.append(m))
     monkeypatch.setattr(RVA, "notify_error", lambda who, m: errs.append(m))
+    monkeypatch.setattr(RVA, "level_message_on", lambda get=None: True)   # the old message switched ON (default OFF, DECISIONS 35)
     photos = []
     monkeypatch.setattr(RVA, "send_review_charts", lambda d, syms, tfs, summ, since=None: photos.append((d, syms, tfs, since)))
     seen = []

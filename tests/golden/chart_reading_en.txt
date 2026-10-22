@@ -1,0 +1,49 @@
+📘 NIFTY — chart reading (for the next session)
+━━━━━━━━━━━━━━━━
+Last close 22,720
+
+🧭 Big picture
+• Weekly: correction inside an up-trend
+• Daily: DOWN · correction · protected high 23,180
+• 1H: range 22,600–22,950 · 15M: correction inside a down-trend
+
+🏗 Structure (A, B)
+• Last 1H event: CHoCH ↓ (close below 22,790)
+• Legs (1H): the down-leg impulsive (larger bodies, little overlap, more FUT volume per bar); the up-leg (so far) corrective (smaller bodies, overlapping, less FUT volume per bar)
+
+🧱 Areas (C) — what the engine watches
+• 🔴 1H supply 22,760–22,820 · FLIPPED (was support) · tested 1× [#11]
+• next opposite area: 🟢 1H demand 22,560–22,610 · FRESH [#21]
+• 🔴 Daily supply 23,050–23,200 · TESTED 2× [#31]
+• Reading check: no duplicate area at the shown places
+
+💧 Liquidity (D)
+• Above: equal highs ≈ 22,950 (resting) · Below: swing low 22,600 (resting)
+• Last sweep: price went below 22,600 to 22,580 and closed back inside
+
+📐 Lines · patterns (E, H) · confluence (F)
+• 1H falling channel (price inside): upper 22,830 · lower 22,590 · main line touched 3×
+• Confluence: the supply 22,760–22,820 lies on a line (touch point)
+
+📊 Volume (I) · RSI (J)
+• The pullback came on lower FUT volume than the impulse down (per bar 900 vs 1,500)
+• RSI: regular bullish divergence 22,650 → 22,600 (confirmed, evidence only)
+
+🔀 Breakout / range (K, L)
+• Range (1H, from structure): edges 22,600–22,610 / 22,940–22,950
+• No accepted breakout at the current pattern
+
+🌊 Wave context
+• Weekly: same-degree correction candidate (leg b) · Daily leg L4 · correction · correction b
+
+🎯 What the engine waits for (a plan, not a signal)
+• Bear-call side: visit 22,760–22,820 → handover → commitment with FUT volume → 5-min CHoCH ⇒ E1–E4
+• Refined 15M base 22,790–22,815: the trigger candle must trade into it; E1 invalidation beyond 22,815
+• Idea cancelled if: a close above 22,820 + a swing above (the area BROKEN) → next: 22,900–22,950
+• Bull-put side: only via model C (OFF)
+• Execution = your dashboard settings
+
+👁 Vision second opinion (info only)
+• Not run (dashboard chart_reading_vision = off) — the engine reading above stands alone
+
+Full report → https://dash.example/chart-reading

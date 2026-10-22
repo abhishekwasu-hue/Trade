@@ -380,6 +380,7 @@ if context_ok:
     import page_broker_accounts
     import page_bot_dynamic_sr_algo
     import page_mcx_futures
+    import page_chart_reading
 
     # 🎓 वापरकर्त्याशी चर्चा करून (Production-grade page arrangement) — ९ पानं आता ४ विभागांत: TRADE (रोजचं ट्रेडिंग), BOTS (automation
     # settings), ANALYZE (विश्लेषण/रिपोर्ट), SYSTEM. url_path आणि render functions तेच — फक्त sidebar ची मांडणी. Dashboard हे default पान
@@ -401,6 +402,7 @@ if context_ok:
             st.Page(page_mtf_pullback.render, title="MTF Pullback + Gap Fill", icon="🌉", url_path="mtf-pullback"),
             st.Page(page_sr_levels_v3.render, title="SR Levels V3 (प्रयोगिक)", icon="🧭", url_path="sr-levels-v3"),
             st.Page(page_opportunity_engine.render, title="Opportunity Engine (प्रयोगिक)", icon="🎯", url_path="opportunity-engine"),
+            st.Page(page_chart_reading.render, title="Chart Reading", icon="📘", url_path="chart-reading"),
             st.Page(page_vision_human_eye.render, title="Vision & Human Eye", icon="👁", url_path="vision-human-eye"),
             st.Page(page_backtest_review.render, title="Backtest Review", icon="🔎", url_path="backtest-review"),
             st.Page(page_reader2_gallery.render, title="Reader v2 Gallery (प्रयोगिक)", icon="📐", url_path="reader2-gallery"),

@@ -89,6 +89,17 @@ def symbols_setting(cli=None):
     return [str(s).strip().upper() for s in items if str(s).strip()]
 
 
+def level_message_on(get=None):
+    """Abhi (Chart Reading Report order, DECISIONS 35): the OLD bare level-count message is OFF by default — dashboard setting
+    `visual_audit_level_message` (cloud_db chart-reading row). Unreadable ⇒ the default (off). The audit itself and its stored data
+    are unchanged."""
+    try:
+        s = (get or cloud_db.get_chart_reading_settings)()
+        return str(s.get("visual_audit_level_message", "off")) == "on"
+    except Exception:                                                   # noqa: BLE001
+        return False
+
+
 def call_cost(model, usage):
     from vision import signal_audit as SA
     return SA.cost_usd(model, usage)
@@ -335,7 +346,10 @@ def main(argv=None, fetch_fn=fetch, store_mod=VS, client_factory=A.make_client):
                           f"\nVision एकूण: आज ${day:.3f} / ${g['vision_daily_budget_usd']}, महिना ${month:.2f} / ${g['vision_monthly_budget_usd']}")
         except Exception:
             pass
-        if not args.no_telegram:
+        if not args.no_telegram and not level_message_on():
+            print("ℹ️ old level-count Telegram message off (dashboard visual_audit_level_message, Chart Reading Report order) — the audit "
+                  "data is stored as before (Supabase + data/oe_visual_audit.jsonl) and shown on the Chart Reading page")
+        elif not args.no_telegram:
             send_telegram_message("👁️ Visual audit (" + str(audit_date) + ")\n" + "\n".join(summary) +
                                   f"\nCalls {total['calls']}, tokens {total['input_tokens']:,}/{total['output_tokens']:,}, ${total['cost_usd']:.3f}" + spent_line
                                   + ("\n❌ अयशस्वी:\n" + "\n".join(failures) if failures else ""))
