@@ -1,6 +1,14 @@
 # CLAUDE.md — Abhi's standing rules (read at the start of every task and after every compaction)
 
-First line of every report to Abhi: `Rules re-read: CLAUDE.md, REPORT_STANDARD.md`.
+## Memory protocol (Abhi)
+- At the start of every task and after every compaction: re-read this file, `docs/owner-orders/` (README, INBOX, DECISIONS) and
+  `docs/reader/REPORT_STANDARD.md` before acting.
+- Every new instruction from Abhi is appended VERBATIM to `docs/owner-orders/INBOX.md` FIRST, before acting on it; its status goes
+  into `docs/owner-orders/README.md`; each owner decision is appended to `docs/owner-orders/DECISIONS.md` (append only).
+- Any provisional decision of yours is first checked against `docs/owner-orders/DECISIONS.md` (and this file and the method doc);
+  list those checks in the report.
+- First line of every report to Abhi: `Rules re-read: CLAUDE.md, REPORT_STANDARD.md, owner-orders`.
+- Trade's private method stays in this repo; nothing of it goes into the public ATP repo.
 
 ## Trading / reading
 - Abhi is a price-action trader, not an intraday trader; trades run about two days. Read the chart as one continuous unit by
@@ -13,10 +21,17 @@ First line of every report to Abhi: `Rules re-read: CLAUDE.md, REPORT_STANDARD.m
   Golden cases are examples, not targets; never tune to pass one day; never edit golden expectations.
 - Entry framework: trend side + proven area, then four independent models E1–E4, each at most once per visit. Evidence is listed
   and never blocks. The old v2.2 BOS / K gate (`legacy_k_gate`) is a logged diagnostic and never decides.
-- Trigger reading (Abhi 22 Oct, `entry_trigger_rule = traded_inside`): the trigger candle must have traded INSIDE the (refined) area,
-  and price must not be beyond the INVALIDATION side. A close outside the area on the trade-direction side is the confirmation and is
-  allowed (a commitment / rejection candle trades into the area and closes away from it). `inside` (the close inside, #364) and
-  `legacy` (da7cbbc) are what-ifs only.
+- Trigger reading (Abhi 22 Oct, `entry_trigger_rule = traded_inside`): the trigger candle must trade INTO the 15M REFINED BASE itself
+  (not only the wider area) for every model where the refined base applies (E1, E2, E3, E4a; E4b: at the retested object). A close
+  outside the area on the trade-direction side is allowed (that close is the confirmation); a close beyond on the invalidation side is
+  not. The refined base exists so that entry and invalidation come from the narrow base. `inside` (#364) and `legacy` (da7cbbc) are
+  what-ifs only.
+- Sweep / fakeout (Abhi 22 Oct): a close beyond the area WITHOUT a swing formed beyond, then back inside = a sweep (K4): the area stays
+  alive and the visit continues. E4a is its model (the next push fails inside the sweep extreme; invalidation beyond the sweep
+  extreme). E2 / E3 may still fire later in the visit (candle touching the refined base; invalidation includes the sweep extreme).
+  E1 does NOT come back after a sweep (first touch, once per visit). A close beyond + a swing beyond = broken (flip); a later return
+  from the other side = the retest of the flipped area ⇒ E4b. A single close beyond the refined base ends only E1 — never marks the
+  area broken and never blocks E2 / E3 / E4.
 - `max_hits_per_zone` = 4 on the dashboard (Abhi 22 Oct: up to four model entries per visit). It stays a dashboard setting.
 - The engine only generates signals. Lots, legs, strikes, SL, target, max trades: the existing dashboard settings. Never add new
   execution settings.
