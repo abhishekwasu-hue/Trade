@@ -1179,6 +1179,9 @@ def _bars_from_highs(hi, lows=None):
     return FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
 
 
+FAR = {"flip_dead_rule": "far_swing"}                                     # the earlier reading (what-if): DEAD only past the far swing
+
+
 def test_band_flip_facts_flipped_then_broken_then_reclaimed_stays_flipped_not_dead():
     """Re-review: flip (26, the first swing after the up break confirmed) → break down (36; a swing low 90 below the band existed before
     that break ⇒ it must be PASSED, Z-1s; 92.8 never reaches it) → back above the band (up break 42 = reclaim) → rally past 104 ⇒ the
@@ -1188,10 +1191,10 @@ def test_band_flip_facts_flipped_then_broken_then_reclaimed_stays_flipped_not_de
     hi += [103.0, 101.0, 99.0, 97.5, 95.5, 94.5, 93.8, 94.5, 96.0, 97.8, 99.5, 101.5, 103.0, 104.0, 105.5]
     B = _bars_from_highs(hi, {5: 90.0})
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}, {"bar": 36, "dir": "down"}, {"bar": 42, "dir": "up"}]}
-    mid = LV.band_flip_facts(B, 41, x, start=0)
+    mid = LV.band_flip_facts(B, 41, x, start=0, s=FAR)
     assert mid["flip_state"] == FL.BROKEN and mid["flipped_at"]["bar"] == 26 and mid["broken_at"]["bar"] == 36
     assert mid["far_swing"]["source"] == "before_break" and mid["far_swing"]["price"] == 90.0
-    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0, s=FAR)
     assert f["flip_state"] == FL.FLIPPED and f["flipped_at"]["bar"] == 26 and f["dead_at"] is None
     assert [w["bar"] for w in f["sweeps"]] == [42]
     lab = LV.band_label({**f, "role": "support", "lo": 95.0, "hi": 98.0, "touch_count": 2, "valid": True})
@@ -1242,9 +1245,9 @@ def test_band_flip_facts_reclaim_to_flipped_restores_the_flip_facts():
     hi += [103.0, 101.0, 99.0, 97.5, 95.5, 94.5, 93.8, 94.5, 96.0, 97.8, 99.5, 101.5, 103.0, 104.0, 105.5]
     B = _bars_from_highs(hi, {5: 90.0})                                      # a swing below the band before the down break (Z-1s)
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}]}
-    flip = LV.band_flip_facts(B, 35, x, start=0)
+    flip = LV.band_flip_facts(B, 35, x, start=0, s=FAR)
     f = LV.band_flip_facts(B, len(hi) - 1, {**x, "breaks": x["breaks"] + [{"bar": 36, "dir": "down"}, {"bar": 42, "dir": "up"}]},
-                           start=0)
+                           start=0, s=FAR)
     assert f["flip_state"] == FL.FLIPPED and f["broken_at"] == flip["broken_at"] and f["far_swing"] == flip["far_swing"]
 
 
@@ -1261,7 +1264,7 @@ def test_band_flip_facts_flip_bar_is_never_also_the_dead_bar():
     ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
     B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
     x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
-    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0, s=FAR)
     assert f["flipped_at"]["bar"] == 44 and f["flip_state"] == FL.BROKEN and f["dead_at"] is None
 
 
@@ -1327,3 +1330,18 @@ def test_flipped_zone_broken_again_is_dead_at_that_break_by_default(mirror):
     assert [k for _, k, _ in Z.events if k in ("broken", "flip", "dead")] == ["broken", "flip", "broken", "dead"]
     assert Z.dead_bar == brk2 and Z.state_at(brk2 - 1) == FL.FLIPPED and Z.state_at(brk2) == FL.DEAD
     assert brk2 == [b for b, k, _ in old.events if k == "broken"][1] and old.dead_bar > brk2   # the what-if dies later, past the far swing
+
+
+def test_band_flip_facts_default_flipped_band_broken_again_is_dead_like_the_engine():
+    """DECISIONS 27 (`flip_dead_rule = broken_again`, default): the same chart as the far_swing case above — flip (26), break down (36),
+    a swing low below the band confirmed after that break ⇒ DEAD there (no sweep, no second flip), as Levels._dead_on_break."""
+    hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2
+    hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]
+    hi += [103.0, 101.0, 99.0, 97.5, 95.5, 94.5, 93.8, 94.5, 96.0, 97.8, 99.5, 101.5, 103.0, 104.0, 105.5]
+    B = _bars_from_highs(hi, {5: 90.0})
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}, {"bar": 36, "dir": "down"}, {"bar": 42, "dir": "up"}]}
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flip_state"] == FL.DEAD and f["flipped_at"]["bar"] == 26 and f.get("dead_rule") == "broken_again"
+    assert 36 < f["dead_at"]["bar"] < 42 and f["sweeps"] == []
+    assert LV.band_flip_facts(B, 36, x, start=0)["flip_state"] == FL.BROKEN          # the close beyond alone is not yet DEAD
+

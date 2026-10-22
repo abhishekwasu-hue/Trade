@@ -899,8 +899,9 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
 - Was: a FLIPPED area broken again stayed BROKEN until that break's far-side swing was reached, and E4 (b) used it as a retest
   object (07–21 Oct: E4b on 282 / 283 / 282 / 287 — all four flipped once and broken back by close + swing beyond before the retest).
   Now DEAD at the second break. The earlier reading stays as the what-if `flip_dead_rule = far_swing`.
-- Open (display only, not the decision): `levels.band_flip_facts` (the Vision approval chart's band labels, `display_bands`) still
-  marks DEAD only past the far-side swing; it should mirror `flip_dead_rule`. Logged; no engine effect.
+- ~~Open (display only): `levels.band_flip_facts` still marked DEAD only past the far-side swing~~ — FIXED: it mirrors
+  `flip_dead_rule` (default `broken_again`: DEAD at the first confirmed swing beyond the band after the second break; `far_swing` what-if
+  kept and pinned in the older band tests).
 
 ## Handover pack (new account) — questions with provisional defaults (checked against DECISIONS / CLAUDE.md)
 - **Where OPEN_QUESTIONS lives.** The pack names `docs/OPEN_QUESTIONS.md`; the repo's file is this one. Provisional: keep this file
