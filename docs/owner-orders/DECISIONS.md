@@ -1,5 +1,7 @@
 # DECISIONS — Abhi's owner decisions (append only; newest last)
 
+Items marked PROVISIONAL are research / lead defaults Abhi has not objected to; Abhi may override them (10, 18).
+
 Check every provisional choice against this list first (CLAUDE.md, memory protocol). Each line: the decision, its source.
 
 1. Abhi is a price-action trader (≈ two-day trades). Reading is by structure, never by day / session / clock. (standing rule)
@@ -15,7 +17,7 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
    the card expires, no entry. (21 Oct decisions, item 3)
 9. Never merge areas / bases / timeframes (Z-1u). Overlapping same-role areas count as one place ONLY as a counter (one signal per
    model per place); edges, trigger and invalidation come from the actual area price is visiting, never the union. (21 Oct RC1)
-10. Zone refinement (research default, review after replay): the 1H / Daily area is the context; the 15M refined base inside it (TA4,
+10. PROVISIONAL — Zone refinement (research default, review after replay): the 1H / Daily area is the context; the 15M refined base inside it (TA4,
     wick to body) gives the trigger, the E1 entry and the invalidation; no refined base ⇒ the models wait. (21 Oct RC2)
 11. A model never fires when price has already gone beyond the invalidation side (gap / large candle through = the area breaking,
     lifecycle). (21 Oct RC3)
@@ -27,7 +29,7 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
 15. BOS-origin area = the base the impulse left (never the breakout candle); no wick ⇒ the body (Z-1x). (concept C fixes, 21 Oct)
 16. Range = from structure (between two edges, price fails to make a new extreme on both sides), comparative; not C-13 equal. (21 Oct)
 17. Daily leg reading = compare (Elliott ratios leave the reading). (21 Oct)
-18. Hidden RSI divergence = the classic reading (provisional default, not objected to). (21 Oct)
+18. PROVISIONAL — Hidden RSI divergence = the classic reading (lead's default, not objected to). (21 Oct)
 19. Reports follow docs/reader/REPORT_STANDARD.md: every entry charted with all layers; outcomes by structure across sessions;
     per-model table + running total; missed moves + worst losses with charts; Marathi summary on top. (21 Oct)
 20. Deploy #364 to PAPER before the open (22 Oct): it halves the risk at the same quality. (22 Oct answers, item 1)
