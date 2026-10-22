@@ -1401,6 +1401,14 @@ def render():
     engine3_daily_pivot_n = settings.get("engine3_daily_pivot_n")         # रिकामं ⇒ provisional N = 2 (L1-c); parsing = _L3.pivot_n_choice
     from paper import engine_entry as _EE                              # entry models E1–E4: same safe parsing as the live path
     engine3_models = {m: _EE.model_on(settings, m) for m in ("E1", "E2", "E3", "E4")}   # signal switch only
+    from decision3 import settings as _S3C                               # model C (DECISIONS 32): every switch default OFF
+    import engine3_live as _L3C
+    engine3_model_c = {"on": _L3C._truthy(settings.get(_L3C.MODEL_C_KEY), False),
+                       **{x: _L3C._truthy(settings.get(_L3C.model_c_sub_key(x)), False) for x in _S3C.MODEL_C_SUBS},
+                       "c_window": str(settings.get("engine3_c_window") or _S3C.DEFAULTS["c_window"]),
+                       "c_a_nature": str(settings.get("engine3_c_a_nature") or _S3C.DEFAULTS["c_a_nature"]),
+                       "c_projections": str(settings.get("engine3_c_projections") or
+                                            ", ".join(f"{r:g}" for r in _S3C.DEFAULTS["c_projections"]))}
     from bots_common import plain_text as _PT
     approval_band_warn_pts = _PT.band_warn_pts(settings)
     from bots_common import preopen_crux as _PC
@@ -1444,6 +1452,27 @@ def render():
                            "invalidation फक्त माहिती, evidence), Vision मत, ✅ / ✏️ / ❌. एका area च्या visit मध्ये एक model एकदाच. ✅ नंतर "
                            "execution = याच पानाचे आजचे settings (lots, naked lots, strikes, SL / target / TSL, एका वेळी एकच position). "
                            "OFF ⇒ त्या model चे signals / cards नाहीत. फक्त PAPER — LIVE ला हात नाही.")
+                # 🎓 Abhi (T-3, DECISIONS 32): model C = Daily विरुद्धच्या correction चा C पाय — वेगळं model, default OFF (replay नंतर ON).
+                engine3_model_c["on"] = bool(st.checkbox("Model C (counter-trend C leg) — default OFF", value=engine3_model_c["on"],
+                                                         key=_widget_key(strategy_key, symbol, _L3C.MODEL_C_KEY)))
+                if engine3_model_c["on"]:
+                    _cc = st.columns(len(_S3C.MODEL_C_SUBS))
+                    for _x, _col in zip(_S3C.MODEL_C_SUBS, _cc):
+                        engine3_model_c[_x] = bool(_col.checkbox(_x, value=engine3_model_c[_x],
+                                                                 key=_widget_key(strategy_key, symbol, _L3C.model_c_sub_key(_x))))
+                    engine3_model_c["c_window"] = st.selectbox("Model C window (c_window)", _S3C.C_WINDOWS,
+                                                               index=list(_S3C.C_WINDOWS).index(engine3_model_c["c_window"])
+                                                               if engine3_model_c["c_window"] in _S3C.C_WINDOWS else 0,
+                                                               key=_widget_key(strategy_key, symbol, "engine3_c_window"))
+                    engine3_model_c["c_a_nature"] = st.selectbox("Model C wave A nature (c_a_nature)", ("impulse", "any"),
+                                                                 index=1 if engine3_model_c["c_a_nature"] == "any" else 0,
+                                                                 key=_widget_key(strategy_key, symbol, "engine3_c_a_nature"))
+                    engine3_model_c["c_projections"] = st.text_input("Model C end-zone projections (ratios, display only)",
+                                                                     value=engine3_model_c["c_projections"],
+                                                                     key=_widget_key(strategy_key, symbol, "engine3_c_projections"))
+                st.caption("Model C: Daily DOWN असताना 1H correction च्या C पायावर bull put (UP ⇒ उलट). A = 1H CHoCH, B corrective, B ने O "
+                           "पलीकडे close + swing केला ⇒ कल्पना संपली. फक्त pullback / retest, breakout entry कधीच नाही. C-a … C-f "
+                           "प्रत्येकाचा स्वतंत्र switch आणि स्वतंत्र आकडेवारी. Execution = याच पानाचे settings. फक्त PAPER.")
                 # 🎓 Abhi (layer 1 ✅): swing scale = त्यांचं visual calibration (swings2 D1 / D2, his approved charts). Advanced —
                 # default बदलायचा नाही; बदल फक्त engine च्या swings साठी (charts / replay approved scale वरच).
                 from swings2 import settings as _SW
@@ -1574,6 +1603,11 @@ def render():
             new_settings["preopen_charts"] = bool(preopen_charts)
             for _m, _on in engine3_models.items():                        # entry models E1–E4: signal switch only
                 new_settings[_EE.model_key(_m, "on")] = bool(_on)
+            new_settings[_L3C.MODEL_C_KEY] = bool(engine3_model_c["on"])  # model C (DECISIONS 32): default OFF
+            for _x in _S3C.MODEL_C_SUBS:
+                new_settings[_L3C.model_c_sub_key(_x)] = bool(engine3_model_c[_x])
+            for _k in ("c_window", "c_a_nature", "c_projections"):
+                new_settings[f"engine3_{_k}"] = str(engine3_model_c[_k])
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_support_max"] = int(rsi_support_max)

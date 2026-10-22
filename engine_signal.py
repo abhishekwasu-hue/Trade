@@ -486,7 +486,11 @@ def model_label(e):
     """{"model": "E1", "name": "Aggressive"} ⇒ "E1 — Aggressive" (no name ⇒ the model's own name)."""
     m = str((e or {}).get("model") or "").upper()
     name = str((e or {}).get("name") or "").strip() or MODEL_NAMES.get(m, "")
-    return f"{m} — {name}" if name else m
+    lab = f"{m} — {name}" if name else m
+    if str((e or {}).get("family") or "").upper() == "C":                # model C (DECISIONS 32): "C · E2 — Confirmation (C-a)"
+        sub = str((e or {}).get("sub_model") or "").strip()
+        return f"C · {lab}" + (f" ({sub})" if sub else "")
+    return lab
 
 
 def pending_entries(bot, symbol, settings, now=None, path=None):

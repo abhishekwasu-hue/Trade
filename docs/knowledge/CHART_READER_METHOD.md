@@ -183,3 +183,11 @@ HOW TO USE IT
    base's far side and the visit's extreme). No refined base yet: the models wait.
  - E4 (b) revisit: a broken line or area is being revisited only while price is actually back at it; the revisit ends when price leaves
    it by structure (a new swing that does not reach it).
+ - Model C (DECISIONS 32, Abhi T-3 / Appendix A; code decision3/model_c.py, switch `model_c`, default OFF): the counter-trend C leg of a
+   correction against the Daily side is a SEPARATE, switchable entry model with its own statistics — the one owner-ordered exception to
+   P4's "never a counter-trend entry" (P4 stands for E1–E4 on the Daily side; the conflict is logged in docs/reports/v22/OPEN_QUESTIONS.md,
+   provisional: DECISIONS 32 wins for model C only). No new concept: wave A = a 1H CHoCH against the Daily side (its nature by the leg
+   comparison), B = the corrective pullback from A's end HA, dead only by a close beyond the origin O and a swing formed beyond O (the
+   K4 rule); E1–E4 unchanged at the 1H areas built during A (fresh or tested), only while B is in progress (before any close beyond
+   HA); pullback / retest only — never the break candle of HA, a channel or a triangle. The end zone and the evidence are context, never
+   a gate or an exit.
