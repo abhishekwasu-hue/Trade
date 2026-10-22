@@ -32,8 +32,9 @@ MID = 101.0
 # The model mechanics below read ONE area as the trade location (`entry_area_refine = area`); the RC2 refined 15M base (research default
 # `setup_tf`) and the inside-the-area rule have their own tests in tests/test_entry_models_inside_area.py.
 AREA = {"entry_area_refine": "area"}
-# The oct12 fixture's trigger bar spikes through the whole area and closes below it: under the inside-the-area rule (Abhi 21 Oct RC3,
-# default) it is not an entry (tests/test_entry_models_inside_area.py); the row-shape tests below read it with the da7cbbc trigger.
+# The oct12 fixture's trigger bar spikes up through the area and closes below it (the trade side): under the 21 Oct RC3 wording
+# (`inside`, #364) it was no entry; under Abhi's 22 Oct reading (`traded_inside`, default) it traded inside the area and its close away
+# is the confirmation ⇒ E1 / E3 fire there, so the row-shape tests read it with the default trigger again (the 12 Oct conflict resolved).
 LEGACY = {**AREA, "entry_trigger_rule": "legacy"}
 
 # A supply 100–102 (bear call). (open, high, low, close, volume)
@@ -373,7 +374,7 @@ def test_entry_gate_settings_are_registered_and_validated():
 def oct12(request):
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=request.param)
-    s = {"level_death_side": "role", **LEGACY}
+    s = {"level_death_side": "role", **AREA}                               # the default trigger (traded_inside)
     V = E3.V22(m15, s=s, ltf=ltf, futures=fut)
     Vk = E3.V22(m15, s={**s, "entry_gate": "legacy_k"}, ltf=ltf, futures=fut)
     ts = V.levels.ts
@@ -417,7 +418,7 @@ def test_21_oct_like_no_bos_k_blocks_the_old_gate_the_models_still_read_the_visi
     mirror, V, Vk, bars = oct12
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=mirror)
-    s = {"level_death_side": "role", **LEGACY}
+    s = {"level_death_side": "role", **AREA}                               # the default trigger (traded_inside)
     V2 = E3.V22(m15, s=s, ltf=ltf, futures=fut)
     Vk2 = E3.V22(m15, s={**s, "entry_gate": "legacy_k"}, ltf=ltf, futures=fut)
     for x in (V2, Vk2):
@@ -592,8 +593,9 @@ def test_overlapping_areas_in_one_visit_give_one_signal_per_model(mirror):
                 if st["status"] == "cluster_consumed":
                     assert "one place, one signal per model" in st["note"]
     assert per_area[3] == [("E1", 0)] and per_area[4] == [("E1", 1)]           # per area: E1 twice (old reading)
-    assert per_area[6] == [("E2", 0)]           # the commitment closes inside area 0 but below area 1 ⇒ only area 0's trigger holds
-                                                # (the trigger check reads the ACTUAL area, never the cluster's union — Z-1u)
+    assert per_area[6] == [("E2", 0), ("E2", 1)]   # the commitment traded inside both areas (closes inside area 0, below area 1 on
+                                                # the trade side — allowed, Abhi 22 Oct traded_inside) ⇒ each area's own trigger holds;
+                                                # the cluster below keeps one (the trigger check reads the ACTUAL area — Z-1u)
     got = {t: [(e[0]["model"], e[3]["area_id"]) for e in k] for t, k in per_cluster.items()}
     assert got[3] == [("E1", 0)] and got[4] == [] and got[6] == [("E2", 0)]    # one signal per model per cluster
     e1 = per_cluster[3][0][0]

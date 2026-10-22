@@ -362,8 +362,9 @@ def test_visit_study_is_the_decisions_own_read(visit_world):
     lt = S["ltf_choch"]["visits"]
     assert len(lt) == 1 and lt[0]["done"] and lt[0]["area_id"] == x["area_id"] and lt[0]["study_from"] == x["arrival"]["ts"]
     cut = _cut(m15, as_of, 15)                                                 # the engine itself on the same bars
-    # the fixture's commitment closes below the area: under the inside-the-area trigger (Abhi 21 Oct RC3, default) that is no entry;
-    # the parity of the facts with the decision's own read is checked on the da7cbbc trigger reading
+    # the fixture's commitment (09:30) opens and closes below the area — it never traded inside it: under the default trigger reading
+    # (Abhi 22 Oct, traded_inside; and #364's inside) that is no entry; the parity of the facts with the decision's own read is checked
+    # on the da7cbbc trigger reading
     Ve = E3.V22(cut[["timestamp", "bar_end", "open", "high", "low", "close"]], None, None, ltf=_cut(ltf, as_of, 5),
                 futures=_cut(fut, as_of, 5), s={"entry_trigger_rule": "legacy", "entry_area_refine": "area"})
     r = Ve.decide(len(Ve.m15) - 1)

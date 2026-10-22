@@ -154,14 +154,14 @@ HOW TO USE IT
    each fires at most once per visit. E2 and E3 never fire while the zone study reads absorption without a handover. Overlapping
    areas of the same role visited together count as one place: one signal per model per visit — a counter only, never one area (see
    the Z-1u bullet below: edges, trigger and invalidation come from the area price is visiting). The dashboard's existing limit of trades per zone applies to these entries as it does to every other entry path.
- - Trigger inside the area (Abhi, §3 models / C lifecycle): a model fires only while price is inside the visited area and not beyond
-   its invalidation — the trigger candle closes inside the area and not beyond the model's invalidation (E4 (b): the rejection form is
-   at the retested object and closes on its trade side). A candle that gaps or closes through the area, or a commitment that closes
-   outside it, is the area being broken or left (lifecycle), not an entry.
-   CORRECTED by Abhi (22 Oct; code in the follow-up to #364): the trigger candle must have TRADED inside the (refined) area, and
-   price must not be beyond the INVALIDATION side. A close outside the area on the trade-direction side is the confirmation and is
-   allowed (a commitment / rejection candle trades into the area and closes away from it). Only a move through the invalidation side
-   is the area breaking.
+ - Trigger inside the area (Abhi 22 Oct, correcting the 21 Oct wording; §3 models / C lifecycle): the trigger candle must have TRADED
+   inside the visited (refined) area — its range reaches the area, the refined base reached in this visit — and price must not be
+   beyond the INVALIDATION side: no close beyond the area's far edge or the model's invalidation, and (E1) the refined base not already
+   closed through in the visit. A close outside the area on the trade-direction side is the confirmation and is allowed (a commitment /
+   rejection candle trades into the area and closes away from it). E4 (b): the rejection form trades at the retested object and closes
+   on its trade side. A candle that gaps or closes through the invalidation side is the area being broken (lifecycle), not an entry;
+   a candle that never traded inside the area is not an entry. (The 21 Oct wording — the close inside the area — stays only as a
+   what-if.)
  - Trades per zone: the dashboard `max_hits_per_zone` is 4 (Abhi 22 Oct: up to four model entries per visit); a dashboard setting.
  - Overlapping areas are never one area (Z-1u): the cluster only counts one signal per model per place. The area's edges, the trigger
    check and the invalidation always come from the actual area price is visiting, never from the union of the cluster.

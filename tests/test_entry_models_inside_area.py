@@ -5,9 +5,11 @@
   RC2  research default `entry_area_refine = setup_tf`: the 1H / Daily area is the context; the refined 15M base inside it (the newest
        15M turn of the area's side inside the band, wick to body) gives the trigger proximity, the E1 entry and the invalidation; no
        refined base yet ⇒ the models wait;
-  RC3  `entry_trigger_rule = inside`: a model fires only while price is inside its area and not beyond its invalidation — a bar that
-       gaps through or a large candle that closes through / out of the area never fires (E1 / E2 / E3 / E4 a), and E4 (b)'s rejection
-       form must be AT the retested object;
+  RC3  the trigger reading — default `entry_trigger_rule = traded_inside` (Abhi 22 Oct): the trigger candle TRADED inside its area and
+       price is not beyond the INVALIDATION side; a close outside on the TRADE side is the confirmation and fires; a gap / large candle
+       through the invalidation side and a candle that never traded inside never fire (E1 / E2 / E3 / E4 a); E4 (b)'s rejection form
+       trades AT the retested object and closes on its trade side. `inside` (#364: the close inside the area) and `legacy` (da7cbbc)
+       stay as what-ifs and are read here as controls;
   RC4  E4 (b): a broken line is "being revisited" only while price is actually back at it, and the revisit ends when price leaves it
        by structure (a new swing that does not reach it).
 """
@@ -24,6 +26,7 @@ from tests.test_decision3_entry_models import BEAR, MID, SWINGS, _bare, _ltf_fro
 
 AREA = {"entry_area_refine": "area"}                      # RC3 alone (the context area = the trade area)
 LEGACY = {**AREA, "entry_trigger_rule": "legacy"}         # the da7cbbc trigger (control)
+INSIDE = {**AREA, "entry_trigger_rule": "inside"}         # the #364 reading: the close inside the area (what-if)
 MIRRORS = pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put"])
 
 
@@ -40,7 +43,9 @@ def _rows(changes):
 
 # ------------------------------------------------------------------------------------------------ settings
 def test_rc2_rc3_settings_registered_with_the_new_defaults():
-    assert S3.DEFAULTS["entry_trigger_rule"] == "inside" and S3.REGISTER["entry_trigger_rule"][1] == "inside / legacy"
+    assert S3.DEFAULTS["entry_trigger_rule"] == "traded_inside"
+    assert S3.REGISTER["entry_trigger_rule"][1] == "traded_inside / inside / legacy"
+    assert "TRADE-DIRECTION side is the confirmation" in S3.REGISTER["entry_trigger_rule"][3]
     assert S3.DEFAULTS["entry_area_refine"] == "setup_tf" and S3.REGISTER["entry_area_refine"][1] == "setup_tf / area"
     assert "RESEARCH DEFAULT" in S3.REGISTER["entry_area_refine"][3] and "review after" in S3.REGISTER["entry_area_refine"][3]
     from decision3 import engine as E3
@@ -53,10 +58,12 @@ def test_rc2_rc3_settings_registered_with_the_new_defaults():
 
 # ------------------------------------------------------------------------------------------------ RC3: inside the area at the trigger
 @MIRRORS
-def test_e1_wick_into_the_area_closing_outside_never_fires(mirror):
-    rows = _rows({3: (99.3, 100.6, 99.2, 99.8, 1.0)})                      # first bar of the visit: a wick in, closes below the area
-    V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=AREA)
-    a, f = EM.Reader(V).area(3, lvl, d)
+def test_e1_traded_into_the_area_closing_on_the_trade_side_fires(mirror):
+    rows = _rows({3: (99.3, 100.6, 99.2, 99.8, 1.0)})                      # first bar of the visit: trades in, closes below the area
+    V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=AREA)                # default traded_inside: the close away = the confirmation
+    assert [x["model"] for x in EM.Reader(V).area(3, lvl, d)[1]] == ["E1"]
+    Vi, lvli, di = _bare(rows, SWINGS, mirror=mirror, s=INSIDE)           # #364 (what-if): the close must be inside ⇒ no entry
+    a, f = EM.Reader(Vi).area(3, lvli, di)
     assert f == [] and "price has left the area" in a["models"]["E1"]["waiting"]
     V0, lvl0, d0 = _bare(rows, SWINGS, mirror=mirror, s=LEGACY)
     assert [x["model"] for x in EM.Reader(V0).area(3, lvl0, d0)[1]] == ["E1"]   # the da7cbbc trigger fired there
@@ -66,44 +73,114 @@ def test_e1_wick_into_the_area_closing_outside_never_fires(mirror):
 def test_gap_through_and_large_candle_through_the_far_edge_never_fire(mirror):
     gap = _rows({3: (102.4, 102.9, 102.2, 102.6, 1.0)})                    # opens beyond the far edge (gap through)
     big = _rows({3: (99.3, 103.0, 99.2, 102.7, 1.0)})                      # one large candle through the whole area
-    for rows in (gap, big):
-        V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=AREA)
-        assert "E1" not in sum(_fired(V, lvl, d, range(3, len(rows))).values(), [])
-    # inside a visit: the commitment bar gaps beyond the far edge, or one large candle closes through it ⇒ no E2 there
-    for bar6 in ((102.3, 102.9, 99.9, 100.1, 5.0), (101.6, 103.4, 101.5, 103.2, 5.0)):
-        V, lvl, d = _bare(_rows({6: bar6}), SWINGS, mirror=mirror, s=AREA)
-        assert "E2" not in _fired(V, lvl, d, [6])[6]
+    for s in (AREA, INSIDE):                                               # the default (traded_inside) and the #364 reading
+        for rows in (gap, big):
+            V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=s)
+            assert "E1" not in sum(_fired(V, lvl, d, range(3, len(rows))).values(), [])
+        # inside a visit: the commitment bar gaps beyond the far edge, or one large candle closes through it ⇒ no E2 there
+        for bar6 in ((102.3, 102.9, 99.9, 100.1, 5.0), (101.6, 103.4, 101.5, 103.2, 5.0)):
+            V, lvl, d = _bare(_rows({6: bar6}), SWINGS, mirror=mirror, s=s)
+            assert "E2" not in _fired(V, lvl, d, [6])[6]
 
 
 @MIRRORS
-def test_e2_commitment_candle_closing_outside_the_area_never_fires(mirror):
-    rows = _rows({6: (101.6, 101.7, 99.0, 99.2, 5.0)})                     # the dominant red closes BELOW the area (07 Oct 09:15 E2)
-    V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=AREA)
+def test_e2_commitment_trading_in_and_closing_outside_on_the_trade_side_fires(mirror):
+    rows = _rows({6: (101.6, 101.7, 99.0, 99.2, 5.0)})                     # the dominant red trades in, closes BELOW the area (07 Oct 09:15)
+    V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=AREA)                # default traded_inside ⇒ E2 (the close away = the confirmation)
     fired = _fired(V, lvl, d, range(3, len(rows)))
-    assert "E2" not in fired[6]
-    a6 = EM.Reader(V).area(6, lvl, d)[0]
+    assert "E2" in fired[6]
+    e2 = next(f for f in EM.Reader(V).area(6, lvl, d)[1] if f["model"] == "E2")
+    assert e2["invalidation"] == pytest.approx(2 * MID - 102.8 if mirror else 102.8)   # the visit's extreme — the invalidation side
+    Vi, lvli, di = _bare(rows, SWINGS, mirror=mirror, s=INSIDE)           # #364 (what-if): no E2, "price has left the area"
+    assert "E2" not in _fired(Vi, lvli, di, [6])[6]
+    a6 = EM.Reader(Vi).area(6, lvli, di)[0]
     assert a6["models"]["E2"]["status"] == "waiting" and "price has left the area" in a6["models"]["E2"]["waiting"]
     V0, lvl0, d0 = _bare(rows, SWINGS, mirror=mirror, s=LEGACY)
     assert "E2" in _fired(V0, lvl0, d0, [6])[6]                           # the da7cbbc trigger fired on it
 
 
 @MIRRORS
-def test_e3_waits_while_the_choch_bar_is_outside_and_fires_back_inside(mirror, monkeypatch):
-    rows = _rows({6: (101.6, 101.7, 99.0, 99.2, 1.0), 7: (99.2, 100.6, 99.1, 100.4, 1.0)})   # 6 closes below, 7 back inside
-    V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=AREA)
+def test_e3_choch_bar_trading_in_and_closing_on_the_trade_side_fires(mirror, monkeypatch):
+    rows = _rows({6: (101.6, 101.7, 99.0, 99.2, 1.0), 7: (99.2, 100.6, 99.1, 100.4, 1.0)})   # 6 trades in, closes below; 7 back inside
     monkeypatch.setattr(EM.Reader, "c1", lambda self, u, l, dd, st: {"done": u >= 6, "line": "LTF CHoCH (test)"})
     monkeypatch.setattr(EM.Reader, "c0", lambda self, *a: (False, "no commitment", {}))
+    V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=AREA)                # default traded_inside: E3 on the CHoCH bar itself
     fired = _fired(V, lvl, d, range(3, 9))
+    assert "E3" in fired[6] and "E3" not in fired[7]
+    Vi, lvli, di = _bare(rows, SWINGS, mirror=mirror, s=INSIDE)           # #364 (what-if): waits for a close back inside
+    fired = _fired(Vi, lvli, di, range(3, 9))
     assert "E3" not in fired[6] and "E3" in fired[7]
 
 
 @MIRRORS
-def test_e4a_confirmation_bar_closing_outside_never_fires(mirror):
-    rows = _rows({9: (100.9, 101.0, 99.5, 99.6, 1.0)})                     # the push failed, but the bar already left the area
-    V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=AREA)
-    assert "E4" not in _fired(V, lvl, d, [9])[9]
+def test_e4a_confirmation_bar_trading_in_and_closing_on_the_trade_side_fires(mirror):
+    rows = _rows({9: (100.9, 101.0, 99.5, 99.6, 1.0)})                     # the push failed; the bar trades in and closes below the area
+    V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=AREA)                # default traded_inside ⇒ E4 (a)
+    assert "E4" in _fired(V, lvl, d, [9])[9]
+    Vi, lvli, di = _bare(rows, SWINGS, mirror=mirror, s=INSIDE)           # #364 (what-if): no
+    assert "E4" not in _fired(Vi, lvli, di, [9])[9]
     V0, lvl0, d0 = _bare(rows, SWINGS, mirror=mirror, s=LEGACY)
     assert "E4" in _fired(V0, lvl0, d0, [9])[9]
+
+
+# ------------------------------------------------------------------------------------------------ traded_inside: the invalidation side
+# and the candle that never traded inside (Abhi 22 Oct). Each case has a legacy control where the model's own read holds, so the "no"
+# comes from the trigger reading alone.
+@MIRRORS
+def test_e2_commitment_that_never_traded_inside_never_fires(mirror):
+    rows = _rows({6: (99.95, 99.98, 98.4, 98.5, 5.0)})                     # the dominant red opens and stays below the area
+    V0, lvl0, d0 = _bare(rows, SWINGS, mirror=mirror, s=LEGACY)
+    assert "E2" in _fired(V0, lvl0, d0, [6])[6]                           # control: the commitment read holds there
+    for s in (AREA, INSIDE):
+        V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=s)
+        assert "E2" not in _fired(V, lvl, d, [6])[6]
+    a6 = EM.Reader(_bare(rows, SWINGS, mirror=mirror, s=AREA)[0]).area(6, lvl0, d0)[0]
+    assert "did not trade inside the area" in a6["models"]["E2"]["waiting"]
+
+
+@MIRRORS
+def test_e3_choch_bar_beyond_the_invalidation_side_or_never_inside_never_fires(mirror, monkeypatch):
+    monkeypatch.setattr(EM.Reader, "c1", lambda self, u, l, dd, st: {"done": u >= 6, "line": "LTF CHoCH (test)"})
+    monkeypatch.setattr(EM.Reader, "c0", lambda self, *a: (False, "no commitment", {}))
+    through = _rows({6: (101.6, 103.4, 101.5, 103.2, 1.0)})                # one large candle closes through the far edge
+    below = _rows({6: (99.9, 99.95, 99.0, 99.2, 1.0), 7: (99.2, 100.6, 99.1, 100.4, 1.0)})   # 6 never inside; 7 back in
+    V, lvl, d = _bare(through, SWINGS, mirror=mirror, s=AREA)
+    assert "E3" not in _fired(V, lvl, d, [6])[6]
+    V, lvl, d = _bare(below, SWINGS, mirror=mirror, s=AREA)
+    fired = _fired(V, lvl, d, range(3, 9))
+    assert "E3" not in fired[6] and "E3" in fired[7]
+    V0, lvl0, d0 = _bare(below, SWINGS, mirror=mirror, s=LEGACY)
+    assert "E3" in _fired(V0, lvl0, d0, [6])[6]                           # control
+
+
+@MIRRORS
+def test_e4a_confirmation_bar_beyond_the_invalidation_side_or_never_inside_never_fires(mirror):
+    through = _rows({9: (100.9, 102.7, 100.8, 102.5, 1.0)})                # closes beyond the far edge (inside the sweep extreme)
+    below = _rows({9: (99.9, 99.95, 99.0, 99.1, 1.0)})                     # opens and stays below the area
+    for rows in (through, below):
+        V, lvl, d = _bare(rows, SWINGS, mirror=mirror, s=AREA)
+        assert "E4" not in _fired(V, lvl, d, [9])[9]
+    V0, lvl0, d0 = _bare(below, SWINGS, mirror=mirror, s=LEGACY)
+    assert "E4" in _fired(V0, lvl0, d0, [9])[9]                           # control: the sweep read holds there
+
+
+@MIRRORS
+def test_e4b_rejection_closing_on_the_invalidation_side_never_fires(mirror, monkeypatch):
+    rows, neck = _neck(mirror)
+    monkeypatch.setattr(TL, "channel_lines", lambda V, t, degree=None: [])
+    monkeypatch.setattr(TL, "channels", lambda V, t, degree=None: [])
+    monkeypatch.setattr(TL, "break_known_at", lambda V, x: 4)
+    monkeypatch.setattr(EM, "PATTERN_HOOK", lambda V, t, d: [neck])
+    monkeypatch.setattr(M, "reversal_form", lambda A, t, dd, s, tss=None: ("pin", 1) if t == 7 else None)
+    d = M.UP if mirror else M.DOWN
+    # bar 7 trades at the line (98.5 there): closing below it (the trade side) fires; closing above it (the invalidation side) never
+    for close, fires in ((98.4, True), (98.6, False)):
+        rr = list(rows)
+        o, h, lo, _c, v = (97.2, 98.7, 97.1, close, 1.0)
+        rr[7] = _mirror_rows([(o, h, lo, close, v)])[0] if mirror else (o, h, lo, close, v)
+        V, _l, _d = _bare(rr, [], trend_at=lambda u: "UP" if mirror else "DOWN")
+        fired = [t for t in range(4, len(rr)) for _f in EM.Reader(V).broken(t, d)[1]]
+        assert (fired == [7]) is fires, (close, fired)
 
 
 def _neck(mirror):
@@ -267,20 +344,42 @@ def test_e1_never_fires_on_a_refined_base_already_closed_through_in_the_visit(mi
     back into the base. E1 must not fire there: its invalidation (the base's far edge) would sit inside price already traded — the
     base is being broken (lifecycle), not entered."""
     rows = REF[:6] + [(103.8, 103.95, 103.6, 103.9, 1.0), (103.9, 103.95, 103.2, 103.3, 1.0), (103.3, 103.4, 102.0, 102.1, 1.0)]
-    V, lvl, d = _ref_rows(rows, mirror)
-    fired = _fired(V, lvl, d, range(6, len(rows)))
-    assert "E1" not in sum(fired.values(), [])
-    a7 = EM.Reader(V).area(7, lvl, d)[0]
-    assert "closed through in this visit" in a7["models"]["E1"]["waiting"]
-    ok = REF[:6] + [(103.0, 103.45, 102.9, 103.2, 1.0)]                    # control: the first touch closes inside ⇒ E1
-    V2, lvl2, d2 = _ref_rows(ok, mirror)
-    assert _fired(V2, lvl2, d2, [6])[6] == ["E1"]
+    for rule in (None, "inside"):                                          # the default (traded_inside) keeps the RC3 lifecycle check
+        V, lvl, d = _ref_rows(rows, mirror, rule=rule)
+        fired = _fired(V, lvl, d, range(6, len(rows)))
+        assert "E1" not in sum(fired.values(), [])
+        a7 = EM.Reader(V).area(7, lvl, d)[0]
+        assert "closed through in this visit" in a7["models"]["E1"]["waiting"]
+        ok = REF[:6] + [(103.0, 103.45, 102.9, 103.2, 1.0)]                # control: the first touch closes inside ⇒ E1
+        V2, lvl2, d2 = _ref_rows(ok, mirror, rule=rule)
+        assert _fired(V2, lvl2, d2, [6])[6] == ["E1"]
 
 
-def _ref_rows(rows, mirror, ltf=False):
+@MIRRORS
+def test_e1_at_the_refined_base_traded_inside_reading(mirror):
+    """traded_inside (default) with the refined base: the visit's first candle at the base that closes below the area (the trade side)
+    fires E1; one that closes beyond the base's far edge (the invalidation side) never does; a candle that never reached the base never
+    does (E1 waits)."""
+    away = REF[:8] + [(102.0, 103.2, 99.5, 99.8, 1.0)]                     # at the base, closes below the context area
+    V, lvl, d = _ref_rows(away, mirror)
+    assert _fired(V, lvl, d, [8])[8] == ["E1"]
+    e1 = EM.Reader(V).area(8, lvl, d)[1][0]
+    assert e1["invalidation"] == pytest.approx(2 * MID - 103.5 if mirror else 103.5)
+    Vi, lvli, di = _ref_rows(away, mirror, rule="inside")                  # #364 (what-if): no
+    assert _fired(Vi, lvli, di, [8])[8] == []
+    through = REF[:8] + [(102.0, 103.9, 101.9, 103.7, 1.0)]                # at the base, closes beyond its far edge (inside the context)
+    V, lvl, d = _ref_rows(through, mirror)
+    assert _fired(V, lvl, d, [8])[8] == []
+    short = REF[:8] + [(102.0, 102.2, 99.0, 99.2, 1.0)]                    # never reaches the base, closes below the area
+    V, lvl, d = _ref_rows(short, mirror)
+    a8, f8 = EM.Reader(V).area(8, lvl, d)
+    assert f8 == [] and "waiting for price to reach" in a8["models"]["E1"]["waiting"]
+
+
+def _ref_rows(rows, mirror, ltf=False, rule=None):
     rr = _mirror_rows(rows) if mirror else rows
-    return _bare(rows, REF_SW + [("H", 103.6, 13, 14)], band=(100.0, 104.0), mirror=mirror,
-                 s={"entry_area_refine": "setup_tf", "entry_trigger_rule": "inside"}, ltf=_ltf_from(rr) if ltf else None)
+    s = {"entry_area_refine": "setup_tf", **({"entry_trigger_rule": rule} if rule else {})}   # None ⇒ the default (traded_inside)
+    return _bare(rows, REF_SW + [("H", 103.6, 13, 14)], band=(100.0, 104.0), mirror=mirror, s=s, ltf=_ltf_from(rr) if ltf else None)
 
 
 # ------------------------------------------------------------------------------------------------ the DEFAULT path, every model
@@ -295,9 +394,10 @@ FULL = REF[:9] + [(103.1, 103.3, 100.4, 100.6, 5.0),   # 9  dominant red on volu
 
 @MIRRORS
 def test_default_settings_every_model_fires_end_to_end(mirror):
-    """entry_area_refine = setup_tf + entry_trigger_rule = inside (the defaults): E1 at the refined base, E2 on the commitment, E3 on the
-    LTF CHoCH, E4 (a) after the sweep — each once, each closing inside the area, each invalidation from the actual area / base."""
-    assert S3.DEFAULTS["entry_area_refine"] == "setup_tf" and S3.DEFAULTS["entry_trigger_rule"] == "inside"
+    """entry_area_refine = setup_tf + entry_trigger_rule = traded_inside (the defaults): E1 at the refined base, E2 on the commitment, E3
+    on the LTF CHoCH, E4 (a) after the sweep — each once, each trigger candle trading inside the area and closing not beyond its
+    invalidation, each invalidation from the actual area / base."""
+    assert S3.DEFAULTS["entry_area_refine"] == "setup_tf" and S3.DEFAULTS["entry_trigger_rule"] == "traded_inside"
     V, lvl, d = _ref_rows(FULL, mirror, ltf=True)
     st = {t: EM.Reader(V).area(t, lvl, d)[1] for t in range(6, len(FULL))}
     fired = {t: [f["model"] for f in fs] for t, fs in st.items()}
@@ -307,10 +407,26 @@ def test_default_settings_every_model_fires_end_to_end(mirror):
     m = (lambda x: 2 * MID - x) if mirror else (lambda x: x)
     assert inv["E1"] == pytest.approx(m(103.5)) and inv["E2"] == pytest.approx(m(103.5)) and inv["E3"] == pytest.approx(m(103.5))
     assert inv["E4"] == pytest.approx(m(104.4))                            # the sweep extreme
+    A = V.levels.A
     for t, fs in st.items():
         for f in fs:
-            c = float(V.levels.A["close"][t])
-            assert float(lvl["lo"]) <= c <= float(lvl["hi"]) and (c - float(f["invalidation"])) * d >= 0, (t, f["model"])
+            c = float(A["close"][t])
+            assert float(A["low"][t]) <= float(lvl["hi"]) and float(A["high"][t]) >= float(lvl["lo"]), (t, f["model"])   # traded inside
+            assert (c - float(f["invalidation"])) * d >= 0, (t, f["model"])  # not beyond the invalidation
+
+
+@MIRRORS
+def test_default_settings_e2_commitment_closing_below_the_area_fires(mirror):
+    """The default path with the refined base: the commitment candle trades into the area (after price reached the base) and closes
+    BELOW it — the confirmation (Abhi 22 Oct) ⇒ E2 with the invalidation beyond the base's far edge / the visit's extreme; #364 did not."""
+    rows = FULL[:9] + [(103.1, 103.3, 99.4, 99.6, 5.0)] + FULL[10:]
+    V, lvl, d = _ref_rows(rows, mirror, ltf=True)
+    f9 = {f["model"]: f for f in EM.Reader(V).area(9, lvl, d)[1]}
+    assert "E2" in f9 and f9["E2"]["invalidation"] == pytest.approx(2 * MID - 103.5 if mirror else 103.5)
+    c = float(V.levels.A["close"][9])
+    assert (c - float(lvl["lo"] if not mirror else lvl["hi"])) * d > 0       # closed outside on the trade side
+    Vi, lvli, di = _ref_rows(rows, mirror, ltf=True, rule="inside")
+    assert "E2" not in [f["model"] for f in EM.Reader(Vi).area(9, lvli, di)[1]]
 
 
 @MIRRORS
@@ -320,10 +436,42 @@ def test_default_settings_e4b_fires_end_to_end(mirror, monkeypatch):
     monkeypatch.setattr(TL, "channels", lambda V, t, degree=None: [])
     monkeypatch.setattr(TL, "break_known_at", lambda V, x: 4)
     monkeypatch.setattr(EM, "PATTERN_HOOK", lambda V, t, d: [neck])
-    V, _l, _d = _bare(rows, [], trend_at=lambda u: "UP" if mirror else "DOWN",
-                      s={"entry_area_refine": "setup_tf", "entry_trigger_rule": "inside"})
+    V, _l, _d = _bare(rows, [], trend_at=lambda u: "UP" if mirror else "DOWN", s={"entry_area_refine": "setup_tf"})
     d = M.UP if mirror else M.DOWN
     fired = [(t, f) for t in range(4, len(rows)) for f in EM.Reader(V).broken(t, d)[1]]
     assert [t for t, _ in fired] == [8] and fired[0][1]["variant"] == "b"
     c = float(V.levels.A["close"][8])
     assert (c - fired[0][1]["invalidation"]) * d >= 0                      # not beyond the retest extreme
+
+
+# ------------------------------------------------------------------------------------------------ the 12 Oct fixture (Abhi's described shape)
+@MIRRORS
+def test_oct12_fixture_spike_trading_through_and_closing_away_fires_under_traded_inside(mirror):
+    """OPEN_QUESTIONS (RC3 conflict): the synthetic 12 Oct bear-call fixture's trigger candle trades up through the area and closes back
+    below it. Under the 21 Oct wording (`inside`, #364) it was no entry; under Abhi's 22 Oct reading (`traded_inside`, default) it traded
+    inside and its close on the trade side is the confirmation ⇒ E1 / E3 fire on it. The next candle (the dominant one) never traded
+    inside the area ⇒ no E2 there (the da7cbbc trigger fired it)."""
+    from decision3 import engine as E3
+    from tests import oct12_fixture as F
+    m15, fut, ltf = F.build(mirror=mirror)
+
+    def entries(rule):
+        V = E3.V22(m15, s={"level_death_side": "role", "entry_area_refine": "area", **({"entry_trigger_rule": rule} if rule else {})},
+                   ltf=ltf, futures=fut)
+        ts = V.levels.ts
+        last = ts.dt.normalize().iloc[-1]
+        bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == last][:3]
+        return V, {i: [e["model"] for e in V.decide(i)["entries"]] for i in bars}
+
+    V, got = entries(None)
+    t0, t1 = sorted(got)[:2]
+    A = V.levels.A
+    d = M.UP if mirror else M.DOWN
+    e = next(x for x in V.decide(t0)["entries"] if x["model"] == "E1")
+    lo, hi = float(e["area"]["lo"]), float(e["area"]["hi"])
+    near = lo if d < 0 else hi
+    assert float(A["low"][t0]) <= hi and float(A["high"][t0]) >= lo and (float(A["close"][t0]) - near) * d > 0   # traded in, closed away
+    assert got[t0] == ["E1", "E3"] and "E2" not in got[t1]
+    assert not (float(A["low"][t1]) <= hi and float(A["high"][t1]) >= lo)                # the dominant candle never traded inside
+    assert entries("inside")[1] == {t: [] for t in got}
+    assert "E2" in entries("legacy")[1][t1]

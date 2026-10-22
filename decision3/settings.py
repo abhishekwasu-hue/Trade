@@ -110,8 +110,10 @@ DEFAULTS = {
     "entry_models_on": ("E1", "E2", "E3", "E4"),   # replays / what-if: कोणते models चालू (live on/off live थरात, इथे नाही)
     "entry_cluster_rule": "cluster",         # lead (provisional, Abhi may override): एकाच visit मधले, एकाच role / बाजूचे overlapping areas = एक
                                              # location ⇒ प्रत्येक model चा एकच signal प्रति cluster प्रति visit. "area" = प्रत्येक area वेगळा (what-if)
-    "entry_trigger_rule": "inside",          # Abhi 21 Oct RC3: a model fires only while price is inside its (refined) area and not beyond its
-                                             # invalidation (close at the trigger bar). "legacy" = the da7cbbc trigger (what-if / old fixtures)
+    "entry_trigger_rule": "traded_inside",   # Abhi 22 Oct: the trigger candle TRADED inside the visited (refined) area and price is not
+                                             # beyond the invalidation side; a close outside on the trade side = the confirmation (allowed).
+                                             # "inside" = the 21 Oct RC3 reading (#364: the close inside the area, what-if); "legacy" = the
+                                             # da7cbbc trigger (what-if / old fixtures)
     "entry_area_refine": "setup_tf",         # Abhi 21 Oct RC2 (RESEARCH DEFAULT, review after replay): 1H / Daily area = context; the
                                              # refined 15M base inside it (TA4) = trigger proximity, E1 and invalidation. "area" = the context
                                              # area itself (the da7cbbc reading, what-if)
@@ -222,11 +224,14 @@ REGISTER = {
                            "cluster per visit — the cluster only COUNTS (Abhi 21 Oct, Z-1u): edges, trigger and invalidation come from the "
                            "actual visited area, never the union (the card lists every member area with its own band); "
                            "area = each area on its own (the 6852bfc reading, what-if)"),
-    "entry_trigger_rule": ("inside", "inside / legacy", "Abhi नियम", "Abhi 21 Oct RC3 (07 Oct BANKNIFTY review, §3 models / C "
-                           "lifecycle): a model fires only while price is inside the visited (refined) area and not beyond its "
-                           "invalidation — the trigger bar's close inside the area's own band and not beyond the model's invalidation; "
-                           "E4 (b): the rejection form at the retested object, closing on its trade side; beyond ⇒ lifecycle / break, "
-                           "not an entry. legacy = the da7cbbc trigger (what-if, old fixtures)"),
+    "entry_trigger_rule": ("traded_inside", "traded_inside / inside / legacy", "Abhi नियम", "Abhi 22 Oct (corrects the 21 Oct RC3 "
+                           "wording, §3 models / C lifecycle): the trigger candle must have TRADED inside the visited (refined) area — "
+                           "its range overlaps the area's own band, the refined base reached in this visit — and price must not be beyond "
+                           "the INVALIDATION side (no close beyond the far edge / the model's invalidation; E1: the refined base not already "
+                           "closed through in the visit). A close outside the area on the TRADE-DIRECTION side is the confirmation and is "
+                           "allowed (a commitment / rejection candle trades into the area and closes away from it); E4 (b): the rejection "
+                           "form trades at the retested object and closes on its trade side. inside = the 21 Oct RC3 reading (#364: the "
+                           "close inside the area's own band, what-if); legacy = the da7cbbc trigger (what-if, old fixtures)"),
     "entry_area_refine": ("setup_tf", "setup_tf / area", "Abhi नियम", "Abhi 21 Oct RC2 — RESEARCH DEFAULT, review after the replay: "
                           "the 1H / Daily area (levels' TA4 band) is the context (where); inside it the refined base on the setup TF "
                           "(the newest 15M turn of the area's side inside the band, wick to body by the same TA4 rule) gives the trigger "
