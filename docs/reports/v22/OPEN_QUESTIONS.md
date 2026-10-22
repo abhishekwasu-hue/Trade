@@ -836,7 +836,7 @@ Provisional choices (assumed — no answer needed unless Abhi objects). Each was
   never inside a price already traded in the visit).
 - **E4 (b) "at the object" = a candle of the rejection form touches it** (one-candle forms: the trigger candle; two-candle forms: the
   trigger or the one before). Method §3 Lines: "the third touch is the trade location".
-- **E4 (a) sweep keeps the context area's far edge** (the sweep is of the area; the refined base only adds the proximity check).
+- **E4 (a) sweep keeps the context area's far edge** (the sweep is of the area; the refined base gives the trigger location: the trigger candle trades into it).
 - ~~**`traded_inside` (Abhi 22 Oct) — "traded inside the (refined) area" = the trigger candle's range reaches the VISITED area's own band
   (the band #364 checked the close against) and the refined base was reached earlier in this visit** — not that the trigger candle
   itself reaches the narrow refined band.~~ **DECIDED by Abhi (22 Oct; branch

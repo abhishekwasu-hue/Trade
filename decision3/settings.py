@@ -116,7 +116,7 @@ DEFAULTS = {
                                              # "inside" = the 21 Oct RC3 reading (#364: the close inside the area, what-if); "legacy" = the
                                              # da7cbbc trigger (what-if / old fixtures)
     "entry_area_refine": "setup_tf",         # Abhi 21 Oct RC2 (RESEARCH DEFAULT, review after replay): 1H / Daily area = context; the
-                                             # refined 15M base inside it (TA4) = trigger proximity, E1 and invalidation. "area" = the context
+                                             # refined 15M base inside it (TA4) = trigger location (the trigger candle trades into it), E1 and invalidation. "area" = the context
                                              # area itself (the da7cbbc reading, what-if)
     "sharp_reversal_handover": True,         # Abhi Z-1z: zone मध्ये push नाकारला + dominant उलट candle ने गिळला = handover (तुलना, आकडा नाही)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
@@ -237,7 +237,7 @@ REGISTER = {
     "entry_area_refine": ("setup_tf", "setup_tf / area", "Abhi नियम", "Abhi 21 Oct RC2 — RESEARCH DEFAULT, review after the replay: "
                           "the 1H / Daily area (levels' TA4 band) is the context (where); inside it the refined base on the setup TF "
                           "(the newest 15M turn of the area's side inside the band, wick to body by the same TA4 rule) gives the trigger "
-                          "proximity, the E1 entry and the invalidation; no refined base yet ⇒ the models wait. area = the context area "
+                          "location (the trigger candle trades into it), the E1 entry and the invalidation; no refined base yet ⇒ the models wait. area = the context area "
                           "itself (what-if / the da7cbbc reading)"),
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
     "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),

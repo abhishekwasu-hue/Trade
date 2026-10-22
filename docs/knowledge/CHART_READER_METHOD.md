@@ -162,8 +162,8 @@ HOW TO USE IT
    side is the confirmation and is allowed (a commitment / rejection candle trades into the base and closes away from it). Price must
    never be beyond the INVALIDATION side: no close beyond the area's far edge or the model's invalidation, and (E1) the refined base
    not already closed through in the visit. A candle that gaps or closes through the invalidation side is the area being broken
-   (lifecycle), not an entry. (The 21 Oct wording — the close inside the area — and the 22 Oct first reading — the base only reached
-   somewhere in the visit — stay only as what-ifs: `entry_trigger_rule = inside`.)
+   (lifecycle), not an entry. (The 22 Oct first reading — the base only reached somewhere in the visit — is superseded; the 21 Oct
+   wording — the close inside the area — stays as the what-if `entry_trigger_rule = inside`, and `legacy` as before.)
  - Sweep / fakeout inside a visit (Abhi 22 Oct; C lifecycle, §3 models): a close beyond the area WITHOUT a swing formed beyond, then
    back inside, is a sweep — the area stays alive and the visit continues. E4 (a) is its model (the next push fails inside the sweep
    extreme; invalidation beyond the sweep extreme); E2 / E3 may still fire later in the same visit (the trigger candle trading into the
