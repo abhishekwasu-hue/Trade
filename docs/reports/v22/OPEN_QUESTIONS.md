@@ -901,3 +901,19 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
   Now DEAD at the second break. The earlier reading stays as the what-if `flip_dead_rule = far_swing`.
 - Open (display only, not the decision): `levels.band_flip_facts` (the Vision approval chart's band labels, `display_bands`) still
   marks DEAD only past the far-side swing; it should mirror `flip_dead_rule`. Logged; no engine effect.
+
+## Handover pack (new account) — questions with provisional defaults (checked against DECISIONS / CLAUDE.md)
+- **Where OPEN_QUESTIONS lives.** The pack names `docs/OPEN_QUESTIONS.md`; the repo's file is this one. Provisional: keep this file
+  (no second list). Assumed — no answer needed unless Abhi objects.
+- **PR order vs one working branch.** The session pushes only to `claude/hopeful-gates-hf186c`, which already carries #367 (T-2 + the
+  trigger follow-up, T-4) + its CI fix + the naked-card part of T-6. Abhi wrote "Merge". Provisional: the STEP 0 docs ride in that
+  same PR (order 1 + 3 together), merged on green CI + independent review (DECISIONS 24); T-1 / T-5 / T-6 follow as the next PR
+  from the same branch restarted on main. Nothing is lost; the order only joins two PRs.
+- **VPS commit.** Last status Abhi pasted (per the earlier handoff): `bf98040` (#365), ✅ clean. #367 has never been deployed.
+  Provisional: treat bf98040 as live until Abhi pastes `./deploy status`.
+- **T-1 / T-5 reports need the VPS database** (vision_signals / vision_events, Telegram message ids, the chart image Vision got). The
+  session cannot read the VPS (CLAUDE.md). Provisional: one read-only export block for Abhi (after close); the fixes are built and
+  tested meanwhile; the reports are written when the export arrives.
+- **T-4 INTRADAY vs two-day holding.** Abhi's decision; the current dashboard setting stays. Replay numbers for both are not
+  available yet (the replay measures outcomes by structure, not by holding style).
+- **T-4 Fyers `fno_historical_data` probe.** Needs Abhi's own Fyers account / token; not run. Forward FUT collection continues.

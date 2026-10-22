@@ -51,3 +51,23 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
 28. One signal per model per place applies to E4 (b) too: overlapping BROKEN areas (and a BROKEN line lying on them) of the same role
     and break direction, revisited together, give ONE E4 (b) per visit; the signal keeps its own object, retest extreme and
     invalidation (counter only, never a union band — as decision 9).
+29. A Vision approval card is never erased: every outcome (✅, ❌, ✏️, no reply, drift, expired, restart-cancel) keeps the original
+    caption and appends one outcome line (the outcome line is never cut); buttons go only after a decision; every outcome is also a
+    new short message replying to the card. The word "shadow" never appears without its plain explanation (comparison only, not
+    counted). Shadow trades (`<bot>_vision_shadow`) are visible on the Vision and Performance pages, kept apart from the real PAPER
+    totals and the kill switch. A card without buttons says so and why. (Handover T-1)
+30. Trade messages show the exits the bot really uses, from the dashboard settings, each in its own unit and in ₹ for the position
+    (SL, TSL activation / state, target, next-level exit, carry-forward check / EOD exit); a stored ₹ level the exit logic does not
+    use is never shown as SL / target; a naked leg shows "premium paid", never "target ₹0" / "R:R NA". Display only; exit logic
+    unchanged. (Handover T-6)
+31. PROVISIONAL — For engine-sourced signals Vision audits against the engine's own reading (engine card and the method's closed
+    concept list); the old level-bot session / gap / opening rules are context lines only and never set the verdict floor. Vision
+    stays advisory (human_confirm). Level-bot signals (signal_source = own) keep their rules unchanged. Verdict vs Abhi's decision
+    vs outcome is measured. (Handover T-5)
+32. Model C (counter-trend C leg of a correction against the Daily side) is a separate, switchable entry model with its own
+    statistics, default OFF until its replay is shown; Abhi switches it ON. Pullback / retest only (never a breakout entry): A
+    needs a 1H CHoCH; B dies only by a close beyond O plus a swing beyond O; entries only while B is in progress (before a close
+    beyond HA) unless a what-if window is chosen; end zone and evidence are context, never a gate or an exit; execution stays the
+    dashboard settings. Sub-ways C-a … C-f each switchable. (Handover T-3, Appendix A)
+33. Older FUT volume: no Upstox Plus (Abhi refuses); forward collection only; a Fyers probe only with Abhi's own account. INTRADAY
+    vs two-day holding is Abhi's decision; the current dashboard setting stays. (Handover T-4)

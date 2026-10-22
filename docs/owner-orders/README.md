@@ -20,3 +20,10 @@ Decisions taken from orders go to DECISIONS.md (append only).
 | 13 | Remaining-work md file (handoff) + stop (credit limit) | handoff given to Abhi; new session resumed on "ok go ahead" | HANDOFF.md (upload) |
 | 14 | Handoff step 1: #367 CI fail (Daily swing confirmed only from a completed day) | done: full suite green (5981 passed) on 7e9e8b7; flip-dead / E4b independent review APPROVE; #367 not merged yet | branch claude/hopeful-gates-hf186c (on #367 head) |
 | 15 | T-1: naked-leg PAPER card — premium paid + dashboard exit rules in words, no ₹0 target / R:R NA (display only) | done + tests (tests/test_paper_naked_card.py); "T-1" not found in the repo — provisional: this item itself | paper/watch.py, branch claude/hopeful-gates-hf186c |
+| 16 | Handover pack (new account): T-1 … T-6 + Appendix A recorded (INBOX verbatim, DECISIONS 29–33) | done (STEP 0) | docs/owner-orders |
+| 17 | T-1 Vision approval UX: never erase a card, notify every outcome, plain words, shadow trades visible, reachability check + report of NIFTY BEARISH L22,761 | report needs VPS data (read-only block for Abhi); fixes next PR | — |
+| 18 | T-2 flipped area broken again ⇒ DEAD + one E4b per place | done in #367 (code + tests + 07–21 Oct before / after); with the CAS truncation fix, merging with the trigger follow-up | branch claude/hopeful-gates-hf186c |
+| 19 | T-3 model C (counter-trend C leg), Appendix A | open: coverage report → build behind switch (OFF) → replay | — |
+| 20 | T-4 carry-over: trigger follow-up (merge + deploy after close); reading-only validator (claude/reading-only-reports); older FUT volume (forward only); INTRADAY vs two-day (Abhi) | trigger follow-up merging with T-2; rest open | — |
+| 21 | T-5 why did Vision disagree (E4b sweep-retest L22,747): report from stored data, then engine-signal audit on the engine reading | report needs VPS data; align in the T-1 PR | — |
+| 22 | T-6 PAPER trade messages: real active exits from settings (own unit + ₹), naked premium paid | naked card part done (52b8c7d, #15); spread / srv2 / periodic lines in the T-1 PR | paper/watch.py |
