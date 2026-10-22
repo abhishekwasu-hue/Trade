@@ -467,3 +467,7 @@ the worst adverse move.
    and the worst adverse move, plus the big moves against the Daily side (taken or not, and why). Use the same card format
    as the replay batches, with charts.
 4. Abhi reviews, then switches it ON in PAPER. Deploy only after market close, in one VPS block with --revert.
+
+---
+## 22 Oct — merge all
+Merge all

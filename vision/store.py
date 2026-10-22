@@ -67,6 +67,7 @@ V1_COLUMNS = {
     "exec_note": "TEXT", "transition_notified": "INTEGER DEFAULT 0",
     "mod_entry": "REAL", "mod_json": "TEXT", "reject_reason": "TEXT",     # Abhi §10: ✏️ limit entry (spot) + सुधारित ticket; ❌ चं कारण
     "pack_version": "TEXT", "v4_json": "TEXT",                           # R0 (design §12): V4 checklist audit (audit-only) + Method Pack version
+    "tg_caption": "TEXT", "tg_outcome": "TEXT",                          # T-1 (DECISIONS 29): card चा मूळ caption + जोडलेल्या outcome ओळी (card कधीच पुसत नाही)
 }
 USAGE_COLUMNS = {"pack_version": "TEXT"}                                  # R0: प्रत्येक V4 call ला कोणता Method Pack होता
 V1_MODES = ("auto_veto", "human_confirm", "veto_then_confirm")
@@ -271,6 +272,15 @@ def _reuse_tags(setup_json):
     return tuple(bool(t.get(k)) for k in REUSE_TAGS) + (t.get(MODEL_TAG),)
 
 
+def _engine_tag(setup_json):
+    """T-5: tags["engine"] is True (paper/engine_entry) — the engine audit's signals; every other signal False."""
+    try:
+        t = json.loads(setup_json or "{}").get("tags") or {}
+    except (ValueError, TypeError, AttributeError):
+        t = {}
+    return isinstance(t, dict) and t.get("engine") is True
+
+
 def find_reusable(row, window_min, tol_pct=0.05, path=None, prompt_version=None):
     """तोच bot / symbol / दिशा / role / TF / setup प्रकार (breakout / directional tags), level ±tol_pct %, आधीच्या `window_min` मिनिटांत DONE
     (unavailable नाही, स्वतः reuse नाही) ⇒ ती row. Role किंवा breakout प्रकार वेगळा ⇒ नवा audit (verdict नियम वेगळे लागतात)."""
@@ -284,8 +294,11 @@ def find_reusable(row, window_min, tol_pct=0.05, path=None, prompt_version=None)
                          (row["bot"], row["symbol"], row.get("direction"), row.get("role"), row.get("setup_tf"), t0, t1,
                           row.get("signal_id") or "")).fetchall()
     want = _reuse_tags(row.get("setup_json"))
+    eng = _engine_tag(row.get("setup_json"))
     for r in rows:
         if _reuse_tags(r["setup_json"]) != want:
+            continue
+        if _engine_tag(r["setup_json"]) != eng:                          # T-5: an engine signal never reuses a level-bot audit (or back)
             continue
         if prompt_version and r["prompt_version"] != prompt_version:       # v1 चं मत v2 signal ला नाही
             continue
@@ -413,6 +426,14 @@ def rows_with_status(statuses, path=None, timeout=10, bot=None, symbol=None):
         args.append(symbol)
     with connect(path, timeout) as c:
         return [dict(r) for r in c.execute(q + " ORDER BY created_at", args)]
+
+
+def last_transition(signal_id, to=None, path=None):
+    """त्या signal चं शेवटचं status बदल event ("APPROVED→EXPIRED" …; to दिलं ⇒ फक्त त्या status कडे) किंवा None. फक्त वाचन."""
+    q, a = "SELECT event FROM vision_events WHERE signal_id=? AND event LIKE ?", [signal_id, f"%→{to}" if to else "%→%"]
+    with connect(path) as c:
+        r = c.execute(q + " ORDER BY ts DESC, rowid DESC LIMIT 1", a).fetchone()
+    return r[0] if r else None
 
 
 def update(signal_id, path=None, **fields):

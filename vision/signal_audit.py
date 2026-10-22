@@ -458,7 +458,11 @@ TIGHT_ROOM_MR = 1.0                                                     # spec: 
 
 def apply_facts(a, ctx, direction=None):
     """Code ला आधीच माहीत असलेली तथ्यं (OHLC वरून) model च्या उत्तरावर लादणे — नियम model ने ती पुन्हा लिहिण्यावर अवलंबून नकोत.
-    फक्त कडक दिशेने: पहिली 15 मिनिटं ⇒ time_risk = opening; room < 1 × median range ⇒ tight; संदर्भ नाही ⇒ room unclear. रिटर्न (a, बदल)."""
+    फक्त कडक दिशेने: पहिली 15 मिनिटं ⇒ time_risk = opening; room < 1 × median range ⇒ tight; संदर्भ नाही ⇒ room unclear. रिटर्न (a, बदल).
+    T-5: an engine signal's context (vision/engine_audit.engine_ctx) ⇒ the engine audit's own facts (no session / gap / L-line fact)."""
+    if _engine(ctx):
+        from . import engine_audit as EA
+        return EA.apply_facts(a, ctx)
     if not a:
         return a, []
     a, ch = dict(a), []
@@ -505,7 +509,10 @@ def pre_verdict(ctx, direction, disagree_rules=None, gray_rules=None):
 
 
 def rule_hits(a, disagree_rules=None, gray_rules=None, ctx=None, direction=None):
-    """(disagree ids, gray ids) जे या audit ला लागतात. None ⇒ सगळे नियम चालू."""
+    """(disagree ids, gray ids) जे या audit ला लागतात. None ⇒ सगळे नियम चालू. T-5: engine context ⇒ the engine checklist's own ids."""
+    if _engine(ctx):
+        from . import engine_audit as EA
+        return EA.rule_hits(a, ctx)
     dr = DISAGREE_RULES if disagree_rules is None else {k: v for k, v in DISAGREE_RULES.items() if k in disagree_rules}
     gr = GRAY_RULES if gray_rules is None else {k: v for k, v in GRAY_RULES.items() if k in gray_rules}
     code = code_facts(ctx, direction)
@@ -553,13 +560,22 @@ def code_facts(ctx, direction=None):
 
 
 def code_verdict(a, disagree_rules=None, gray_rules=None, ctx=None, direction=None):
-    """एका audit चा verdict: नियमांनी ठरलेली पातळी किंवा vision चा स्वतःचा verdict — जो जास्त कडक तो (नियमांपेक्षा positive कधीच नाही)."""
+    """एका audit चा verdict: नियमांनी ठरलेली पातळी किंवा vision चा स्वतःचा verdict — जो जास्त कडक तो (नियमांपेक्षा positive कधीच नाही).
+    T-5: engine context ⇒ the engine audit's floor (its own checklist only; the old rules are context lines, never the floor)."""
+    if _engine(ctx):
+        from . import engine_audit as EA
+        return EA.code_verdict(a, ctx)
     if not a:
         return "unavailable"
     d, g = rule_hits(a, disagree_rules, gray_rules, ctx, direction)
     floor = "disagree" if d else ("gray" if g else "agree")
     own = a.get("verdict") if a.get("verdict") in SEVERITY else "gray"
     return max(floor, own, key=SEVERITY.get)
+
+
+def _engine(ctx):
+    """T-5: the context was built for an engine signal's engine audit (vision/chart.render marks it)."""
+    return isinstance(ctx, dict) and ctx.get("signal_source") == "engine"
 
 
 def combine(verdicts):
@@ -589,7 +605,13 @@ def one_call(client, params):
 def audit(client, png, sig, model, second_below=0.6, effort=None, thinking=None, on_usage=None, budget_ok=None, disagree_rules=None,
           gray_rules=None):
     """1 audit (+ confidence < second_below असेल तर दुसरा, budget_ok() खरं असेल तरच). रिटर्न dict:
-    {verdict, audits:[…], verdicts:[…], confidence, cost_usd, usage, latency_ms, error, prompt_version, model}."""
+    {verdict, audits:[…], verdicts:[…], confidence, cost_usd, usage, latency_ms, error, prompt_version, model}.
+    T-5 (DECISIONS 31, provisional): an engine signal (`vision_engine_audit = engine`) ⇒ vision/engine_audit.audit (the engine's own
+    reading, the method's concepts; old rules = context lines only). Every other signal: this audit, unchanged."""
+    from . import engine_audit as EA
+    if EA.use_engine(sig):
+        return EA.audit(client, png, sig, model, second_below=second_below, effort=effort, thinking=thinking, on_usage=on_usage,
+                        budget_ok=budget_ok, disagree_rules=disagree_rules, gray_rules=gray_rules)
     params = build_request(png, sig, model, effort=effort, thinking=thinking)
     out = {"audits": [], "verdicts": [], "cost_usd": 0.0, "latency_ms": 0, "error": None, "prompt_version": PROMPT_VERSION, "model": model,
            "usage": {"input_tokens": 0, "output_tokens": 0, "cache_read": 0, "cache_write": 0}}

@@ -106,7 +106,18 @@ def engine_gate_tags(r, direction, settings=None):
     return {"mode": "engine", "side": direction, "area": area, "grade": r.get("grade"), "tf": "15M",
             "trend": pay.get("trend_used") or pay.get("daily_trend"), "form": pay.get("commitment_form"),
             "band_warn_pts": PT.band_warn_pts(settings), "band_warn_rule": PT.band_warn_rule(settings),   # layer 6b (default points)
-            "areas": engine_areas(pay), "reader": engine_reader(pay)}
+            "areas": engine_areas(pay), "reader": engine_reader(pay), "htf": engine_htf(pay)}
+
+
+def engine_htf(pay):
+    """T-5 (the engine card's HTF strip, display only): the engine row's own Weekly / Daily states — {weekly, daily, daily_phase}
+    copied as text; none present ⇒ None. Never raises."""
+    try:
+        out = {k: (None if pay.get(src) is None else str(pay.get(src)))
+               for k, src in (("weekly", "weekly_trend"), ("daily", "daily_trend"), ("daily_phase", "daily_phase"))}
+        return out if any(v is not None for v in out.values()) else None
+    except Exception:                                                     # noqa: BLE001 — display only
+        return None
 
 
 def engine_reader(pay):
@@ -220,6 +231,7 @@ def _process(bot, access_token, symbol, settings, lot_size, source, now, has_ope
         return f"{symbol}: engine setup {direction} — Vision / ✅ ची वाट ({getattr(g, 'note', 'gate नाही')})"
     if g.action != "ENTER":
         ES.mark_consumed(bot, symbol, r["bar_ts"], f"NOT_ENTERED_{g.action}", path)
+        _no_shadow(g, vpath)
         return f"{symbol}: engine setup {direction} — नाकारला ({g.note}) ⇒ entry नाही"
     msgs, _spot = open_paper(access_token, symbol, settings, direction, level, lot_size, source, "ENGINE", min(lots, g.lots),
                              min(naked, g.naked_lots), chain=chain, open_fn=open_fn, now=now)
@@ -230,6 +242,18 @@ def _process(bot, access_token, symbol, settings, lot_size, source, now, has_ope
     except Exception:
         pass
     return f"{symbol}: engine setup {direction} ⇒ " + "; ".join(msgs)
+
+
+def _no_shadow(g, vpath=None):
+    """T-1: gate SHADOW ⇒ engine मार्ग shadow position उघडत नाही — Telegram card ला साध्या शब्दांत सांगण्यासाठी नोंद (फक्त DB, network नाही).
+    Entry / order ला हात नाही; कधीच raise नाही."""
+    if getattr(g, "action", None) != "SHADOW":
+        return
+    try:
+        from vision import notify as VN
+        VN.record_shadow(g.signal_id, False, "the engine entry path opens no shadow position", vpath)
+    except Exception:                                                    # noqa: BLE001 — display only
+        pass
 
 
 # ------------------------------------------------------------------------------------------------ entry models E1–E4 (decision3 `entries`)
@@ -357,6 +381,7 @@ def entry_gate_tags(r, e, direction, settings=None):
     return {"engine": True, "engine_bar": r["bar_ts"], "engine_grade": g["grade"], "gate": g,
             "entry_model": str(e["model"]).upper(), "entry_name": e.get("name") or ES.MODEL_NAMES.get(str(e["model"]).upper()),
             "entry_label": ES.model_label(e), "entry_visit": str(e["visit_id"]), "entry_area_id": ar.get("id"),
+            "entry_object": e.get("object") or ar.get("object"),       # T-5: area / broken_area / broken_line (the engine card + audit)
             "entry_trigger_ts": None if e.get("trigger_ts") is None else str(e["trigger_ts"]), "entry_ref": e.get("entry_ref"),
             "entry_invalidation": e.get("invalidation"), "entry_evidence": ev,
             "entry_cluster": None if not cl else [x.get("area_id") for x in cl.get("members") or [] if isinstance(x, dict)]}
@@ -433,6 +458,7 @@ def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e,
         return f"{who}: Vision / ✅ ची वाट ({getattr(g, 'note', 'gate नाही')})"
     if g.action != "ENTER":
         done(f"NOT_ENTERED_{g.action}")
+        _no_shadow(g, vpath)
         return f"{who}: नाकारला ({g.note}) ⇒ entry नाही"
     full, why = zone_full(bot, symbol, settings, e, bar, path)            # again after ✅: another entry may have used the zone meanwhile
     if full == "full":

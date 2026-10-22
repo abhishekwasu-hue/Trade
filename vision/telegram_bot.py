@@ -25,6 +25,7 @@ import pandas as pd
 from . import approval as AP
 from . import config as VC
 from . import decide as VD
+from . import notify as VN
 from . import store as VS
 from . import tg as TG
 
@@ -35,9 +36,10 @@ def expire_on_restart(path=None):
     n = 0
     for r in VS.rows_with_status("PENDING_HUMAN", path):
         if VS.transition(r["signal_id"], "PENDING_HUMAN", "EXPIRED", path, decided_at=VS._iso(VS.now_ist()), decided_by="restart",
-                         decision_reason="service restart ⇒ जुना pending निर्णय रद्द"):
-            n += 1
-            TG.edit_any(r.get("tg_message_id"), f"♻️ Service restart ⇒ हा signal रद्द (stale approve नाही) · {r['symbol']} {r['direction']}")
+                         decision_reason="service restart ⇒ जुना pending निर्णय रद्द", transition_notified=1):
+            n += 1                                                       # T-1: card पुसत नाही — ओळ जोडून + नवा संदेश (worker पुन्हा नाही)
+            line = VN.restart_line()
+            VN.post(r, "restart", line, f"{VN.where(r)}: {line}", path)
     return n
 
 
@@ -55,10 +57,11 @@ def _manual_sweep(path=None, only_signal=None, send=None):
         return []
 
 
-def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_send=None, send=None, send_buttons=None):
-    """रिटर्न (ok, संदेश). answer / edit / send / send_buttons injectable (tests)."""
+def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_send=None, send=None, send_buttons=None, send_reply=None):
+    """रिटर्न (ok, संदेश). answer / edit / send / send_buttons / send_reply injectable (tests). edit = (message_id, original_caption, line)
+    — default `TG.append_outcome` (T-1: card कधीच पुसत नाही); send_reply = card ला उत्तर म्हणून नवा संदेश."""
     answer = answer or TG.answer_callback
-    edit = edit or TG.edit_any
+    edit = edit or TG.append_outcome
     msg = cq.get("message") or {}
     if not _authorized(cq.get("from"), msg.get("chat")):
         answer(cq.get("id"), "परवानगी नाही")
@@ -93,17 +96,23 @@ def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_sen
         why = f"तुम्ही approve केलं ({f}×)" + (f" · ✏️ limit entry {float(lim):g}" if lim is not None else "")
         ok = VS.transition(sid, "PENDING_HUMAN", "APPROVED", path, human_decision="approve", human_ts=VS._iso(now), decided_at=VS._iso(now),
                            decided_by=who, decision_reason=why)
-        text = (f"✅ Approved {now:%H:%M} — entry ×{f} (drift guard नंतर)" if lim is None else
-                f"✅ Approved {now:%H:%M} — limit entry {float(lim):g}: spot तिथे आल्यावरच ×{f} (exec window मध्ये; नाहीतर position नाही)")
+        text = VN.approved_line(now, f, lim)
+        kind = "approved"
     else:
         ok = VS.transition(sid, "PENDING_HUMAN", "REJECTED", path, factor=0.0, human_decision="reject", human_ts=VS._iso(now),
                            decided_at=VS._iso(now), decided_by=who, decision_reason="तुम्ही reject केलं")
-        text = f"❌ Rejected {now:%H:%M} — skip (shadow trade)"
+        try:
+            appr = VC.approval_required(VC.load(row.get("bot"), path), row.get("trading_mode") or "PAPER")
+        except Exception:                                                # noqa: BLE001 — display only
+            appr = True
+        text = VN.rejected_line(now, appr)
+        kind = "rejected"
     if not ok:
         answer(cq.get("id"), "आधीच ठरलं")
         return False, "race"
-    answer(cq.get("id"), text)
-    edit(row.get("tg_message_id"), f"{text} · {_model_prefix(row)}{row['symbol']} {row['direction']} L{float(row['level'] or 0):,.0f}")
+    answer(cq.get("id"), text if action == "A" else f"❌ Rejected {now:%H:%M} ⇒ trade NOT taken")
+    line = f"{text} · {VN.where(row)}"                                   # T-1: मूळ card + ही ओळ (बटणं निर्णयानंतरच जातात) + नवा संदेश
+    VN.post(row, kind, line, line, path, append=edit, send_reply=send_reply)
     if action == "R":                                                    # Abhi §10b: कारण एक tap (निर्णय आधीच लागू — position नाही)
         AP.prompt_reason(row, send_buttons)
     if row.get("bot") == "manual":                                       # ✋ /paper: bot cycle नाही ⇒ इथेच (✅ ⇒ entry, ❌ ⇒ बंद)
@@ -209,6 +218,7 @@ def handle_command(text, from_, chat, path=None, send=None, trading_mode_fn=None
 
 def poll_once(offset, path=None, timeout=50):
     """एक getUpdates फेरी. रिटर्न पुढचा offset."""
+    VN.listener_seen(path)                                               # T-1: bot health ओळीसाठी listener ची शेवटची poll
     for u in TG.get_updates(offset, timeout):
         offset = max(offset, int(u.get("update_id", 0)) + 1)
         try:
@@ -243,9 +253,9 @@ def main(argv=None):
             n = expire_on_restart()
             print(f"vision telegram service सुरू — restart मुळे {n} pending रद्द")
             ok, why = TG.can_ask()
-            if not ok:                                                   # बटणं पाठवली जाणार नाहीत ⇒ प्रत्येक signal timeout नियमाने — मोठ्याने सांगा
+            if not ok:                                                   # बटणं पाठवली जाणार नाहीत ⇒ प्रत्येक signal skip — मोठ्याने सांगा (दिवसातून एकदा)
                 print(f"⚠️ {why}")
-                TG.send_text(f"⚠️ Vision V1: Approve / Reject बटणं बंद — {why}. तोपर्यंत V1 signals timeout नियमाने.")
+                VN.can_ask_alert(why)
             offset = int(VS.kv_get("tg_offset") or 0)
             while True:
                 offset = poll_once(offset)

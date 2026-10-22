@@ -213,9 +213,10 @@ def start_modify(row, uid, answer, cq_id, send=None, path=None, now=None):
 
 
 def apply_entry(uid, sid, text, send=None, path=None, now=None, edit=None, send_buttons=None):
-    """"entry X" ⇒ ticket ⇒ row (mod_entry, mod_json, नवी deadline) — status PENDING_HUMAN तसाच (पुन्हा ✅ हवं)."""
+    """"entry X" ⇒ ticket ⇒ row (mod_entry, mod_json, नवी deadline) — status PENDING_HUMAN तसाच (पुन्हा ✅ हवं).
+    edit = (message_id, original_caption, line) — T-1: जुना card पुसत नाही (ओळ जोडतो, बटणं काढतो); नवा ticket = नवा card (त्याचा caption नोंद)."""
     send = send or TG.send_text
-    edit = edit or TG.edit_any
+    edit = edit or TG.append_outcome
     send_buttons = send_buttons or TG.send_photo
     now = pd.Timestamp(now or VS.now_ist())
     entry, err = parse_entry(text)
@@ -239,19 +240,24 @@ def apply_entry(uid, sid, text, send=None, path=None, now=None, edit=None, send_
         send("⌛ signal चा निर्णय आधीच झाला ⇒ Modify नाही.")
         return False, "race"
     state_clear(uid, path)
-    edit(row.get("tg_message_id"), f"✏️ entry बदलली ({entry:g}) — सुधारित ticket खाली; ही बटणं बंद · {row['symbol']} {row['direction']}")
-    mid = send_buttons(None, ticket_text(row, t, dl, int(s["exec_window_min"]), layout=s.get("approval_card_layout"),
-                                         window_min=s.get("approve_window_min")), buttons(sid, True))
-    if mid:
-        VS.update(sid, path, tg_message_id=mid)
+    line = f"✏️ entry बदलली ({entry:g}) — सुधारित ticket खाली; ही बटणं बंद · {row['symbol']} {row['direction']}"
+    prev = str(row.get("tg_outcome") or "").strip()
+    edit(row.get("tg_message_id"), row.get("tg_caption"), f"{prev}\n{line}" if prev else line)
+    tk = ticket_text(row, t, dl, int(s["exec_window_min"]), layout=s.get("approval_card_layout"), window_min=s.get("approve_window_min"))
+    mid = send_buttons(None, tk, buttons(sid, True))
+    if mid:                                                              # पुढचे outcomes या नव्या card वर (मूळ caption = ticket)
+        VS.update(sid, path, tg_message_id=mid, tg_caption=tk, tg_outcome=None)
     return True, "modified"
 
 
 # ------------------------------------------------------------------------------------------------ ❌ कारण
+def reason_prompt_text(row):
+    return f"❌ कारण? (एक tap) · {html.escape(str(row['symbol']))} {html.escape(str(row.get('direction') or ''))}"
+
+
 def prompt_reason(row, send_buttons=None):
     try:
-        (send_buttons or TG.send_photo)(None, f"❌ कारण? (एक tap) · {html.escape(str(row['symbol']))} {html.escape(str(row.get('direction') or ''))}",
-                                        reason_buttons(row["signal_id"]))
+        (send_buttons or TG.send_photo)(None, reason_prompt_text(row), reason_buttons(row["signal_id"]))
     except Exception as exc:
         print(f"⚠️ reject कारण विचारता आलं नाही: {type(exc).__name__}: {exc}")
 
@@ -262,7 +268,8 @@ def _store_reason(sid, label, path=None):
 
 
 def set_reason(row, code, uid, answer, cq_id, edit=None, msg_id=None, send=None, path=None, now=None):
-    edit = edit or TG.edit_any
+    """edit = (message_id, original_caption, line) — T-1: कारणाचा प्रश्न तसाच ठेवून उत्तराची ओळ जोडतो (पुसत नाही)."""
+    edit = edit or TG.append_outcome
     send = send or TG.send_text
     if row.get("human_decision") != "reject":
         answer(cq_id, "हा signal तुम्ही reject केलेला नाही")
@@ -276,7 +283,7 @@ def set_reason(row, code, uid, answer, cq_id, edit=None, msg_id=None, send=None,
     _store_reason(row["signal_id"], label, path)
     answer(cq_id, f"कारण नोंदलं: {label}")
     if msg_id:
-        edit(msg_id, f"❌ कारण: <b>{label}</b> ✓ · {row['symbol']} {row.get('direction') or ''}")
+        edit(msg_id, reason_prompt_text(row), f"❌ कारण: <b>{label}</b> ✓ · {row['symbol']} {row.get('direction') or ''}")
     return True, label
 
 

@@ -206,17 +206,41 @@ def render_spend():
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
+def render_engine_measure(rows):
+    """T-5 (DECISIONS 31, provisional): closed engine trades — Vision's verdict × Abhi's decision × the outcome (by structure: next area
+    first / invalidation first / open at data end, and the P&L). Read only."""
+    from vision import engine_measure as EM
+    try:
+        rec = EM.closed_rows(rows)
+    except Exception as exc:                                             # noqa: BLE001 — a display section never breaks the page
+        st.caption(f"Engine signals: verdict × result NA ({type(exc).__name__})")
+        return
+    st.subheader("Engine signals: Vision agreed / disagreed / gray × result")
+    if not rec:
+        st.caption("अजून कुठलाही बंद engine trade नाही (signal_source = engine).")
+        return
+    st.dataframe(EM.table(rec), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rec), use_container_width=True, hide_index=True)
+
+
 def render():
     st.title("👁 Vision & Human Eye")
     st.caption("notify / shadow: vision फक्त माहिती. V1 modes (फक्त PAPER): vision entry थांबवू / अर्धी करू शकतो, वाढवत नाही; exits नेहमी "
                "automatic. डावीकडे vision ला पाठवलेली image (signal पर्यंतच), उजवीकडे trade नंतरचा POST-HOC chart (vision कडे कधीच नाही).")
     try:
-        df = flatten(VS.list_signals())
+        raw = VS.list_signals()
+        df = flatten(raw)
     except Exception as exc:
         st.error(f"vision DB वाचता आली नाही: {exc}")
         return
+    try:                                                                 # T-1: approval बटणं (can_ask) + listener — एका ओळीत
+        from vision import notify as VN
+        st.caption(VN.health_line())
+    except Exception as exc:                                             # noqa: BLE001 — display only
+        st.caption(f"Vision approval health: NA ({type(exc).__name__})")
     render_settings()
     render_spend()
+    render_engine_measure(raw)
     pct, mb = disk_usage(IM.base_dir())
     c1, c2, c3 = st.columns(3)
     c1.metric("Signals (एकूण)", len(df))
@@ -239,6 +263,8 @@ def render():
     values = f7.multiselect("मूल्य", sorted(df[field].dropna().unique()) if field else [])
     start, end = (rng if isinstance(rng, (list, tuple)) and len(rng) == 2 else (None, None))
     v = apply_filters(df, start, end, bots, verdicts, results, versions, field or None, values)
+    from vision import shadow_view as VSV                                # T-1: shadow trades (❌ / no reply / drift) — खऱ्या आकड्यांपासून वेगळे
+    VSV.render(st, start=start, end=end)
     if not v.empty and v["prompt_version"].notna().any():               # prompt_version नुसार गट (evaluation v1 / v2 वेगळे)
         g = v.groupby(v["prompt_version"].fillna("—")).agg(signals=("signal_id", "count"),
                                                           agree=("verdict", lambda s: int((s == "agree").sum())),
