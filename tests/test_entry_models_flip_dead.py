@@ -61,6 +61,22 @@ def test_flipped_area_broken_again_with_a_swing_beyond_is_dead_no_second_flip(mi
 
 
 @MIRRORS
+def test_flipped_area_swept_back_without_a_swing_beyond_stays_flipped(mirror):
+    """Handover T-2: flip → a sweep back (a close beyond the flipped area, no swing formed beyond, then back) ⇒ still FLIPPED, alive."""
+    f, sw = _mirror(mirror)
+    closes = CLOSES[:28] + [120.0, 118.6, 116.6, 118.8, 120.4, 121.8, 123.0, 123.8, 123.2, 124.4, 125.0]   # bar 30 closes beyond
+    m = m15_from([f(c) for c in closes], wick=0.3)
+    p2 = [P(sw("H"), f(118), 8, 10), P(sw("H"), f(122.6), 25, 27)]
+    p1 = [P(sw("H"), f(118), 8, 10), P(sw("L"), f(112), 14, 16), P(sw("H"), f(120.5), 20, 22), P(sw("H"), f(122.6), 25, 27)]
+    lv = LV.Levels(res_of(m, p2, p1))
+    Z = [L for L in lv.L if abs(L.anchor - f(118)) < 1e-6][0]
+    kinds = [(b, k) for b, k, _ in Z.events if k in ("broken", "flip", "sweep", "dead")]
+    assert kinds == [(22, "broken"), (27, "flip"), (31, "sweep")]
+    assert Z.dead_bar is None and all(Z.state_at(t) == FL.FLIPPED for t in range(27, len(m)))
+    assert any(x["id"] == Z.id for x in lv.snapshot(len(m) - 1))
+
+
+@MIRRORS
 def test_dead_area_gives_no_e4b_retest_while_the_far_swing_what_if_still_does(mirror, monkeypatch):
     """The replayed worst loss: a flipped area broken back, then retested from the other side with a rejection. Default ⇒ dead, no
     E4 (b). The earlier reading (`flip_dead_rule = far_swing`) keeps it BROKEN and fires the E4 (b) at the rejection bar."""
