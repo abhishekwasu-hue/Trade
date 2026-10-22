@@ -944,3 +944,7 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
   unchanged (opening shadow trades would be a new execution behaviour Abhi did not state); the cards now say it in plain words
   ("No shadow trade: approval mode keeps only a would-have note …"). Abhi decides whether approval mode should open comparison-only
   shadow trades.
+- **T-1 review notes, logged (low, not fixed here):** (a) a card still pending from a previous day expires with
+  `transition_notified=1` and gets no outcome line / reply (its buttons stay; a press answers "आधीच ठरलं") — same as before T-1;
+  (b) `vision/notify.post` reads and rewrites `tg_outcome` without a lock, so two processes posting different outcomes for one signal
+  at the same instant can drop one line from the card history (each reply message is still sent).

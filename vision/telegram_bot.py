@@ -101,7 +101,11 @@ def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_sen
     else:
         ok = VS.transition(sid, "PENDING_HUMAN", "REJECTED", path, factor=0.0, human_decision="reject", human_ts=VS._iso(now),
                            decided_at=VS._iso(now), decided_by=who, decision_reason="तुम्ही reject केलं")
-        text = VN.rejected_line(now)
+        try:
+            appr = VC.approval_required(VC.load(row.get("bot"), path), row.get("trading_mode") or "PAPER")
+        except Exception:                                                # noqa: BLE001 — display only
+            appr = True
+        text = VN.rejected_line(now, appr)
         kind = "rejected"
     if not ok:
         answer(cq.get("id"), "आधीच ठरलं")

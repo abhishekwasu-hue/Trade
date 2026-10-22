@@ -516,22 +516,25 @@ def outcome_messages(day, path=None):
     for r in rows:
         if r.get("decided_by") == "timeout" and r.get("tg_message_id") and not VN.posted(r["signal_id"], "no_reply", path):
             taken = 0.0 if _approval(r, path) or r.get("timeout_status") != "APPROVED" else float(r.get("factor") or 0.0)
-            line = VN.no_reply_line(r.get("deadline") or r.get("decided_at"), taken)
+            line = VN.no_reply_line(r.get("deadline") or r.get("decided_at"), taken, _approval(r, path))
             VN.post(r, "no_reply", line, f"{VN.where(r)}: {line}", path)
-    for r in VS.rows_with_status(("DRIFT_REJECTED", "EXPIRED"), path):
-        if not r.get("transition_notified") and r.get("mode") in VC.V1_MODES and r.get("decided_at"):
-            if r["status"] == "DRIFT_REJECTED":
-                kind, line = "drift", VN.drift_line(r.get("drift_result"))
-            else:
-                kind, line = "expired", VN.expired_line(r, VS.last_transition(r["signal_id"], "EXPIRED", path))
-            VN.post(r, kind, line, f"{VN.where(r)}: {line}", path)
-            VS.update(r["signal_id"], path, transition_notified=1)
-    for r in rows:
-        if r["status"] in ("SHADOWED", "DRIFT_REJECTED") and not VN.posted(r["signal_id"], "shadow", path):
-            res = VN.shadow_result(r["signal_id"], path)
-            if res is not None:
-                line = VN.shadow_result_text(res)
-                VN.post(r, "shadow", line, f"{VN.where(r)}: {line}", path)
+    try:
+        for r in VS.rows_with_status(("DRIFT_REJECTED", "EXPIRED"), path):
+            if not r.get("transition_notified") and r.get("mode") in VC.V1_MODES and r.get("decided_at"):
+                if r["status"] == "DRIFT_REJECTED":
+                    kind, line = "drift", VN.drift_line(r.get("drift_result"), _approval(r, path))
+                else:
+                    kind, line = "expired", VN.expired_line(r, VS.last_transition(r["signal_id"], "EXPIRED", path))
+                VN.post(r, kind, line, f"{VN.where(r)}: {line}", path)
+                VS.update(r["signal_id"], path, transition_notified=1)
+        for r in rows:
+            if r["status"] in ("SHADOWED", "DRIFT_REJECTED") and not VN.posted(r["signal_id"], "shadow", path):
+                res = VN.shadow_result(r["signal_id"], path)
+                if res is not None:
+                    line = VN.shadow_result_text(res)
+                    VN.post(r, "shadow", line, f"{VN.where(r)}: {line}", path)
+    except Exception as exc:                                             # noqa: BLE001 — display only (review: never raise)
+        print(f"⚠️ outcome संदेश: {type(exc).__name__}: {exc}")
 
 
 BAR_WAIT = True                                                          # tests / scripts साठी master switch (setting सोबत)
@@ -737,7 +740,11 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
         final = row.get("algo_decision") or "ENTER"                     # V0: vision फक्त माहिती ⇒ अंतिम निर्णय = algorithm चा
 
         # 2. reuse
-        prev = (VS.find_reusable(row, int(s["reuse_window_min"]), path=path, prompt_version=SA.PROMPT_VERSION)
+        pv = SA.PROMPT_VERSION                                            # review: engine rows reuse only engine audits (fewer paid calls)
+        if VS._engine_tag(row.get("setup_json")) and s.get("vision_engine_audit", "engine") == "engine":
+            from . import engine_audit as EA
+            pv = EA.PROMPT_VERSION
+        prev = (VS.find_reusable(row, int(s["reuse_window_min"]), path=path, prompt_version=pv)
                 if int(s["reuse_window_min"]) > 0 else None)
         if prev is not None:
             pj = json.loads(prev.get("vision_json") or "{}")

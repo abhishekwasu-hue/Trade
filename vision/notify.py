@@ -18,6 +18,7 @@ from . import tg as TG
 
 EXPLAIN = "comparison only, not counted in results"
 SHADOW_NEXT = "A comparison-only shadow trade will be recorded if the setup is still valid on the next check."
+NO_SHADOW_APPROVAL = "Approval mode: no shadow trade, only a would-have note is kept (comparison only, not counted in results)."
 NOT_TAKEN_SHORT = "Trade NOT taken; a comparison-only shadow trade may follow (not counted in results)."   # card (1024 मर्यादा)
 SIZE_EN = {1.0: "full size", 0.5: "half size"}
 LISTENER_KEY = "tg_listener_seen"
@@ -96,20 +97,24 @@ def approved_line(now, factor, limit=None):
     return f"✅ Approved {hm(now)} — entry {size_en(factor)} (after the drift guard)"
 
 
-def rejected_line(now):
-    return f"❌ Rejected by you {hm(now)} ⇒ trade NOT taken. {SHADOW_NEXT}"
+def _next(approval):
+    return NO_SHADOW_APPROVAL if approval else SHADOW_NEXT
 
 
-def no_reply_line(deadline, taken_factor=None):
+def rejected_line(now, approval=True):
+    return f"❌ Rejected by you {hm(now)} ⇒ trade NOT taken. {_next(approval)}"
+
+
+def no_reply_line(deadline, taken_factor=None, approval=True):
     """taken_factor None / 0 ⇒ skipped (human_confirm, approval mode); > 0 ⇒ the no-reply rule enters (approval off only)."""
     if taken_factor:
         return f"⏱ No reply by {hm(deadline)} ⇒ the no-reply rule: entry {size_en(taken_factor)} (after the drift guard)."
-    return f"⏱ No reply by {hm(deadline)} ⇒ trade NOT taken. {SHADOW_NEXT}"
+    return f"⏱ No reply by {hm(deadline)} ⇒ trade NOT taken. {_next(approval)}"
 
 
-def drift_line(drift):
+def drift_line(drift, approval=True):
     return (f"❌ Not entered: price moved too far after the approval (drift guard: {html.escape(str(drift or '?'))[:160]}) ⇒ "
-            f"trade NOT taken. {SHADOW_NEXT}")
+            f"trade NOT taken. {_next(approval)}")
 
 
 def no_shadow_line(reason):
