@@ -66,6 +66,10 @@ DEFAULTS = {
                                              # गाठला (पार / नसेल ⇒ break नंतरचा पहिला swing confirm) ⇒ DEAD (दुसरा flip नाही,
                                              # Z-1f). "acceptance" = जुना spec §5.4 (acceptance ⇒ लगेच flip) — फक्त जुने tests / what-if;
                                              # level_death_side फक्त "acceptance" सोबत लागू
+    "flip_dead_rule": "broken_again",        # Abhi (C lifecycle): an area flips only once — a FLIPPED area broken again (a close beyond + a
+                                             # swing formed beyond, break_rule) ⇒ DEAD at once (no second flip; never armed, no E4 (b) retest).
+                                             # "far_swing" = the earlier reading (DEAD only when that break's far-side swing is also reached;
+                                             # until then BROKEN) — what-if only
     "flip_pullback_inner_degree": 1,         # G4 context (a): pullback ची आतली रचना या swings2 degree च्या pivots वर (level_degree च्या एक खाली)
     "flip_pullback_vol_ratio": 1.0,          # G4 context (b): pullback ची सरासरी (normalised) FUT volume < हे × flip impulse ची ⇒ "lower" (फक्त fact)
     "flip_vol_min_coverage": 1.0,            # G4 context (b): impulse / pullback bars पैकी इतक्या bars ला volume हवा; कमी ⇒ (b) NA (फक्त fact)
@@ -251,6 +255,7 @@ REGISTER = {
     "watch_levels_max": (3, "—", "Abhi नियम", "Abhi B2 watch-list (final) + KB K4 chart display (≤ 3 bands above / below price)"),
     "wave_gates": (False, "False / True", "Abhi नियम", "Abhi B1: no wave prediction — wave / maturity / C = a context only; True फक्त जुने tests"),
     "level_flip_rule": ("far_swing", "far_swing / acceptance", "Abhi नियम", "KB K4 / G4 (Abhi final, Z-1): flip = पलीकडे + पलीकडचा swing पार (swing नसेल ⇒ break नंतरचा पहिला swing confirm होताच — Z-1s, तोडायची गरज नाही); नाहीतर BROKEN; flipped zone दुसऱ्यांदा ⇒ DEAD"),
+    "flip_dead_rule": ("broken_again", "broken_again / far_swing (what-if)", "Abhi नियम", "C lifecycle (Abhi): an area flips only once; a FLIPPED area broken again (close beyond + swing beyond) ⇒ DEAD — never armed, no E4 (b) retest. far_swing = the earlier reading (DEAD only past that break's far-side swing)"),
     "flip_pullback_inner_degree": (1, "0 / 1", "व्याख्या", "KB G4 context (a): pullback ची रचना एक degree खालच्या pivots वर (daily_legs.classify inner_seq) — फक्त fact"),
     "flip_pullback_vol_ratio": (1.0, "—", "setting", "KB G4 context (b) 'lower FUT volume than the impulse' ⇒ ratio < 1.0 — फक्त fact, gate नाही (Abhi Z-1)"),
     "flip_vol_min_coverage": (1.0, "—", "setting", "KB G4 context (b): volume NA कधीच शांत 'lower' नाही — सगळ्या bars ला volume हवा"),

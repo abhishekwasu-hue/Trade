@@ -30,7 +30,9 @@ commitment / rejection candle trades into the area and closes away from it). E4 
 and closes on its trade side. A gap / large candle through the INVALIDATION side is the area being broken (lifecycle), never an entry;
 a candle that never traded inside the area never fires. What-ifs: `inside` = the 21 Oct RC3 reading (#364: the close inside the area's
 own band), `legacy` = the da7cbbc trigger (no inside check). Edges, trigger and invalidation always come from the actual area being
-visited (Z-1u): the overlapping cluster (`entry_cluster_rule = cluster`) only counts one signal per model per place.
+visited (Z-1u): the overlapping cluster (`entry_cluster_rule = cluster`) only counts one signal per model per place — for E4 (b)
+too: overlapping BROKEN areas of the same role and break direction revisited together are one place (one E4 (b) per visit).
+A DEAD area (flipped once, broken again — `levels.flip_dead_rule`) is never armed and never an E4 (b) object.
 Each model fires at most ONCE per visit (key = area id + visit start + model; the live layer prefixes the symbol): a model fires at bar
 t when its condition holds at t and held at no earlier bar of the same visit (each earlier bar read only with what was known at it).
 A stop-out never blocks the other models ⇒ up to four entries per visit. Models disarm when the area breaks (K4 "broken" / dead inside
@@ -782,8 +784,10 @@ def read(V, t, trend, act):
         d = M._dir(trend)
         b_armed, b_fired = R.broken(t, d)
         armed.extend(b_armed)
-        for f in b_fired:
-            entries.append((f, None, d, f["obj"]))
+        b_entries = [(f, None, d, f["obj"]) for f in b_fired]
+        if str(V.s.get("entry_cluster_rule", "cluster")) == "cluster":     # Z-1u for E4 (b) too: overlapping broken areas = one place
+            b_entries = clusters(b_armed, b_entries, obj="broken_area", prefix="CB")
+        entries.extend(b_entries)
     out = []
     for f, lvl, d, a in entries:
         if f["model"] != "E4" or f["variant"] == "a":
@@ -822,7 +826,7 @@ def read(V, t, trend, act):
     return {"entries": out, "armed": armed, "first_area": first_area, "reader": R}
 
 
-def clusters(armed, entries, cands=()):
+def clusters(armed, entries, cands=(), obj="area", prefix="C"):
     """Lead's provisional rule (Abhi may override; `entry_cluster_rule = cluster`): areas of the same role on the same side whose bands
     overlap, visited together (all armed at this bar), are ONE place — at most one signal per model per overlapping cluster per visit.
 
@@ -836,9 +840,13 @@ def clusters(armed, entries, cands=()):
     counting key). A model already fired on any member earlier in this visit ⇒ a new firing on another member is consumed, not a signal;
     several members firing the same model at this bar ⇒ one signal (the anchor's if it fired, else the earliest visit). The signal keeps
     its own area, its own trigger and its own invalidation; the cluster lists its member areas (ids + their own bands) for the card. A
-    single area = a cluster of one (unchanged). Returns the kept (f, lvl, d, a) list; member statuses are annotated."""
-    pool = [a for a in armed if a.get("object") == "area" and not a.get("disarmed")]
-    seen = {(str(a.get("area_id")), int(a["direction"])) for a in armed if a.get("object") == "area"}
+    single area = a cluster of one (unchanged). Returns the kept (f, lvl, d, a) list; member statuses are annotated.
+
+    `obj = "broken_area"` (prefix "CB"): the same count for E4 (b) on BROKEN areas — overlapping broken areas of the same role and break
+    direction revisited together are one place ⇒ one E4 (b) per place per visit (Abhi: one signal per model per place); lines stay
+    their own place."""
+    pool = [a for a in armed if a.get("object") == obj and not a.get("disarmed")]
+    seen = {(str(a.get("area_id")), int(a["direction"])) for a in armed if a.get("object") == obj}
     for lvl, d in cands:                                                   # watch-list areas not visited now: part of the place
         lid = lvl.get("parent_level", lvl.get("id"))
         if (str(lid), int(d)) in seen:
@@ -861,7 +869,7 @@ def clusters(armed, entries, cands=()):
         if not vis:
             continue
         anchor = min(vis, key=lambda x: (int(x["visit_start_bar"]), str(x["area_id"])))
-        info = {"id": f"C{anchor['area_id']}", "anchor": anchor["area_id"], "visit_id": anchor["visit_id"],
+        info = {"id": f"{prefix}{anchor['area_id']}", "anchor": anchor["area_id"], "visit_id": anchor["visit_id"],
                 "visit_start": anchor["visit_start"], "n": len(mem),
                 "members": [{**{k: x.get(k) for k in ("area_id", "tf", "role", "lo", "hi", "state", "visit_id")},
                              "visited": not x.get("_unvisited")} for x in mem],
