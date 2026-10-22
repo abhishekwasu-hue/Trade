@@ -33,3 +33,4 @@ Decisions taken from orders go to DECISIONS.md (append only).
 | 26 | "Merge and continue" (2) | nothing open to merge (#368–#370 merged); continuing: band labels mirror the DEAD rule (display), model C replay on trade-data | branch claude/hopeful-gates-hf186c |
 | 27 | Deploy c3e9f0a (#368–#371) | done by Abhi: status ✅ clean; T-1 trail L22,761 reported (card had buttons, timeout ⇒ SHADOWED, no shadow trade in approval mode); T-5 audit fields: waiting for the read-only print | VPS |
 | 28 | "Ok go ahead" on the four open decisions | provisional defaults kept (DECISIONS 34); model C gallery pushed to trade-data | trade-data |
+| 29 | Chart Reading Report (daily Telegram reading per symbol, replaces the bare Visual-audit level count) | recorded (DECISIONS 35); report-first answered; build in its own PR; sample NIFTY + BANKNIFTY to Abhi before deploy | — |
