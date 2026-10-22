@@ -436,9 +436,9 @@ def h1_rows():
     from decision3 import engine as E3
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=False)
-    # the fixture's trigger bar spikes through the area and closes below it ⇒ no entry under the inside-the-area rule (Abhi 21 Oct RC3,
-    # the default); the contract shape is checked on the da7cbbc trigger reading
-    V = E3.V22(m15, s={"level_death_side": "role", "entry_trigger_rule": "legacy", "entry_area_refine": "area"}, ltf=ltf, futures=fut)
+    # the fixture's trigger bar trades up through the area and closes below it (the trade side) ⇒ an entry under the default trigger
+    # reading (Abhi 22 Oct, traded_inside; it was none under #364's inside) — the contract shape is checked on the default
+    V = E3.V22(m15, s={"level_death_side": "role", "entry_area_refine": "area"}, ltf=ltf, futures=fut)
     ts = V.levels.ts
     last = ts.dt.normalize().iloc[-1]
     bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == last]

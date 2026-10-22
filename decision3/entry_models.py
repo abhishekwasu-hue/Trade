@@ -7,9 +7,9 @@
   the candle-form reader (method.reversal_form) · RSI / zone read / confirming evidence (layer 5 / 6a) for the label.
 
 Armed while price VISITS a valid (alive, not BROKEN / DEAD) trade-side area:
-  E1 Aggressive    — defaults (Abhi 21 Oct RC2 / RC3: `entry_area_refine = setup_tf`, `entry_trigger_rule = inside`): the visit's first
-                     bar AT the refined 15M base inside the area (no earlier visit bar touched it, none closed beyond its far edge),
-                     closing inside the area and not beyond the base's far edge. Invalidation: beyond the refined base's far edge.
+  E1 Aggressive    — defaults (Abhi 21 Oct RC2 / 22 Oct: `entry_area_refine = setup_tf`, `entry_trigger_rule = traded_inside`): the
+                     visit's first bar AT the refined 15M base inside the area (no earlier visit bar touched it, none closed beyond its
+                     far edge), not closing beyond the base's far edge. Invalidation: beyond the refined base's far edge.
                      `entry_area_refine = area` (what-if / da7cbbc): the first bar of a NEW visit; invalidation beyond the area's far edge.
   E2 Confirmation  — the commitment candle (c0, incl. its volume comparison and the FUT-volume data-problem rule) inside the visit.
                      Invalidation: beyond the visit's extreme.
@@ -20,11 +20,15 @@ Armed while price VISITS a valid (alive, not BROKEN / DEAD) trade-side area:
                      structure, confirmed) fails inside the sweep extreme; (b) a BROKEN line (channel_lines, close beyond + swing beyond)
                      or a BROKEN area (K4, broken in the trade direction) is revisited and a rejection candle (reversal_form) closes away
                      from it. Invalidation: beyond the sweep / retest extreme.
-Abhi 21 Oct (07 Oct BANKNIFTY review, §3 models / C lifecycle): a model fires only while price is INSIDE the visited area and not
-beyond its invalidation — at the trigger bar the close is inside the area's own band and not beyond the model's invalidation (E4 (b):
-the rejection form is at the retested object and closes on its trade side); beyond it the area is being broken (lifecycle), not
-entered — e.g. a commitment candle that closes outside the area never fires E2. Edges, trigger and invalidation always come from the
-actual area being visited (Z-1u): the overlapping cluster (`entry_cluster_rule = cluster`) only counts one signal per model per place.
+Trigger reading (Abhi 22 Oct, corrects the 21 Oct RC3 wording; §3 models / C lifecycle) — `entry_trigger_rule = traded_inside`: the
+trigger candle has TRADED inside the visited area (its range overlaps the area's own band; the refined base reached in this visit) and
+price is not beyond the INVALIDATION side (no close beyond the far edge / the model's invalidation; E1: the refined base not already
+closed through in the visit). A close OUTSIDE the area on the TRADE-DIRECTION side is allowed — that close is the confirmation (a
+commitment / rejection candle trades into the area and closes away from it). E4 (b): the rejection form trades at the retested object
+and closes on its trade side. A gap / large candle through the INVALIDATION side is the area being broken (lifecycle), never an entry;
+a candle that never traded inside the area never fires. What-ifs: `inside` = the 21 Oct RC3 reading (#364: the close inside the area's
+own band), `legacy` = the da7cbbc trigger (no inside check). Edges, trigger and invalidation always come from the actual area being
+visited (Z-1u): the overlapping cluster (`entry_cluster_rule = cluster`) only counts one signal per model per place.
 Each model fires at most ONCE per visit (key = area id + visit start + model; the live layer prefixes the symbol): a model fires at bar
 t when its condition holds at t and held at no earlier bar of the same visit (each earlier bar read only with what was known at it).
 A stop-out never blocks the other models ⇒ up to four entries per visit. Models disarm when the area breaks (K4 "broken" / dead inside
@@ -113,20 +117,33 @@ class Reader:
             return "close through the far side of the area (breakout)"
         return None
 
+    TRIGGER_RULES = ("traded_inside", "inside", "legacy")
+
+    def trigger_rule(self):
+        return str(self.V.s.get("entry_trigger_rule", "traded_inside"))
+
     def outside(self, i, lvl, d):
-        """Abhi 21 Oct (BANKNIFTY 07 Oct review, §3 models / C lifecycle): a model fires only while price is INSIDE the visited area — bar
-        i's close inside the area's own band [lo, hi] (the actual area being visited, never a cluster's union, Z-1u). A close beyond the far
-        edge = the area is being broken (lifecycle), not entered; a close beyond the near edge (the trade side) = price has already left
-        the area. None when inside, else the reason (a wait text). Comparison only."""
-        if not self.inside_on():
+        """Is bar i a trigger AT the visited area (the actual area being visited, never a cluster's union, Z-1u)? None when it is, else
+        the reason (a wait text). Comparison only.
+          traded_inside (default, Abhi 22 Oct): bar i's range overlaps the area's band [lo, hi] and it does not close beyond the far edge
+            (the invalidation side). A close outside on the TRADE side is allowed — the confirmation (it traded in, closed away).
+          inside (#364, what-if): bar i's close inside [lo, hi].
+          legacy (da7cbbc): no check (None)."""
+        rule = self.trigger_rule()
+        if rule == "legacy":
             return None
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
         c = float(self.A["close"][i])
-        if lo <= c <= hi:
-            return None
         far = hi if d < 0 else lo
         if (c - far) * d < 0:
             return "close beyond the area's far edge — the area is being broken (lifecycle), not entered"
+        if rule == "traded_inside":
+            if self.touches(i, lvl):
+                return None
+            return ("the candle did not trade inside the area — price has left the area on the trade side (the trigger candle must "
+                    "trade inside the area)")
+        if lo <= c <= hi:
+            return None
         return "close outside the area on the trade side — price has left the area (a model fires only while price is inside it)"
 
     def beyond(self, i, inv, d):
@@ -137,7 +154,8 @@ class Reader:
         return f"close beyond the invalidation {float(inv):,.2f}" if (c - float(inv)) * d < 0 else None
 
     def inside_on(self):
-        return str(self.V.s.get("entry_trigger_rule", "inside")) == "inside"
+        """An inside-the-area reading is on (traded_inside or inside); legacy = the da7cbbc trigger."""
+        return self.trigger_rule() != "legacy"
 
     def base_broken(self, start, u, rb, d):
         """RC3 lifecycle for the refined base: the first bar of the visit (start … u) that CLOSED beyond the base's far edge, or None.
@@ -319,9 +337,10 @@ class Reader:
     ONE_CANDLE_FORMS = ("pin", "strong_close")                          # method.reversal_form's single-candle forms
 
     def retest_ok(self, u, form, touch, start, d):
-        """E4 (b) at bar u — Abhi 21 Oct, the inside-the-area rule for a retest: the rejection form is AT the retested object (a bar of the
-        form touches the broken area's band / the broken line: bar u itself for a one-candle form, u or u − 1 for a two-candle form), it
-        closes on the object's trade side (`away`, already read by rejection) and not beyond the retest extreme. None ⇒ ok, else why."""
+        """E4 (b) at bar u — the inside-the-area rule for a retest (Abhi 21 Oct; the same under `traded_inside`, Abhi 22 Oct, and
+        `inside`): the rejection form TRADES at the retested object (a bar of the form touches the broken area's band / the broken line:
+        bar u itself for a one-candle form, u or u − 1 for a two-candle form), it closes on the object's trade side (`away`, already read
+        by rejection — the confirmation) and not beyond the retest extreme. None ⇒ ok, else why. `legacy`: no check."""
         if not self.inside_on():
             return None
         bars = (u,) if form.get("form") in self.ONE_CANDLE_FORMS else (u, u - 1)
@@ -371,7 +390,8 @@ class Reader:
         fired = []
         refine = self.refine_on()
 
-        def at_area(u):                                                    # inside the visited area's band, no breakout bar (H2)
+        def at_area(u):                                                    # traded inside the visited area's band (traded_inside; the
+                                                                           # close inside under `inside`), no breakout bar (H2)
             return self.h2_block(u, lvl, d) is None and self.outside(u, lvl, d) is None
 
         def ext_at(u):                                                     # the visit's extreme up to bar u (E2 / E3 invalidation)

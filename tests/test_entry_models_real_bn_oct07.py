@@ -1,11 +1,13 @@
 """Abhi's BANKNIFTY 07–21 Oct review (deployed da7cbbc) — the two real cases, read live-equivalently on the private trade-data export
 (skips cleanly without it; nothing from it is stored in this repo):
 
-  • 07 Oct 09:15 E2 (bear call, the 1H supply 54,886–55,193): the commitment candle closed BELOW the area — beyond it, not inside it
-    — so it must not fire (RC3);
+  • 07 Oct 09:15 E2 (bear call, the 1H supply 54,886–55,193): the commitment candle traded INTO the area and closed BELOW it — on the
+    trade side. Abhi 22 Oct (`entry_trigger_rule = traded_inside`, default): that close is the confirmation ⇒ E2 fires, invalidation
+    beyond the visit's extreme (the invalidation side); under the 21 Oct RC3 wording (`inside`, #364, what-if) it did not fire;
   • 07 Oct 10:00 E1 on that area: its invalidation was the cluster's far edge 55,201 (the union of overlapping areas) — the invalidation
     must come from the area itself (RC1); with the refined 15M base (RC2, research default) it waits for price to reach the base;
-  • every entry that day: the trigger close inside its own area and no invalidation from a cluster's union.
+  • every entry that day: the trigger candle traded inside its own area, no close beyond its far edge or its invalidation, and no
+    invalidation from a cluster's union.
 The day's inputs are cut exactly as engine3_live cuts them at that session's close (15M / Daily / 5M / FUT windows)."""
 import glob
 import os
@@ -61,8 +63,7 @@ def _inputs():
     return m15, m5, m1, fut, dh
 
 
-@pytest.fixture(scope="module")
-def day_rows():
+def _build(s=None, only=None):
     import engine3_live as L
     import instruments as INS
     from bots_common import level_reaction as LR
@@ -83,14 +84,19 @@ def day_rows():
     ltf = cut(m5_all, S["engine3_ltf_days"], 5)
     fut = cut(fut_all, S["engine3_fut_days"], 5)
     m1 = m1_all[(m1_all["timestamp"] >= m15["timestamp"].iloc[0]) & (m1_all["timestamp"] + pd.Timedelta(minutes=1) <= m15["bar_end"].iloc[-1])]
-    V = E3.V22(m15.drop(columns=["volume"], errors="ignore"), m1.reset_index(drop=True), daily, sealed=HI.sealed_fn("BANKNIFTY"),
-               ltf=ltf, futures=fut)
-    ts = pd.to_datetime(V.m15["timestamp"]).reset_index(drop=True)
-    bars = [i for i in range(len(ts)) if ts[i].normalize() == D]
     try:
-        yield V, ts, {str(ts[t])[11:16]: V.decide(t) for t in bars}
+        V = E3.V22(m15.drop(columns=["volume"], errors="ignore"), m1.reset_index(drop=True), daily, sealed=HI.sealed_fn("BANKNIFTY"),
+                   ltf=ltf, futures=fut, **({"s": s} if s else {}))
+        ts = pd.to_datetime(V.m15["timestamp"]).reset_index(drop=True)
+        bars = [i for i in range(len(ts)) if ts[i].normalize() == D and (only is None or str(ts[i])[11:16] in only)]
+        return V, ts, {str(ts[t])[11:16]: V.decide(t) for t in bars}
     finally:
         INS.set_current(prev)                                              # never leak the instrument to later tests
+
+
+@pytest.fixture(scope="module")
+def day_rows():
+    return _build()
 
 
 def _on_band(e):
@@ -98,12 +104,23 @@ def _on_band(e):
     return a.get("lo") is not None and abs(float(a["lo"]) - BAND[0]) < 0.01 and abs(float(a["hi"]) - BAND[1]) < 0.01
 
 
-def test_oct07_0915_e2_commitment_closed_below_the_area_does_not_fire(day_rows):
+def test_oct07_0915_e2_commitment_traded_in_and_closed_below_the_area_fires(day_rows):
     V, ts, rows = day_rows
     r = rows["09:15"]
+    i = int(np.flatnonzero(ts.astype(str).str.startswith(f"{DAY} 09:15"))[0])
+    A = V.levels.A
+    assert float(A["high"][i]) >= BAND[0] and float(A["close"][i]) < BAND[0]   # traded into the area, closed below it (trade side)
+    e2 = [e for e in r["entries"] if e["model"] == "E2" and _on_band(e)]
+    assert len(e2) == 1 and e2[0]["direction"] < 0                           # traded_inside (default): the close away = confirmation
+    inv = float(e2[0]["invalidation"])
+    assert inv >= BAND[1] and "cluster" not in str(e2[0]["invalidation_rule"])  # the invalidation side: beyond the area's far edge
+    assert inv >= float(A["high"][i])                                        # the trigger is not beyond its invalidation
+
+
+def test_oct07_0915_e2_under_the_21_oct_inside_reading_does_not_fire():
+    V, ts, rows = _build({"entry_trigger_rule": "inside"}, only={"09:15"})   # #364 (what-if): the close must be inside the area
+    r = rows["09:15"]
     assert not [e for e in r["entries"] if e["model"] == "E2" and _on_band(e)]
-    c = float(V.levels.A["close"][int(np.flatnonzero(ts.astype(str).str.startswith(f"{DAY} 09:15"))[0])])
-    assert c < BAND[0]                                                     # the bar closed below the area (beyond it, trade side)
     arm = [a for a in r["armed"] if a.get("lo") is not None and abs(float(a["lo"]) - BAND[0]) < 0.01]
     assert arm and ("price has left the area" in str(arm[0]["models"]["E2"].get("waiting")) or arm[0].get("disarmed"))
 
@@ -120,14 +137,17 @@ def test_oct07_1000_e1_never_uses_the_cluster_union(day_rows):
         assert "refined" in str(arm[0]["models"]["E1"].get("waiting"))
 
 
-def test_oct07_every_entry_triggers_inside_its_own_area(day_rows):
+def test_oct07_every_entry_trades_inside_its_own_area(day_rows):
     V, ts, rows = day_rows
     A = V.levels.A
     for hm, r in rows.items():
         for e in r["entries"]:
             assert "cluster" not in str(e["invalidation_rule"]) and "lo" not in (e.get("cluster") or {})
             if e["object"] == "area":
-                c = float(A["close"][e["trigger_bar"]])
-                assert float(e["area"]["lo"]) <= c <= float(e["area"]["hi"]), (hm, e["model"], c, e["area"])
+                b, d = e["trigger_bar"], e["direction"]
+                lo, hi = float(e["area"]["lo"]), float(e["area"]["hi"])
+                assert float(A["low"][b]) <= hi and float(A["high"][b]) >= lo, (hm, e["model"], e["area"])   # traded inside
+                c = float(A["close"][b])
+                assert (c - (hi if d < 0 else lo)) * d >= 0, (hm, e["model"], c)   # no close beyond the far edge
                 inv = float(e["invalidation"])
-                assert (c - inv) * e["direction"] >= 0, (hm, e["model"], c, inv)   # not beyond its invalidation
+                assert (c - inv) * d >= 0, (hm, e["model"], c, inv)   # not beyond its invalidation

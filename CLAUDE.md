@@ -13,16 +13,18 @@ First line of every report to Abhi: `Rules re-read: CLAUDE.md, REPORT_STANDARD.m
   Golden cases are examples, not targets; never tune to pass one day; never edit golden expectations.
 - Entry framework: trend side + proven area, then four independent models E1–E4, each at most once per visit. Evidence is listed
   and never blocks. The old v2.2 BOS / K gate (`legacy_k_gate`) is a logged diagnostic and never decides.
-- Trigger reading (Abhi 22 Oct): the trigger candle must have traded INSIDE the (refined) area, and price must not be beyond the
-  INVALIDATION side. A close outside the area on the trade-direction side is the confirmation and is allowed (a commitment /
-  rejection candle trades into the area and closes away from it). Code: follow-up PR to #364 (#364 still requires the close inside).
+- Trigger reading (Abhi 22 Oct, `entry_trigger_rule = traded_inside`): the trigger candle must have traded INSIDE the (refined) area,
+  and price must not be beyond the INVALIDATION side. A close outside the area on the trade-direction side is the confirmation and is
+  allowed (a commitment / rejection candle trades into the area and closes away from it). `inside` (the close inside, #364) and
+  `legacy` (da7cbbc) are what-ifs only.
 - `max_hits_per_zone` = 4 on the dashboard (Abhi 22 Oct: up to four model entries per visit). It stays a dashboard setting.
 - The engine only generates signals. Lots, legs, strikes, SL, target, max trades: the existing dashboard settings. Never add new
   execution settings.
 - Never add a trading rule (R:R filter, gate, threshold) that Abhi didn't state.
-- A model fires only while price is inside the visited area and not beyond its invalidation (the trigger bar's close; E4 (b): the
-  rejection form at the retested object). Beyond it the area is being broken (lifecycle), not entered — never an entry
-  (`entry_trigger_rule = inside`).
+- A model fires only when its trigger candle traded inside the visited area and price is not beyond its invalidation side (no close
+  beyond the far edge / the invalidation; E4 (b): the rejection form at the retested object, closing on its trade side). A gap or a
+  large candle that closes through the invalidation side is the area being broken (lifecycle), not entered — never an entry; a candle
+  that never traded inside the area never fires.
 - Clusters only count one signal per model per place — edges, trigger and invalidation come from the actual area, never the union
   (Z-1u). No union band in any entry, payload or card; `max_hits_per_zone` counts the visited area.
 - Refined base (RC2, RESEARCH DEFAULT, review after the replay — `entry_area_refine = setup_tf`): the 1H / Daily area is the context;

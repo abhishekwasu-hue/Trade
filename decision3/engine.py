@@ -113,8 +113,9 @@ class V22:
             raise ValueError("decision3 V22: a legacy zone_visit_rule knows no approach leg — pair it with commit_volume_rule = opposite")
         if self.s.get("entry_gate", "models") not in ENTRY_GATES:          # Abhi 21 Oct: fail at start, never a silent gate
             raise ValueError(f"decision3 V22: unknown entry_gate {self.s['entry_gate']!r} (allowed: {', '.join(ENTRY_GATES)})")
-        if self.s.get("entry_trigger_rule", "inside") not in ("inside", "legacy"):
-            raise ValueError(f"decision3 V22: unknown entry_trigger_rule {self.s['entry_trigger_rule']!r} (allowed: inside, legacy)")
+        if self.s.get("entry_trigger_rule", "traded_inside") not in EM.Reader.TRIGGER_RULES:
+            raise ValueError(f"decision3 V22: unknown entry_trigger_rule {self.s['entry_trigger_rule']!r} "
+                             f"(allowed: {', '.join(EM.Reader.TRIGGER_RULES)})")
         if self.s.get("entry_area_refine", "setup_tf") not in ("setup_tf", "area"):
             raise ValueError(f"decision3 V22: unknown entry_area_refine {self.s['entry_area_refine']!r} (allowed: setup_tf, area)")
         if self.s.get("entry_cluster_rule", "cluster") not in ("cluster", "area"):
