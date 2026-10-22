@@ -7,7 +7,7 @@ A chart's meta = {"entry_key": str, "layers": {layer_key: {"evaluated": bool, "c
 that bar is still evaluated (count 0, note e.g. "no pattern").
 """
 
-RULES_LINE = "Rules re-read: CLAUDE.md, REPORT_STANDARD.md"
+RULES_LINE = "Rules re-read: CLAUDE.md, REPORT_STANDARD.md, owner-orders"
 
 REQUIRED_LAYERS = ("areas_1h_states", "lines", "channels", "patterns", "liquidity_sweeps", "fut_volume_pane", "rsi_pane",
                    "rsi_divergence_pair", "ltf_choch_inset", "htf_state_strip", "story")

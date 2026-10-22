@@ -80,8 +80,11 @@ def test_claude_md_and_standard_exist_with_key_rules():
     root = pathlib.Path(__file__).resolve().parents[1]
     md = (root / "CLAUDE.md").read_text(encoding="utf-8")
     for need in ("PAPER only", "Exits are never blocked", "human_confirm", "Never run anything on the VPS", "holdout",
-                 "CLOSED", "E1–E4", "No fixed numbers", "REPORT_STANDARD.md", "Rules re-read: CLAUDE.md, REPORT_STANDARD.md"):
+                 "CLOSED", "E1–E4", "No fixed numbers", "REPORT_STANDARD.md", "Rules re-read: CLAUDE.md, REPORT_STANDARD.md, owner-orders"):
         assert need in md, need
+    for f in ("README.md", "INBOX.md", "DECISIONS.md"):
+        assert (root / "docs" / "owner-orders" / f).exists(), f              # memory protocol (Abhi 22 Oct)
+    assert "docs/owner-orders/" in md and "INBOX.md" in md and "DECISIONS.md" in md
     std = (root / "docs" / "reader" / "REPORT_STANDARD.md").read_text(encoding="utf-8")
     for k in RS.REQUIRED_LAYERS:
         assert f"`{k}`" in std, k

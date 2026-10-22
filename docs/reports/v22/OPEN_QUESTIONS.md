@@ -878,3 +878,18 @@ Effects to review (07–21 Oct, trade-data `review/replay_banknifty_6m/<sha>/gro
 - Wide single areas (~300 pts, 3.5–4× the median): not a cluster effect. The BOS-origin one (Abhi's 300, births b + c) came from the
   two concept-C bugs above — fixed here (C-1 / C-2); the swing-born ones (a:D2, one sharp 1H candle wick to body) match the method and
   stay; the refined 15M base now bounds the trade location inside them.
+
+## BANKNIFTY 6-month reading galleries (code bf98040; trade-data `review/replay_banknifty_6m/reading/bf98040/`) — possible misreads
+Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
+- **Z-1u / RC1 counter not applied to E4b broken areas:** two E4b entries at one place — 25 Sep 14:00 (1H 276 + D 277, identical band
+  55,699–55,970), 01 Jul 12:15 (D 295 + 1H 296), 20 Jul 14:15 (area 295 + a broken line at the same bar). The one-signal-per-model-
+  per-place counter must include E4b's broken objects.
+- **RC2 refined base (§2C):** the 26 May 09:30 down move (2,415 pts) had no entry — D area 97 waited "no refined base yet: no 15M
+  turn inside its band". Check whether a refined base should come from the turn that starts the departure (short 15M history may
+  contribute).
+- **§3 E4a (K4 sweep):** E4a never fired in six months. Check the sweep read on charts.
+- **E4b on channel parallels (`|par`):** the worst losses (13 Jul MAE 919; 02 Sep MAE 669; 14 May broken area 271 MAE 684). Check
+  whether a parallel's retest is a trade location per §2E.
+- **§1 MTF agreement / E3 CHoCH:** 09–11 Jun visits of areas 280 / 288 gave 6 stops out of 6 while the 15M read "trending up".
+- **For Abhi's eye (§1 / §2B, not logged as a bug):** all 69 entries are bear calls — Daily DOWN for six months (protected LH 58,706
+  never taken); the 52,877 → 58,673 up leg read as "correction in progress"; the largest move with no entry is up 3,961 pts.
