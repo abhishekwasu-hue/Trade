@@ -804,10 +804,15 @@ def band_flip_facts(df, t, x, s=None, start=None):
         reached when it is CONFIRMED (Abhi Z-1s, as flip.far_swing / flip.reached — the chart label mirrors the engine);
       • while BROKEN, a break back the other way before the far swing is passed = reclaim ⇒ sweep ★, the prior state and role are kept
         (ACTIVE, or FLIPPED with its flipped_at) — never a new break / flip;
-      • a FLIPPED band broken against its new role and that break's far swing reached ⇒ DEAD, no second flip (Abhi Z-1f / Z-1k / Z-1s).
+      • a FLIPPED band broken against its new role ⇒ DEAD, no second flip: `flip_dead_rule = broken_again` (default, as the engine)
+        at the first confirmed swing beyond the band after that break; `far_swing` (what-if) when that break's far swing is reached
+        (Abhi Z-1f / Z-1k / Z-1s; owner-orders DECISIONS 27).
     Additive facts only: `valid` / `flipped` / `broken` of the shared check are not changed (open question Z-1b).
     Returns {flip_state, broken_at, far_swing (+ source), flipped_at, dead_at, sweeps} (bars + ts; bars ≤ t only)."""
     from facts import validity as FV
+    rule = (s or {}).get("flip_dead_rule") or S3.DEFAULTS.get("flip_dead_rule", "broken_again")   # mirrors Levels._dead_on_break
+    if rule not in ("broken_again", "far_swing"):
+        raise ValueError(f"flip_dead_rule {rule!r} — broken_again / far_swing पैकी")
     s = FV.load(s)
     B = FV.bars_of(df)
     brs = sorted((br for br in (x.get("breaks") or []) if int(br["bar"]) <= t), key=lambda br: int(br["bar"]))
@@ -840,6 +845,9 @@ def band_flip_facts(df, t, x, s=None, start=None):
         piv, post = [i for i in beyond if i < b], sorted(i for i in beyond if i >= b)
         flip_bar = (out["flipped_at"] or {}).get("bar")
         for i in range(b + (prior == FL.FLIPPED and flip_bar == b), end + 1):   # the flip bar was used for the flip (engine: no DEAD on it)
+            if prior == FL.FLIPPED and rule == "broken_again" and any(q + k <= i for q in post):
+                out.update(flip_state=FL.DEAD, dead_at=bar(i), dead_rule="broken_again")   # flipped once, broken again (close +
+                return out                                                  # a swing beyond, confirmed) ⇒ DEAD — as the engine
             known = [p for p in piv if p + k <= i]                          # confirmed by bar i (no look-ahead)
             if known:
                 p, src = (min(known, key=lambda j: B.H[j]) if up else max(known, key=lambda j: B.L[j])), "before_break"
