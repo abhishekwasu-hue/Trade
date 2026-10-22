@@ -902,9 +902,10 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
   groups (13 Apr–9 May: 0 entries). Live reads a 90-day 15M window (`engine3_m15_days`), so its first ~`sigma_sessions` sessions carry
   no 15M turn either — for Abhi's eye only (a D / W area whose only 15M turns lie in that first part waits until a new turn forms
   inside it, or a newer one is confirmed); no change without his word (RC2 is a research default, review after the replay).
-- **§3 E4a (K4 sweep):** E4a never fired in six months. Check the sweep read on charts.
-- **E4b on channel parallels (`|par`):** the worst losses (13 Jul MAE 919; 02 Sep MAE 669; 14 May broken area 271 MAE 684). Check
-  whether a parallel's retest is a trade location per §2E.
+- ~~**§3 E4a (K4 sweep):** E4a never fired in six months. Check the sweep read on charts.~~ — CHECKED, not a bug (see "Reading
+  checks — E4a and E4b" below).
+- ~~**E4b on channel parallels (`|par`):** the worst losses (13 Jul MAE 919; 02 Sep MAE 669; 14 May broken area 271 MAE 684). Check
+  whether a parallel's retest is a trade location per §2E.~~ — two lifecycle bugs FIXED (see "Reading checks — E4a and E4b" below).
 - **§1 MTF agreement / E3 CHoCH:** 09–11 Jun visits of areas 280 / 288 gave 6 stops out of 6 while the 15M read "trending up".
   **Checked — the model gating follows the method; one evidence-wording fix (§1 MTF state).** (a) Which timeframes must agree: only
   the Daily side (§2 b, P4: "trade in the direction of the higher-timeframe trend"; a correction does not change the Daily trend).
@@ -925,6 +926,63 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
   (`mtf_state._range_left`, wording only; entries unchanged; tests/test_pa_mtf_state.py).
 - **For Abhi's eye (§1 / §2B, not logged as a bug):** all 69 entries are bear calls — Daily DOWN for six months (protected LH 58,706
   never taken); the 52,877 → 58,673 up leg read as "correction in progress"; the largest move with no entry is up 3,961 pts.
+
+## Reading checks — E4a and E4b (BANKNIFTY galleries; checked against CLAUDE.md, DECISIONS 3, 9, 12, 23, 27, 28, method §3 / §8, KB K6.5)
+Replay: the walk-forward runner on the branch head (b74e832 → this fix), 13 groups 13 Apr – 21 Oct; 12 groups reading-only (no
+near-month FUT volume, REPORT_STANDARD 0a: E2 / volume not evaluated) + 07–21 Oct testable (FUT on every session, live rule). Outcomes
+by structure across sessions (next opposite area first vs a close beyond the invalidation first). The two warm-up groups (13 Apr –
+9 May: the 15M history starts 13 Apr, so the swing engine has no finest swings yet) give no entries either side.
+- **§3 E4 (a) — not a bug; the method had no qualifying case.** Funnel over the 101 armed trade-side area visits (after warm-up): 55 had
+  a push beyond the far edge / a K4 sweep event (34 with a close beyond, then back inside — the CLAUDE.md "Sweep / fakeout" read is
+  correct in levels: `sweep` events, area alive, visit continues). In none did the E4 (a) read complete: 46 visits ended (or the area
+  broke) before the NEXT PUSH formed as a confirmed swing of the finest structure (D1) after the sweep; 3 sweeps failed (price went
+  beyond the sweep extreme later — then the K4 break / flip, not E4 (a)); 6 visits ended at the poke itself (no later bar). So the
+  trigger-stage checks (traded inside the area, into the refined base, not beyond the sweep extreme) were never reached. Example 22 May
+  1H 53,963.10–54,109.15: five closes above (high 54,213.05), back inside at 14:00 = K4 sweep; the later push (15:15, high 54,193.00)
+  stayed under the sweep extreme but is no D1 swing (and closed above the far edge), and the 25 May gap broke the area. Code =
+  method: E4 (a) at `entry_models.Reader.sweep` reads "the next push" as a swing of the finest structure (method §3: a swing is a
+  turning point the structure respects; small wiggles are not swings; Abhi's D1 / D2 calibration). Assumed — no answer needed unless
+  Abhi objects. For Abhi's eye (not a rule): a D1 swing is usually larger than a narrow 1H band, so a failed push inside a sweep of
+  such a band rarely completes before the visit ends — E4 (a) will stay rare on BANKNIFTY by this reading. Never tuned.
+- **§2E lines / channels: a parallel's retest IS a trade location (not a bug in itself).** Abhi's own order (INBOX C-11, C-b / C-f: "B's
+  line of highs (or its channel parallel) BROKEN by K6.5, then the retest of that broken line … = E4 (b)") makes a broken channel
+  parallel an E4 (b) object; its break is K6.5 (`channels` → `_broken_at`: a close beyond + a swing of its kind beyond).
+- **FIXED — C lifecycle / K6.5 mirror for a BROKEN LINE (E4 b object; DECISIONS 23 + 27).** Was: a broken line (main line or channel
+  parallel) stayed an E4 (b) retest object whatever price did after its break — the lines had no lifecycle (areas have reclaim /
+  dead). E4 (b) reads a broken line as a flipped object ("close beyond + swing beyond = broken (flip)"), so a broken line that price
+  closes back through on its ORIGINAL side AND builds a swing (of the line's degree) beyond it there is broken again ⇒ dead as a
+  flipped area broken again is (an area flips only once) — never an E4 (b) object again (`trendline.broken_back_at`, read in
+  `Reader.broken_objects` for every E4 (b) line object — model C's C-b / C-d / C-f lines too, model C stays OFF; a close back
+  WITHOUT a swing there = a sweep, the line stays broken). No new setting, no number. The two
+  replayed worst losses were this: 13 Jul 09:15 (1H parallel D2:H+:1025-1123|par, broken down 23 Jun 14:45, closed back above from
+  24 Jun 09:15 with the swing high 58,706.10 (25 Jun) — broken back the next day; the "retest" 3 weeks later was the rising line
+  catching up with price, entry 57,596.30 after a gap, 449 pts from the line, MAE 919) and 02 Sep 11:15 (falling line of lows
+  D2:L-:1177-1279, broken down 19 Aug 09:30, closed back above 19 Aug 13:30 + the swing high 57,873.80 (24 Aug): price came onto the
+  line from ABOVE, MAE 669). The other removed E4 (b) were all broken back before (or at) their trigger: 20 May 13:15, 30 Jun 14:00,
+  08 Jul 09:15, 13 Jul 10:30, 20 Jul 09:15 and 14:15, 07 Sep 09:15, 24 Sep 13:45. Tests: `tests/test_entry_models_broken_back.py`
+  (both mirrors). Display only, not changed: `channels()` still labels such a line "retest of the broken … line" (chart text).
+- **FIXED — K4 reclaim on the break's own confirming bar (levels, layer 2 lifecycle).** Was: when the bar that makes a break KNOWN (its
+  swing beyond confirmed) itself closed back on the role side, the reclaim attempt ("a close back on the role side AND a swing formed
+  there", the break's mirror) began only at the next bar, so a swing formed AT that bar was lost and the area stayed BROKEN. Now that
+  close starts the attempt (`Levels._step_far_swing`). Replayed: 14 May 1H support 53,492.10–53,510.45 "broken" at 09:15 (the swing low
+  53,385.45 of 13 May 15:15 confirmed by the gap-up bar that closed at 53,924.40, swing high 53,968.65 there) — now reclaimed at 09:45,
+  so no E4 (b) bear call from above at 10:30 (was MAE 684). Only this entry changed across all groups (E1 / E2 / E3 identical);
+  the chart band labels (`levels.band_flip_facts`, facts.validity breaks) are a separate reader — not checked for the same case.
+- **Before / after (same data, same outcome rule).** Per model, all 13 groups — entries (next first / invalidation first):
+
+  | model | before | after |
+  |---|---|---|
+  | E1 | 25 (8 / 17) | 25 (8 / 17) |
+  | E2 | 2 (2 / 0) | 2 (2 / 0) |
+  | E3 | 19 (12 / 7) | 19 (12 / 7) |
+  | E4 a | 0 | 0 |
+  | E4 b | 28 (14 / 14), worst MAE 918.8 | 17 (10 / 7), worst MAE 590.8 |
+  | all | 74 (36 / 38) | 63 (32 / 31) |
+
+  Changed groups (E4 b): 10–24 May 3 → 1 (14 May, 20 May out), 24 Jun – 8 Jul 3 → 1 (30 Jun, 8 Jul out), 9–23 Jul 6 → 2 (13 Jul ×2,
+  20 Jul ×2 out), 23 Aug – 6 Sep 2 → 1 (2 Sep out), 7–21 Sep 3 → 2 (7 Sep out), 22 Sep – 6 Oct 6 → 5 (24 Sep out). Removed: 7 that
+  hit the invalidation first, 4 that reached the next area first (P7: a valid read can lose; these were not valid reads). 07–21 Oct
+  (testable, live rule): 14 (9 / 5) before and after — unchanged.
 
 ## C lifecycle — a flipped area broken again (owner-orders DECISIONS 27; code `flip_dead_rule = broken_again`)
 - Was: a FLIPPED area broken again stayed BROKEN until that break's far-side swing was reached, and E4 (b) used it as a retest
