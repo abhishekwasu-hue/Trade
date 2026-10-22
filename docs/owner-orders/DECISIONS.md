@@ -71,3 +71,7 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     dashboard settings. Sub-ways C-a … C-f each switchable. (Handover T-3, Appendix A)
 33. Older FUT volume: no Upstox Plus (Abhi refuses); forward collection only; a Fyers probe only with Abhi's own account. INTRADAY
     vs two-day holding is Abhi's decision; the current dashboard setting stays. (Handover T-4)
+34. PROVISIONAL defaults kept on Abhi's "go ahead" (each can still be changed by Abhi): model C reads A / B at the 1H degree
+    (Appendix A C-3) and stays OFF; DECISIONS 32 wins over method P4 for model C only; approval mode keeps only a would-have note
+    for rejected / no-reply signals (no shadow trade opened); the model C replay gallery goes to the private trade-data repo.
+    (Handover follow-up)

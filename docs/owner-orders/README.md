@@ -31,3 +31,5 @@ Decisions taken from orders go to DECISIONS.md (append only).
 | 24 | "Merge and continue" | #369 merged (489d526): T-1 / T-5 / T-6; VPS block for #368 + #369 given (after close, --revert); T-4 reading-only validator merged into the next PR; T-3 model C build in progress (switch OFF) | — |
 | 25 | T-3 model C step 2 + T-4 reading-only validator | merged (#370, 0d7813e; model C switch OFF; independent review APPROVE after 8 fixes); step 3 replay on trade-data in progress | main |
 | 26 | "Merge and continue" (2) | nothing open to merge (#368–#370 merged); continuing: band labels mirror the DEAD rule (display), model C replay on trade-data | branch claude/hopeful-gates-hf186c |
+| 27 | Deploy c3e9f0a (#368–#371) | done by Abhi: status ✅ clean; T-1 trail L22,761 reported (card had buttons, timeout ⇒ SHADOWED, no shadow trade in approval mode); T-5 audit fields: waiting for the read-only print | VPS |
+| 28 | "Ok go ahead" on the four open decisions | provisional defaults kept (DECISIONS 34); model C gallery pushed to trade-data | trade-data |

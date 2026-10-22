@@ -483,3 +483,7 @@ Merge and continue
 ---
 ## 22 Oct — VPS block
 Vps block dya
+
+---
+## 22 Oct — after the deploy status (reply to the four open decisions)
+Ok go ahead
