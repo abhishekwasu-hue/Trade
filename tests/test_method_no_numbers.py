@@ -78,6 +78,12 @@ CALIBRATION = {                  # Abhi (layer 1 ✅): a swing's significance is
 }
 PENDING = {                      # still a number in the reading path ⇒ removed in the named layer
 }
+DISPLAY_RATIOS = {               # tuples of numbers that are display / context only — never read by an entry, a gate or an exit:
+                                 # {setting: the only decision3 files that may read it}
+    # model C (T-3, DECISIONS 32) C-7 end zone: the C-vs-A projection ratios, drawn / listed as context (Q7 default (1.0,) = C equals A)
+    "c_projections": {"settings.py", "model_c.py"},
+}
+DECLARED = {"pa_fib_ratios"}     # Abhi K7 (declared exception): the Fibonacci tool's own ratios, a confluence label only
 
 
 def _numeric(v):
@@ -91,6 +97,25 @@ def test_every_reading_number_is_classified():
     groups = [set(LEGACY), OPERATIONAL, DATA_QUALITY, set(CALIBRATION), set(PENDING)]
     assert all(not (a & b) for i, a in enumerate(groups) for b in groups[i + 1:]), "a setting is in two classes"
     assert not (classified - nums - {"level_min_width_sigma"}), f"stale entries: {sorted(classified - nums)}"
+
+
+def test_number_tuples_are_display_ratios_or_declared():
+    """A tuple of numbers in the defaults is a display ratio (read only where it is drawn, never by an entry / gate / exit) or a declared
+    exception; anything new must be classified here."""
+    tuples = {k for k, v in S3.DEFAULTS.items() if isinstance(v, (tuple, list)) and v and
+              all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)}
+    assert tuples == set(DISPLAY_RATIOS) | DECLARED, sorted(tuples ^ (set(DISPLAY_RATIOS) | DECLARED))
+    src = {f.name: f.read_text(encoding="utf-8") for f in D3.glob("*.py")}
+    for k, allowed in DISPLAY_RATIOS.items():
+        readers = {n for n, txt in src.items() if re.search(rf"[\"']{k}[\"']", txt)}
+        assert readers <= allowed, f"{k} (display only) is read outside {sorted(allowed)}: {sorted(readers - allowed)}"
+        assert S3.REGISTER[k][2] == "setting"
+
+
+def test_model_c_settings_are_words_not_numbers():
+    """Model C (DECISIONS 32): every switch is a word / a subset, default OFF; the only numbers are the display ratios above."""
+    assert (S3.DEFAULTS["model_c"], S3.DEFAULTS["c_a_nature"], S3.DEFAULTS["c_window"]) == ("off", "impulse", "b_only")
+    assert all(isinstance(x, str) for x in S3.DEFAULTS["model_c_subs"])
 
 
 def test_legacy_numbers_are_read_only_where_their_switch_lives():

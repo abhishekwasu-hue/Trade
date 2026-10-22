@@ -23,7 +23,7 @@ import base64
 import json
 import time
 
-PROMPT_VERSION = "engine_check_v1"
+PROMPT_VERSION = "engine_check_v2"                 # v2: the model C exception (DECISIONS 32)
 SETTING = "vision_engine_audit"
 MODES = ("engine", "legacy")
 DEFAULT = "engine"                      # PROVISIONAL (DECISIONS 31): review with the verdict-vs-outcome table (vision/engine_measure.py)
@@ -75,7 +75,12 @@ price is in the text; never read or invent a price from the image.
 THE METHOD (a closed concept list: judge only with these concepts)
 - Read the chart as one continuous unit, by structure only. A gap is simply the next candle.
 - Trend side: trade only in the direction of the higher-timeframe trend; a correction in progress does not change the trend. Never a
-  counter-trend entry, never a breakout entry, never a chase.
+  counter-trend entry (one exception, an owner decision: model C below), never a breakout entry, never a chase.
+- Model C (only when the facts name model C): a separate, switchable model for the C leg of a correction against the Daily side. Its
+  trade side is the correction's own direction: the Daily side is the other way, a 1H change of character began wave A, wave B is a
+  corrective pullback still in progress (no close beyond the end of A, except the first return to it when the facts say so), and B
+  has not died (a close beyond the origin O and a swing formed beyond O). For a model C signal judge trend_side by this rule; judge
+  every other item as for any signal. It is still a pullback or retest entry, never a breakout entry.
 - Area and its lifecycle: an area is built from one base (wick to body), never from joined bases. Alive = fresh or tested. Sweep = a
   close beyond the area without a swing formed beyond it, then back inside: the area stays alive and the visit continues. Broken = a
   close beyond the area and a swing formed beyond it. Flipped = price went beyond the far-side swing: the role reverses. Dead = a
@@ -214,6 +219,14 @@ def reading(sig, fallback_areas=None):
     ev = [[str(x[0]), str(x[1])] for x in ev if isinstance(x, (list, tuple)) and len(x) >= 2] if isinstance(ev, list) else []
     htf = g.get("htf") if isinstance(g.get("htf"), dict) else {}
     cl = g.get("cluster") if isinstance(g.get("cluster"), dict) else None
+    mc = None
+    if str(t.get("entry_family") or "").upper() == "C":                 # model C (DECISIONS 32): its own facts for trend_side
+        c = t.get("entry_model_c") if isinstance(t.get("entry_model_c"), dict) else {}
+        mc = {"sub_model": t.get("entry_sub_model"), "story": t.get("entry_story"), "daily": (c.get("daily") or {}).get("trend"),
+              "weekly": c.get("weekly"), "O": _num((c.get("O") or {}).get("price")), "HA": _num((c.get("HA") or {}).get("price")),
+              "B": _num((c.get("B") or {}).get("price")), "a_nature": (c.get("a_nature") or {}).get("verdict"),
+              "b_nature": (c.get("b_nature") or {}).get("verdict"), "window": c.get("window"),
+              "invalidated_if": c.get("invalidated_if")}
     return {"direction": d, "side": "bull put" if d > 0 else "bear call", "model": model, "name": name, "label": t.get("entry_label"),
             "grade": g.get("grade"), "object": obj, "trend": g.get("trend"), "htf": htf or None,
             "area": None if area is None else {"lo": area[0], "hi": area[1], "tf": me.get("tf") or g.get("tf"), "state": me.get("state"),
@@ -222,7 +235,7 @@ def reading(sig, fallback_areas=None):
             "invalidation": ip, "invalidation_rule": rule, "next_area": nxt, "evidence": ev,
             "cluster": None if not cl else {"n": cl.get("n"), "members": t.get("entry_cluster")},
             "others": [{"role": a.get("role"), "lo": _num(a.get("lo")), "hi": _num(a.get("hi")), "state": a.get("state")}
-                       for a in areas if _band(a.get("lo"), a.get("hi")) not in (area,)]}
+                       for a in areas if _band(a.get("lo"), a.get("hi")) not in (area,)], "model_c": mc}
 
 
 def _p(x):
@@ -265,6 +278,17 @@ def facts_text(sig, rd=None):
     lines.append(f"Next area in the trade direction: {nx['role']} {_p(nx['lo'])} - {_p(nx['hi'])}"
                  + (f" ({nx['source']})" if nx.get("source") and nx["source"] != "engine" else "") + "." if nx else
                  "Next area in the trade direction: none known.")
+    mc = rd.get("model_c")
+    if mc:                                                               # DECISIONS 32: the C leg's own trend-side rule (advisory audit)
+        lines.append(f"Model C ({mc.get('sub_model') or 'C'}, owner decision — a separate switchable model, not the Daily-side rule): "
+                     f"the counter-trend C leg of a correction against the Daily side. Daily side {mc.get('daily') or 'n/a'}"
+                     + (f", Weekly {mc['weekly']}" if mc.get("weekly") else "") + "; this trade is in the 1H correction's direction.")
+        lines.append(f"Model C structure (engine): origin O {_p(mc.get('O'))}; wave A from O made a 1H change of character, its nature "
+                     f"{mc.get('a_nature') or 'n/a'}, ended at HA {_p(mc.get('HA'))}; wave B {mc.get('b_nature') or 'n/a'}, extreme so "
+                     f"far {_p(mc.get('B'))}; window: {mc.get('window') or 'n/a'}; {mc.get('invalidated_if') or ''}.")
+        lines.append("Trend side for this model C signal passes when: the Daily side is opposite to this trade, a 1H change of "
+                     "character began wave A, B is a corrective pullback still in progress (or the first return to HA when the window "
+                     "says so) and B has not closed beyond O with a swing formed beyond O. Judge trend_side by this rule.")
     if rd.get("cluster") and rd["cluster"].get("n"):
         lines.append("Cluster: overlapping areas of the same role count as one place (one signal per model); the edges, trigger and "
                      "invalidation above come from the visited area only.")

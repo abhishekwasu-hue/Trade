@@ -273,6 +273,9 @@ def model_lines(tags):
     if not lab:
         return []
     out = []
+    st = " ".join(str(tags.get("entry_story") or "").split())
+    if st:                                                               # model C (DECISIONS 32, C-10): the one-line story
+        out.append(f"🌊 {html.escape(st[:400])}")
     inv = tags.get("entry_invalidation")
     if isinstance(inv, dict):
         px = _num(inv.get("price"))
