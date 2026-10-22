@@ -938,3 +938,9 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
   (decision3.levels.display_bands at signal time, labelled "chart band finder"); none ⇒ "none known" and the outcome follows the
   invalidation only. Open (display / measurement only): the engine payload could carry its own next opposite area.
 - **Report of the L22,747 card** still needs the VPS export (vision_signals / vision_events); written when it arrives.
+- **T-1 finding: no shadow trade opens in approval mode.** With `approval_required` = True (the PAPER default), a rejected / no-reply
+  V1 signal becomes only a would-have note (`paper_would_have`, lots 0) — `vision/gate._shadow` returns HOLD; the one-bot engine path
+  never opens a shadow position either. That is why no `srv2_momentum_reversal_vision_shadow` trade exists. Provisional: behaviour
+  unchanged (opening shadow trades would be a new execution behaviour Abhi did not state); the cards now say it in plain words
+  ("No shadow trade: approval mode keeps only a would-have note …"). Abhi decides whether approval mode should open comparison-only
+  shadow trades.
