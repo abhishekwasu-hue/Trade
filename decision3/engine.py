@@ -840,12 +840,23 @@ class V22:
                    channel_lines=[x for g in TL.line_degrees(self) for x in TL.channel_lines(self, t, g)],
                    channels=[{k: v for k, v in c.items() if k != "base_line"} for g in TL.line_degrees(self)
                              for c in TL.channels(self, t, g)],
+                   channels_htf=self._channels_htf(t),                    # T3: the Daily / Weekly channels (display / evidence only)
                    entry_models_on=list(EM.Reader(self).on))
         if em is None and ok1 and not ok2:
             row["why"] = why2
         if MDC.is_on(self):                                                # model C (DECISIONS 32, default OFF): only when switched on —
             MDC.attach(self, t, row)                                       # row["model_c"] + C entries appended; OFF ⇒ the row as before
         return row
+
+    def _channels_htf(self, t):
+        """T3 (PA §2E per timeframe): the Daily / Weekly channels at bar t on their own candles and swings (trendline.channels_by_tf),
+        compact; the 1H / 15M ones are the row's `channels`. Display / evidence only — read by no decision."""
+        try:
+            by = TL.channels_by_tf(self, t)
+        except Exception as exc:                                           # noqa: BLE001 — display only: an error is said, never fatal
+            return {"na": f"{type(exc).__name__}: {str(exc)[:120]}"}
+        return {tf: ({"na": by[tf]["na"]} if by[tf].get("na") else
+                     {"structure": by[tf]["structure"], "channels": TL.compact_channels(by[tf]["channels"])}) for tf in ("D", "W")}
 
     def legacy_k_gate(self, t, trend, act=None):
         """The old ③ (BOS impulse + K pullback, `method.Pullbacks`) read at bar t, LOGGED only (entry_gate = models): pass / fail + the

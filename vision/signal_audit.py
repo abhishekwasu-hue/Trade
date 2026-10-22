@@ -343,7 +343,8 @@ def signal_text(sig):
                      + (f", R:R {g.get('rr')}" if g.get("rr") is not None else "") + ". "   # R:R फक्त dashboard rr gate चालू असेल तर
                      +
                      "Check zone, trend, pullback and trigger.")
-    rest = {k: v for k, v in tags.items() if k != "gate"}
+    rest = {k: v for k, v in tags.items() if k not in ("gate", "entry_pa_evidence")}   # T9 PA list: card only — Vision's input
+    # (and its paid prompt size) stays as before (OPEN_QUESTIONS T9-2)
     if rest:
         lines.append("Bot tags: " + ", ".join(f"{k}={v}" for k, v in sorted(rest.items())))
     lines.append("Audit this signal against the playbook and fill the JSON.")

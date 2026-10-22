@@ -140,6 +140,8 @@ HOW TO USE IT
    resting liquidity; Fibonacci is never read alone (its ratios are the tool's definition, `pa_fib_ratios`, a declared exception).
  - Liquidity (T2, t2_liquidity.md): obvious swing extremes not yet traded beyond, and inducement (a minor extreme taken just before the
    area).
+ - Lines and channels per timeframe (T3, t3_t9_coverage.md): the same line / channel reading (two separate reactions, the parallel
+   through the opposite extreme, broken = a close beyond + a swing beyond) on each timeframe's own swings — Weekly, Daily, 1H, 15M.
  - Chart patterns (T4, t4_chart_patterns.md): patterns from the structure swings; a break is real only by a close beyond and a swing
    beyond, otherwise a fakeout; a pattern is context and a retest level, never a breakout entry.
  - Candle forms (T5, t5_candle_forms.md): a form is read against its neighbouring candles and counts only at a location (area, level
@@ -152,6 +154,8 @@ HOW TO USE IT
    the range itself read from the structure of that timeframe.
  - Output objects (T8, t8_output_objects.md): one list of drawn objects shared by the approval chart and the review charts, and a
    short story per timeframe; display only.
+ - Evidence wiring (T9, t3_t9_coverage.md): each entry lists every track's facts above in the track's own words (its area, the channel
+   price is in, the candle, the volume, the divergence, the range); listed, never a gate.
  - Entry models (E1 aggressive, E2 confirmation, E3 structure, E4 sweep-retest): armed while price visits a valid trade-side area;
    each fires at most once per visit. E2 and E3 never fire while the zone study reads absorption without a handover. Overlapping
    areas of the same role visited together count as one place: one signal per model per visit — a counter only, never one area (see

@@ -392,9 +392,17 @@ def channel_lines(V, t, degree=None):
     memo = V.__dict__.setdefault("_chan_memo", {})
     if (t, g) in memo:
         return memo[(t, g)]
-    lv = V.levels
-    C = lv.A["close"]
-    known = _known_deg(V, t, g)
+    out = lines_on(V.levels.A, _known_deg(V, t, g), t, g, TF_OF_DEGREE.get(g, f"D{g}"), f"D{g}")
+    memo[(t, g)] = out
+    return out
+
+
+def lines_on(A, known, t, degree, tf, prefix):
+    """T3 — the core of `channel_lines` for ANY timeframe: A = that timeframe's bars (open / high / low / close arrays; bar index = A's),
+    known = its own swings known at its bar t (kind, price, bar), in bar order. The same method §3 / K6.5 reading on every timeframe;
+    ids are "<prefix>:<kind><+|->:<b1>-<b2>". Comparison only."""
+    g = degree
+    C = A["close"]
     out = []
     for kind, sd in FAMILIES:
         side = 1 if kind == "H" else -1
@@ -426,13 +434,13 @@ def channel_lines(V, t, degree=None):
             def line(b, y1=y1, b1=b1, slope=slope):
                 return y1 + slope * (b - b1)
             bb = _broken_at(C, known, kind, line, side, b2 + 1, t)
-            groups = touch_groups(lv.A, known, kind, line, b1, b2, t if bb is None else bb)
+            groups = touch_groups(A, known, kind, line, b1, b2, t if bb is None else bb)
             x = {"family": f"{'rising' if sd > 0 else 'falling'} line of {'highs' if kind == 'H' else 'lows'}", "kind": kind,
-                 "slope_dir": "rising" if sd > 0 else "falling", "degree": g, "tf": TF_OF_DEGREE.get(g, f"D{g}"),
+                 "slope_dir": "rising" if sd > 0 else "falling", "degree": g, "tf": tf,
                  "p1": [b1, round(y1, 2)], "p2": [b2, round(y2, 2)],
                  "slope": round(slope, 4), "touches": len(groups), "touch_groups": groups, "value_t": round(line(t), 2),
                  "broken": bb is not None, "break_bar": bb, "break_side": "up" if side > 0 else "down",
-                 "state": "BROKEN" if bb is not None else "ACTIVE", "id": f"D{g}:{kind}{'+' if sd > 0 else '-'}:{b1}-{b2}"}
+                 "state": "BROKEN" if bb is not None else "ACTIVE", "id": f"{prefix}:{kind}{'+' if sd > 0 else '-'}:{b1}-{b2}"}
             if bb is None and cur is None:
                 cur = x
             elif bb is not None:
@@ -440,7 +448,6 @@ def channel_lines(V, t, degree=None):
                     brk = x
                 break                                                      # the newest broken line of this family found
         out.extend(z for z in (cur, brk) if z is not None)
-    memo[(t, g)] = out
     return out
 
 
@@ -455,12 +462,17 @@ def channels(V, t, degree=None):
     memo = V.__dict__.setdefault("_chanl_memo", {})
     if (t, g) in memo:
         return memo[(t, g)]
-    lv = V.levels
-    A = lv.A
+    out = channels_on(V.levels.A, _known_deg(V, t, g), channel_lines(V, t, g), t, g)
+    memo[(t, g)] = out
+    return out
+
+
+def channels_on(A, known, lines, t, degree):
+    """T3 — the core of `channels` for ANY timeframe (A, known, t as in `lines_on`; lines = its `lines_on` result)."""
+    g = degree
     C = A["close"]
-    known = _known_deg(V, t, g)
     out = []
-    for ln in channel_lines(V, t, g):
+    for ln in lines:
         (b1, _y1), (b2, _y2) = ln["p1"], ln["p2"]
         seg = np.arange(int(b1), int(b2) + 1)
         if ln["kind"] == "H":
@@ -495,8 +507,61 @@ def channels(V, t, degree=None):
         out.append({"id": f"ch:{ln['id']}", "tf": ln["tf"], "degree": g, "slope_dir": ln["slope_dir"], "base": ln["id"],
                     "base_line": ln, "parallel": pl, "upper_t": round(ut, 2), "lower_t": round(lt, 2), "state": state,
                     "broken_side": bside, "broken_lines": [x["id"] for x in broken]})
-    memo[(t, g)] = out
     return out
+
+
+# ------------------------------------------------------------------------------------------------ T3: channels per timeframe
+CHANNEL_TFS = ("W", "D", "1H", "15M")    # the timeframes with structure swings (5M = the LTF-CHoCH swing only: OPEN_QUESTIONS T3-1)
+
+
+def _htf_lines(V, t, tf):
+    """Daily / Weekly lines + channels at the 15M bar t: the same core on that timeframe's candles closed by t, through the swings
+    `mtf_state.swings` reads its state from (the Daily / Weekly fold's own swings, alternated; confirmed by t). Cached per closed candle.
+    Returns (lines, channels, structure word)."""
+    from . import mtf_state as MS
+    F = MS.frame(V, t, tf)
+    if F is None or not F["n"]:
+        return [], [], None
+    n = int(F["n"])
+    memo = V.__dict__.setdefault("_chan_tf_memo", {})
+    if (tf, n) in memo:
+        return memo[(tf, n)]
+    ext, _inn, deg, _ = MS.swings(V, t, tf)
+    A = {k: np.asarray(F[c], float)[:n] for k, c in (("open", "o"), ("high", "h"), ("low", "l"), ("close", "c"))}
+    known = sorted((p for p in ext if int(p.bar) < n and int(p.confirm_bar) < n), key=lambda p: p.bar)
+    lines = lines_on(A, known, n - 1, None, tf, tf)
+    chans = channels_on(A, known, lines, n - 1, None)
+    for x in lines + [c["parallel"] for c in chans]:                      # the candles' own times (bars are that timeframe's index)
+        x["structure"] = deg
+        x["ts"] = [str(F["ts"].iloc[int(x["p1"][0])]), str(F["ts"].iloc[min(int(x["p2"][0]), n - 1)])]
+    memo[(tf, n)] = out = (lines, chans, deg)
+    return out
+
+
+def channels_by_tf(V, t):
+    """T3 (§2E per timeframe): {tf: {"structure", "lines", "channels"}} for W, D, 1H, 15M at the 15M bar t, each read on its own swings
+    and bars by the same method §3 / K6.5 core. 1H / 15M = the existing degrees of the 15M chart (`line_degrees`, unchanged — the rows'
+    `channel_lines` / `channels`); D / W = their own candles (`_htf_lines`). Evidence / display only: the E4 (b) objects stay the trend
+    degree's lines (`entry_models.Reader.broken_objects`), so nothing here changes an entry. Missing Daily / Weekly data ⇒ "na"."""
+    out = {}
+    for tf in CHANNEL_TFS:
+        if tf in ("D", "W"):
+            try:
+                lines, chans, deg = _htf_lines(V, t, tf)
+            except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:   # no Daily / Weekly candles ⇒ said
+                out[tf] = {"structure": None, "lines": [], "channels": [], "na": type(exc).__name__}
+                continue
+            out[tf] = {"structure": deg, "lines": lines, "channels": chans}
+            continue
+        gs = [g for g in line_degrees(V) if TF_OF_DEGREE.get(g) == tf]
+        out[tf] = {"structure": ", ".join(f"D{g}" for g in gs) or None,
+                   "lines": [x for g in gs for x in channel_lines(V, t, g)], "channels": [c for g in gs for c in channels(V, t, g)]}
+    return out
+
+
+def compact_channels(chans):
+    """A channel list for the row / payload: the base line dict left out (its id stays in `base`), as the row's `channels`."""
+    return [{k: v for k, v in c.items() if k != "base_line"} for c in chans]
 
 
 def line_value(ln, b):
