@@ -986,3 +986,17 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
   provisional reading). `c_window = b_and_ha_retest` opens the HA first return for the C-e sub-way only (without C-e it reads as
   b_only). c_pullbacks opens from the bar after the HA break. An unreadable `engine3_c_projections` falls back to the default with a
   warning (display only — never stops the engine).
+
+## T-3 step 3 — model C replay, BANKNIFTY 07–21 Oct (code 0d7813e; trade-data review/replay_banknifty_6m/model_c/0d7813e/)
+Testable (near-month FUT on all 9 sessions). Model C OFF = 14 Daily-side entries (9 / 5), equal to the #367 "after" column; ON (both
+windows) = the same 14 + C-f labels, **0 model C entries**. Golden check (the 1,357-pt up move 12–15 Oct): no C-a / C-b / C-e entry.
+Logged as reading differences against named concepts — never tuned:
+- **C-3 / method §3 CHoCH (`mtf_state.dow_events`):** after the 08 Oct CHoCH down the next 1H high (55,419.30) was a higher high, so
+  the 1H never read DOWN; the 13 Oct close above 55,419.30 reads as a 1H BOS up, not a CHoCH up ⇒ no wave A by C-3.
+- **§1 degree of A / HA / B:** Abhi's A → HA → B (54,708.8 → 55,644.7 → 55,168.2) are 15M swings; there is no 1H swing between
+  54,708.80 and 56,065.50, so at 1H degree HA would be C's own end and the B window could not open before C. Question for Abhi: is
+  model C's A / B read at 15M degree (the setup degree) rather than 1H? Provisional: unchanged (1H, as Appendix A C-3 says).
+- **C-5 area set / lifecycle:** B ended inside 1H area 54,886–55,193, which the engine reads FLIPPED (a supply broken up on 09 Oct, then
+  tested as support; base 05 Oct, before A); Abhi reads a TESTED 1H demand. Provisional: a flipped area is not a C area (Q6).
+- Holds: B on lower FUT volume than A (12,863 vs 25,882 per bar); C ended just under the top of the Weekly area 54,891–56,099; the
+  earlier up move (07 Oct) has no model C entry (inside the older cycle, window closed — not by the C-4 death).
