@@ -38,11 +38,13 @@ def bars_15m(df1m, asof=None):
     return MC.frame(df1m, "15m", asof).reset_index(drop=True)
 
 
-def session_complete(day, last_bar_end):
-    """Session पूर्ण: त्याचा शेवटचा अपेक्षित 15M bar बंद (CAS दिवसांत 15:15 ला संपणारा, नाहीतर 15:30 ला)."""
+def session_complete(day, last_bar_end, cas_kept=False):
+    """Session पूर्ण: त्याचा शेवटचा अपेक्षित 15M bar बंद (CAS दिवसांत 15:15 ला संपणारा, नाहीतर 15:30 ला). `cas_kept` = data मध्ये CAS
+    candle ठेवलेली आहे (engine चा 15M ती वगळतो) ⇒ CAS दिवसाचा शेवटचा bar ती candle ⇒ 15:30 ला; नाहीतर कापलेल्या data वर दिवस एक bar
+    आधीच पूर्ण धरला जातो (look-ahead / truncation फरक)."""
     from opportunity_engine import cas as CAS
     day = pd.Timestamp(day).normalize()
-    cas_day = bool(CAS.cas_mask([day + pd.Timedelta(hours=15, minutes=15)]).iloc[0])
+    cas_day = not cas_kept and bool(CAS.cas_mask([day + pd.Timedelta(hours=15, minutes=15)]).iloc[0])
     need = day + (pd.Timedelta(hours=15, minutes=15) if cas_day else pd.Timedelta(hours=15, minutes=30))
     return pd.Timestamp(last_bar_end) >= need
 
