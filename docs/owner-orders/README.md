@@ -34,3 +34,5 @@ Decisions taken from orders go to DECISIONS.md (append only).
 | 27 | Deploy c3e9f0a (#368–#371) | done by Abhi: status ✅ clean; T-1 trail L22,761 reported (card had buttons, timeout ⇒ SHADOWED, no shadow trade in approval mode); T-5 audit fields: waiting for the read-only print | VPS |
 | 28 | "Ok go ahead" on the four open decisions | provisional defaults kept (DECISIONS 34); model C gallery pushed to trade-data | trade-data |
 | 29 | Chart Reading Report (daily Telegram reading per symbol, replaces the bare Visual-audit level count) | recorded (DECISIONS 35); report-first answered; build in its own PR; sample NIFTY + BANKNIFTY to Abhi before deploy | — |
+| 30 | "No questions, continue non-stop" | provisional defaults everywhere (logged in OPEN_QUESTIONS); continuing: Chart Reading Report build + sample, reading checks from the 6-month galleries (RC2 26 May, E4a never fired, channel-parallel E4b losses, MTF 9–11 Jun) | — |
+| 31 | visual_audit_symbols has BANKNIFTY | answered: a Vision dashboard save on 11 Oct 18:34 (same save: monthly budget 5→10, cap 0.1→0.3); not code / .env / cron; Abhi changes it on the Vision page if wanted | VPS setting |
