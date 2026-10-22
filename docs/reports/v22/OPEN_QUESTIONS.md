@@ -948,3 +948,9 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
   `transition_notified=1` and gets no outcome line / reply (its buttons stay; a press answers "आधीच ठरलं") — same as before T-1;
   (b) `vision/notify.post` reads and rewrites `tg_outcome` without a lock, so two processes posting different outcomes for one signal
   at the same instant can drop one line from the card history (each reply message is still sent).
+
+## T-3 model C (counter-trend C leg) — coverage questions (2026-10-22)
+- Q1–Q11 with their provisional defaults are in `docs/reports/model_c/COVERAGE.md` §4 (assumed — no answer needed unless Abhi objects).
+  The ones Abhi may want to see: Q1 (model C needs DState.trend DOWN; `rev` / Weekly fallback ⇒ none), Q2 (method P4 / Vision
+  `trend_side` vs DECISIONS 32 — model C only), Q6 (a flipped area inside A is not C-a; the C-f switch only labels), Q7
+  (`c_projections` default (1.0,), display only), Q8 (15M-only channels are not E4 (b) objects).
