@@ -177,11 +177,31 @@ def dow_events(raw, C, equal=None):
     return out
 
 
+def _range_left(seq, C, j, band):
+    """Evidence wording only (§1 MTF state; DECISIONS 16 — a range = price fails to make a new extreme on BOTH sides; §2 K / T4 — a
+    break is real only by a close beyond + a swing formed beyond): the state stays "range" while no swing has formed beyond the band,
+    but when a close since the newest swing (bars ≤ j) went beyond a band edge the detail says so, so a reader does not see "range"
+    with price already traded away from it. The newest such close decides the side. '' when none / no band. Comparison only."""
+    if not band or not seq or j is None:
+        return ""
+    lo = int(seq[-1].bar) + 1
+    if lo > j:
+        return ""
+    c = np.asarray(C[lo:j + 1], float)
+    up, dn = np.flatnonzero(c > float(band[1])), np.flatnonzero(c < float(band[0]))
+    if not len(up) and not len(dn):
+        return ""
+    above = len(up) and (not len(dn) or up[-1] > dn[-1])
+    edge = float(band[1]) if above else float(band[0])
+    return (f"; closed {'above its high' if above else 'below its low'} {edge:,.2f} since the last swing — no swing formed beyond it "
+            f"yet (not a confirmed break)")
+
+
 def swing_state(trend, seq, C, j, events, band=None):
     """The state word from a swing structure at frame bar j (seq = alternating swings known at j, C = closes, events = BOS / CHoCH known
     at j). Returns (state, side, detail)."""
     if trend == RANGE:
-        return RANGE_S, 0, "range" + (f" {band[0]:,.2f}–{band[1]:,.2f}" if band else "")
+        return RANGE_S, 0, "range" + (f" {band[0]:,.2f}–{band[1]:,.2f}" if band else "") + _range_left(seq, C, j, band)
     if trend not in (UP, DOWN):
         return UNCLEAR_S, 0, "fewer than two confirmed highs and lows"
     dirn = 1 if trend == UP else -1

@@ -218,3 +218,24 @@ def test_method_pure_no_dates_no_new_settings():
     assert "settings2" not in src and "c_hi" not in src
     from decision3 import settings as S3
     assert not any(k.startswith("mtf") for k in S3.DEFAULTS)
+
+
+def test_range_detail_says_when_price_closed_beyond_an_edge_without_a_swing_beyond():
+    """Reading check (BANKNIFTY 09–11 Jun, §1 MTF state / DECISIONS 16 / T4): a contracting 15M range (LH + HL) that price leaves by
+    closes above its high with no swing formed beyond stays "range" (not a confirmed break), but the detail says price closed above
+    the high since the last swing. Mirror below the low. Bars after j are never read (no look-ahead)."""
+    seq = [P("H", 130, 0), P("L", 100, 5), P("H", 125, 10), P("L", 105, 15)]          # LH + HL ⇒ RANGE 100–130
+    assert MS.trend_of(seq) == MS.RANGE
+    band = MS._band(seq)
+    assert band == (100.0, 130.0)
+    C = _closes_from([130, 100, 125, 105, 128], per_leg=5)                                # back inside: no close beyond
+    s, side, why = MS.swing_state(MS.RANGE, seq, C, len(C) - 1, [], band=band)
+    assert (s, side) == (MS.RANGE_S, 0) and "closed" not in why
+    Cu = np.r_[C, 131.0, 140.0]                                                           # closes above the high, no swing beyond
+    s, side, why = MS.swing_state(MS.RANGE, seq, Cu, len(Cu) - 1, [], band=band)
+    assert (s, side) == (MS.RANGE_S, 0) and "closed above its high 130.00" in why and "not a confirmed break" in why
+    assert "closed" not in MS.swing_state(MS.RANGE, seq, Cu, len(C) - 1, [], band=band)[2]   # at j before the closes: unchanged
+    Cd = np.r_[C, 99.0]                                                                   # mirror: a close below the low
+    assert "closed below its low 100.00" in MS.swing_state(MS.RANGE, seq, Cd, len(Cd) - 1, [], band=band)[2]
+    Cb = np.r_[C, 131.0, 99.0]                                                            # both sides ⇒ the newest close decides
+    assert "below its low" in MS.swing_state(MS.RANGE, seq, Cb, len(Cb) - 1, [], band=band)[2]

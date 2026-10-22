@@ -888,10 +888,41 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
 - **RC2 refined base (§2C):** the 26 May 09:30 down move (2,415 pts) had no entry — D area 97 waited "no refined base yet: no 15M
   turn inside its band". Check whether a refined base should come from the turn that starts the departure (short 15M history may
   contribute).
+  **Checked — not a bug against TA4 / RC2 (DECISIONS 10); no code change.** (a) The departure turn (15M swing high 26 May 09:30,
+  55,536.80, inside the D band 55,326.05–55,554.15) is a finest-structure (D1) swing only when confirmed: at 13:00, when price was
+  already ~250 pts below the band (close 55,076). From 13:00 the reader does use it as the refined base (55,459.00–55,536.80, wick to
+  body) — E1 correctly reads it as "a newer turn formed inside this visit" (E1 = the first arrival at a base known before) and no later
+  candle traded back into it (high after 13:00: 55,204.95), so E2 / E3 / E4 (a) had no trigger candle at the base (DECISIONS 22). Using
+  the turn before its confirmation would be look-ahead; using its D0 confirmation (09:45) would read a wiggle as a swing (§3 "small
+  wiggles inside a leg are not swings"). (b) The short 15M history is the real cause in the gallery: the replay's 15M data starts
+  13 Apr, and swings2 reads no swing until its σ has `sigma_sessions` sessions (data quality, not a reading rule) ⇒ no 15M swing of
+  any degree before 13 May (first pivots 13 May 09:15). This D area (born before the 15M window, `a:D-prior`) was tested 13 Apr, swept
+  28 Apr–4 May and touched 8 May — all before 13 May — so none of its earlier 15M turns could become the refined base (with a turn
+  known before 25 May, E1 would have been read at the first touch of this visit). The same warm-up explains the two empty gallery
+  groups (13 Apr–9 May: 0 entries). Live reads a 90-day 15M window (`engine3_m15_days`), so its first ~`sigma_sessions` sessions carry
+  no 15M turn either — for Abhi's eye only (a D / W area whose only 15M turns lie in that first part waits until a new turn forms
+  inside it, or a newer one is confirmed); no change without his word (RC2 is a research default, review after the replay).
 - **§3 E4a (K4 sweep):** E4a never fired in six months. Check the sweep read on charts.
 - **E4b on channel parallels (`|par`):** the worst losses (13 Jul MAE 919; 02 Sep MAE 669; 14 May broken area 271 MAE 684). Check
   whether a parallel's retest is a trade location per §2E.
 - **§1 MTF agreement / E3 CHoCH:** 09–11 Jun visits of areas 280 / 288 gave 6 stops out of 6 while the 15M read "trending up".
+  **Checked — the model gating follows the method; one evidence-wording fix (§1 MTF state).** (a) Which timeframes must agree: only
+  the Daily side (§2 b, P4: "trade in the direction of the higher-timeframe trend"; a correction does not change the Daily trend).
+  Daily was DOWN (correction in progress, protected LH 61,764.85), so these are pullback entries at 1H supply inside the Daily
+  correction — the side question is the already-logged "Daily DOWN for six months" item for Abhi's eye (§1 / §2B), not this one.
+  The 15M is the pullback timeframe (§2 d): a pullback into a bear-call area is by definition going up on 15M; the MTF state /
+  agreement is evidence only (T1 "never enters, blocks or grades"; CLAUDE.md "evidence is listed and never blocks"; DECISIONS 6).
+  (b) When the pullback shows weakness: §3 / §4 "LTF still trending against ⇒ no entry" is the 5M CHoCH after entry into the area,
+  which E3 requires — all three E3 entries had it (09 Jun 10:40 close below HL 54,639.45 after arrival 09:25; 10 Jun 12:35 below
+  55,419.20 after a sweep of 55,534.65; 11 Jun 13:10 below 55,470.15 after a sweep of 55,600.15). E1 (Aggressive) is the first touch
+  of the refined base without LTF confirmation by Abhi's own model definition (21 Oct, DECISIONS 6) — its 5M read "trending up" on
+  10 Jun 10:45 is listed, never a gate. (c) The 6 / 6: the 1H impulse up kept running (1H HL 53,843.30 → the Daily correction
+  extended to 55,600+); P5 / P7 — a valid read can lose; no rule from one cluster. (d) **Evidence misread fixed (§1 MTF state;
+  DECISIONS 16 range = price fails to make a new extreme on BOTH sides; T4 a break is real only by a close + a swing beyond):** on
+  09–10 Jun the 15M read "range 53,843.30–54,865.50" (D1: LH 54,455.20 + HL 53,949.90) while price closed above 54,865.50 on 09 Jun
+  and traded 600 pts above it with no D1 swing formed beyond. The state stays "range" (no confirmed break), but the detail now says
+  "closed above its high 54,865.50 since the last swing — no swing formed beyond it yet (not a confirmed break)"
+  (`mtf_state._range_left`, wording only; entries unchanged; tests/test_pa_mtf_state.py).
 - **For Abhi's eye (§1 / §2B, not logged as a bug):** all 69 entries are bear calls — Daily DOWN for six months (protected LH 58,706
   never taken); the 52,877 → 58,673 up leg read as "correction in progress"; the largest move with no entry is up 3,961 pts.
 
