@@ -18,4 +18,5 @@ Decisions taken from orders go to DECISIONS.md (append only).
 | 11 | Flipped area broken again ⇒ DEAD (no E4b on it) + one E4b per place (duplicate E4b) | code + tests + 07–21 Oct before / after done; Abhi: merge now + VPS block (overrides the after-close timing for this deploy); merge on green CI + independent review | branch claude/trigger-touches-refined-base |
 | 12 | Stop: report (docs/reports/owner/STATUS_REPORT.md), commit, merge, no new jobs | done; #367 merges on green CI; VPS block in the report |
 | 13 | Remaining-work md file (handoff) + stop (credit limit) | handoff given to Abhi; new session resumed on "ok go ahead" | HANDOFF.md (upload) |
-| 14 | Handoff step 1: #367 CI fail (Daily swing confirmed only from a completed day) | in progress | branch claude/hopeful-gates-hf186c (on #367 head) |
+| 14 | Handoff step 1: #367 CI fail (Daily swing confirmed only from a completed day) | done: full suite green (5981 passed) on 7e9e8b7; flip-dead / E4b independent review APPROVE; #367 not merged yet | branch claude/hopeful-gates-hf186c (on #367 head) |
+| 15 | T-1: naked-leg PAPER card — premium paid + dashboard exit rules in words, no ₹0 target / R:R NA (display only) | done + tests (tests/test_paper_naked_card.py); "T-1" not found in the repo — provisional: this item itself | paper/watch.py, branch claude/hopeful-gates-hf186c |

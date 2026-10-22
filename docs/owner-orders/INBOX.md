@@ -93,3 +93,7 @@ repo read kra, kontihi file delete kinwa change karu nka
 ---
 ## 22 Oct — new session: go ahead (with the handoff: fix the #367 CI fail, review, merge, VPS block, owner-orders)
 ok go ahead
+
+---
+## 22 Oct — naked-leg PAPER card (add to T-1)
+Add to T-1: the PAPER entry card shows "target ₹0 · R:R NA" and "net credit ₹-…" for a NAKED leg (paper/watch.py) because naked exits run on the dashboard's spot % / premium-points / TSL / EOD settings, not a ₹ level. Show for naked legs: "premium paid ₹…", the active exit rules in words with their dashboard values (SL, TSL, target as spot % / points, EOD exit), and no ₹0 target / R:R NA. Display only; no exit logic change; tests.
