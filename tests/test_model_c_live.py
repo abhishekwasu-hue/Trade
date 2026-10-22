@@ -44,9 +44,19 @@ def test_model_c_switches_default_off_and_each_sub_way_is_its_own_switch():
     assert got == {"model_c": "on", "model_c_subs": ["C-a", "C-e"], "c_window": "b_and_ha_retest", "c_projections": (1.0, 1.618)}
     assert L.v22_settings({}) is None                                       # nothing set ⇒ V22 on decision3's defaults (model C off)
     assert L.v22_settings(on)["model_c"] == "on"
-    for bad in ({**on, "engine3_c_window": "c_only"}, {**on, "engine3_c_projections": "x"}):
-        with pytest.raises(L.SettingError):
-            L.v22_settings(bad)
+    with pytest.raises(L.SettingError):
+        L.v22_settings({**on, "engine3_c_window": "c_only"})
+
+
+def test_a_bad_projection_text_never_stops_the_engine(capsys):
+    """Review (LOW 3): c_projections is display only — an empty piece is skipped, an unreadable value falls back to the default with a
+    warning; the engine settings still load (no SettingError, every other signal unaffected)."""
+    on = {"engine3_model_c_on": True, "engine3_model_c_a_on": True}
+    assert L.v22_settings({**on, "engine3_c_projections": "1, 1.618,"})["c_projections"] == (1.0, 1.618)
+    for bad in ("x", "1, -2", ",", "0"):
+        got = L.v22_settings({**on, "engine3_c_projections": bad})
+        assert got["model_c"] == "on" and "c_projections" not in got, bad
+    assert "unreadable" in capsys.readouterr().out
 
 
 def test_model_c_entry_skipped_while_its_switch_is_off(es, opened):
@@ -137,11 +147,65 @@ def test_vision_audit_gets_the_model_c_facts_and_stays_advisory():
     txt = EA.facts_text(_c_sig())
     assert "Model C (C-a, owner decision" in txt and "Trend side for this model C signal passes when" in txt
     assert "origin O 24,800.00" in txt and "HA 25,210.00" in txt
-    assert "Model C" not in EA.facts_text(engine_sig()) and EA.reading(engine_sig())["model_c"] is None
-    assert "model C" in EA.SYSTEM_PROMPT and "never a breakout entry" in EA.SYSTEM_PROMPT
-    for text in (EA.SYSTEM_PROMPT, txt):
+    assert "Model C" not in EA.facts_text(engine_sig()) and "model_c" not in EA.reading(engine_sig())
+    assert "model C" in EA.MODEL_C_SYSTEM and "never a breakout entry" in EA.MODEL_C_SYSTEM
+    for text in (EA.SYSTEM_PROMPT, EA.MODEL_C_SYSTEM, txt):
         assert not RS._DAY_RE.search(text.lower()), RS._DAY_RE.search(text.lower())
         assert not FORBIDDEN.search(text) and not CLOCK.search(text)
-    rules = re.sub(r"\bE[1-4]\b|\b(15M|1H|5M)\b", "", EA.SYSTEM_PROMPT)
-    assert not re.search(r"\d", rules)
+    for sp in (EA.SYSTEM_PROMPT, EA.MODEL_C_SYSTEM):
+        rules = re.sub(r"\bE[1-4]\b|\b(15M|1H|5M)\b", "", sp)
+        assert not re.search(r"\d", rules)
     assert EA.KEYS[0] == "trend_side" and EA.VERDICTS == ("agree", "gray", "disagree")   # the checklist / verdict shape unchanged
+
+
+# the pre-change engine audit (git f25f04d): its system prompt (sha256) and version — every non-C engine card keeps them exactly
+PRE_SYSTEM_SHA = "12aaa57f7e7c69420cde0b5766825c49884cbaa1d64915c29de1eba4a6260f26"
+
+
+def test_non_c_engine_cards_keep_the_pre_change_prompt_and_version():
+    """Review (MEDIUM 1): switch OFF / any Daily-side card ⇒ the audit request's system prompt and the prompt version are byte-identical to
+    the pre-change code; only a model C card gets the second system block and the "+c" version (audit, validate, reuse lookup)."""
+    import hashlib
+    from tests.test_vision_engine_audit import Fake, ok_reply
+    from tests.test_vision_v0 import msg
+    assert hashlib.sha256(EA.SYSTEM_PROMPT.encode("utf-8")).hexdigest() == PRE_SYSTEM_SHA and EA.PROMPT_VERSION == "engine_check_v1"
+    plain, csig = engine_sig(), _c_sig()
+    p = EA.build_request(b"png", plain, "m")
+    assert p["system"] == [{"type": "text", "text": EA.SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
+    assert EA.prompt_version(plain) == "engine_check_v1" and "model_c" not in EA.reading(plain)
+    pc = EA.build_request(b"png", csig, "m")
+    assert pc["system"][0] == p["system"][0] and pc["system"][1]["text"] == EA.MODEL_C_SYSTEM and len(pc["system"]) == 2
+    assert EA.prompt_version(csig) == "engine_check_v1+c"
+    for sig, want in ((plain, "engine_check_v1"), (csig, "engine_check_v1+c")):
+        res = EA.audit(Fake([msg(ok_reply())]), b"png", sig, "m")
+        assert res["prompt_version"] == want and res["audits"][0]["engine_check"] == want, res.get("error")
+    assert EA.validate(ok_reply())[0]["engine_check"] == "engine_check_v1"
+
+
+def test_worker_reuse_lookup_uses_the_cards_own_prompt_version(monkeypatch):
+    """A model C card reuses only a model C audit (and a Daily-side card only an engine_check_v1 one)."""
+    import inspect
+    from vision import worker as VW
+    src = inspect.getsource(VW)
+    assert "EA.prompt_version(" in src and "pv = EA.PROMPT_VERSION" not in src
+    tags = _c_sig()["tags"]
+    assert EA.prompt_version({"tags": tags}) == "engine_check_v1+c" and EA.prompt_version({"tags": engine_sig()["tags"]}) == "engine_check_v1"
+
+
+def test_paper_watch_labels_model_c_positions_and_links_their_own_card(monkeypatch):
+    """Review (LOW 7): a model C position (ENGINE_C_A_E2) keeps its model label and its own Vision card link (not a Daily-side E2's)."""
+    from paper import watch as PW
+    from vision import gate as VG
+    assert PW.trade_model({"entry_reason_tag": "ENGINE_C_A_E2"}) == "C-a · E2"
+    assert PW.trade_model({"entry_reason_tag": "ENGINE_E2"}) == "E2" and PW.trade_model({"entry_reason_tag": "ENGINE_SIGNAL"}) is None
+    assert PW.trade_model({"entry_reason_tag": "ENGINE_C_"}) is None
+    assert PW._model_label("C-a · E2") == "C · E2 — Confirmation (C-a)" and PW._model_label("E2") == "E2 — Confirmation"
+    rows = [{"signal_id": "daily", "created_at": "2026-10-06 10:40:00", "tags": {"entry_model": "E2"}},
+            {"signal_id": "c", "created_at": "2026-10-06 10:41:00", "tags": {"entry_model": "E2", "entry_family": "C",
+                                                                               "entry_sub_model": "C-a"}}]
+    monkeypatch.setattr("vision.store.rows_with_status", lambda *a, **k: rows)
+    monkeypatch.setattr(VG, "_row_tags", lambda r: r["tags"])
+    t = "2026-10-06 10:45:00"
+    assert PW.vision_link(BOT, SYM, t, model="C-a · E2")["vision_signal_id"] == "c"
+    assert PW.vision_link(BOT, SYM, t, model="E2")["vision_signal_id"] == "daily"
+    assert PW.vision_link(BOT, SYM, t, model="C-b · E2") == {}

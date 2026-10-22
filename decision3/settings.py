@@ -392,7 +392,8 @@ DEFAULTS.update({
                                              # engine3_model_c_<x>_on switches, default OFF, pass their subset)
     "c_a_nature": "impulse",                 # C-3: wave A must read impulse (legs_compare vs its neighbours); any = what-if
     "c_window": "b_only",                    # C-6: entries only while B is in progress (before any close beyond HA); b_and_ha_retest = + the
-                                             # first return to HA (forced for C-e objects); c_pullbacks = C's own pullbacks (what-if only)
+                                             # first return to HA for the C-e sub-way ONLY (C-e on forces it; without C-e it reads as
+                                             # b_only); c_pullbacks = + C's own pullbacks after the HA break bar (what-if only)
     "c_projections": (1.0,),                 # C-7 (display / context only): C-vs-A projection ratios from B's end (Q7: C = A)
 })
 REGISTER.update({
@@ -406,8 +407,9 @@ REGISTER.update({
     "c_a_nature": ("impulse", "impulse / any", "Abhi नियम", "Appendix A C-3: wave A's nature by the existing leg reader (legs_compare: "
                    "bodies / overlap / FUT volume vs its neighbouring legs); impulse = default (a zigzag A is a five), any = what-if"),
     "c_window": ("b_only", "b_only / b_and_ha_retest / c_pullbacks", "Abhi नियम", "Appendix A C-6 / C-11 note: b_only = model C entries "
-                 "only while B is in progress (no close beyond HA); b_and_ha_retest = + the first return to HA (C-e; forced for C-e "
-                 "objects when C-e is on); c_pullbacks = C's own pullbacks after HA (what-if only)"),
+                 "only while B is in progress (no close beyond HA); b_and_ha_retest = + the first return to HA for the C-e sub-way "
+                 "ONLY (provisional: the C-e switch ON forces it — Appendix A; without C-e it reads as b_only); c_pullbacks = + C's own "
+                 "pullbacks from the bar after the HA break (never the break candle; what-if only)"),
     "c_projections": ((1.0,), "ratios (display / context only)", "setting", "Appendix A C-7: the C-vs-A projection band B_end ± r × "
                       "(HA − O) on the signal / chart — context, never a gate, an entry or an exit (Q7: (1.0,) = C equals A; Abhi adds "
                       "ratios on the dashboard)"),

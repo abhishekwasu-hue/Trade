@@ -743,7 +743,11 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
         pv = SA.PROMPT_VERSION                                            # review: engine rows reuse only engine audits (fewer paid calls)
         if VS._engine_tag(row.get("setup_json")) and s.get("vision_engine_audit", "engine") == "engine":
             from . import engine_audit as EA
-            pv = EA.PROMPT_VERSION
+            try:                                                          # model C cards (DECISIONS 32) reuse only model C audits
+                tg = (json.loads(row.get("setup_json") or "{}") or {}).get("tags") or {}
+            except (ValueError, TypeError, AttributeError):
+                tg = {}
+            pv = EA.prompt_version({"tags": tg if isinstance(tg, dict) else {}})
         prev = (VS.find_reusable(row, int(s["reuse_window_min"]), path=path, prompt_version=pv)
                 if int(s["reuse_window_min"]) > 0 else None)
         if prev is not None:

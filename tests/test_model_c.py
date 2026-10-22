@@ -518,3 +518,92 @@ def test_real_readers_read_the_cycle_and_the_c_areas(real_v):
     ez = MC.end_zone(V, t, c)
     assert ez["first_htf_area"] is None or float(ez["first_htf_area"]["lo"]) > c["HA"]["price"]
     assert MC.evidence(V, t, c)["b_volume_vs_a"] == "lower"
+
+
+# ------------------------------------------------------------------------------------------------ independent review fixes (PR #370)
+def test_ha_area_is_read_as_known_at_t_no_look_ahead():
+    """Review (MEDIUM 2): Levels builds the whole series, so HA's area is only a level born by t and alive at t; a level with the same
+    base bar born later (e.g. a later 'd' pair on HA's swing) is never used before its birth; when HA's own birth fell inside an alive
+    band (lineage only — Level.inside_bases), that band is the area at HA from the merge bar on."""
+    later = NS(id=5, tf="1H", base_bar=21, role0=LV.RES, born_bar=40, dead_bar=None, lo=129.5, hi=130.2, births=["d"],
+               band_at=lambda u: (129.5, 130.2))
+    host = NS(id=3, tf="1H", base_bar=8, role0=LV.RES, born_bar=10, dead_bar=None, lo=128.8, hi=130.4, births=["a:D2"],
+              inside_bases=[(23, 21, LV.RES)], band_at=lambda u: (128.8, 130.4))
+    dead = NS(id=6, tf="1H", base_bar=21, role0=LV.RES, born_bar=23, dead_bar=30, lo=129.0, hi=130.2, band_at=lambda u: (129.0, 130.2))
+    V = NS(levels=NS(L=[later, host, dead]))
+    assert MC._ha_area(V, 22, 21, 1) is None                              # nothing known yet
+    assert MC._ha_area(V, 25, 21, 1)["id"] == 6                           # HA's own area (born at 23)
+    a = MC._ha_area(V, 35, 21, 1)                                         # 6 died at 30; 5 is not born yet ⇒ the host band (lineage)
+    assert a["id"] == 3 and "lineage" in a["how"]
+    assert MC._ha_area(V, 41, 21, 1)["id"] == 5                           # from its birth on, the band born at HA's swing wins
+    assert MC._ha_area(V, 35, 21, -1) is None                             # the mirror role only
+
+
+def test_real_levels_record_a_birth_inside_an_alive_band():
+    """Levels._born: a birth wholly inside an alive same-role band is lineage only — the additive inside_bases keeps its base bar."""
+    lv = LV.Levels.__new__(LV.Levels)
+    lv.s, lv.L = S3.load({}), []
+    host = lv._born(10, LV.RES, 128.0, 131.0, "a:D2", 130.5, base_bar=8)
+    same = lv._born(23, LV.RES, 129.0, 130.2, "a:D2", 130.2, base_bar=21)
+    assert same is host and host.inside_bases == [(23, 21, LV.RES)] and host.base_bar == 8 and len(lv.L) == 1
+    assert MC._ha_area(NS(levels=lv), 23, 21, 1)["id"] == host.id and MC._ha_area(NS(levels=lv), 22, 21, 1) is None
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bull_put", "bear_call_mirror"])
+def test_c_e_object_unchanged_by_a_later_level_at_ha_truncation(mirror):
+    """The C-e read at the first return (35) with a later-born level on HA's swing (born 44, listed first) is the same as on data cut
+    at 35 (where that level does not exist yet)."""
+    rows = _rows()[:22] + AFTER_HA
+    areas = [(2, 129.6, 130.2, 21, LV.RES, FL.ACTIVE, 44)] + C_AREA + [(1, HA_BAND[0], HA_BAND[1], 21, LV.RES, FL.BROKEN, 23)]
+    lo, hi = _band(*HA_BAND, mirror)
+    br = {"id": 1, "lo": lo, "hi": hi, "role": LV.SUP if mirror else LV.RES, "state": FL.BROKEN, "break_dir": -1 if mirror else 1,
+          "broken_at": 33, "tf": "1H", "trade_location": True, "sweeps": 0, "births": ["a:D2"], "fresh": False, "confluence": []}
+    snap = lambda t: [br] if t >= 33 else []                                # noqa: E731
+    s = {"c_window": "b_and_ha_retest"}
+    d = _dir(mirror)
+    V = build(rows, fine=HA_FINE, areas=areas, mirror=mirror, s=s, snapshot=snap)
+    Vk = build(rows[:36], d2=[x for x in D2 if x[3] <= 35], fine=[x for x in HA_FINE if x[3] <= 35],
+               areas=[a for a in areas if a[6] <= 35], mirror=mirror, s=s, snapshot=snap)
+    assert MC.cycle(V, 35, d)["ha_area"]["id"] == 1 == MC.cycle(Vk, 35, d)["ha_area"]["id"]
+    assert _sig(V, 35, d) == _sig(Vk, 35, d) and _sig(V, 35, d)[1]
+
+
+def test_attach_rolls_back_when_c_f_fails(monkeypatch):
+    """Review (LOW 4): a model C error after the C entries were read leaves the row's entries exactly as they were (fail closed)."""
+    rows = _rows()
+    V = build(rows, areas=C_AREA)
+    t = min(fired(V, range(len(rows)), 1))
+    daily = {"model": "E1", "direction": -1, "visit_id": "9@x", "area": {"lo": 140.0, "hi": 141.0}}
+    row = {"entries": [daily]}
+    MC.attach(V, t, row)
+    assert len(row["entries"]) > 1 and row["entries"][0] == daily and "error" not in row["model_c"]
+
+    def boom(*a, **k):
+        raise RuntimeError("c-f")
+    monkeypatch.setattr(MC, "tag_cf", boom)
+    row = {"entries": [daily]}
+    MC.attach(V, t, row)
+    assert row["entries"] == [daily] and row["entries"][0] is daily and "c-f" in row["model_c"]["error"]
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bull_put", "bear_call_mirror"])
+def test_c_pullbacks_window_never_opens_on_the_break_candle(mirror):
+    """Review (LOW 5): c_pullbacks (what-if) opens from the bar AFTER the first close beyond HA — never on the break candle (H2)."""
+    rows, V = _ha_case(mirror, s={"c_window": "c_pullbacks", "model_c_subs": ["C-a"]})
+    d = _dir(mirror)
+    assert not MC.cycle(V, 27, d)["windows"]["cp"] and MC.cycle(V, 28, d)["windows"]["cp"]
+    assert 27 not in fired(V, range(len(rows)), d)
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bull_put", "bear_call_mirror"])
+def test_b_and_ha_retest_without_c_e_reads_as_b_only(mirror):
+    """Review (LOW 6, provisional — REGISTER): b_and_ha_retest opens the HA first return for the C-e sub-way only; without C-e the
+    entries equal b_only's and the HA-return window stays shut."""
+    no_e = [x for x in S3.MODEL_C_SUBS if x != "C-e"]
+    d = _dir(mirror)
+    rows, Vb = _ha_case(mirror, s={"model_c_subs": no_e})
+    _, Vr = _ha_case(mirror, s={"model_c_subs": no_e, "c_window": "b_and_ha_retest"})
+    sig = lambda g: {t: [e["key"] for e in v] for t, v in g.items()}       # noqa: E731
+    assert sig(fired(Vb, range(len(rows)), d)) == sig(fired(Vr, range(len(rows)), d))
+    assert not any(MC.cycle(Vr, t, d)["windows"]["e"] for t in range(len(rows)))
+    assert "C-e sub-way ONLY" in S3.REGISTER["c_window"][3]

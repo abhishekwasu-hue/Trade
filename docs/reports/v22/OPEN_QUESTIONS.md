@@ -978,3 +978,10 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
   mixed / NA on a visit's first bars, E1 cannot fire in that visit (the window starts later) — E2 / E3 / E4 can (Q9).
 - **Hidden divergence pair (coverage C-8).** The context line reads `rsi_hidden.read_hidden_divergence(V, t, d)` as it is; the explicit
   (O, B-low) pair frame was not added (it needs a real-data case to compare; step 3 replay).
+- **Review fixes (PR #370).** The Vision engine audit keeps `SYSTEM_PROMPT` and `engine_check_v1` byte-identical for every non-C card;
+  only a model C card gets a second system block (`MODEL_C_SYSTEM`) and the version `engine_check_v1+c` (audit, validate and the
+  worker's reuse lookup). HA's area is read as known at t (born by t, alive at t); when HA's own birth fell inside an alive band
+  (lineage only, `Level.inside_bases`), that band is the area at HA; no such level ⇒ no C-e object (C-e waits; logged here as the
+  provisional reading). `c_window = b_and_ha_retest` opens the HA first return for the C-e sub-way only (without C-e it reads as
+  b_only). c_pullbacks opens from the bar after the HA break. An unreadable `engine3_c_projections` falls back to the default with a
+  warning (display only — never stops the engine).

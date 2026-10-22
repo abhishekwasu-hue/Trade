@@ -230,24 +230,48 @@ def _cycle(V, t, d):
         return out
     if win == "c_pullbacks":
         back = [e for e in evs if e["type"] == "CHoCH" and int(e["dir"]) == -d and hc < int(e["bar"]) <= t and same(e["bar"])]
-        out["windows"]["cp"] = not back
+        out["windows"]["cp"] = bool(t > hc and not back)                 # from the bar AFTER the break of HA (never the break candle)
     ha_area = _ha_area(V, t, hb, d)
     out["ha_area"] = ha_area
-    if ha_area is not None and ("C-e" in subs_on(V) or win == "b_and_ha_retest"):
+    if ha_area is not None and "C-e" in subs_on(V):                     # the HA first return is the C-e sub-way's window only (Appendix
+                                                                           # A: C-e ON ⇒ b_and_ha_retest); without C-e it reads as b_only
         r = _first_return(V, t, hc, ha_area, d, k0)
         out["ha_return"] = r
         out["windows"]["e"] = bool(r and r["start"] is not None and r.get("end_known") is None)
     return out
 
 
+def _known_alive(L, t):
+    """The level exists at t: born by t and not dead at t (Levels builds the whole series — never a level from after t)."""
+    if int(getattr(L, "born_bar", 0) or 0) > t:
+        return False
+    alive = getattr(L, "alive", None)
+    return bool(alive(t)) if callable(alive) else getattr(L, "dead_bar", None) is None or int(L.dead_bar) > t
+
+
 def _ha_area(V, t, hb, d):
-    """HA's own 1H area: the area born at HA's swing (base_bar = HA's bar, the role against the minor direction) ⇒ {id, lo, hi} at t."""
+    """HA's own 1H area as known at t ⇒ {id, lo, hi, how} or None. Only levels born by t and alive at t (no look-ahead):
+      • the area built from HA's swing (Level.base_bar = HA's bar, the role against the minor direction; an a:D2 birth first);
+      • else the alive same-role band HA's own birth fell inside (Levels._born: lineage only, the band unchanged — recorded in the
+        additive Level.inside_bases as (known bar, base bar, role)) — that band is the area at HA, as known at t.
+    None ⇒ no C-e object (logged in OPEN_QUESTIONS)."""
     want = "resistance" if d > 0 else "support"
+    own, inside = [], []
     for L in getattr(V.levels, "L", []):
-        if getattr(L, "base_bar", None) == hb and getattr(L, "role0", None) == want and getattr(L, "tf", "1H") == "1H":
-            lo, hi = L.band_at(t) if hasattr(L, "band_at") else (L.lo, L.hi)
-            return {"id": L.id, "lo": round(float(lo), 2), "hi": round(float(hi), 2)}
-    return None
+        if getattr(L, "tf", "1H") != "1H" or not _known_alive(L, t):
+            continue
+        if getattr(L, "base_bar", None) == hb and getattr(L, "role0", None) == want:
+            own.append(L)
+        elif any(int(b) <= t and int(bb) == hb and r == want for b, bb, r in getattr(L, "inside_bases", None) or ()):
+            inside.append(L)
+    pick = min(own, key=lambda L: (0 if (getattr(L, "births", None) or ["a:D2"])[0] == "a:D2" else 1, int(L.born_bar)), default=None)
+    how = "born at HA's swing"
+    if pick is None and inside:
+        pick, how = min(inside, key=lambda L: int(L.born_bar)), "the band HA's swing fell inside (lineage)"
+    if pick is None:
+        return None
+    lo, hi = pick.band_at(t) if hasattr(pick, "band_at") else (pick.lo, pick.hi)
+    return {"id": pick.id, "lo": round(float(lo), 2), "hi": round(float(hi), 2), "how": how}
 
 
 def _first_return(V, t, hc, band, d, k0):
@@ -508,11 +532,12 @@ def attach(V, t, row):
         info.update(direction=d, cycle=brief(cyc), entries=len(ents),
                     armed=[{k: a.get(k) for k in ("object", "area_id", "lo", "hi", "visit_id", "disarmed")} |
                            {"models": {m: (x or {}).get("status") for m, x in (a.get("models") or {}).items()}} for a in armed])
-        row["model_c"] = info
-        if ents:
-            row["entries"] = list(row.get("entries") or []) + ents
+        base = [dict(e) for e in row.get("entries") or []]                # C-f labels copies: the row changes only when all succeeds
         if "C-f" in sub:
-            tag_cf(V, t, row, cyc)
+            tag_cf(V, t, {"entries": base}, cyc)
+        if ents or "C-f" in sub:
+            row["entries"] = base + ents
+        row["model_c"] = info
     except Exception as exc:                                               # noqa: BLE001 — model C never breaks the Daily side
         log.warning("decision3 model C failed at bar %s: %s", t, exc, exc_info=True)
         row["model_c"] = {"on": True, "error": f"{type(exc).__name__}: {exc}"[:200], "entries": 0}

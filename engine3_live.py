@@ -581,14 +581,27 @@ def model_c_settings(s=None):
         v = s.get(key)
         if v is not None and str(v).strip():
             out[v22] = str(v).strip().lower()
-    pr = s.get("engine3_c_projections")
-    if pr is not None and (not isinstance(pr, str) or pr.strip()):
-        try:
-            out["c_projections"] = tuple(float(x) for x in (pr.split(",") if isinstance(pr, str) else pr))
-        except (TypeError, ValueError):
-            raise ValueError(f"engine3_c_projections = {pr!r} — ratios separated by commas (display only)") from None
+    pr = c_projections_of(s.get("engine3_c_projections"))
+    if pr is not None:
+        out["c_projections"] = pr
     MDC.validate({**S3.DEFAULTS, **out})
     return out
+
+
+def c_projections_of(v):
+    """Dashboard `engine3_c_projections` (display / context only, C-7) ⇒ a tuple of positive ratios or None (decision3's default).
+    Empty pieces are skipped ("1, 1.618," ⇒ (1.0, 1.618)); an unreadable value never stops the engine — a warning, then the default."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    try:
+        parts = [x for x in (v.split(",") if isinstance(v, str) else v) if not (isinstance(x, str) and not x.strip())]
+        out = tuple(float(x) for x in parts)
+        if not out or not all(math.isfinite(r) and r > 0 for r in out):
+            raise ValueError
+        return out
+    except (TypeError, ValueError):
+        print(f"⚠️ engine3_c_projections = {v!r} unreadable (ratios separated by commas, display only) ⇒ the default is used")
+        return None
 
 
 def v22_settings(s=None):

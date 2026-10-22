@@ -74,6 +74,8 @@ class Level:
     base_bar: int = None                            # additive (model C, T-3): the 15M bar of the base the area was built from — the swing's
                                                     # extreme bar (a:D2 / d), the BOS-origin base 1H candle's first 15M bar (b); None = a
                                                     # Daily / Weekly / prior band. Read only by decision3/model_c.py (never in snapshot)
+    inside_bases: list = field(default_factory=list)  # additive (model C): [(known bar, base bar, role)] of births that fell INSIDE this
+                                                      # band (lineage only) — read only by model_c._ha_area (never in snapshot)
 
     def provisional(self, t):
         """PF-2: the band's min width at t is the provisional one (born / merged while σ_1H was missing, σ_1H not known yet)."""
@@ -244,6 +246,8 @@ class Levels:
                     if birth not in o.births:
                         o.births.append(birth)
                     o.lineage.append({"bar": int(t), "inside": birth, "band": (round(float(lo), 2), round(float(hi), 2))})
+                    if base_bar is not None:
+                        o.inside_bases.append((int(t), int(base_bar), role))
                     return o
         L = Level(len(self.L), role, float(lo), float(hi), int(t), [birth], anchor, tf=tf,
                   base_bar=None if base_bar is None else int(base_bar))

@@ -70,9 +70,22 @@ def _orders(db_path, trade_id):
 
 
 def trade_model(t):
-    """Engine entry model of a PAPER trade (live_trades.entry_reason_tag "ENGINE_E1" ⇒ "E1"), else None."""
+    """Engine entry model of a PAPER trade (live_trades.entry_reason_tag "ENGINE_E1" ⇒ "E1"; model C, DECISIONS 32: "ENGINE_C_A_E2" ⇒
+    "C-a · E2" — paper/engine_entry.model_tag / tag_slot), else None."""
     tag = str((t or {}).get("entry_reason_tag") or "")
+    if tag.startswith("ENGINE_C_"):
+        parts = tag[len("ENGINE_C_"):].split("_")
+        return f"C-{parts[0].lower()} · {parts[1].upper()}" if len(parts) == 2 and parts[0] and parts[1].upper().startswith("E") else None
     return tag[len("ENGINE_"):] if tag.startswith("ENGINE_E") else None
+
+
+def _model_parts(model):
+    """trade_model ⇒ (model "E2", family "C" | None, sub-model "C-a" | None)."""
+    m = str(model or "")
+    if " · " in m:
+        sub, e = m.split(" · ", 1)
+        return e, "C", sub
+    return m, None, None
 
 
 def vision_link(bot, symbol, entry_time, vpath=None, window_min=15, model=None):
@@ -84,8 +97,12 @@ def vision_link(bot, symbol, entry_time, vpath=None, window_min=15, model=None):
         t1 = pd.Timestamp(entry_time)
         best = None
         for r in VS.rows_with_status(("EXECUTED",), vpath, 5, bot=bot, symbol=str(symbol).upper()):
-            if model is not None and VG._row_tags(r).get("entry_model") != model:
-                continue
+            if model is not None:
+                tg = VG._row_tags(r)
+                m, fam, sub = _model_parts(model)
+                if tg.get("entry_model") != m or (str(tg.get("entry_family") or "").upper() or None) != fam or \
+                        (fam == "C" and tg.get("entry_sub_model") != sub):
+                    continue
             ex = pd.Timestamp(r.get("executed_at") or r.get("decided_at") or r["created_at"])
             if t1 - pd.Timedelta(minutes=window_min) <= ex <= t1 + pd.Timedelta(minutes=1) and (best is None or ex > best[0]):
                 best = (ex, r)
@@ -441,7 +458,8 @@ def on_entry(t, orders, send=None, jpath=None, tag="", ss_settings=None, engine_
 def _model_label(model):
     try:
         import engine_signal as ES
-        return ES.model_label({"model": model})
+        m, fam, sub = _model_parts(model)
+        return ES.model_label({"model": m, "family": fam, "sub_model": sub})
     except Exception:                                                    # noqa: BLE001
         return str(model)
 
