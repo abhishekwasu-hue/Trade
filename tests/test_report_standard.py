@@ -145,3 +145,80 @@ def test_malformed_inputs_raise_the_standard_error():
     c = card(); c.pop("entry_key")
     with pytest.raises(RS.ReportStandardError, match="entry_key"):
         RS.validate_card(c)
+
+
+# ------------------------------------------------------------------------------------------------ READING GALLERY (kind="reading_only")
+def reading(fv="missing", model="E1", **kw):
+    items = {k: RS.FUT_MISSING if fv == "missing" else "FUT: 1.4× the approach leg" for k in RS.VOLUME_ITEMS}
+    items["e2"] = "E2 — " + RS.FUT_MISSING if fv == "missing" else "E2 read on FUT volume"
+    m = chart()
+    m["layers"]["fut_volume_pane"]["note"] = RS.FUT_MISSING if fv == "missing" else "near-month FUT volume"
+    bad = RS.group_data_status(["2026-09-22"], [])
+    r = report(entries=[card(model=model, fut_volume=fv, volume_items=items)], charts={"E1@a": m}, data_status=bad,
+               banner=RS.READING_BANNER, running_total_label="Running per-model table — " + RS.RUNNING_LABEL)
+    r.update(kw)
+    return r
+
+
+def test_reading_only_passes_with_banner_marks_and_label_even_when_not_testable():
+    assert RS.validate_report(reading(), kind="reading_only")
+    assert RS.validate_report(reading(fv="present", model="E2"), kind="reading_only")   # a FUT session: E2 read on FUT
+    with pytest.raises(RS.ReportStandardError, match="not testable"):                   # the replay kind still refuses it
+        RS.validate_report(reading())
+    with pytest.raises(RS.ReportStandardError, match="unknown report kind"):
+        RS.validate_report(reading(), kind="reading")
+
+
+@pytest.mark.parametrize("key,val,msg", [("banner", "", "banner"), ("banner", "READING GALLERY", "banner"),
+                                         ("running_total_label", "Running total", "without volume evidence"),
+                                         ("running_total_label", None, "without volume evidence")])
+def test_reading_only_requires_banner_and_running_label(key, val, msg):
+    with pytest.raises(RS.ReportStandardError, match=msg):
+        RS.validate_report(reading(**{key: val}), kind="reading_only")
+
+
+@pytest.mark.parametrize("item", RS.VOLUME_ITEMS)
+def test_reading_only_every_volume_item_marked(item):
+    r = reading()
+    r["entries"][0]["volume_items"][item] = "✗"
+    with pytest.raises(RS.ReportStandardError, match=item):
+        RS.validate_report(r, kind="reading_only")
+    r["entries"][0]["volume_items"].pop(item)
+    with pytest.raises(RS.ReportStandardError, match="not stated"):
+        RS.validate_report(r, kind="reading_only")
+
+
+def test_reading_only_fut_pane_e2_and_source():
+    r = reading()
+    r["charts"]["E1@a"]["layers"]["fut_volume_pane"]["note"] = "volume pane"
+    with pytest.raises(RS.ReportStandardError, match="FUT pane"):
+        RS.validate_report(r, kind="reading_only")
+    with pytest.raises(RS.ReportStandardError, match="E2 without FUT volume"):
+        RS.validate_report(reading(model="E2"), kind="reading_only")
+    r = reading()
+    r["entries"][0]["fut_volume"] = "spot"
+    with pytest.raises(RS.ReportStandardError, match="never spot volume"):
+        RS.validate_report(r, kind="reading_only")
+
+
+@pytest.mark.parametrize("text", ["spot volume 12,345", "Spot vol: 9800", "spot_volume=410"])
+def test_reading_only_refuses_spot_volume_values(text):
+    r = reading()
+    r["entries"][0]["evidence"] = [["volume growing inside", text]]
+    with pytest.raises(RS.ReportStandardError, match="spot-volume value"):
+        RS.validate_report(r, kind="reading_only")
+    r = reading(summary_mr="सारांश — never spot volume, never filled gaps")                 # wording without a value is fine
+    assert RS.validate_report(r, kind="reading_only")
+
+
+def test_reading_only_keeps_every_other_check():
+    with pytest.raises(RS.ReportStandardError, match="first line"):
+        RS.validate_report(reading(first_line="Hello"), kind="reading_only")
+    with pytest.raises(RS.ReportStandardError, match="no chart"):
+        RS.validate_report(reading(charts={}), kind="reading_only")
+    r = reading()
+    r["charts"]["E1@a"]["layers"].pop("rsi_pane")
+    with pytest.raises(RS.ReportStandardError, match="rsi_pane"):
+        RS.validate_report(r, kind="reading_only")
+    with pytest.raises(RS.ReportStandardError, match="horizon"):
+        RS.validate_report(reading(outcome_rule={"horizon": "eod"}), kind="reading_only")

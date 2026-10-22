@@ -5,6 +5,12 @@ Every chart carries its clean-chart line selection (P8, `lines_view`): legend �
 
 A chart's meta = {"entry_key": str, "layers": {layer_key: {"evaluated": bool, "count": int, "note": str}}}. A layer with nothing at
 that bar is still evaluated (count 0, note e.g. "no pattern").
+
+READING GALLERY (`validate_report(rep, kind="reading_only")`, Abhi 22 Oct): a reading-only check of the chart reading for sessions that
+lack near-month FUT volume. The not-testable data status is allowed there (it is the reason for the gallery), and instead: the banner
+on top (READING_BANNER), every volume-dependent item (VOLUME_ITEMS: E2, commitment volume, volume evidence, absorption volume, the FUT
+pane) of an entry whose visit lacks FUT volume marked FUT_MISSING, no E2 entry without FUT volume, no spot-volume value anywhere (never
+substituted), and the running per-model table labelled RUNNING_LABEL. Every other check is the same as a replay report's.
 """
 
 RULES_LINE = "Rules re-read: CLAUDE.md, REPORT_STANDARD.md, owner-orders"
@@ -25,6 +31,16 @@ _DAY_RE = re.compile(r"\b(days?|sessions?|eod|clock|o'clock|dates?|intraday|expi
 
 class ReportStandardError(ValueError):
     pass
+
+
+REPORT_KINDS = ("replay", "reading_only")
+READING_BANNER = ("READING GALLERY — FUT volume missing; E2 and volume evidence not evaluated; will be superseded when FUT volume "
+                  "arrives")
+FUT_MISSING = "FUT volume missing"
+VOLUME_ITEMS = ("e2", "commitment_volume", "volume_evidence", "absorption_volume", "fut_volume_pane")
+RUNNING_LABEL = "without volume evidence"
+# a spot-volume VALUE (a number given as spot volume) — wording such as "never spot volume" stays allowed
+_SPOT_VOL_RE = re.compile(r"spot[\s_-]*vol(?:ume)?s?\b[^0-9a-z]{0,6}\d", re.IGNORECASE)
 
 
 def chart_max_lines_default():
@@ -114,11 +130,60 @@ def validate_card(card):
     return True
 
 
-def validate_report(rep, chart_max_lines=None):
+def _strings(x):
+    if isinstance(x, str):
+        yield x
+    elif isinstance(x, dict):
+        for k, v in x.items():
+            yield str(k)
+            yield from _strings(v)
+    elif isinstance(x, (list, tuple)):
+        for v in x:
+            yield from _strings(v)
+
+
+def validate_reading_only(rep):
+    """The reading-only extras (READING GALLERY): banner, volume items marked, no E2 without FUT volume, no spot-volume value, running
+    table labelled. Each entry card carries "fut_volume" ("present" | "missing") and "volume_items" {item: text}; an entry whose visit
+    lacks FUT volume has every VOLUME_ITEMS text containing FUT_MISSING; its chart's fut_volume_pane note says FUT_MISSING too."""
+    if (rep.get("banner") or "").strip() != READING_BANNER:
+        raise ReportStandardError(f"reading gallery: the banner on top must be {READING_BANNER!r}")
+    if RUNNING_LABEL not in str(rep.get("running_total_label") or ""):
+        raise ReportStandardError(f"reading gallery: the running per-model table must be labelled {RUNNING_LABEL!r}")
+    charts = rep.get("charts") or {}
+    for card in rep.get("entries") or []:
+        key = card.get("entry_key")
+        fv = card.get("fut_volume")
+        if fv not in ("present", "missing"):
+            raise ReportStandardError(f"card {key!r}: fut_volume must be 'present' or 'missing' (got {fv!r}; never spot volume)")
+        items = card.get("volume_items") or {}
+        miss = [k for k in VOLUME_ITEMS if not str(items.get(k) or "").strip()]
+        if miss:
+            raise ReportStandardError(f"card {key!r}: volume item(s) {', '.join(miss)} not stated")
+        if fv == "missing":
+            bad = [k for k in VOLUME_ITEMS if FUT_MISSING not in str(items.get(k))]
+            if bad:
+                raise ReportStandardError(f"card {key!r}: volume item(s) {', '.join(bad)} must be marked {FUT_MISSING!r}")
+            if str(card.get("model")) == "E2":
+                raise ReportStandardError(f"card {key!r}: E2 without FUT volume — E2 is not evaluated ('E2 — {FUT_MISSING}')")
+            pane = (((charts.get(key) or {}).get("layers") or {}).get("fut_volume_pane") or {}).get("note")
+            if FUT_MISSING not in str(pane or ""):
+                raise ReportStandardError(f"chart {key!r}: the FUT pane must say {FUT_MISSING!r}")
+    hit = next((t for t in _strings({k: v for k, v in rep.items() if k != "charts"} | {"charts": charts}) if _SPOT_VOL_RE.search(t)), None)
+    if hit is not None:
+        raise ReportStandardError(f"reading gallery: a spot-volume value is shown ({hit[:80]!r}) — never substitute spot volume")
+    return True
+
+
+def validate_report(rep, chart_max_lines=None, kind="replay"):
     """rep = {"first_line", "summary_mr", "outcome_rule", "entries": [card], "charts": {entry_key: meta}, "per_model": [...],
-    "running_total": [...], "missed_big_moves": [{"chart": ...}], "worst_losses": [{"chart": ...}], "gaps": [...]}."""
+    "running_total": [...], "missed_big_moves": [{"chart": ...}], "worst_losses": [{"chart": ...}], "gaps": [...]}.
+    kind = "replay" (default) | "reading_only" (READING GALLERY: + "banner", "running_total_label", per card "fut_volume" /
+    "volume_items"; a not-testable data status is allowed — validate_reading_only)."""
+    if kind not in REPORT_KINDS:
+        raise ReportStandardError(f"unknown report kind {kind!r} (allowed: {', '.join(REPORT_KINDS)})")
     ds = rep.get("data_status")
-    if ds is not None and ds.get("status") != "testable":
+    if kind == "replay" and ds is not None and ds.get("status") != "testable":
         raise ReportStandardError(f"group not testable ({ds.get('line')}): emit only that one line, no report")
     if (rep.get("first_line") or "").strip() != RULES_LINE:
         raise ReportStandardError(f"first line must be {RULES_LINE!r}")
@@ -142,4 +207,6 @@ def validate_report(rep, chart_max_lines=None):
             raise ReportStandardError(f"{key}: every item needs a chart")
     if rep.get("gaps") is None:
         raise ReportStandardError("data gaps table missing (empty list if none)")
+    if kind == "reading_only":
+        validate_reading_only(rep)
     return True
