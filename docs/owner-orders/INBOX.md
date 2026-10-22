@@ -65,3 +65,7 @@ One reading check (concept C, the area lifecycle), report first, then fix if the
 - Method: an area flips only once; broken again after its flip ⇒ DEAD (no second flip). A dead area is never armed, and no E4 (b) retest may use it.
 - Check how the code treats "broken again after flip" (level_flip_rule / the death rule), list every replayed entry that used such an area, fix it with a test (flip → broken back with a close beyond + a swing beyond ⇒ dead ⇒ no E4b), re-run, and show the before / after per model.
 Do this together with the duplicate-E4b fix (one signal per model per place), in the same PR, before the post-close deploy. Record both in owner-orders DECISIONS as principles, without dates.
+
+---
+## 22 Oct (market hours) — merge now
+आताच merge kra aani vps block dya

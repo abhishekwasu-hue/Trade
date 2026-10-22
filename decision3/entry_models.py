@@ -31,7 +31,8 @@ and closes on its trade side. A gap / large candle through the INVALIDATION side
 a candle that never traded inside the area never fires. What-ifs: `inside` = the 21 Oct RC3 reading (#364: the close inside the area's
 own band), `legacy` = the da7cbbc trigger (no inside check). Edges, trigger and invalidation always come from the actual area being
 visited (Z-1u): the overlapping cluster (`entry_cluster_rule = cluster`) only counts one signal per model per place — for E4 (b)
-too: overlapping BROKEN areas of the same role and break direction revisited together are one place (one E4 (b) per visit).
+too: overlapping BROKEN areas (and a BROKEN line lying on them) of the same role and break direction revisited together are one
+place (one E4 (b) per visit).
 A DEAD area (flipped once, broken again — `levels.flip_dead_rule`) is never armed and never an E4 (b) object.
 Each model fires at most ONCE per visit (key = area id + visit start + model; the live layer prefixes the symbol): a model fires at bar
 t when its condition holds at t and held at no earlier bar of the same visit (each earlier bar read only with what was known at it).
