@@ -505,6 +505,30 @@ def line_value(ln, b):
     return float(y1) + float(ln["slope"]) * (int(b) - int(b1))
 
 
+def broken_back_at(V, ln, t):
+    """K6.5 mirror for a BROKEN line (method §3 "as an area"; C lifecycle, owner-orders DECISIONS 27): after the break's own excursion,
+    price closes back beyond the line on its ORIGINAL side AND a swing of the line's own degree forms beyond it there (the break rule
+    `_broken_at`, mirrored), the swing confirmed by bar t. Returns the first close of that run (a bar), else None. E4 (b) reads a broken
+    line as a flipped object (Abhi 22 Oct: close beyond + swing beyond = broken (flip), the return from the other side = its retest), so
+    a broken line broken back is DEAD as a flipped area broken again is (an area flips only once): from then on it is never a retest
+    object for E4 (b). A close back WITHOUT a swing formed there is a sweep of the retest: the line stays broken. Comparison only;
+    bars ≤ t."""
+    if not ln.get("broken") or ln.get("break_bar") is None:
+        return None
+    bs = ln.get("break_side")                                              # the break side (a line of highs is broken upward)
+    side = (1 if bs == "up" else -1) if bs in ("up", "down") else (1 if ln["kind"] == "H" else -1)
+    C = V.levels.A["close"]
+    run_end = int(ln["break_bar"])                                         # skip the break's own closes beyond
+    while run_end <= t and (float(C[run_end]) - line_value(ln, run_end)) * side > 0:
+        run_end += 1
+    if run_end > t:
+        return None
+    g = int(ln.get("degree") or V.s.get("level_degree", 2))
+    known = _known_deg(V, t, g)
+    back_kind = "L" if side > 0 else "H"                                   # the swing that confirms the break back
+    return _broken_at(C, known, back_kind, lambda b: line_value(ln, b), -side, run_end, int(t))
+
+
 def break_known_at(V, ln):
     """The bar from which a broken line is KNOWN broken: the confirmation of the first swing beyond it after the break close (K6.5)."""
     if not ln.get("broken"):

@@ -611,7 +611,10 @@ class Levels:
                                  (f"far-side swing {fs.price:,.2f} not reached" if fs is not None else "no far-side swing known")))
                 L.flip_facts.append((t, {**hist, "broken_at": t, "break_dir": 1 if up else -1, "exc_start": st["start"],
                                          "far_swing": self._swing_fact(fs)}))
-                st.update(brk=True, rc=0, back=None)
+                # the break is KNOWN at bar t (its swing beyond confirmed) — bar t may itself already close back on the role side (a
+                # gap / a sharp return on the confirming bar): that close starts the reclaim attempt (the break's mirror), so a swing
+                # formed there from bar t on can complete it (K4 reclaim; was: the attempt only from bar t + 1, the swing at t lost)
+                st.update(brk=True, rc=0, back=t if ((C[t] > L.hi) if role == SUP else (C[t] < L.lo)) else None)
                 excursion[L.id] = 0
                 return
         if beyond_close:

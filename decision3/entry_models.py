@@ -33,7 +33,8 @@ own band), `legacy` = the da7cbbc trigger (no inside check). Edges, trigger and 
 visited (Z-1u): the overlapping cluster (`entry_cluster_rule = cluster`) only counts one signal per model per place — for E4 (b)
 too: overlapping BROKEN areas (and a BROKEN line lying on them) of the same role and break direction revisited together are one
 place (one E4 (b) per visit).
-A DEAD area (flipped once, broken again — `levels.flip_dead_rule`) is never armed and never an E4 (b) object.
+A DEAD area (flipped once, broken again — `levels.flip_dead_rule`) is never armed and never an E4 (b) object; the same for a BROKEN
+line broken back (a close back beyond it on its original side + a swing of its degree formed there, `trendline.broken_back_at`).
 Each model fires at most ONCE per visit (key = area id + visit start + model; the live layer prefixes the symbol): a model fires at bar
 t when its condition holds at t and held at no earlier bar of the same visit (each earlier bar read only with what was known at it).
 A stop-out never blocks the other models ⇒ up to four entries per visit. Models disarm when the area breaks (K4 "broken" / dead inside
@@ -637,6 +638,8 @@ class Reader:
             k = ln["known_bar"] if ln.get("known_bar") is not None else TL.break_known_at(V, ln)
             if k is None or k > t:
                 continue
+            if TL.broken_back_at(V, ln, t) is not None:                    # K6.5 mirror / C lifecycle: broken back (a close back on
+                continue                                                   # its original side + a swing formed there) ⇒ no retest object
 
             def lv(i, ln=ln):
                 return TL.line_value(ln, i)
