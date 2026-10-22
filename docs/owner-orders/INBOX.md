@@ -56,3 +56,12 @@ Abhi — the BANKNIFTY 6-month galleries (15-day batches) are still missing. Two
  Same code as deployed (record the commit); one HTML gallery per batch, newest first; a running per-model table marked "without volume evidence".
  When the FUT volume arrives, re-run those batches in full and mark the old gallery superseded.
 Send each batch as it is ready (one message per batch, no "still waiting" messages). इट्स अर्जंट
+
+---
+## 22 Oct — latest replay group review: flipped-area death + duplicate E4b
+Abhi — review of the latest replay group (all parts). By model: E3 strongest, E2 clean, E4b mostly good, E1 weakest (expected for aggressive entries; the PAPER statistics decide later, no change). The big moves missed against the Daily side are correct by the method.
+One reading check (concept C, the area lifecycle), report first, then fix if the code departs from the method:
+- The worst-loss E4b in the group's "worst losses" page was a retest of a FLIPPED area (a broken support acting as resistance). Before that retest, price had closed back above that flipped area AND formed a swing high beyond it, i.e. the flipped area was broken a second time in the opposite direction.
+- Method: an area flips only once; broken again after its flip ⇒ DEAD (no second flip). A dead area is never armed, and no E4 (b) retest may use it.
+- Check how the code treats "broken again after flip" (level_flip_rule / the death rule), list every replayed entry that used such an area, fix it with a test (flip → broken back with a close beyond + a swing beyond ⇒ dead ⇒ no E4b), re-run, and show the before / after per model.
+Do this together with the duplicate-E4b fix (one signal per model per place), in the same PR, before the post-close deploy. Record both in owner-orders DECISIONS as principles, without dates.
