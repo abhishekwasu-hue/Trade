@@ -82,15 +82,26 @@ def _manual_profile():
     return VC.load("_global").get("manual_profile")
 
 
-def positions_text(trades_fn=None):
+def _exits_text(t, settings_fn=None):
+    """Abhi T-6 (DECISIONS 30): settings-driven bots ⇒ engine चे खरे exits (dashboard settings, TSL स्थिती); stored 100%-credit SL कधीच "SL"
+    म्हणून नाही. इतर (manual / generic — stored ₹ levels तेच exits) ⇒ stored levels, नसल्यास "—" (₹0 नाही)."""
+    bot = PW.exit_bot(t)
+    if bot:
+        from vision import config as VC
+        key = VC.BOT_STRATEGY_KEY.get(bot, "1m_instant")
+        ss = _try(lambda: settings_fn(key, t.get("symbol")), default=None) if settings_fn else PW.bot_settings(bot, t.get("symbol"))
+        return PW.exit_status_text(t, bot, ss if isinstance(ss, dict) else None)
+    return f"SL {PW._stored(t.get('sl_pnl_level'))} · target {PW._stored(t.get('target_pnl_level'))}"
+
+
+def positions_text(trades_fn=None, settings_fn=None):
     tr = (trades_fn or open_trades)()
     if not tr:
         return "📂 <b>/positions</b>\nउघडा trade नाही."
     out = ["📂 <b>/positions</b>"]
     for t in tr:
         out.append(f"#{str(t.get('trade_id') or '')[-6:]} · {t.get('mode')} · {t.get('source')} · {t.get('symbol')} {t.get('strategy') or ''} "
-                   f"{t.get('strikes_summary') or ''} · entry {str(t.get('entry_time'))[11:16]} · SL ₹{t.get('sl_pnl_level') or 0:,.0f} · "
-                   f"target ₹{t.get('target_pnl_level') or 0:,.0f}")
+                   f"{t.get('strikes_summary') or ''} · entry {str(t.get('entry_time'))[11:16]} · {_try(lambda: _exits_text(t, settings_fn))}")
     out.append("PAPER लगेच बंद: /exit &lt;id&gt; (SL / target Telegram वरून बदलत नाहीत)")
     return "\n".join(out)
 
@@ -148,7 +159,7 @@ def handle(cmd, by, send, arg=None, **deps):
         send(status_text(**{k: v for k, v in deps.items() if k in ("token_fn", "market_fn", "kill_fn", "pause_fn", "settings_fn", "trades_fn", "paper_pause_fn")}))
         return True, "status"
     if cmd == "/positions":
-        send(positions_text(deps.get("trades_fn")))
+        send(positions_text(deps.get("trades_fn"), deps.get("settings_fn")))
         return True, "positions"
     if cmd == "/pause":
         send(pause(by, deps.get("set_fn")))
