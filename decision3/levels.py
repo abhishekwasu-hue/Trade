@@ -71,6 +71,11 @@ class Level:
     prov: list = field(default_factory=list)        # Abhi PF-2: [(from bar, to bar | None)] — band min width provisional (σ_1H missing)
     tf: str = "1H"                                  # Abhi Z-1u: the band's own timeframe (1H / D / W) — never mixed
     lineage: list = field(default_factory=list)     # Abhi Z-1u: [{"bar", "overlaps": level id, "band": (lo, hi)}] — "born from" evidence
+    base_bar: int = None                            # additive (model C, T-3): the 15M bar of the base the area was built from — the swing's
+                                                    # extreme bar (a:D2 / d), the BOS-origin base 1H candle's first 15M bar (b); None = a
+                                                    # Daily / Weekly / prior band. Read only by decision3/model_c.py (never in snapshot)
+    inside_bases: list = field(default_factory=list)  # additive (model C): [(known bar, base bar, role)] of births that fell INSIDE this
+                                                      # band (lineage only) — read only by model_c._ha_area (never in snapshot)
 
     def provisional(self, t):
         """PF-2: the band's min width at t is the provisional one (born / merged while σ_1H was missing, σ_1H not known yet)."""
@@ -218,7 +223,7 @@ class Levels:
             sg = float(np.median(hl["h"].max() - hl["l"].min()))        # तात्पुरता: bars ≤ t चे 1H ranges चा median (lookahead नाही)
         return float(self.s["level_min_width_sigma"]) * (sg if np.isfinite(sg) else 0.0)
 
-    def _born(self, t, role, lo, hi, birth, anchor):
+    def _born(self, t, role, lo, hi, birth, anchor, base_bar=None):
         """Abhi Z-1u: a birth always BUILDS its own band (its own candles, its own timeframe) — never merged into another band, never
         widening one. A birth lying wholly inside an alive same-timeframe, same-role band is that zone (lineage only, band unchanged); one
         that overlaps it partly is its own level with the overlap recorded as lineage ("born from" evidence); other timeframes are related
@@ -241,8 +246,11 @@ class Levels:
                     if birth not in o.births:
                         o.births.append(birth)
                     o.lineage.append({"bar": int(t), "inside": birth, "band": (round(float(lo), 2), round(float(hi), 2))})
+                    if base_bar is not None:
+                        o.inside_bases.append((int(t), int(base_bar), role))
                     return o
-        L = Level(len(self.L), role, float(lo), float(hi), int(t), [birth], anchor, tf=tf)
+        L = Level(len(self.L), role, float(lo), float(hi), int(t), [birth], anchor, tf=tf,
+                  base_bar=None if base_bar is None else int(base_bar))
         for o in self.L:
             if o.tf == tf and o.alive(t):
                 olo, ohi = o.band_at(t)
@@ -326,7 +334,7 @@ class Levels:
         for p in self.piv:
             o, hh, ll, cc = self._h1_upto(h1_of[p.bar], p.confirm_bar)
             lo, hi = _band_swing(p.kind, o, hh, ll, cc, p.price, self._w(p.confirm_bar))
-            out.setdefault(p.confirm_bar, []).append((RES if p.kind == "H" else SUP, lo, hi, "a:D2", p.price))
+            out.setdefault(p.confirm_bar, []).append((RES if p.kind == "H" else SUP, lo, hi, "a:D2", p.price, int(p.bar)))
         # Daily swings (known_at = त्या दिवसाचा close ⇒ त्या दिवसाचा शेवटचा 15M bar)
         if self.daily_states and self.daily_df is not None:
             seen = set()
@@ -381,7 +389,7 @@ class Levels:
                 w = self._w(t)
                 if hi - lo < w:
                     lo, hi = (hi - w, hi) if kind == "H" else (lo, lo + w)
-                out.setdefault(t, []).append((RES if kind == "H" else SUP, lo, hi, "d", (a.price + b.price) / 2))
+                out.setdefault(t, []).append((RES if kind == "H" else SUP, lo, hi, "d", (a.price + b.price) / 2, int(a.bar)))
         return out
 
     def _bos(self, t, known):
@@ -514,15 +522,16 @@ class Levels:
                 if jb is not None:
                     _j, c4 = jb
                     lo, hi = bos_band(d, c4)                               # Abhi C-2 / Z-1x: wick to body; no wick ⇒ the body
+                    jx = np.flatnonzero(self.h1_of == _j)                  # base_bar (additive): the base 1H candle's first 15M bar
                     w = self._w(t)
                     if hi - lo < w:
                         if d > 0:
                             hi = lo + w
                         else:
                             lo = hi - w
-                    births.setdefault(t, []).append((SUP if d > 0 else RES, lo, hi, "b", origin.price))
-            for role, lo, hi, why, anchor in births.get(t, []):
-                L = self._born(t, role, lo, hi, why, anchor)
+                    births.setdefault(t, []).append((SUP if d > 0 else RES, lo, hi, "b", origin.price, int(jx[0]) if len(jx) else None))
+            for role, lo, hi, why, anchor, *bb in births.get(t, []):
+                L = self._born(t, role, lo, hi, why, anchor, bb[0] if bb else None)
                 if not np.isfinite(self.sig1h[t]) and float(self.s["level_min_width_sigma"]) > 0:   # PF-2 only with the legacy min width
                     prov.add(L.id)
                     if not (L.prov and L.prov[-1][1] is None):

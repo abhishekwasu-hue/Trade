@@ -74,20 +74,26 @@ def side_of(d):
 class Reader:
     """One decision bar's entry-model read for a V22 instance (memoised per V22 across bars: a sequential run reads each bar once)."""
 
-    def __init__(self, V):
+    def __init__(self, V, side_fn=None):
         self.V = V
         self.A = V.levels.A
         self.ts = V._ts
         self.memo = V.__dict__.setdefault("_em_memo", {})
         on = V.s.get("entry_models_on")
         self.on = tuple(MODELS if on is None else on)
+        # Model C (DECISIONS 32, decision3/model_c.py): an injected trade side u ⇒ +1 / −1 / 0 (the C window of the counter-trend C leg)
+        # replaces step1's Daily side. None (default) ⇒ today's path, byte for byte.
+        self.side_fn = side_fn
 
     # ------------------------------------------------------------------------------------------ small facts
     def T(self, i):
         return None if i is None else str(pd.Timestamp(self.ts[int(i)]))
 
     def trend_dir(self, u, role):
-        """The trade direction for an area of this role at bar u (① as step1 reads it; no trade ⇒ 0)."""
+        """The trade direction for an area of this role at bar u (① as step1 reads it; no trade ⇒ 0). With an injected side (model C) the
+        side function decides (its own memo; never the step1 memo)."""
+        if self.side_fn is not None:
+            return int(self.side_fn(int(u)))
         key = ("trend", int(u))
         if key not in self.memo:
             ok1, _w, _st, ctx = self.V.step1(int(u))
@@ -601,9 +607,10 @@ class Reader:
         self.memo[key] = start
         return start
 
-    def broken_objects(self, t, d):
+    def broken_objects(self, t, d, extra=None):
         """E4 (b): the trade-direction BROKEN areas (K4 state BROKEN, break_dir = d, a trade location by the existing selection) and the
-        trade-direction BROKEN lines (channel_lines: a line of lows broken down for a bear call; of highs broken up for a bull put)."""
+        trade-direction BROKEN lines (channel_lines: a line of lows broken down for a bear call; of highs broken up for a bull put).
+        extra = more broken line dicts (model C's pattern adapter, C-d) — a line carrying `known_bar` is known broken from that bar."""
         V = self.V
         A = self.A
         out = []
@@ -621,12 +628,13 @@ class Reader:
         cands += [c["parallel"] for c in TL.channels(V, t)]                 # + each channel's parallel (its broken line = a retest level)
         if PATTERN_HOOK is not None:                                       # hook: a broken pattern boundary / neckline (patterns track)
             cands += list(PATTERN_HOOK(V, t, d) or [])
+        cands += list(extra or [])
         seen = set()
         for ln in cands:
             if not ln.get("broken") or ln.get("break_side") != want or ln["id"] in seen:
                 continue
             seen.add(ln["id"])
-            k = TL.break_known_at(V, ln)
+            k = ln["known_bar"] if ln.get("known_bar") is not None else TL.break_known_at(V, ln)
             if k is None or k > t:
                 continue
 
@@ -643,14 +651,15 @@ class Reader:
             out.append(("line", ln, touch, away, aw_sw, int(k) + 1))
         return out
 
-    def broken(self, t, d):
-        """E4 (b) for every broken object of the trade direction ⇒ ([armed dicts], [fired at t])."""
+    def broken(self, t, d, keep=None, extra=None):
+        """E4 (b) for every broken object of the trade direction ⇒ ([armed dicts], [fired at t]). keep(kind, obj) (model C: its own
+        object filters C-b / C-d / C-e) ⇒ only the objects it keeps; None ⇒ all (today)."""
         V = self.V
         armed, fired = [], []
         if "E4" not in self.on:
             return armed, fired
-        for kind, obj, touch, away, aw_sw, born in self.broken_objects(t, d):
-            if born > t:
+        for kind, obj, touch, away, aw_sw, born in self.broken_objects(t, d, extra):
+            if born > t or (keep is not None and not keep(kind, obj)):
                 continue
             oid = obj["id"] if kind == "area" else f"line:{obj['id']}"
             start = self.touch_visit(t, oid, born, touch, aw_sw, d)
@@ -760,10 +769,12 @@ class Reader:
         return {"present": bool(hits), "channels": hits}
 
 
-def read(V, t, trend, act):
+def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broken_on=True):
     """Abhi 21 Oct — the entry models at decision bar t for the step2 watch-list `act` (trade side, alive, not BROKEN). Returns
-    {entries, armed, waiting (text), best (row area dict), best_eval (6a facts for the row)}."""
-    R = Reader(V)
+    {entries, armed, waiting (text), best (row area dict), best_eval (6a facts for the row)}.
+    Model C (decision3/model_c.py) only: side_fn = its injected trade side, keep / extra = its E4 (b) objects, prefix = its cluster ids
+    ("MC…", never clashing with the Daily side's "C…"), broken_on = False reads the areas only. The defaults = today's path."""
+    R = Reader(V) if side_fn is None else Reader(V, side_fn)          # the default call exactly as before (model C only injects)
     A = R.A
     armed, entries, cands = [], [], []
     first_area = None
@@ -780,14 +791,14 @@ def read(V, t, trend, act):
         for f in fired:
             entries.append((f, lvl, d, a))
     if str(V.s.get("entry_cluster_rule", "cluster")) == "cluster":         # one location = one overlapping cluster (lead, provisional)
-        entries = clusters(armed, entries, cands)
-    if trend in ("UP", "DOWN"):
+        entries = clusters(armed, entries, cands, prefix=prefix + "C")
+    if trend in ("UP", "DOWN") and broken_on:
         d = M._dir(trend)
-        b_armed, b_fired = R.broken(t, d)
+        b_armed, b_fired = R.broken(t, d) if keep is None and extra is None else R.broken(t, d, keep, extra)
         armed.extend(b_armed)
         b_entries = [(f, None, d, f["obj"]) for f in b_fired]
         if str(V.s.get("entry_cluster_rule", "cluster")) == "cluster":     # Z-1u for E4 (b) too: overlapping broken areas = one place
-            b_entries = clusters(b_armed, b_entries, obj=("broken_area", "broken_line"), prefix="CB")
+            b_entries = clusters(b_armed, b_entries, obj=("broken_area", "broken_line"), prefix=prefix + "CB")
         entries.extend(b_entries)
     out = []
     for f, lvl, d, a in entries:

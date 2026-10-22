@@ -279,9 +279,41 @@ def model_on(settings, model):
         return MODEL_DEFAULT_ON
 
 
-def model_tag(model):
-    """live_trades.entry_reason_tag of a model's PAPER position ("ENGINE_E1" …) — journal / summary label only (exits never read it)."""
+def model_c_on(settings, sub=None):
+    """Model C (DECISIONS 32) signal switch: the dashboard `engine3_model_c_on` AND, for a sub-way, `engine3_model_c_<x>_on` — all
+    default OFF (the opposite of E1–E4) until Abhi switches them on after the replay. A SIGNAL switch only; execution never reads it."""
+    from engine3_live import MODEL_C_KEY, _truthy, model_c_sub_key
+    st = settings or {}
+    if not _truthy(st.get(MODEL_C_KEY), False):
+        return False
+    return True if not sub else _truthy(st.get(model_c_sub_key(sub)), False)
+
+
+def model_tag(model, family=None, sub_model=None):
+    """live_trades.entry_reason_tag of a model's PAPER position ("ENGINE_E1" …; model C: "ENGINE_C_A_E2" = family C, sub-model C-a,
+    model E2 — its own statistics) — journal / summary label only (exits never read it)."""
+    if str(family or "").upper() == "C":
+        sub = str(sub_model or "").split("-")[-1].upper() or "X"
+        return f"ENGINE_C_{sub}_{str(model).upper()}"
     return f"ENGINE_{str(model).upper()}"
+
+
+def summary_key(model, family=None, sub_model=None):
+    """The statistics slot of an entry: "E2", or "C-a · E2" for model C (kept apart from the Daily-side models)."""
+    if str(family or "").upper() == "C":
+        return f"{sub_model or 'C'} · {str(model).upper()}"
+    return str(model).upper()
+
+
+def tag_slot(tag):
+    """entry_reason_tag ⇒ its statistics slot ("ENGINE_E2" ⇒ "E2", "ENGINE_C_A_E2" ⇒ "C-a · E2"); not an engine model tag ⇒ None."""
+    t = str(tag or "")
+    if t.startswith("ENGINE_C_"):
+        parts = t[len("ENGINE_C_"):].split("_")
+        if len(parts) == 2:
+            return f"C-{parts[0].lower()} · {parts[1]}"
+        return None
+    return t[len("ENGINE_"):] if t.startswith("ENGINE_E") else None
 
 
 def _num(x):
@@ -384,7 +416,18 @@ def entry_gate_tags(r, e, direction, settings=None):
             "entry_object": e.get("object") or ar.get("object"),       # T-5: area / broken_area / broken_line (the engine card + audit)
             "entry_trigger_ts": None if e.get("trigger_ts") is None else str(e["trigger_ts"]), "entry_ref": e.get("entry_ref"),
             "entry_invalidation": e.get("invalidation"), "entry_evidence": ev,
-            "entry_cluster": None if not cl else [x.get("area_id") for x in cl.get("members") or [] if isinstance(x, dict)]}
+            "entry_cluster": None if not cl else [x.get("area_id") for x in cl.get("members") or [] if isinstance(x, dict)],
+            **model_c_tags(e)}
+
+
+def model_c_tags(e):
+    """Model C entries (DECISIONS 32) ⇒ the extra Vision row tags: family, sub-model, the one-line story (card) and the model C facts
+    the engine audit reads (so `trend_side` is judged by model C's own rule — Vision stays advisory). Any other entry ⇒ {} (its tags stay
+    today's)."""
+    if str(e.get("family") or "").upper() != "C":
+        return {}
+    return {"entry_family": "C", "entry_sub_model": e.get("sub_model"), "entry_story": e.get("story"),
+            "entry_model_c": e.get("model_c") if isinstance(e.get("model_c"), dict) else None}
 
 
 def _process_models(bot, access_token, symbol, settings, lot_size, source, now, ents, has_open, gate_fn, open_fn, chain, path,
@@ -425,6 +468,9 @@ def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e,
     if not model_on(settings, m):
         done("SKIPPED_MODEL_OFF")
         return f"{who}: model OFF (dashboard) ⇒ skip"
+    if str(e.get("family") or "").upper() == "C" and not model_c_on(settings, e.get("sub_model")):
+        done("SKIPPED_MODEL_C_OFF")                                      # DECISIONS 32: model C + its sub-way, default OFF
+        return f"{who}: model C / {e.get('sub_model')} OFF (dashboard) ⇒ skip"
     if (now.hour, now.minute) >= cutoff:
         done("SKIPPED_CUTOFF")
         return f"{who}: {cutoff[0]}:{cutoff[1]:02d} नंतर नवीन entry नाही"
@@ -470,7 +516,8 @@ def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e,
         return f"{who}: या visit साठी {m} आधीच घेतला ⇒ दुसरी position नाही"
     try:
         msgs, _spot = open_paper(access_token, symbol, settings, direction, level, lot_size, source, "ENGINE", min(lots, g.lots),
-                                 min(naked, g.naked_lots), chain=chain, open_fn=open_fn, now=now, reason_tag=model_tag(m))
+                                 min(naked, g.naked_lots), chain=chain, open_fn=open_fn, now=now,
+                                 reason_tag=model_tag(m, e.get("family"), e.get("sub_model")))
     except Exception as exc:                                             # noqa: BLE001 — claimed ⇒ never a second try for this visit
         ES.set_entry_status(bot, symbol, visit, m, f"OPEN_FAILED: {type(exc).__name__}: {exc}", path)
         return f"{who}: PAPER open त्रुटी ⇒ position नाही ({type(exc).__name__}: {exc})"
@@ -499,7 +546,7 @@ def models_summary(day, db_path=None, vpath=None):
         for r in VS.list_signals(day, vpath):
             t = VG._row_tags(r)
             if t.get("entry_model") and not t.get("dry_run"):
-                slot(str(t["entry_model"]).upper())["cards"] += 1
+                slot(summary_key(t["entry_model"], t.get("entry_family"), t.get("entry_sub_model")))["cards"] += 1
     except Exception as exc:                                             # noqa: BLE001
         print(f"⚠️ models_summary (vision): {type(exc).__name__}: {exc}")
     try:
@@ -509,16 +556,28 @@ def models_summary(day, db_path=None, vpath=None):
             c = sqlite3.connect(db_path, timeout=5)
             try:
                 rows = c.execute("SELECT entry_reason_tag, status, exit_reason FROM live_trades WHERE mode='PAPER' "
-                                 "AND substr(entry_time,1,10)=? AND entry_reason_tag LIKE 'ENGINE_E%'", (str(day),)).fetchall()
+                                 "AND substr(entry_time,1,10)=? AND (entry_reason_tag LIKE 'ENGINE_E%' OR entry_reason_tag LIKE "
+                                 "'ENGINE_C_%')", (str(day),)).fetchall()
             finally:
                 c.close()
             for tag, status, why in rows:
-                x = slot(str(tag)[len("ENGINE_"):])
+                k = tag_slot(tag)
+                if k is None:
+                    continue
+                x = slot(k)
                 x["positions"] += 1
                 x["open" if str(status).upper() == "OPEN" else PW.exit_kind(why)] += 1
     except Exception as exc:                                             # noqa: BLE001
         print(f"⚠️ models_summary (trades): {type(exc).__name__}: {exc}")
     return dict(sorted(out.items()))
+
+
+def _slot_label(k):
+    """"E2" ⇒ "E2 — Confirmation"; "C-a · E2" ⇒ "C · E2 — Confirmation (C-a)" (model C's own line)."""
+    if " · " in str(k):
+        sub, m = str(k).split(" · ", 1)
+        return ES.model_label({"model": m, "family": "C", "sub_model": sub})
+    return ES.model_label({"model": k})
 
 
 def models_summary_text(day, db_path=None, vpath=None):
@@ -530,7 +589,7 @@ def models_summary_text(day, db_path=None, vpath=None):
         return ""
     if not d:
         return ""
-    parts = [f"{ES.model_label({'model': m})} {x['cards']} card{'s' if x['cards'] != 1 else ''}, {x['positions']} "
+    parts = [f"{_slot_label(m)} {x['cards']} card{'s' if x['cards'] != 1 else ''}, {x['positions']} "
              f"position{'s' if x['positions'] != 1 else ''} (open {x['open']}, stopped {x['stopped']}, target {x['target']}"
              + (f", other exit {x['other']}" if x["other"] else "") + ")" for m, x in d.items()]
     return "<b>Entry models today</b>: " + " · ".join(parts) + "."

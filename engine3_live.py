@@ -549,12 +549,67 @@ def method_switches(s=None):
     return out
 
 
+# Model C (DECISIONS 32, T-3): the dashboard switches, ALL default OFF (the opposite of E1–E4) until Abhi switches it on after the
+# replay. engine3_model_c_on = the model (V22 `model_c`) and its live signal switch; engine3_model_c_<a…f>_on = each sub-way (V22
+# `model_c_subs`); engine3_c_window / engine3_c_a_nature / engine3_c_projections = the model's own settings (empty = decision3's default).
+MODEL_C_KEY = "engine3_model_c_on"
+
+
+def model_c_sub_key(sub):
+    """"C-a" ⇒ "engine3_model_c_a_on"."""
+    return f"engine3_model_c_{str(sub).split('-')[-1].lower()}_on"
+
+
+def _truthy(v, default=False):
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return default
+    if isinstance(v, str):
+        return v.strip().lower() not in ("false", "0", "no", "off")
+    return bool(v)
+
+
+def model_c_settings(s=None):
+    """Dashboard model C keys ⇒ V22 settings; model C off (default) ⇒ None (V22 never reads model C — today's rows). Bad value ⇒
+    ValueError (fail closed)."""
+    from decision3 import model_c as MDC
+    from decision3 import settings as S3
+    s = s or {}
+    if not _truthy(s.get(MODEL_C_KEY), False):
+        return None
+    out = {"model_c": "on", "model_c_subs": [x for x in S3.MODEL_C_SUBS if _truthy(s.get(model_c_sub_key(x)), False)]}
+    for key, v22 in (("engine3_c_window", "c_window"), ("engine3_c_a_nature", "c_a_nature")):
+        v = s.get(key)
+        if v is not None and str(v).strip():
+            out[v22] = str(v).strip().lower()
+    pr = c_projections_of(s.get("engine3_c_projections"))
+    if pr is not None:
+        out["c_projections"] = pr
+    MDC.validate({**S3.DEFAULTS, **out})
+    return out
+
+
+def c_projections_of(v):
+    """Dashboard `engine3_c_projections` (display / context only, C-7) ⇒ a tuple of positive ratios or None (decision3's default).
+    Empty pieces are skipped ("1, 1.618," ⇒ (1.0, 1.618)); an unreadable value never stops the engine — a warning, then the default."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    try:
+        parts = [x for x in (v.split(",") if isinstance(v, str) else v) if not (isinstance(x, str) and not x.strip())]
+        out = tuple(float(x) for x in parts)
+        if not out or not all(math.isfinite(r) and r > 0 for r in out):
+            raise ValueError
+        return out
+    except (TypeError, ValueError):
+        print(f"⚠️ engine3_c_projections = {v!r} unreadable (ratios separated by commas, display only) ⇒ the default is used")
+        return None
+
+
 def v22_settings(s=None):
     """Dashboard `engine3_*` ⇒ V22 settings (`s`) for the live decision and the pre-open levels: the swing scale (layer 1), the Daily
     pivot size (L1-c) + the layer switches. Nothing set ⇒ None (V22 on decision3's defaults = the method, today's behaviour). Bad value ⇒
     ValueError (fail closed)."""
     try:
-        out = {**(swing_scale(s) or {}), **(daily_pivot_n(s) or {}), **method_switches(s)}
+        out = {**(swing_scale(s) or {}), **(daily_pivot_n(s) or {}), **method_switches(s), **(model_c_settings(s) or {})}
     except ValueError as exc:                                            # a setting error, not a data problem (Telegram says so)
         raise SettingError(str(exc)) from exc
     return out or None
@@ -822,6 +877,11 @@ def row_from_v22(symbol, r, now_fn):
         payload["armed"] = compact_armed(r.get("armed"))
         if r.get("legacy_k_gate") is not None:                           # old step ③: a logged diagnostic only (first to go when too long)
             payload["legacy_k_gate"] = r.get("legacy_k_gate")
+    if isinstance(r.get("model_c"), dict):                               # model C on (DECISIONS 32): the cycle in one line (display)
+        cy = r["model_c"].get("cycle") or {}
+        payload["model_c"] = {"phase": cy.get("phase"), "cycle": cy.get("id"), "why": str(cy.get("why") or r["model_c"].get("why")
+                                                                                         or "")[:200],
+                              "windows": cy.get("windows"), "entries": r["model_c"].get("entries"), "error": r["model_c"].get("error")}
     return {"symbol": str(symbol).upper(), "bar_ts": str(pd.Timestamp(r["bar_end"])), "computed_at": str(now_fn()),
             "decision": r.get("decision"), "gate": gate, "direction": d, "level_lo": lv.get("lo"), "level_hi": lv.get("hi"),
             "entry": rk.get("entry"), "invalidation": rk.get("sl"), "target": rk.get("target"), "grade": r.get("conviction"),
@@ -906,6 +966,10 @@ def compact_entries(entries):
         rb = e.get("refined_base")
         if isinstance(rb, dict) and rb.get("lo") is not None:            # RC2: the refined 15M base inside the area (display + card)
             x["refined_base"] = {"lo": float(rb["lo"]), "hi": float(rb["hi"]), "ts": None if rb.get("ts") is None else str(rb["ts"])}
+        if e.get("family") == "C":                                       # model C (DECISIONS 32): family, sub-model, story, context
+            x.update(model_c_of(e))
+        elif isinstance(e.get("model_c_context"), dict):                 # C-f: a label on a Daily-side entry (statistics only)
+            x["model_c_context"] = {"sub_model": e["model_c_context"].get("sub_model"), "cycle": e["model_c_context"].get("cycle")}
         for k in ("trigger_ts", "visit_id", "visit_start", "trigger_bar_end", "key"):
             if x.get(k) is not None:
                 x[k] = str(x[k])
@@ -913,6 +977,25 @@ def compact_entries(entries):
             x["area"]["id"] = str(x["area"]["id"])                       # numpy ints ⇒ text, never a JSON error
         out.append(x)
     return out
+
+
+def model_c_of(e):
+    """A model C entry's card / audit facts (decision3/model_c.py label) ⇒ {family, sub_model, story, model_c {window, daily, weekly, O,
+    choch, HA, B, a_nature, b_nature, end_zone, invalidated_if}} with plain values (prices, words). Display + audit only; never raises."""
+    try:
+        c = e.get("model_c") if isinstance(e.get("model_c"), dict) else {}
+        pt = lambda p: None if not isinstance(p, dict) else {k: p.get(k) for k in ("price", "level", "ts") if k in p}   # noqa: E731
+        nat = lambda n: None if not isinstance(n, dict) else {"verdict": n.get("verdict"), "why": str(n.get("why") or "")[:160]}  # noqa: E731
+        ez = c.get("end_zone") if isinstance(c.get("end_zone"), dict) else {}
+        return {"family": "C", "sub_model": e.get("sub_model"), "story": None if e.get("story") is None else str(e["story"])[:400],
+                "model_c": {"window": c.get("window"), "daily": c.get("daily"), "weekly": c.get("weekly"), "O": pt(c.get("O")),
+                            "choch": pt(c.get("choch")), "HA": pt(c.get("HA")), "B": pt(c.get("B")),
+                            "a_nature": nat(c.get("a_nature")), "b_nature": nat(c.get("b_nature")),
+                            "end_zone": {"first_htf_area": ez.get("first_htf_area"), "protected_origin": ez.get("protected_origin"),
+                                         "projections": ez.get("projections")},
+                            "invalidated_if": c.get("invalidated_if")}}
+    except Exception:                                                    # noqa: BLE001 — display only
+        return {"family": "C", "sub_model": e.get("sub_model")}
 
 
 def compact_armed(armed):

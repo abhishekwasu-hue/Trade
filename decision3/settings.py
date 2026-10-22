@@ -380,6 +380,41 @@ REGISTER["pa_fib_ratios"] = ((0.382, 0.5, 0.618, 0.786), "KB K7 set", "व्य
                              "Abhi rule K7 (declared exception): Fibonacci retracement only as a confluence label where a level lands on "
                              "an area / resting liquidity; never alone, never a gate (decision3/confluence_pa.fib_on_areas)")
 
+# Model C — the counter-trend C leg of a correction against the Daily side (handover T-3, Appendix A; owner-orders DECISIONS 32;
+# decision3/model_c.py, docs/reports/model_c/COVERAGE.md). A separate, switchable entry model, default OFF until its replay is shown.
+# None of these is a number in the reading: `c_projections` is display / context only (the C-7 end zone, never read by an entry, a gate
+# or an exit — tests/test_method_no_numbers.py DISPLAY_RATIOS).
+MODEL_C_SUBS = ("C-a", "C-b", "C-c", "C-d", "C-e", "C-f")
+C_WINDOWS = ("b_only", "b_and_ha_retest", "c_pullbacks")
+DEFAULTS.update({
+    "model_c": "off",                        # DECISIONS 32: off (default) = V22.decide never calls model C ⇒ rows byte-identical to before
+    "model_c_subs": MODEL_C_SUBS,            # replays / what-if: which sub-ways C-a … C-f read when model_c = on (live: the dashboard's own
+                                             # engine3_model_c_<x>_on switches, default OFF, pass their subset)
+    "c_a_nature": "impulse",                 # C-3: wave A must read impulse (legs_compare vs its neighbours); any = what-if
+    "c_window": "b_only",                    # C-6: entries only while B is in progress (before any close beyond HA); b_and_ha_retest = + the
+                                             # first return to HA for the C-e sub-way ONLY (C-e on forces it; without C-e it reads as
+                                             # b_only); c_pullbacks = + C's own pullbacks after the HA break bar (what-if only)
+    "c_projections": (1.0,),                 # C-7 (display / context only): C-vs-A projection ratios from B's end (Q7: C = A)
+})
+REGISTER.update({
+    "model_c": ("off", "off / on", "Abhi नियम", "DECISIONS 32 (T-3, Appendix A): model C = the counter-trend C leg (Daily DOWN ⇒ bull put "
+                "on the 1H correction's C leg; mirror) — A = a 1H CHoCH, B corrective, dies only by a close + a swing beyond O; E1–E4 "
+                "unchanged at the 1H areas built during A; pullback / retest only. off = never read (today's rows); the live switch is "
+                "engine3_model_c_on (default OFF)"),
+    "model_c_subs": (MODEL_C_SUBS, "subset of C-a / C-b / C-c / C-d / C-e / C-f", "Abhi नियम", "Appendix A C-11: each sub-way switchable "
+                     "(C-a B-end at an A area, C-b B channel break retest, C-c B sweeps O, C-d B triangle edge retest, C-e HA flip retest, "
+                     "C-f end of C back to the Daily side = a label only); replays / what-if — live = engine3_model_c_<x>_on (default OFF)"),
+    "c_a_nature": ("impulse", "impulse / any", "Abhi नियम", "Appendix A C-3: wave A's nature by the existing leg reader (legs_compare: "
+                   "bodies / overlap / FUT volume vs its neighbouring legs); impulse = default (a zigzag A is a five), any = what-if"),
+    "c_window": ("b_only", "b_only / b_and_ha_retest / c_pullbacks", "Abhi नियम", "Appendix A C-6 / C-11 note: b_only = model C entries "
+                 "only while B is in progress (no close beyond HA); b_and_ha_retest = + the first return to HA for the C-e sub-way "
+                 "ONLY (provisional: the C-e switch ON forces it — Appendix A; without C-e it reads as b_only); c_pullbacks = + C's own "
+                 "pullbacks from the bar after the HA break (never the break candle; what-if only)"),
+    "c_projections": ((1.0,), "ratios (display / context only)", "setting", "Appendix A C-7: the C-vs-A projection band B_end ± r × "
+                      "(HA − O) on the signal / chart — context, never a gate, an entry or an exit (Q7: (1.0,) = C equals A; Abhi adds "
+                      "ratios on the dashboard)"),
+})
+
 TRENDS = ("UP", "DOWN", "RANGE", "NEUTRAL", "UNKNOWN")
 
 

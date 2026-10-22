@@ -10,6 +10,15 @@ Otherwise the group emits ONE line — `not testable — FUT volume missing` wit
 blocked-trigger cards, never spot volume as a substitute, never filled gaps. `validate_report` refuses a report whose `data_status` is
 not testable.
 
+### 0a. Reading gallery (Abhi 22 Oct) — reading check only, never results
+For sessions without near-month FUT volume Abhi can still verify the chart READING: the replay harness only (never live code) runs
+the deployed reader without letting the FUT data-problem rule consume the models; E1 / E3 / E4 (a, b) are followed to their structural
+outcomes. Every volume-dependent item is marked `FUT volume missing` (E2 shown as `E2 — FUT volume missing`, commitment volume, volume
+evidence, absorption volume, the FUT pane); never spot volume, never filled gaps; where FUT exists it is used. Banner on top:
+`READING GALLERY — FUT volume missing; E2 and volume evidence not evaluated; will be superseded when FUT volume arrives`; the running
+per-model table is labelled `without volume evidence`. Validated by `validate_report(rep, kind="reading_only")`; all other checks
+the same.
+
 ## 1. First line
 `Rules re-read: CLAUDE.md, REPORT_STANDARD.md, owner-orders`
 

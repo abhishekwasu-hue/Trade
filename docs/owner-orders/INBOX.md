@@ -471,3 +471,7 @@ the worst adverse move.
 ---
 ## 22 Oct — merge all
 Merge all
+
+---
+## 22 Oct — merge and continue
+Merge and continue

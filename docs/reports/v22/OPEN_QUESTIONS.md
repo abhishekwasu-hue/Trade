@@ -948,3 +948,40 @@ Logged as bugs against named concepts (never one-chart rules). Not fixed yet.
   `transition_notified=1` and gets no outcome line / reply (its buttons stay; a press answers "आधीच ठरलं") — same as before T-1;
   (b) `vision/notify.post` reads and rewrites `tg_outcome` without a lock, so two processes posting different outcomes for one signal
   at the same instant can drop one line from the card history (each reply message is still sent).
+
+## T-3 model C (counter-trend C leg) — coverage questions (2026-10-22)
+- Q1–Q11 with their provisional defaults are in `docs/reports/model_c/COVERAGE.md` §4 (assumed — no answer needed unless Abhi objects).
+  The ones Abhi may want to see: Q1 (model C needs DState.trend DOWN; `rev` / Weekly fallback ⇒ none), Q2 (method P4 / Vision
+  `trend_side` vs DECISIONS 32 — model C only), Q6 (a flipped area inside A is not C-a; the C-f switch only labels), Q7
+  (`c_projections` default (1.0,), display only), Q8 (15M-only channels are not E4 (b) objects).
+
+## T-3 model C — step 2 (built behind the switch, default OFF) (2026-10-22)
+- **Conflict for Abhi: method P4 vs DECISIONS 32.** P4 says "never a counter-trend entry"; DECISIONS 32 (Abhi's later order, T-3) adds
+  model C, a counter-trend C-leg entry. **Provisional: DECISIONS 32 wins for model C only** — P4 stands unchanged for E1–E4 on the
+  Daily side. Written into CHART_READER_METHOD §8 ("Model C" bullet) and into the Vision engine audit: the prompt names the one
+  exception (PROMPT_VERSION `engine_check_v2`) and a model C card's facts carry its own trend-side rule (Daily side the other way, a
+  1H CHoCH began A, B corrective and in progress, not dead), so `trend_side` is not failed for being counter-trend. Vision stays
+  advisory (human_confirm). Assumed — no answer needed unless Abhi objects.
+- **C-e window.** Appendix A: "With C-e ON, c_window = b_and_ha_retest". Built so: with the C-e switch on, the first return to HA is
+  open for the C-e objects only (HA's own area BROKEN ⇒ E4 (b); FLIPPED ⇒ E1–E4 at it), whatever `c_window` says; the other sub-ways
+  keep the B window. The first return = the first touch of HA's band after the C push away (a finest-structure swing beyond the band,
+  confirmed) and it ends at a new swing that does not reach the band (the RC4 revisit rule). The break candle of HA is never an entry.
+- **c_pullbacks (what-if only).** Read as the B window PLUS C's own pullbacks after the close beyond HA, at 1H areas whose base lies
+  from B's end on, until a 1H CHoCH back to the Daily side (C's end by structure). Provisional; never a default.
+- **Engine vs dashboard defaults.** Engine `model_c_subs` default = all six (the replay reads every sub-way when `model_c = on`); live,
+  every dashboard switch (`engine3_model_c_on`, `engine3_model_c_<a…f>_on`) is OFF by default and passes its own subset.
+- **C-f** labels a Daily-side entry (`model_c_context.sub_model = C-f`) when its area overlaps the end zone's first Daily / Weekly area
+  (or it is an E4 (b) on a line anchored inside C) after C left HA; the entry, its tag and its statistics slot stay the Daily side's.
+- **Row decision.** A bar whose only fired entries are model C keeps the Daily-side decision text; the C entries are in `entries`
+  (the live path reads them there) and the cycle in `model_c`.
+- **B read early.** B's nature is read on the closed 1H candles after HA's; until one exists B reads NA ⇒ the models wait. If B reads
+  mixed / NA on a visit's first bars, E1 cannot fire in that visit (the window starts later) — E2 / E3 / E4 can (Q9).
+- **Hidden divergence pair (coverage C-8).** The context line reads `rsi_hidden.read_hidden_divergence(V, t, d)` as it is; the explicit
+  (O, B-low) pair frame was not added (it needs a real-data case to compare; step 3 replay).
+- **Review fixes (PR #370).** The Vision engine audit keeps `SYSTEM_PROMPT` and `engine_check_v1` byte-identical for every non-C card;
+  only a model C card gets a second system block (`MODEL_C_SYSTEM`) and the version `engine_check_v1+c` (audit, validate and the
+  worker's reuse lookup). HA's area is read as known at t (born by t, alive at t); when HA's own birth fell inside an alive band
+  (lineage only, `Level.inside_bases`), that band is the area at HA; no such level ⇒ no C-e object (C-e waits; logged here as the
+  provisional reading). `c_window = b_and_ha_retest` opens the HA first return for the C-e sub-way only (without C-e it reads as
+  b_only). c_pullbacks opens from the bar after the HA break. An unreadable `engine3_c_projections` falls back to the default with a
+  warning (display only — never stops the engine).

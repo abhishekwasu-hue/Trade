@@ -747,6 +747,29 @@ def retest_levels(V, t, d=None, tf="1H"):
     return read_patterns(V, t, d=d, tf=tf)["retest_levels"]
 
 
+def hook_lines(V, t, d=None, tf="1H", families=None):
+    """Model C (T-3, C-d) adapter — wired ONLY by decision3/model_c.py (the general Daily-side PATTERN_HOOK wiring stays the T9 item):
+    each accepted (broken) pattern boundary at t (`retest_levels`, the same selection) in the E4 (b) broken-line shape {kind, family,
+    tf, p1, p2, slope, broken, break_bar, break_side, known_bar, id, degree} + the pattern's own swing bars (`swing_bars`) so the caller
+    can keep the shapes that lie inside its leg. known_bar = the bar the break is accepted (close beyond + swing beyond known). families =
+    only these pattern families (None = all). Bars ≤ t only."""
+    r = read_patterns(V, t, d=d, tf=tf)
+    S = known_swings(V.res["pivots"].get(r["degree"]) or [], t)
+    out = []
+    for p in r["patterns"]:
+        if families is not None and p["family"] not in families:
+            continue
+        for x in _retest([p], t, S):
+            b = p["boundaries"].get(x["boundary"]) or {}
+            up = int(x["break_dir"]) > 0
+            out.append({"kind": "H" if up else "L", "family": f"{p['name']} {x['boundary']}", "tf": x["tf"], "p1": list(x["p0"]),
+                        "p2": list(x["p1"]), "slope": float(x["slope"]), "broken": True, "break_bar": b.get("first_close"),
+                        "break_side": "up" if up else "down", "known_bar": int(x["accepted_bar"]), "state": "BROKEN",
+                        "id": f"pat:{p['family']}:{x['boundary']}:{int(x['p0'][0])}", "degree": r["degree"],
+                        "pattern": p["family"], "swing_bars": [int(s["bar"]) for s in p["swings"]]})
+    return out
+
+
 def draw_objects(V, t, d=None, tf="1H", read=None):
     """Objects for the chart track: one "pattern" object per pattern (its swings as `points`) and one "pattern_boundary" per line,
     drawn from its first anchor to bar t (converging lines: to their apex). {kind, tf, t0, t1, p0, p1, label, state, evidence}."""

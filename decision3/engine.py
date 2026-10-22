@@ -21,6 +21,7 @@ from . import flip as FL
 from . import levels as LV
 from . import liquidity as LQ
 from . import method as M
+from . import model_c as MDC
 from . import settings as S3
 from . import range_edges as RE
 from . import trendline as TL
@@ -123,6 +124,7 @@ class V22:
         bad = [m for m in (self.s.get("entry_models_on") or ()) if m not in MODELS]
         if bad or isinstance(self.s.get("entry_models_on"), str):
             raise ValueError(f"decision3 V22: entry_models_on accepts a list of {', '.join(MODELS)} (got {self.s.get('entry_models_on')!r})")
+        MDC.validate(self.s)                                              # model C (DECISIONS 32): fail at start, never a silent switch
         if self.s.get("div_degree_rule", "zone") not in ("zone", "all"):   # fail at start, not on the first in-zone bar
             raise ValueError(f"decision3 V22: unknown div_degree_rule {self.s['div_degree_rule']!r} (allowed: zone, all)")
         self.sealed = sealed                                              # Q33: sealed (NIFTY holdout) तारखा output मध्ये नाहीत
@@ -841,6 +843,8 @@ class V22:
                    entry_models_on=list(EM.Reader(self).on))
         if em is None and ok1 and not ok2:
             row["why"] = why2
+        if MDC.is_on(self):                                                # model C (DECISIONS 32, default OFF): only when switched on —
+            MDC.attach(self, t, row)                                       # row["model_c"] + C entries appended; OFF ⇒ the row as before
         return row
 
     def legacy_k_gate(self, t, trend, act=None):

@@ -24,6 +24,7 @@ import json
 import time
 
 PROMPT_VERSION = "engine_check_v1"
+MODEL_C_VERSION = PROMPT_VERSION + "+c"            # a model C card (DECISIONS 32): + the model C system block
 SETTING = "vision_engine_audit"
 MODES = ("engine", "legacy")
 DEFAULT = "engine"                      # PROVISIONAL (DECISIONS 31): review with the verdict-vs-outcome table (vision/engine_measure.py)
@@ -107,6 +108,27 @@ English sentence:
 verdict: "agree" = every item except evidence passes; "gray" = an item is unclear or mixed; "disagree" = an item except evidence fails.
 reason: one short sentence in simple Marathi (Devanagari) naming the deciding concept. confidence: from zero to one.
 Reply with the JSON object only."""
+
+
+# Model C (DECISIONS 32; OPEN_QUESTIONS: P4 vs DECISIONS 32, provisional — DECISIONS 32 wins for model C only). A SECOND system block, sent
+# only with a model C card: SYSTEM_PROMPT (and its cache) stays byte-identical for every other engine signal.
+MODEL_C_SYSTEM = """MODEL C (this card only; an owner decision)
+This signal is model C: a separate, switchable model for the C leg of a correction against the Daily side. It is the one exception to
+"never a counter-trend entry". Its trade side is the correction's own direction: the Daily side is the other way, a 1H change of
+character began wave A, wave B is a corrective pullback still in progress (no close beyond the end of A, except the first return to it
+when the facts say so), and B has not died (a close beyond the origin O and a swing formed beyond O). Judge trend_side by this rule;
+judge every other item as for any signal. It is still a pullback or retest entry, never a breakout entry."""
+
+
+def is_model_c(sig):
+    """A model C card: tags["entry_family"] == "C" (paper/engine_entry.model_c_tags)."""
+    return str(_tags(sig).get("entry_family") or "").upper() == "C"
+
+
+def prompt_version(sig):
+    """The audit's prompt version for this card: "engine_check_v1" for every engine signal as before; "engine_check_v1+c" for a model C
+    card (its extra system block) — stamped on the audit (validate), the result (audit) and the worker's reuse lookup."""
+    return MODEL_C_VERSION if is_model_c(sig) else PROMPT_VERSION
 
 
 # ------------------------------------------------------------------------------------------------------------------ which signals
@@ -214,6 +236,14 @@ def reading(sig, fallback_areas=None):
     ev = [[str(x[0]), str(x[1])] for x in ev if isinstance(x, (list, tuple)) and len(x) >= 2] if isinstance(ev, list) else []
     htf = g.get("htf") if isinstance(g.get("htf"), dict) else {}
     cl = g.get("cluster") if isinstance(g.get("cluster"), dict) else None
+    mc = None
+    if str(t.get("entry_family") or "").upper() == "C":                 # model C (DECISIONS 32): its own facts for trend_side
+        c = t.get("entry_model_c") if isinstance(t.get("entry_model_c"), dict) else {}
+        mc = {"sub_model": t.get("entry_sub_model"), "story": t.get("entry_story"), "daily": (c.get("daily") or {}).get("trend"),
+              "weekly": c.get("weekly"), "O": _num((c.get("O") or {}).get("price")), "HA": _num((c.get("HA") or {}).get("price")),
+              "B": _num((c.get("B") or {}).get("price")), "a_nature": (c.get("a_nature") or {}).get("verdict"),
+              "b_nature": (c.get("b_nature") or {}).get("verdict"), "window": c.get("window"),
+              "invalidated_if": c.get("invalidated_if")}
     return {"direction": d, "side": "bull put" if d > 0 else "bear call", "model": model, "name": name, "label": t.get("entry_label"),
             "grade": g.get("grade"), "object": obj, "trend": g.get("trend"), "htf": htf or None,
             "area": None if area is None else {"lo": area[0], "hi": area[1], "tf": me.get("tf") or g.get("tf"), "state": me.get("state"),
@@ -222,7 +252,7 @@ def reading(sig, fallback_areas=None):
             "invalidation": ip, "invalidation_rule": rule, "next_area": nxt, "evidence": ev,
             "cluster": None if not cl else {"n": cl.get("n"), "members": t.get("entry_cluster")},
             "others": [{"role": a.get("role"), "lo": _num(a.get("lo")), "hi": _num(a.get("hi")), "state": a.get("state")}
-                       for a in areas if _band(a.get("lo"), a.get("hi")) not in (area,)]}
+                       for a in areas if _band(a.get("lo"), a.get("hi")) not in (area,)], **({"model_c": mc} if mc else {})}
 
 
 def _p(x):
@@ -265,6 +295,17 @@ def facts_text(sig, rd=None):
     lines.append(f"Next area in the trade direction: {nx['role']} {_p(nx['lo'])} - {_p(nx['hi'])}"
                  + (f" ({nx['source']})" if nx.get("source") and nx["source"] != "engine" else "") + "." if nx else
                  "Next area in the trade direction: none known.")
+    mc = rd.get("model_c")
+    if mc:                                                               # DECISIONS 32: the C leg's own trend-side rule (advisory audit)
+        lines.append(f"Model C ({mc.get('sub_model') or 'C'}, owner decision — a separate switchable model, not the Daily-side rule): "
+                     f"the counter-trend C leg of a correction against the Daily side. Daily side {mc.get('daily') or 'n/a'}"
+                     + (f", Weekly {mc['weekly']}" if mc.get("weekly") else "") + "; this trade is in the 1H correction's direction.")
+        lines.append(f"Model C structure (engine): origin O {_p(mc.get('O'))}; wave A from O made a 1H change of character, its nature "
+                     f"{mc.get('a_nature') or 'n/a'}, ended at HA {_p(mc.get('HA'))}; wave B {mc.get('b_nature') or 'n/a'}, extreme so "
+                     f"far {_p(mc.get('B'))}; window: {mc.get('window') or 'n/a'}; {mc.get('invalidated_if') or ''}.")
+        lines.append("Trend side for this model C signal passes when: the Daily side is opposite to this trade, a 1H change of "
+                     "character began wave A, B is a corrective pullback still in progress (or the first return to HA when the window "
+                     "says so) and B has not closed beyond O with a swing formed beyond O. Judge trend_side by this rule.")
     if rd.get("cluster") and rd["cluster"].get("n"):
         lines.append("Cluster: overlapping areas of the same role count as one place (one signal per model); the edges, trigger and "
                      "invalidation above come from the visited area only.")
@@ -288,7 +329,8 @@ def build_request(png, sig, model, max_tokens=None, effort=None, thinking=None, 
     params = {
         "model": model,
         "max_tokens": int(max_tokens or SA.max_output_tokens()),
-        "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+        "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
+        + ([{"type": "text", "text": MODEL_C_SYSTEM}] if is_model_c(sig) else []),
         "messages": [{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.standard_b64encode(png).decode("utf-8")}},
             {"type": "text", "text": text if text is not None else facts_text(sig)}]}],
@@ -301,7 +343,7 @@ def build_request(png, sig, model, max_tokens=None, effort=None, thinking=None, 
     return params
 
 
-def validate(raw):
+def validate(raw, version=PROMPT_VERSION):
     """(clean dict, error | None). A missing item / status outside the enum / no verdict ⇒ error (⇒ unavailable)."""
     if not isinstance(raw, dict):
         return None, "JSON object नाही"
@@ -327,11 +369,11 @@ def validate(raw):
         return None, "confidence NaN"
     out["confidence"] = min(1.0, max(0.0, conf))
     out["reason"] = str(raw.get("reason") or "").strip()[:REASON_MAX]
-    out["engine_check"] = PROMPT_VERSION
+    out["engine_check"] = version
     return out, None
 
 
-def parse_message(message):
+def parse_message(message, version=PROMPT_VERSION):
     from . import signal_audit as SA
     usage = SA.usage_of(message)
     stop = getattr(message, "stop_reason", None)
@@ -346,18 +388,18 @@ def parse_message(message):
         raw = json.loads(text)
     except ValueError as exc:
         return None, f"JSON parse: {exc}", usage
-    data, err = validate(raw)
+    data, err = validate(raw, version)
     return data, err, usage
 
 
-def one_call(client, params):
+def one_call(client, params, version=PROMPT_VERSION):
     """(data, error, usage, latency_ms). Never raises."""
     t0 = time.monotonic()
     try:
         msg = client.messages.create(**params)
     except Exception as exc:                                             # noqa: BLE001
         return None, f"API: {type(exc).__name__}: {str(exc)[:160]}", {}, int((time.monotonic() - t0) * 1000)
-    data, err, usage = parse_message(msg)
+    data, err, usage = parse_message(msg, version)
     return data, err, usage, int((time.monotonic() - t0) * 1000)
 
 
@@ -421,15 +463,16 @@ def audit(client, png, sig, model, second_below=0.6, effort=None, thinking=None,
     ctx = sig.get("ctx")
     rd = (ctx or {}).get("engine") if isinstance(ctx, dict) and isinstance(ctx.get("engine"), dict) else reading(sig)
     params = build_request(png, sig, model, effort=effort, thinking=thinking, text=facts_text(sig, rd))
+    pv = prompt_version(sig)
     legacy = legacy_context(ctx, sig.get("direction"), disagree_rules, gray_rules)
-    out = {"audits": [], "verdicts": [], "cost_usd": 0.0, "latency_ms": 0, "error": None, "prompt_version": PROMPT_VERSION, "model": model,
+    out = {"audits": [], "verdicts": [], "cost_usd": 0.0, "latency_ms": 0, "error": None, "prompt_version": pv, "model": model,
            "usage": {"input_tokens": 0, "output_tokens": 0, "cache_read": 0, "cache_write": 0}, "rule_hits": []}
     for n in range(2):
         if n == 1:
             first = out["audits"][0] if out["audits"] else None
             if first is None or first["confidence"] >= second_below or (budget_ok is not None and not budget_ok()):
                 break
-        data, err, usage, ms = one_call(client, params)
+        data, err, usage, ms = one_call(client, params, pv)
         if not usage and err and err.startswith("API"):
             usage = {"input_tokens": 2050, "output_tokens": SA.max_output_tokens(), "estimated": 1}   # as signal_audit.audit (budget)
         c = SA.cost_usd(model, usage)
