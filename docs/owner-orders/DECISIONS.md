@@ -75,3 +75,9 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     (Appendix A C-3) and stays OFF; DECISIONS 32 wins over method P4 for model C only; approval mode keeps only a would-have note
     for rejected / no-reply signals (no shadow trade opened); the model C replay gallery goes to the private trade-data repo.
     (Handover follow-up)
+35. The daily Chart Reading Report (Telegram, per dashboard symbol: after the close + a short refresh before the open) is built
+    only from the decision3 reader's own facts, in the closed concept words A–L; no new reading rule, score or number; no buy /
+    sell / target / stop words; areas as ranges; execution stays the dashboard settings. Vision's part is information only (per
+    alive area VALID / SPURIOUS / SHIFT, missing zones, duplicates; an area outside the chart window is "not visible", never
+    SPURIOUS); its disagreements are reading checks against a named concept in OPEN_QUESTIONS. The old bare level-count message is
+    off by default. Abhi approves one sample (NIFTY + BANKNIFTY) before the deploy. (Chart Reading Report order)

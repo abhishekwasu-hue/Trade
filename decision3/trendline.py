@@ -505,6 +505,44 @@ def line_value(ln, b):
     return float(y1) + float(ln["slope"]) * (int(b) - int(b1))
 
 
+def broken_back_at(V, ln, t):
+    """K6.5 mirror for a BROKEN line (method §3 "as an area") — the line's own reclaim, read exactly as `Levels._step_far_swing` reads a
+    BROKEN area's reclaim (a close back on its role side AND a swing formed there): after the break's own excursion, a close back beyond
+    the line on its ORIGINAL side starts an attempt; a swing of the line's own degree formed beyond it there (from the attempt's first
+    close on) and CONFIRMED while the attempt still holds completes it (the confirming bar may itself close back on the break side, as in
+    levels); a close that is not back before that confirmation ends the attempt (a sweep of the retest — the line stays broken).
+    Returns the attempt's first close (a bar) of the first completed attempt known by bar t, else None. E4 (b) reads a broken line as
+    a flipped object (Abhi 22 Oct: close beyond + swing beyond = broken (flip)); once its break is undone by structure the line is
+    never a retest object for E4 (b) again. Comparison only; bars ≤ t (each bar read with the swings confirmed by it)."""
+    if not ln.get("broken") or ln.get("break_bar") is None:
+        return None
+    bs = ln.get("break_side")                                              # the break side (a line of highs is broken upward)
+    side = (1 if bs == "up" else -1) if bs in ("up", "down") else (1 if ln["kind"] == "H" else -1)
+    C = V.levels.A["close"]
+    t = int(t)
+    run_end = int(ln["break_bar"])                                         # skip the break's own closes beyond
+    while run_end <= t and (float(C[run_end]) - line_value(ln, run_end)) * side > 0:
+        run_end += 1
+    if run_end > t:
+        return None
+    g = int(ln.get("degree") or V.s.get("level_degree", 2))
+    back_kind = "L" if side > 0 else "H"                                   # the swing that confirms the break back
+    piv = [p for p in _known_deg(V, t, g) if p.kind == back_kind and int(p.bar) >= run_end
+           and (float(p.price) - line_value(ln, int(p.bar))) * -side > 0]
+    if not piv:
+        return None
+    att = None
+    for u in range(run_end, t + 1):
+        back = (float(C[u]) - line_value(ln, u)) * -side > 0
+        if back and att is None:
+            att = u
+        if att is not None and any(int(p.bar) >= att and int(p.confirm_bar) <= u for p in piv):
+            return att
+        if not back:
+            att = None
+    return None
+
+
 def break_known_at(V, ln):
     """The bar from which a broken line is KNOWN broken: the confirmation of the first swing beyond it after the break close (K6.5)."""
     if not ln.get("broken"):

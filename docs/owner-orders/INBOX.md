@@ -487,3 +487,154 @@ Vps block dya
 ---
 ## 22 Oct — after the deploy status (reply to the four open decisions)
 Ok go ahead
+
+---
+## Chart Reading Report order
+Abhi (message with the order):
+Abhi — a separate new order attached: TRADE_SESSION_CHART_READING_REPORT.md (the daily Chart Reading Report on Telegram, replacing the bare Visual-audit level-count message). Record it in owner-orders first (INBOX verbatim, a README row, a DECISIONS principle). Do its "Report first" part, then build it in its own PR after the handover's T-1 / T-5 / T-6 Vision work. Send me one sample report for NIFTY and BANKNIFTY (charts + text) for approval before the deploy. Reports to me in Marathi.
+
+The order (verbatim):
+
+# Trade session — order: the daily Chart Reading Report on Telegram
+
+From Abhi. English spec; reports to Abhi in Marathi. A separate order (not part of the handover pack).
+First: re-read CLAUDE.md, REPORT_STANDARD.md and owner-orders; append this order VERBATIM to docs/owner-orders/INBOX.md; add a README row and a DECISIONS principle (no dates). One PR (`claude/chart-reading-report`); self-review; tests; PAPER unaffected; one VPS block for Abhi after market close with --revert (say if a restart is needed). Standing rules of CLAUDE.md apply.
+
+### What Abhi saw
+The daily Visual-audit message ("NIFTY 1D: 6 levels → 3 VALID, 3 SPURIOUS …, 2 missing भाग …, CONSENSUS: 2"):
+- It shows only level counts. A trader cannot learn the market state from it, and it does not look professional.
+- It also audits the OLD Opportunity Engine §2.6 levels, which no live bot trades (`consensus_mode = off`).
+- Abhi reads the chart with many concepts and decides trades with all of them. The report must show the same reading.
+
+### Report first
+1. Which bots / paths read the Opportunity Engine levels or the consensus today. Confirm that decision3 does not.
+2. Why `visual_audit_symbols` now includes BANKNIFTY. Abhi's setting was NIFTY only, for cost.
+
+### The new report
+- **One report per symbol** (the dashboard symbols list):
+  - after the market close (the reading for the next session);
+  - a short refresh before the open (what changed overnight / at the open).
+- **Built from the decision3 READER's own facts.** Reuse what exists:
+  - `mtf_state` (W / D / 1H / 15M state + story);
+  - the areas with their K4 lifecycle;
+  - liquidity / liquidity_pa;
+  - trendline channel_lines / channels;
+  - patterns_pa;
+  - volume_read;
+  - rsi / rsi_hidden;
+  - daily wave_context (corr_label, wave);
+  - confluence_pa;
+  - entry_models state;
+  - `bots_common/preopen_crux` + `decision3/preopen_chart` (the existing pre-open crux and charts are the starting point;
+    extend them, do not rebuild).
+- **No new reading rule, score or number.** Every value comes from the reader. Words come only from the closed concept
+  list A–L of the Price Action Standard.
+
+### Message 1: the charts
+An album of 3 annotated PNGs, with chart text in English:
+- **Weekly + Daily:** trend, protected level, the correction legs (a / b / c), the Daily / Weekly areas.
+- **1H:**
+  - the alive areas with their ids and states;
+  - the broken / flipped ones dashed;
+  - liquidity pools;
+  - channel lines with touch counts;
+  - pattern boundaries;
+  - the last BOS / CHoCH.
+- **15M:**
+  - the refined bases;
+  - the current visit;
+  - the "entry only if" sequence at the nearest trade-side area;
+  - the invalidation line;
+  - the next area.
+- Each chart has an FUT volume pane, and RSI with the divergences marked.
+
+### Message 2: the reading
+- Plain words, in Marathi by default (a dashboard language setting, MR / EN).
+- Short lines; one section per concept; a section with nothing to say is omitted.
+- It must fit one Telegram message (≤ 4096 characters). The "full" detail goes to a dashboard page linked at the end.
+- Layout (the values below are a FORMAT EXAMPLE only, not a reading):
+
+```
+📘 NIFTY — chart reading (for the next session)
+━━━━━━━━━━━━━━━━
+🧭 Big picture
+• Weekly: correction inside an up-trend
+• Daily: DOWN · protected high 23,180 · correction leg b
+• 1H: range 22,600–22,950 · 15M: counter-move
+
+🏗 Structure (A, B)
+• Last 1H event: CHoCH ↓ (close below 22,790); no BOS since
+• Legs: the down-leg impulsive (larger bodies, rising FUT volume); the up-leg corrective (overlapping, lower volume)
+
+🧱 Areas (C) — what the engine watches
+• 🔴 1H supply 22,760–22,820 · FLIPPED (was support) · retested once
+• 🟢 1H demand 22,560–22,610 · FRESH
+• Daily supply 23,050–23,200 · TESTED
+• Reading check: no wide / duplicate area
+
+💧 Liquidity (D)
+• Above: equal highs ≈ 22,950 (resting) · Below: swept 22,600 and closed back inside
+
+📐 Lines · patterns (E, H) · confluence (F)
+• 1H falling channel, lower line touched 3×
+• Confluence: the supply 22,760–22,820 lies on the channel's upper line
+
+📊 Volume (I) · RSI (J)
+• The pullback came on lower FUT volume
+• 1H: regular bullish divergence at 22,600 (evidence only)
+
+🔀 Breakout / range (K, L)
+• No accepted breakout · Range edges 22,600 / 22,950
+
+🌊 Wave context
+• Daily correction: A done, B in progress → a C leg is possible (model C: OFF)
+
+🎯 What the engine waits for (a plan, not a signal)
+• Bear-call side: visit 22,760–22,820 → handover → commitment with FUT volume → 5-min CHoCH ⇒ E1–E4
+• Idea cancelled if: a close above 22,820 + a swing above (the area BROKEN)
+• Bull-put side: only via model C (OFF)
+• Execution = your dashboard settings
+
+👁 Vision second opinion (info only)
+• Areas: 4 of 5 agree · 1 shift suggested (22,760 → 22,790)
+• A zone it sees that the engine does not: 22,860–22,890
+• Trend / structure reading: agrees
+• Full report → <dashboard link>
+```
+
+### Vision's part
+The existing Dual-Eye audit is pointed at the decision3 reader's ALIVE areas per timeframe (bands as drawn, lifecycle
+state, area id). It is information only, never a gate. Per area it gives:
+- VALID / SPURIOUS / SHIFT;
+- the missing zones;
+- duplicates inside another area (a concept C / Z-1u reading check).
+Rules:
+- An area drawn outside the visible chart window is "not visible on this chart", never SPURIOUS.
+- Vision also gives one line each for trend / structure agreement.
+- Its disagreements go to OPEN_QUESTIONS as reading checks against a named concept. Never a rule from one chart.
+
+### Rules
+- No buy / sell / target / stop words in the reading. Areas as ranges.
+- Execution stays the dashboard settings.
+- No day / date / session framing in the READING. "For the next session" is only the operational send time.
+- The Vision budget caps stay. The symbols, the language, the on / off switch and the short / full detail level are
+  dashboard settings.
+- The old bare level-count message: off by default (a setting); its data is kept on the dashboard page.
+- Charts and private reading data go to the private trade-data repo only, never this public repo.
+
+### Tests
+- Every section maps to its reader fact (a fixture per concept).
+- An empty concept is omitted.
+- The message length ≤ 4096 characters with the overflow to the link.
+- The "not visible" rule.
+- The language setting.
+- No look-ahead (the report at the close uses bars ≤ that close).
+- Golden-format snapshot tests in English and Marathi.
+
+### Show Abhi
+Before the deploy, send ONE sample report for NIFTY and BANKNIFTY (charts + text) from the latest close, for his
+approval of the look.
+
+---
+## 22 Oct — no questions, continue non-stop
+ओके आता प्रश्न विचारू नका पुढील रिमिक्स काम करा नॉनस्टॉप
