@@ -73,3 +73,23 @@ Do this together with the duplicate-E4b fix (one signal per model per place), in
 ---
 ## 22 Oct — stop here
 कोणताही नवीन जॉब सुरू करू नका जे आतापर्यंत काम झालेला आहे त्याचा रिपोर्ट मला द्या एक एमडी फाईल तयार करा आणि जे झालं आहे ते कमेंट आणि मर्ज करा आणि काम इथेच थांबवा
+
+---
+## 22 Oct — md file of the remaining work (recorded late, from the handoff)
+आणि अजून कोणते काम शिल्लक आहे त्याची पण एमडी फाईल द्या
+
+---
+## 22 Oct — credit limit (recorded late, from the handoff)
+क्रेडिट लिमिट संपली असल्यामुळे तुम्ही कोणतही काम करू नका फक्त जे काही करायचं आहे ते मला सांगा मी दुसऱ्याकडून मधून करतो
+
+---
+## 22 Oct — md file (recorded late, from the handoff)
+Md file de
+
+---
+## 22 Oct — new session: read only
+repo read kra, kontihi file delete kinwa change karu nka
+
+---
+## 22 Oct — new session: go ahead (with the handoff: fix the #367 CI fail, review, merge, VPS block, owner-orders)
+ok go ahead

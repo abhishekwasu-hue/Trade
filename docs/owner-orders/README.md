@@ -17,3 +17,5 @@ Decisions taken from orders go to DECISIONS.md (append only).
 | 10 | BANKNIFTY 6-month reading galleries (no FUT before 30 Sep) | done, 12 batches on bf98040 (trade-data review/replay_banknifty_6m/reading/bf98040) | reading-only validator: branch claude/reading-only-reports |
 | 11 | Flipped area broken again ⇒ DEAD (no E4b on it) + one E4b per place (duplicate E4b) | code + tests + 07–21 Oct before / after done; Abhi: merge now + VPS block (overrides the after-close timing for this deploy); merge on green CI + independent review | branch claude/trigger-touches-refined-base |
 | 12 | Stop: report (docs/reports/owner/STATUS_REPORT.md), commit, merge, no new jobs | done; #367 merges on green CI; VPS block in the report |
+| 13 | Remaining-work md file (handoff) + stop (credit limit) | handoff given to Abhi; new session resumed on "ok go ahead" | HANDOFF.md (upload) |
+| 14 | Handoff step 1: #367 CI fail (Daily swing confirmed only from a completed day) | in progress | branch claude/hopeful-gates-hf186c (on #367 head) |

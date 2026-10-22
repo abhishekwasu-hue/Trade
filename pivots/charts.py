@@ -38,8 +38,12 @@ def agg_1h(m15):
 
 def daily_from_15m(m15, asof):
     """15M ⇒ daily; फक्त पूर्ण sessions (त्या दिवसाचा शेवटचा अपेक्षित 15M bar — CAS असेल तर 15:15 ला संपणारा — asof पर्यंत बंद).
-    अर्धवट दिवसाची candle नाही."""
+    अर्धवट दिवसाची candle नाही. CAS candle (opportunity_engine/cas.py) structure नाही ⇒ Daily candle मध्ये नाही (engine चा 15M ती
+    आधीच वगळतो, `resample_nse` drop); ती असलेल्या data वरही दिवस त्याच्या शेवटच्या structure candle ला पूर्ण ⇒ कापलेल्या आणि पूर्ण
+    data वर तीच Daily candle, तोच known_at."""
+    from opportunity_engine import cas as CAS
     m = m15[pd.to_datetime(m15["bar_end"]) <= pd.Timestamp(asof)]
+    m = m[~CAS.cas_mask(m["timestamp"]).to_numpy()]
     t = pd.to_datetime(m["timestamp"])
     g = m.assign(timestamp=t.dt.normalize()).groupby("timestamp").agg(open=("open", "first"), high=("high", "max"), low=("low", "min"),
                                                                    close=("close", "last"), bar_end=("bar_end", "max")).reset_index()
