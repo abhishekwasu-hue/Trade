@@ -69,3 +69,7 @@ Do this together with the duplicate-E4b fix (one signal per model per place), in
 ---
 ## 22 Oct (market hours) — merge now
 आताच merge kra aani vps block dya
+
+---
+## 22 Oct — stop here
+कोणताही नवीन जॉब सुरू करू नका जे आतापर्यंत काम झालेला आहे त्याचा रिपोर्ट मला द्या एक एमडी फाईल तयार करा आणि जे झालं आहे ते कमेंट आणि मर्ज करा आणि काम इथेच थांबवा
