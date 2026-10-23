@@ -718,3 +718,7 @@ Do it fast, use multiple agent
 ---
 ## 23 Oct — VPS command + see all work
 Vps comand dya, आतापर्यंत झालेले सर्व काम मला बघायचे आहे
+
+---
+## 23 Oct — VPS block now, during market
+मार्केट सुरू आहे तरी मला आत्ताच व्हीपीएस ब्लॉक द्या फोर्स फुल इराण करा
