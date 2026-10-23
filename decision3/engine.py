@@ -34,6 +34,7 @@ STEPS = ("③", "④", "⑤", "⑥", "⑦")
 VISIT_RULES = ("structure", "close_away", "touch_window")                 # method §3 Visit (+ legacy what-ifs); settings.zone_visit_rule
 ENTRY_GATES = ("models", "legacy_k")                                      # Abhi 21 Oct: settings.entry_gate
 MODELS = ("E1", "E2", "E3", "E4")
+TRIGGER_TFS = ("5M", "15M")                                               # DECISIONS 37: settings.trigger_tf (5M = Abhi's rule)
 MODEL_NAME = {"E1": "Aggressive", "E2": "Confirmation", "E3": "Structure", "E4": "Sweep-retest"}
 
 
@@ -121,6 +122,8 @@ class V22:
             raise ValueError(f"decision3 V22: unknown entry_area_refine {self.s['entry_area_refine']!r} (allowed: setup_tf, area)")
         if self.s.get("entry_cluster_rule", "cluster") not in ("cluster", "area"):
             raise ValueError(f"decision3 V22: unknown entry_cluster_rule {self.s['entry_cluster_rule']!r} (allowed: cluster, area)")
+        if str(self.s.get("trigger_tf", "5M")).upper() not in TRIGGER_TFS:   # DECISIONS 37: fail at start, never a silent trigger frame
+            raise ValueError(f"decision3 V22: unknown trigger_tf {self.s['trigger_tf']!r} (allowed: {', '.join(TRIGGER_TFS)})")
         bad = [m for m in (self.s.get("entry_models_on") or ()) if m not in MODELS]
         if bad or isinstance(self.s.get("entry_models_on"), str):
             raise ValueError(f"decision3 V22: entry_models_on accepts a list of {', '.join(MODELS)} (got {self.s.get('entry_models_on')!r})")
@@ -146,6 +149,7 @@ class V22:
         self.bar_end = pd.to_datetime(self.m15["bar_end"]).reset_index(drop=True)
         self._ts = pd.to_datetime(self.m15["timestamp"]).to_numpy()
         self.pb = M.Pullbacks(self)
+        self._futures = futures                                           # DECISIONS 37: the FUT 5M bars for the 5M trigger frame
         self._confirm_inputs(ltf, futures)
 
     def range_structure(self, t):
@@ -772,7 +776,9 @@ class V22:
             return M_WAIT, chk, {**extra, "why": "conviction कमी — गहाळ: " + ", ".join(missing)}
         return M_NO, chk, {**extra, "why": "विरुद्ध पुरावे जास्त"}
 
-    def decide(self, t):
+    def decide(self, t, _models=None, _c_read=None):
+        """The decision at the closed 15M bar t. `_models` / `_c_read` (decide5 only, DECISIONS 37): the entry models read at a 5M candle
+        instead of at t — None (every 15M caller, trigger_tf = 15M) = the earlier behaviour, byte for byte."""
         if self.sealed is not None and self.sealed(pd.Timestamp(self.m15["timestamp"].iloc[t])):   # Abhi Z-1t (belt and braces)
             from elliott import data_policy as DP
             raise DP.HoldoutError("decision on a sealed holdout date — never produced")
@@ -785,7 +791,7 @@ class V22:
         dec, best, evals = (NO_TRADE if not ok1 else WAIT), {}, []
         em = None
         if ok1 and ok2 and not self.legacy_k:                             # Abhi 21 Oct: the entry models decide (③ K = diagnostic only)
-            em = self._models_eval(t, trend, act, ctx.get("notes"))
+            em = (_models or self._models_eval)(t, trend, act, ctx.get("notes"))
             chk.update(em["chk"])
             dec, best, evals = em["decision"], em["best"], em["evals"]
         elif ok1 and ok2:
@@ -845,7 +851,10 @@ class V22:
         if em is None and ok1 and not ok2:
             row["why"] = why2
         if MDC.is_on(self):                                                # model C (DECISIONS 32, default OFF): only when switched on —
-            MDC.attach(self, t, row)                                       # row["model_c"] + C entries appended; OFF ⇒ the row as before
+            if _c_read is None:
+                MDC.attach(self, t, row)                                   # row["model_c"] + C entries appended; OFF ⇒ the row as before
+            else:
+                MDC.attach(self, t, row, read=_c_read)                     # DECISIONS 37: model C follows trigger_tf (Q10)
         return row
 
     def _channels_htf(self, t):
@@ -877,11 +886,11 @@ class V22:
             return {"pass": None, "reason": "no trade direction (① ✘)", "direction": 0, "values": None}
         return out[0] if len(out) == 1 else {**out[0], "by_direction": out}
 
-    def _models_eval(self, t, trend, act, notes=None):
+    def _models_eval(self, t, trend, act, notes=None, _read=None):
         """Abhi 21 Oct (entry_gate = models): ③ = the entry models (decision3/entry_models.py) on the step2 watch-list. A model fired
         at t ⇒ setup (the first fired entry gives the row's level / label / evidence list); none ⇒ wait, the reason = what each armed
         model waits for."""
-        r = EM.read(self, t, trend, act)
+        r = EM.read(self, t, trend, act) if _read is None else _read(self, t, trend, act)
         armed, entries = r["armed"], r["entries"]
         live = [a for a in armed if not a.get("disarmed")]
         chk = {"③": [bool(live), (f"entry models armed at {len(live)} visit(s): " + ", ".join(
@@ -921,3 +930,38 @@ class V22:
     def run(self, bars=None):
         bars = range(len(self.m15)) if bars is None else bars
         return [self.decide(t) for t in bars]
+
+    # ------------------------------------------------------------------------------------------ DECISIONS 37: the 5M trigger
+    @property
+    def trigger_tf(self):
+        """settings.trigger_tf: "5M" (default, Abhi's rule) = the entry trigger on 5M (decide5); "15M" = the earlier behaviour."""
+        return str(self.s.get("trigger_tf", "5M")).upper()
+
+    def trigger_frame(self):
+        from . import trigger_frame as TF5
+        return TF5.of(self)
+
+    def decide5(self, j):
+        """DECISIONS 37 (owner rule): the decision at the 5M close of the 5M candle j (trigger_tf = 5M). Everything above the trigger —
+        ① Daily side, ② the areas with their K4 lifecycle, the refined 15M base, the visit, the evidence context — is read at k(j), the
+        last 15M bar CLOSED at that 5M close (a 15M bar in progress is never read; its 5M children only as 5M candles); the entry models
+        read their trigger on the 5M candles (decision3/entry_models5.read5). The row = decide(k) with the 5M entries; `ts` / `bar_end`
+        = the 5M candle, `context_bar` / `context_ts` / `context_bar_end` = the 15M bar k, `trigger_tf` = "5M", `bar5` = j."""
+        from . import entry_models5 as EM5
+        F = self.trigger_frame()
+        if not (0 <= int(j) < F.n):
+            raise IndexError(f"decide5: 5M candle {j} outside the trigger frame ({F.n} candles)")
+        j = int(j)
+        k = int(F.k_of[j])
+        if k < 0:
+            return {"bar5": j, "ts": F.T(j), "bar_end": F.E(j), "engine_version": "v22", "trigger_tf": "5M", "decision": WAIT,
+                    "why": "no closed 15M bar yet", "entries": [], "armed": [], "checklist": {}}
+
+        def read5(V, t, trend, act, **kw):
+            return EM5.read5(V, j, trend, act, **kw)
+
+        row = self.decide(k, _models=lambda t, trend, act, notes=None: self._models_eval(t, trend, act, notes, _read=read5),
+                          _c_read=read5)
+        row.update(trigger_tf="5M", bar5=j, context_bar=k, context_ts=row["ts"], context_bar_end=row["bar_end"], ts=F.T(j),
+                   bar_end=F.E(j))
+        return row

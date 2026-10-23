@@ -28,7 +28,7 @@ restart_units() {
 
 if [ "${1:-}" = "--revert" ]; then
   echo "== 1/4 settings revert"; python3 scripts/set_one_bot_mode.py --revert || echo "⚠️ settings revert: वरचा संदेश पाहा"
-  echo "== 2/4 schedule revert"; bash scripts/install_engine_schedule.sh --revert
+  echo "== 2/4 schedule revert"; bash scripts/install_engine_schedule.sh --revert-all
   echo "== 3/4 code rollback"
   if [ -f "$RB" ]; then
     read -r B H < "$RB"

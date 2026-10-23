@@ -418,7 +418,17 @@ def entry_gate_tags(r, e, direction, settings=None):
             "entry_invalidation": e.get("invalidation"), "entry_evidence": ev,
             "entry_pa_evidence": e.get("pa_evidence") if isinstance(e.get("pa_evidence"), list) else None,   # T9: display only
             "entry_cluster": None if not cl else [x.get("area_id") for x in cl.get("members") or [] if isinstance(x, dict)],
-            **model_c_tags(e), **object_tags(e)}
+            **model_c_tags(e), **object_tags(e), **trigger_tags(e)}
+
+
+def trigger_tags(e):
+    """DECISIONS 37: an entry whose trigger was read on 5M ⇒ {entry_trigger_tf "5M", entry_trigger (the 5M candle: ts, bar_end, OHLC,
+    context_bar_ts, facts …)} — the card's 5M trigger panel, Vision's bar wait on the trigger TF, the models summary. A 15M entry ⇒ {}
+    (its tags as before). Display / timing only."""
+    tf = e.get("trigger_tf")
+    if not tf:
+        return {}
+    return {"entry_trigger_tf": str(tf).upper(), "entry_trigger": e.get("trigger") if isinstance(e.get("trigger"), dict) else None}
 
 
 def object_tags(e):

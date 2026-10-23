@@ -12,8 +12,10 @@ Token तपासणी (decision3; env ENGINE_TOKEN_CHECK, default on — Abhi
 (401 / 403 / UDAPI100050) ⇒ प्रत्येक symbol ची error row + "🔴 Upstox token rejected …" (दर 15M bar, throttle नाही); पुन्हा पास ⇒
 "✅ Upstox data restored …" एकदा. Network चूक ≠ नाकारला (आजचा मार्ग). Exits (trade_monitor) ना हात नाही. Token कधीच print नाही.
 
-VPS cron (UTC; `scripts/install_engine_schedule.sh` लावतो — हाताने नाही):
-  1,16,31,46 4-9 * * 1-5  cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/engine_signal_run.py --engine decision3
+VPS cron (UTC; `scripts/install_engine_schedule.sh` लावतो — हाताने नाही). DECISIONS 37 (trigger_tf 5M): every minute with `--guard` —
+the run exits at once unless the symbol's bar (5M, or 15M in the 15M what-if) closed a minute ago is due and not stored; a due run
+decides every unstored closed 5M bar of the session (catch-up):
+  * 3-10 * * 1-5  cd /root/Trade && set -a && . ./.env && set +a && flock -n … python3 scripts/engine_signal_run.py --engine decision3 --guard
 Dry-run (store / Telegram नाही; बाजार बंद असला तरी): python3 scripts/engine_signal_run.py --dry-run --force
 """
 import argparse
@@ -47,13 +49,50 @@ def _token_check(tok, check_fn=None):
         return f"unknown ({type(exc).__name__})"
 
 
-def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert_path=None, now=None, symbols_fn=None, check_fn=None):
+def _settings(sym, settings_fn=None):
+    return ES.engine3_settings(sym) if settings_fn is None else ES.engine3_settings(sym, settings_fn)
+
+
+def trigger_tf(sym, settings_fn=None):
+    """The symbol's dashboard `engine3_trigger_tf` ⇒ "5M" (default, DECISIONS 37) / "15M"; an unreadable / bad value ⇒ "5M" here (the
+    run itself then fails closed on a bad setting with its own error row)."""
+    import engine3_live as L
+    try:
+        return L.trigger_tf_of(_settings(sym, settings_fn))
+    except ValueError:
+        return "5M"
+
+
+def due_symbols(syms, now=None, path=None, settings_fn=None):
+    """The every-minute guard (DECISIONS 37, report §5): a symbol is due when the bar closed at least a minute ago on its trigger TF is
+    inside the store window (`engine_first_bar_end` … `engine_last_bar_end`) and not stored yet (an error row does not count — the next
+    minute retries). The 5M bar is checked first (no settings read when it is stored); 15M mode then needs a new 15M bar."""
+    now = ES._naive(now or ES.now_ist())
+    out = []
+    for sym in syms:
+        b5 = ES.due_bar_end(now, "5M")
+        if not ES.in_window(b5) or ES.has_bar(sym, b5, path):
+            continue
+        tf = trigger_tf(sym, settings_fn)
+        b = b5 if tf == "5M" else ES.due_bar_end(now, "15M")
+        if tf != "5M" and (not ES.in_window(b) or ES.has_bar(sym, b, path)):
+            continue
+        out.append(sym)
+    if not out:
+        print(f"⏭️ guard {now:%H:%M}: no due bar (stored / outside the store window) ⇒ exit")
+    return out
+
+
+def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert_path=None, now=None, symbols_fn=None, check_fn=None,
+         settings_fn=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbols", default=None, help="default: decision3 ⇒ dashboard signal_symbols; decision2 ⇒ NIFTY. signal_symbols "
                                                     "बाहेरचे symbols ⇒ skip")
     ap.add_argument("--engine", default=None, help="decision3 (default) / decision2")
     ap.add_argument("--force", action="store_true", help="बाजार बंद असला तरी (dry-run / तपासणी)")
     ap.add_argument("--dry-run", action="store_true", help="store मध्ये लिहीत नाही, Telegram नाही — फक्त print")
+    ap.add_argument("--guard", action="store_true", help="every-minute cron (DECISIONS 37): exit at once unless a closed bar of the "
+                                                        "symbol's trigger TF (5M / 15M) inside the store window is not stored yet")
     a = ap.parse_args(argv)
     engine = ES.engine_name(a.engine)
     if market_fn is None:
@@ -70,17 +109,26 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
     if not syms:
         print("⏭️ एकही signal symbol नाही ⇒ engine signal नाही")
         return 0
+    if a.guard and engine == "decision3":                                # DECISIONS 37: the every-minute cron runs only when a bar is due
+        syms = due_symbols(syms, now, settings_fn=settings_fn)
+        if not syms:
+            return 0
     if token_fn is None:
         import cloud_db
         token_fn = lambda: cloud_db.get_effective_upstox_token(None)  # noqa: E731
     tok = token_fn()
-    bar = ES.expected_bar_end(now or ES.now_ist())
+    _bars = {}
+
+    def bar_for(sym):                                                    # the error row's bar: the symbol's own trigger TF (5M / 15M)
+        if sym not in _bars:
+            _bars[sym] = ES.expected_bar_end(now or ES.now_ist(), trigger_tf(sym, settings_fn) if engine == "decision3" else "15M")
+        return _bars[sym]
     if not tok:
         msg = "Upstox token नाही — engine signal मोजता येत नाही (आधी daily login)"
         print(f"❌ {msg}")
         if not a.dry_run:
             for sym in syms:
-                ES.save_error(sym, bar, msg, engine=engine)
+                ES.save_error(sym, bar_for(sym), msg, engine=engine)
                 ES.alert_error(sym, "Upstox token missing", send=send, state_path=alert_path, now=now)
         return 2
     if engine == "decision3" and token_check_on():                       # Abhi: नाकारलेला token प्रत्येक 15M bar ला दिसावा
@@ -91,7 +139,7 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
             if not a.dry_run:
                 for sym in syms:
                     try:
-                        ES.save_error(sym, bar, msg, engine=engine)
+                        ES.save_error(sym, bar_for(sym), msg, engine=engine)
                     except Exception as exc2:                            # noqa: BLE001
                         print(f"⚠️ {sym}: error row लिहिता आली नाही: {exc2}")
                 try:
@@ -108,7 +156,7 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                 print(f"⚠️ token restored alert पाठवता आला नाही: {type(exc2).__name__}: {exc2}")
     if run_fn is None:
         if engine == "decision3":
-            run_fn = lambda sym, t: ES.run3(sym, t, now=now, dry_run=a.dry_run, s=ES.engine3_settings(sym))  # noqa: E731
+            run_fn = lambda sym, t: ES.run3(sym, t, now=now, dry_run=a.dry_run, s=_settings(sym, settings_fn))  # noqa: E731
         else:
             run_fn = ES.run
     rc = 0
@@ -125,7 +173,8 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                 continue
             tag = " (dry-run, store नाही)" if a.dry_run else ""
             print(f"✅ {sym} [{engine}] {r['bar_ts']}: {r['decision']} gate {r.get('gate') or '—'} dir {r.get('direction')} "
-                  f"grade {r.get('grade') or '—'} · {r.get('reason') or ''}{tag}{_m1_tag(r)}")
+                  f"grade {r.get('grade') or '—'} · {r.get('reason') or ''}{tag}{_m1_tag(r)}"
+                  + (f" · catch-up {len(r['caught_up'])} earlier 5M bar(s)" if r.get("caught_up") else ""))
             if not a.dry_run:
                 print(f"   {ES.opinion(sym, r['bar_ts'])}")
         except Exception as exc:                                         # noqa: BLE001 — fail-closed
@@ -134,7 +183,7 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
             rc = 1
             if not a.dry_run:
                 try:
-                    ES.save_error(sym, bar, msg, engine=engine)
+                    ES.save_error(sym, bar_for(sym), msg, engine=engine)
                 except Exception as exc2:                                # noqa: BLE001
                     print(f"⚠️ {sym}: error row लिहिता आली नाही: {exc2}")
                 if getattr(exc, "token_rejected", False):               # engine3_live.TokenRejected ⇒ तीच 🔴 ओळ (दर bar, एकदाच)

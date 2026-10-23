@@ -79,26 +79,89 @@ def object_label(rd):
 
 
 def trigger_panel(fig, trigger, rd):
-    """Plug point for the trigger timeframe (the 5M trigger build plugs in here): trigger = {"tf": "5M", "df": its candles closed by the
-    signal, with "start"} ⇒ an inset of the last candles with the trigger candle boxed, drawn over the setup panel's top-left corner.
-    Today the engine's trigger TF is the setup TF (15M) and no trigger frame is passed (the trigger is boxed on the setup panel)."""
+    """DECISIONS 37 — the 5M TRIGGER panel (an inset over the setup panel's top-left corner): trigger = {"tf": "5M", "df": the trigger-TF
+    candles closed by the signal (with "start"), "vol": their FUT volume (optional)} ⇒ the visit's 5M candles up to the trigger candle
+    (boxed, "T"), the refined base (strong), the context area (faint), the invalidation (dashed), and the model's own 5M facts: the
+    E3 CHoCH level, the E4 (a) sweep extreme + the failed push, the E4 (b) line's value per 5M candle; the FUT 5M volume under it. P8:
+    display only, nothing else drawn; a failure here leaves the card without the panel (the caller notes it)."""
     import plotly.graph_objects as go
     df = trigger.get("df")
     if df is None or not len(df):
         return
+    tr = rd.get("trigger") if isinstance(rd.get("trigger"), dict) else {}
     k = trigger_index(df, rd.get("trigger_ts"))
-    lo = max(0, k - 11)
-    sub = df.iloc[lo:k + 1].reset_index(drop=True)
-    fig.add_trace(go.Candlestick(x=list(range(len(sub))), open=sub["open"], high=sub["high"], low=sub["low"], close=sub["close"],
+    lo0 = max(0, k - 23)
+    vs = tr.get("visit_start5")
+    if vs is not None:                                                    # from the visit's first 5M candle (at most 36 candles)
+        try:
+            t0 = pd.Timestamp(CH.to_ist_naive(vs))
+            hit = [i for i in range(k + 1) if pd.Timestamp(df["start"].iloc[i]) >= t0]
+            if hit:
+                lo0 = max(min(hit[0], k), k - 35)
+        except (TypeError, ValueError):
+            pass
+    sub = df.iloc[lo0:k + 1].reset_index(drop=True)
+    n = len(sub)
+    fig.add_trace(go.Candlestick(x=list(range(n)), open=sub["open"], high=sub["high"], low=sub["low"], close=sub["close"],
                                  showlegend=False, xaxis="x9", yaxis="y9", increasing_line_color="#26a69a",
                                  decreasing_line_color="#ef5350"))
-    fig.update_layout(xaxis9=dict(domain=[0.01, 0.2], anchor="y9", showticklabels=False, rangeslider_visible=False),
-                      yaxis9=dict(domain=[0.62, 0.95], anchor="x9", showticklabels=False))
-    j = len(sub) - 1
+    plo, phi = float(sub["low"].min()), float(sub["high"].max())
+    area, rb, inv = rd.get("area"), rd.get("refined"), rd.get("invalidation")
+    f = tr.get("facts") if isinstance(tr.get("facts"), dict) else {}
+    for v in [inv] + list(rb or []) + [f.get("choch_level"), f.get("sweep_extreme")]:
+        if v is not None and np.isfinite(float(v)):
+            plo, phi = min(plo, float(v)), max(phi, float(v))
+    pad = 0.05 * (phi - plo or 1.0)
+    fig.update_layout(xaxis9=dict(domain=[0.01, 0.24], anchor="y9", showticklabels=False, rangeslider_visible=False, range=[-0.6, n - 0.4]),
+                      yaxis9=dict(domain=[0.66, 0.95], anchor="x9", showticklabels=False, range=[plo - pad, phi + pad]))
+    role = "support" if rd.get("direction", -1) > 0 else "resistance"
+    colr, fill = ROLE_FILL[role]
+
+    def band(lo, hi, a, width):
+        fig.add_shape(type="rect", xref="x9", yref="y9", x0=-0.5, x1=n - 0.5, y0=max(lo, plo - pad), y1=min(hi, phi + pad),
+                      fillcolor=fill.format(a=a), line=dict(color=colr, width=width), layer="below")
+
+    def hline(y, color, dash, text):
+        fig.add_shape(type="line", xref="x9", yref="y9", x0=-0.5, x1=n - 0.5, y0=y, y1=y, line=dict(color=color, width=1, dash=dash))
+        fig.add_annotation(xref="x9", yref="y9", x=0, y=y, text=text, showarrow=False, xanchor="left", yshift=6,
+                           font=dict(size=7, color=color))
+    if area and area.get("lo") is not None and area["lo"] != area["hi"] and area["hi"] >= plo - pad and area["lo"] <= phi + pad:
+        band(float(area["lo"]), float(area["hi"]), FAINT, 0.5)            # the context area (faint)
+    if rb:
+        band(float(rb[0]), float(rb[1]), STRONG, 1.2)                     # the refined 15M base (strong)
+    if inv is not None:
+        hline(float(inv), INV_COLOR, "dash", "INV")
+    if f.get("choch_level") is not None:                                  # E3: the 5M CHoCH level
+        hline(float(f["choch_level"]), "#ce93d8", "dot", "CHoCH 5M")
+    if f.get("sweep_extreme") is not None:                                # E4 (a): the sweep extreme + the failed push
+        hline(float(f["sweep_extreme"]), "#ff8a65", "dot", "SWEEP")
+        if f.get("push_ts") is not None and f.get("push_price") is not None:
+            px = [i for i in range(n) if str(pd.Timestamp(sub["start"].iloc[i])) == str(pd.Timestamp(f["push_ts"]))]
+            if px:
+                fig.add_annotation(xref="x9", yref="y9", x=px[0], y=float(f["push_price"]), text="push ✗", showarrow=False, yshift=8,
+                                   font=dict(size=7, color="#ff8a65"))
+    lv = tr.get("line_values") if isinstance(tr.get("line_values"), list) else None
+    if lv:                                                                # E4 (b) on a line: its value at each 5M candle
+        at = {str(pd.Timestamp(a)): float(b) for a, b in lv}
+        xs = [i for i in range(n) if str(pd.Timestamp(sub["start"].iloc[i])) in at]
+        if xs:
+            fig.add_trace(go.Scatter(x=xs, y=[at[str(pd.Timestamp(sub["start"].iloc[i]))] for i in xs], mode="lines", xaxis="x9",
+                                     yaxis="y9", showlegend=False, line=dict(color=colr, width=1.5, dash="dash")))
+    j = n - 1
     fig.add_shape(type="rect", xref="x9", yref="y9", x0=j - 0.45, x1=j + 0.45, y0=float(sub["low"].iloc[j]), y1=float(sub["high"].iloc[j]),
                   line=dict(color="#ffd54f", width=1.5))
-    fig.add_annotation(xref="x9 domain", yref="y9 domain", x=0, y=1.08, text=f"trigger {trigger.get('tf') or ''} · T", showarrow=False,
-                       xanchor="left", font=dict(size=9, color="#ffd54f"))
+    vol = trigger.get("vol")
+    if vol is not None and len(vol) == len(df):
+        v = np.asarray(vol, float)[lo0:k + 1]
+        if np.isfinite(v).any():
+            fig.add_trace(go.Bar(x=list(range(n)), y=[0 if not np.isfinite(x) else x for x in v], xaxis="x10", yaxis="y10",
+                                 showlegend=False, marker_color="#78909c"))
+            fig.update_layout(xaxis10=dict(domain=[0.01, 0.24], anchor="y10", showticklabels=False, range=[-0.6, n - 0.4]),
+                              yaxis10=dict(domain=[0.58, 0.65], anchor="x10", showticklabels=False))
+    ctx = tr.get("context_bar_ts")
+    fig.add_annotation(xref="x9 domain", yref="y9 domain", x=0, y=1.1, showarrow=False, xanchor="left",
+                       text=f"trigger {trigger.get('tf') or ''} · T" + (f" · context 15M {str(ctx)[11:16]}" if ctx else ""),
+                       font=dict(size=9, color="#ffd54f"))
 
 
 def build_figure(setup, higher, sig, tfs, rd, vols=None, objects=None, xmaps=None, errors=None, trigger=None):
@@ -175,8 +238,9 @@ def build_figure(setup, higher, sig, tfs, rd, vols=None, objects=None, xmaps=Non
                                    font=dict(size=9, color=INV_COLOR), row=1, col=c)
         if objects:
             CH._objects(fig, objects, df, lo, hi, c, (xmaps or (None, None))[c - 1], sig=sig, inv=inv, errors=errors)
-        if c == 1 and trigger is None:                                     # the trigger candle (on the setup panel unless a trigger
-            k = trigger_index(df, rd.get("trigger_ts"))                    # panel of its own TF is given)
+        if c == 1:                                                         # the trigger candle on the setup panel; with a 5M trigger
+            k = trigger_index(df, rd.get("trigger_ts") if trigger is None else   # panel: the 15M bar that contains the 5M trigger
+                              (rd.get("trigger") or {}).get("bar15_ts") or rd.get("trigger_ts"))
             bar = df.iloc[k]
             fig.add_shape(type="rect", x0=k - 0.45, x1=k + 0.45, y0=float(bar["low"]), y1=float(bar["high"]),
                           line=dict(color="#ffd54f", width=1.5), fillcolor="rgba(255,213,79,0.08)", row=1, col=c)
@@ -184,7 +248,11 @@ def build_figure(setup, higher, sig, tfs, rd, vols=None, objects=None, xmaps=Non
             fig.add_annotation(x=k, y=float(bar["low"]) if up else float(bar["high"]), text="T ▲" if up else "T ▼", showarrow=False,
                                yshift=-14 if up else 14, font=dict(size=12, color="#ffd54f"), row=1, col=c)
     if trigger is not None:
-        trigger_panel(fig, trigger, rd)
+        try:
+            trigger_panel(fig, trigger, rd)
+        except Exception as exc:                                           # noqa: BLE001 — display only: the card without the panel
+            if errors is not None:
+                errors.append(f"trigger panel: {type(exc).__name__}: {str(exc)[:80]}")
     model = f"{rd['model']} {rd.get('name') or ''}".strip() if rd.get("model") else "engine setup"
     import engine_signal as ES                                             # addition D: the engine's name, as a small label
     title = (f"{sig.get('symbol', '')} · {model} · {rd['side']} · {object_label(rd).lower()}"

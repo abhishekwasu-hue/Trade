@@ -359,7 +359,7 @@ def keep_e(t, cyc):
 
 
 # ------------------------------------------------------------------------------------------------ the C entries at bar t
-def entries_at(V, t, cyc):
+def entries_at(V, t, cyc, read=None):
     """Model C entries fired at bar t for the cycle (the existing entry models, unchanged) ⇒ (entries, armed)."""
     d = cyc["d"]
     trend = "UP" if d > 0 else "DOWN"
@@ -368,7 +368,8 @@ def entries_at(V, t, cyc):
     got, armed = [], []
 
     def run(which, act, keep, extra, broken_on, label_fn):
-        r = EM.read(V, t, trend, act, side_fn=side_fn(V, d, cid, which), keep=keep, extra=extra, prefix="M", broken_on=broken_on)
+        r = (read or EM.read)(V, t, trend, act, side_fn=side_fn(V, d, cid, which), keep=keep, extra=extra, prefix="M",
+                              broken_on=broken_on)                         # read = the 5M reader when trigger_tf = 5M (DECISIONS 37)
         armed.extend(r["armed"])
         for e in r["entries"]:
             s = label_fn(e)
@@ -514,7 +515,7 @@ def tag_cf(V, t, row, cyc):
 
 
 # ------------------------------------------------------------------------------------------------ the V22.decide hook
-def attach(V, t, row):
+def attach(V, t, row, read=None):
     """V22.decide (only when `model_c = on`): row["model_c"] = the cycle read at t + the C armed objects; the C entries are appended to
     row["entries"] (the Daily-side entries and every other row key unchanged; C-f only labels). A model C reading error is logged and
     reported in row["model_c"]["error"] and gives no C entry (fail closed) — it never touches the Daily side."""
@@ -528,7 +529,7 @@ def attach(V, t, row):
             row["model_c"] = {**info, "cycle": None, "why": f"Daily {st.trend}: model C needs a Daily DOWN / UP side (C-1, Q1)"}
             return row
         cyc = cycle(V, t, d)
-        ents, armed = entries_at(V, t, cyc) if cyc.get("alive") and any(cyc["windows"].values()) else ([], [])
+        ents, armed = entries_at(V, t, cyc, read) if cyc.get("alive") and any(cyc["windows"].values()) else ([], [])
         info.update(direction=d, cycle=brief(cyc), entries=len(ents),
                     armed=[{k: a.get(k) for k in ("object", "area_id", "lo", "hi", "visit_id", "disarmed")} |
                            {"models": {m: (x or {}).get("status") for m, x in (a.get("models") or {}).items()}} for a in armed])
