@@ -1186,3 +1186,45 @@ Checked against CLAUDE.md, DECISIONS 6, 23, 27, 28, 38–41, method P4 / §8 (T7
   default: a rejection candle opening on the original side counts as "from above" even after one overshoot close (no number added to
   separate it from the live case, where price closed above four times without a swing of the line's degree). Affects 2 of the 7
   removed replay entries (03 Sep, 09 Oct: "trigger opened above"). Abhi decides; `any` restores the earlier reading.
+
+## Entry trigger on 5M (owner-orders DECISIONS 37; report docs/reports/trigger_5m_report.md; built 23 Oct)
+Checked against CLAUDE.md (trigger reading, sweep / fakeout, refined base, clusters, E4 (b), live safety), DECISIONS 6, 9–11, 21–23, 27,
+28, 32, 37–41, method §2 d / e and §3 (models, trigger at the refined base). Provisional defaults (report §11, Q1–Q18), assumed unless
+Abhi objects — each is in the code as written here:
+- Q1 / Q2 a visit may start on a 5M candle inside the 15M bar in progress; the visit's 5M start = its first 5M candle trading into the
+  area; visit id = area @ the 15M bin that contains it (the same id the 15M bar gets once closed); it ends only by 15M structure.
+- Q3 E1 = the visit's first 5M candle trading into the refined base known at k(u); that candle closing beyond the base's far edge ⇒ no
+  E1 this visit (the base was closed through).
+- Q4 / Q5 E2 on the 5M candles: dominant over every other 5M candle of the visit; FUT 5M volume above the average of the approach leg's
+  and the visit's opposite-side 5M candles; handover / sharp reversal / absorption on the visit's 5M candles (gating E2 / E3); the slot
+  baseline stays a what-if. Method §2 d carries the line citing DECISIONS 37.
+- Q6 E3: the trigger is the 5M candle whose close makes the CHoCH, and it must trade into the refined base — not relaxed (a CHoCH candle
+  outside the base gives no E3 for that CHoCH; a later new CHoCH in the same visit may).
+- Q7 E4 (a): the push = the LTF swing definition of `method.ltf_choch` on 5M (a swing high above the previous candle's high and not below
+  the next one's, confirmed at the next candle); a K4 sweep event of the area counts at its 15M close.
+- Q8 E4 (b): objects as known at k(u) (`break_known_at`, `broken_back_at`, DEAD); a line's value at a 5M candle at its float position on
+  the 15M axis (the child's place inside its bin); the revisit ends by a 15M away swing (mapped to the 5M candle closing that 15M bar);
+  approach side (DECISIONS 38) on the 5M candles.
+- Q9 the required set (handover + commitment + volume + LTF CHoCH) is read on 5M at the trigger; the confirming pieces / zone read / RSI /
+  lines at the last closed 15M bar k; evidence never blocks.
+- Q10 model C follows `trigger_tf` (its reads go through the 5M reader); it stays OFF.
+- Q11 every-minute cron `* 3-10 * * 1-5` with `--guard` + flock (exits unless the bar closed a minute ago is due and unstored); the
+  entry-hours / store-window settings unchanged; in 5M mode the window is judged on the end of the 15M bin holding the 5M candle
+  (review #378), so the 09:20 / 09:25 closes are stored with the 09:30 opening bin and 15:05 / 15:10 stay out, as for 15M bars.
+- Q12 catch-up: a due run decides every unstored closed 5M bar of the session in order (since = the last stored non-error row); the
+  freshness stays `engine_max_age_min`. A 5M bar (spot / FUT) not yet at Upstox fails the cycle closed (error row, retried next
+  minute); only that one close missing ⇒ silent retry (no Telegram, review #378), more than one ⇒ the usual error line.
+- Q13 / Q14 replay outcomes on 5M closes for both variants; entry time difference counted in 5M candles.
+- Q15 groups without FUT: one line each + the reading-only E1 / E3 / E4 comparison "without volume evidence".
+- Q16 the 5M history window stays `engine3_ltf_days` = 10; a visit whose first 15M bar has no 5M candles ⇒ its 5M models wait with a
+  data reason.
+- Q17 built on the DECISIONS 38–41 fix (8ff504e + c1cf6ed). Q18 the card keeps the 15M and 1H panels and adds the 5M trigger panel
+  (inset), display only; Vision's bar wait / signal bar / apply_facts read the trigger candle's TF; a 5M card adds a prompt block
+  (`engine_check_v2+5m`), SYSTEM_PROMPT unchanged for 15M cards.
+- Deploy rollback: `install_engine_schedule.sh --revert` now restores the 15M engine line in place with `ENGINE3_TRIGGER_TF=15m` (the run
+  reads the 15M trigger whatever the dashboard says; pre-37 code ignores it); re-running it changes nothing; no engine line ⇒ nothing
+  written. The full one-bot revert is only `--revert-all` (deploy_one_bot.sh uses it).
+- Logged, out of scope (report §9.12): `zone_entries_today` counts `max_hits_per_zone` by day; CLAUDE.md says per visited area.
+- Noted while building (not changed here): on 8ff504e `tests/test_model_c.py::test_switch_off…[oct12_bear]` failed (the DECISIONS 38–41
+  rows vs the old pin) — fixed on the branch by c1cf6ed (merged into this build).
+

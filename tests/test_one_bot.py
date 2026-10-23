@@ -469,7 +469,8 @@ def test_schedule_installer_idempotent_and_revert_exact(tmp_path):
     assert cron.read_text() == once                                   # idempotent
     act = [x for x in once.splitlines() if x and not x.startswith("#")]
     assert sum("scripts/engine_signal_run.py --engine decision3" in x and "--dry-run" not in x for x in act) == 1
-    assert "1,16,31,46 4-9 * * 1-5" in once and "engine_signal_run.py --engine decision3 >>" in once   # symbols = dashboard setting
+    assert "\n* 3-10 * * 1-5 " in once and "engine_signal_run.py --engine decision3 --guard >>" in once   # DECISIONS 37: every minute,
+    assert "1,16,31,46 4-9 * * 1-5" not in once                           # guarded; symbols = dashboard setting
     assert "SENSEX" not in "".join(x for x in once.splitlines() if "engine_signal_run.py" in x and not x.startswith("#"))
     assert sum(x.startswith("30 3 * * 1-5 ") and "scripts/level_gate_preopen.py" in x for x in act) == 1   # 09:00 IST pre-open, एकदाच
     assert "#one-bot-off# 1,16,31,46 3-10" in once and "#one-bot-off# */5 4-9 * * 1-5 cd /root/Trade && python3 oi_signal" in once
@@ -477,8 +478,35 @@ def test_schedule_installer_idempotent_and_revert_exact(tmp_path):
         assert any(live in x for x in act), live                      # LIVE ओळी (सगळे प्रकार) untouched
     assert out.count("LIVE auto-trader") == 3
     assert "trade_monitor.py" in once and "# one-bot-srv2" not in once and "\n\n" in once
-    _install(cron, "--revert")
+    _install(cron, "--revert-all")
     assert cron.read_text() == ORIG                                   # रिकाम्या ओळींसकट तंतोतंत
+
+
+def test_schedule_revert_restores_todays_15m_engine_line_only(tmp_path):
+    """DECISIONS 37 deploy rollback: `--revert` puts back today's 15M engine line (1,16,31,46 4-9) in place of the every-minute guarded
+    line (ENGINE3_TRIGGER_TF=15m) and changes nothing else; a second `--revert` changes nothing (never the full revert); the pre-37
+    15M line is replaced the same way; no engine line ⇒ nothing written; the full revert is only `--revert-all`."""
+    cron = tmp_path / "cron"
+    cron.write_text(ORIG)
+    _install(cron)
+    five = cron.read_text()
+    today = five.replace(next(x for x in five.splitlines() if x.endswith("# one-bot-engine")),
+                         next(x for x in open(os.path.join(ROOT, "scripts", "install_engine_schedule.sh"), encoding="utf-8").read()
+                              .splitlines() if x.startswith('ENGINE15_LINE="')).split('"', 1)[1].rsplit('"', 1)[0]
+                         .replace("$REPO_DIR", "/root/Trade"))
+    _install(cron, "--revert")
+    assert cron.read_text() == today and "1,16,31,46 4-9 * * 1-5" in today and "--guard" not in today
+    assert "ENGINE3_TRIGGER_TF=15m" in today
+    r = _install(cron, "--revert")                                    # re-run of the same block ⇒ idempotent
+    assert cron.read_text() == today and "already reverted" in r.stdout
+    old15 = today.replace("ENGINE3_TRIGGER_TF=15m ", "")             # the pre-37 15M line (no variable) ⇒ the same 15M revert line
+    cron.write_text(old15)
+    _install(cron, "--revert")
+    assert cron.read_text() == today
+    _install(cron, "--revert-all")
+    assert cron.read_text() == ORIG
+    r = _install(cron, "--revert")                                    # no engine line ⇒ nothing written
+    assert cron.read_text() == ORIG and "❌" in r.stdout
 
 
 def test_schedule_installer_keeps_auto_trader_line_with_open_position(tmp_path):
@@ -533,7 +561,7 @@ def v22_setup(symbol, bar_end, role="resistance"):
 def test_engine_run_per_symbol_writes_setup_readable_by_adapter(sym, tmp_path, monkeypatch):
     p = str(tmp_path / "es.db")
     now = pd.Timestamp("2030-01-07 10:01")
-    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None: v22_setup(s, "2030-01-07 10:00"))
+    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None, since=None: v22_setup(s, "2030-01-07 10:00"))
     r = ES.run3(sym, "tok", feed=object(), path=p, now=now)
     assert r["decision"] == "setup" and r["direction"] == -1 and r["level_lo"] == 22600.0 and r["grade"] == "B"
     st = {"signal_source": "engine", "trading_mode": "PAPER"}
@@ -541,7 +569,7 @@ def test_engine_run_per_symbol_writes_setup_readable_by_adapter(sym, tmp_path, m
     assert pe is not None and pe["bar_ts"] == "2030-01-07 10:00:00" and json.loads(pe["payload"])["engine"] == "decision3"
     # पुढचा bar "wait" ⇒ setup ✅ ची वाट पाहत तसाच (max age मध्ये)
     w = dict(v22_setup(sym, "2030-01-07 10:15"), decision="wait")
-    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None: w)
+    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None, since=None: w)
     ES.run3(sym, "tok", feed=object(), path=p, now=pd.Timestamp("2030-01-07 10:16"))
     assert ES.pending_entry("srv2_momentum_reversal", sym, st, "2030-01-07 10:17", p)["bar_ts"] == "2030-01-07 10:00:00"
     assert ES.pending_entry("srv2_momentum_reversal", sym, st, "2030-01-07 10:45", p) is None            # max age नंतर नाही
@@ -551,7 +579,7 @@ def test_engine_run_per_symbol_writes_setup_readable_by_adapter(sym, tmp_path, m
 
 def test_engine_window_skips_bars_outside_0930_1500(tmp_path, monkeypatch):
     p = str(tmp_path / "es.db")
-    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None: v22_setup(s, "2030-01-07 15:15"))
+    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None, since=None: v22_setup(s, "2030-01-07 15:15"))
     r = ES.run3("NIFTY", "tok", feed=object(), path=p, now=pd.Timestamp("2030-01-07 15:16"))
     assert r.get("skipped") and ES.latest("NIFTY", "2030-01-07 15:16", path=p) is None
     assert ES.in_window("2030-01-07 09:30") and ES.in_window("2030-01-07 15:00") and not ES.in_window("2030-01-07 09:15")
@@ -561,7 +589,7 @@ def test_engine_window_skips_bars_outside_0930_1500(tmp_path, monkeypatch):
 def test_fail_closed_error_row_alerts_first_repeat_60min_and_recovered(tmp_path, monkeypatch):
     p = str(tmp_path / "es.db")
     monkeypatch.setenv("ENGINE_SIGNAL_DB", p)
-    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None: v22_setup(s, "2030-01-07 10:00"))
+    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None, since=None: v22_setup(s, "2030-01-07 10:00"))
     ES.run3("SENSEX", "tok", feed=object(), path=p, now=pd.Timestamp("2030-01-07 10:01"))
     sent, al = [], str(tmp_path / "al.json")
 

@@ -48,6 +48,22 @@ class FutVolumeMissing(EngineDataError):
     data_problem = True
 
 
+class BarLate(EngineDataError):
+    """DECISIONS 37 (trigger_tf 5M): the 5M bar (spot / FUT) of the 5M close being decided is not at Upstox yet ⇒ this cycle fails closed
+    (error row); the next minute's cycle decides it (catch-up). one_bar = only that one close is missing (the bar before it is there) ⇒
+    the caller retries silently (no Telegram); more missing ⇒ the usual error line."""
+    bar_late = True
+
+    def __init__(self, msg, one_bar=False):
+        super().__init__(msg)
+        self.one_bar = bool(one_bar)
+
+
+class FutBarLate(BarLate):
+    """DECISIONS 37 (trigger_tf 5M): the FUT 5M bar of the 5M close being decided is not at Upstox yet ⇒ this cycle fails closed (error
+    row); the next minute's cycle decides it (catch-up). Not the Z-1c "FUT volume missing" data problem."""
+
+
 class TokenRejected(EngineDataError):
     """Upstox ने token नाकारला (HTTP 401 / 403, उदा. UDAPI100050 "Invalid token used to access API" — दुसऱ्या system साठी नवा token
     काढला की bot चा token रद्द होतो) ⇒ bot आंधळा. EngineDataError च ⇒ आजचे सर्व fail-closed मार्ग तसेच; caller (engine_signal_run)
@@ -430,13 +446,23 @@ def build_inputs(feed, symbol, now, s=None, levels_only=False):
         ltf = DP.filter_allowed(ltf, "annotation")
     if not len(ltf) or ltf["timestamp"].iloc[-1].normalize() != m15["timestamp"].iloc[-1].normalize():
         raise EngineDataError(f"{symbol}: 5M spot (LTF) data नाही ⇒ c1 CHoCH तपासता येत नाही")
+    tf5 = trigger_tf_of(s) == "5M"
+    want5 = now.floor("5min")
+    in5 = SESSION_OPEN <= (want5.hour, want5.minute) <= SESSION_CLOSE and want5.normalize() == m15["timestamp"].iloc[-1].normalize()
+    if tf5 and in5 and pd.Timestamp(ltf["bar_end"].iloc[-1]) < want5:   # DECISIONS 37: the 5M close being decided must be there
+        raise BarLate(f"{symbol}: शेवटचा बंद 5M spot ({want5:%H:%M}) अजून Upstox कडे नाही (last {ltf['bar_end'].iloc[-1]:%H:%M})",
+                      one_bar=pd.Timestamp(ltf["bar_end"].iloc[-1]) >= want5 - pd.Timedelta(minutes=5))
     fut, note = None, None
     try:                                                                 # c0 / a2 volume (raw FUT bars, method §3; approach leg may reach back)
         fut = closed_session_bars(feed.futures(symbol, "5minute", s["engine3_fut_days"]), 5, now)
         today_fut = fut[fut["timestamp"].dt.normalize() == m15["timestamp"].iloc[-1].normalize()] if len(fut) else fut
         if not len(today_fut) or float(today_fut["volume"].sum()) <= 0:
             fut, note = None, f"{symbol}: FUT 5M volume (आज) नाही"
-    except TokenRejected:                                                # token नाकारला ⇒ "FUT volume missing" नाही, खरं कारण
+        elif tf5 and in5 and pd.Timestamp(today_fut["bar_end"].iloc[-1]) < want5:   # DECISIONS 37: the FUT 5M bar of that close too
+            raise FutBarLate(f"{symbol}: शेवटचा बंद FUT 5M ({want5:%H:%M}) अजून Upstox कडे नाही "
+                                  f"(last {today_fut['bar_end'].iloc[-1]:%H:%M})",
+                             one_bar=pd.Timestamp(today_fut["bar_end"].iloc[-1]) >= want5 - pd.Timedelta(minutes=5))
+    except (TokenRejected, FutBarLate):                                  # token नाकारला / 5M FUT bar उशिरा ⇒ खरं कारण
         raise
     except Exception as exc:                                             # noqa: BLE001
         fut, note = None, f"{symbol}: FUT volume नाही ({type(exc).__name__}: {str(exc)[:80]})"
@@ -526,7 +552,14 @@ METHOD_SWITCHES = {
     # Abhi 21 Oct (PA standard T7): the range from structure (Daily / Weekly fold + 1H / 15M); c13 = two equal highs + two equal lows.
     "engine3_daily_range_rule": ("daily_range_rule", ("structure", "c13"), "layer 1 range (Daily / Weekly / 1H / 15M)"),
     "engine3_range_state_rule": ("range_state_rule", ("structure", "overlap"), "row range state (context)"),
+    # Abhi (DECISIONS 37, owner rule): the entry trigger on 5M for every model; 15m = the earlier behaviour (what-if, byte-identical).
+    "engine3_trigger_tf": ("trigger_tf", ("5m", "15m"), "entry trigger timeframe (5M closes; DECISIONS 37)"),
 }
+
+
+def trigger_tf_of(s=None):
+    """Dashboard `engine3_trigger_tf` ⇒ "5M" (default, Abhi's rule) / "15M" (what-if). Unknown ⇒ ValueError (as every switch)."""
+    return str(method_switches({"engine3_trigger_tf": (s or {}).get("engine3_trigger_tf")}).get("trigger_tf", "5m")).upper()
 
 
 def method_switches(s=None):
@@ -710,14 +743,14 @@ def load_m1(feed, symbol, m15, now, s=None):
     return m1, info
 
 
-def evaluate(symbol, m15, daily, ltf=None, fut=None, s3=None, m1=None, m1_info=None):
+def evaluate(symbol, m15, daily, ltf=None, fut=None, s3=None, m1=None, m1_info=None, since=None):
     """V22 ⇒ शेवटच्या बंद 15M bar चा निर्णय (dict, decide() चा). m1 = spot 1m (Z-1o) ⇒ V22 df1m (swings2 ⇒ levels + rsi2).
     m1_info (load_m1 चा payload `m1`) ⇒ m15_complete भरतो / V22 1m सह त्रुटी ⇒ fallback नोंद."""
     import instruments as INS
     prev = INS._current["name"]
     INS.set_current(symbol)                                              # PE.guard चा holdout नियम त्याच instrument चा (NIFTY फक्त)
     try:
-        return _evaluate(symbol, m15, daily, ltf, fut, s3, m1, m1_info)
+        return _evaluate(symbol, m15, daily, ltf, fut, s3, m1, m1_info, since)
     finally:
         INS._current["name"] = prev                                      # process-wide instrument पुढच्या caller ला गळू नये
 
@@ -748,7 +781,28 @@ def m1_v22_failed(symbol, info, exc):
         info.update(used=False, fallback=True, note=note)
 
 
-def _evaluate(symbol, m15, daily, ltf, fut, s3, m1=None, m1_info=None):
+def decide_live(V, since=None):
+    """The live decision of one cycle. trigger_tf 15M (or an engine without decide5) ⇒ V.decide(last closed 15M bar) — today's call.
+    trigger_tf 5M (DECISIONS 37) ⇒ V.decide5(last closed 5M candle); `since` (the last stored bar_ts of the session, catch-up — report §5)
+    ⇒ every closed 5M candle of the same session after it is decided too, in order, as r["catch_up"] (a missed cycle never loses a
+    trigger candle; each is read only with what was known at its own close)."""
+    if getattr(V, "trigger_tf", None) != "5M" or not hasattr(V, "decide5"):
+        return V.decide(len(V.m15) - 1)
+    F = V.trigger_frame()
+    if F.n == 0:
+        raise EngineDataError("5M trigger frame रिकामा ⇒ 5M trigger वाचता येत नाही")
+    last = F.n - 1
+    js = [last]
+    if since is not None:
+        day = pd.Timestamp(F.end[last]).normalize()
+        js = [j for j in range(F.n) if pd.Timestamp(F.end[j]) > pd.Timestamp(since) and pd.Timestamp(F.end[j]).normalize() == day] or [last]
+    rows = [V.decide5(j) for j in js]
+    r = rows[-1]
+    r["catch_up"] = rows[:-1]
+    return r
+
+
+def _evaluate(symbol, m15, daily, ltf, fut, s3, m1=None, m1_info=None, since=None):
     from decision3 import engine as E3
     from decision3 import history as HI
     m15 = m15.drop(columns=[c for c in ("volume",) if c in m15.columns])   # index volume 0 ≠ खरा volume (NA हवा)
@@ -766,7 +820,7 @@ def _evaluate(symbol, m15, daily, ltf, fut, s3, m1=None, m1_info=None):
     def run(df1m):
         with fold_cache(symbol.upper()):
             V = E3.V22(m15, df1m, daily, **kw)
-        return V, V.decide(len(V.m15) - 1)
+        return V, decide_live(V, since)
     if m1 is None:
         return run(None)[1]
     try:
@@ -966,6 +1020,9 @@ def compact_entries(entries):
         rb = e.get("refined_base")
         if isinstance(rb, dict) and rb.get("lo") is not None:            # RC2: the refined 15M base inside the area (display + card)
             x["refined_base"] = {"lo": float(rb["lo"]), "hi": float(rb["hi"]), "ts": None if rb.get("ts") is None else str(rb["ts"])}
+        if e.get("trigger_tf"):                                          # DECISIONS 37: the 5M trigger candle (card / audit / replay)
+            x["trigger_tf"] = str(e["trigger_tf"])
+            x["trigger"] = trigger_of(e)
         pa = pa_first_per_track(e.get("pa_evidence"))
         if pa:                                                           # T9: the PA evidence (display only) — first fact per track
             x["pa_evidence"] = pa
@@ -980,6 +1037,30 @@ def compact_entries(entries):
             x["area"]["id"] = str(x["area"]["id"])                       # numpy ints ⇒ text, never a JSON error
         out.append(x)
     return out
+
+
+TRIGGER_FACTS = ("line", "at", "choch_level", "sweep_ts", "sweep_extreme", "push_ts", "push_price", "form", "retest_extreme")
+
+
+def trigger_of(e):
+    """A 5M-trigger entry (DECISIONS 37) ⇒ {tf, ts, bar_end, ohlc, volume, context_bar_ts, bar15_ts, visit_start5, facts (CHoCH / sweep
+    / push / form), line_values [[ts, price]] (E4 b on a line: the line's value at the visit's 5M candles)}. Display / audit only; never
+    raises."""
+    try:
+        f = e.get("facts") if isinstance(e.get("facts"), dict) else {}
+        oh = e.get("trigger_ohlc") if isinstance(e.get("trigger_ohlc"), dict) else {}
+        num = lambda v: None if v is None else float(v)  # noqa: E731
+        txt = lambda v: None if v is None else str(v)  # noqa: E731
+        out = {"tf": txt(e.get("trigger_tf")), "ts": txt(e.get("trigger_ts")), "bar_end": txt(e.get("trigger_bar_end")),
+               "ohlc": {k: num(oh.get(k)) for k in ("open", "high", "low", "close")} if oh else None,
+               "volume": num(e.get("trigger_volume")), "context_bar_ts": txt(e.get("context_bar_ts")),
+               "bar15_ts": txt(e.get("trigger_bar15_ts")), "visit_start5": txt(e.get("visit_start5")),
+               "facts": {k: (f[k] if isinstance(f[k], (int, float, str)) or f[k] is None else str(f[k])) for k in TRIGGER_FACTS if k in f}}
+        if isinstance(e.get("line_values"), list):
+            out["line_values"] = [[str(a), float(b)] for a, b in e["line_values"][-36:]]
+        return out
+    except Exception:                                                    # noqa: BLE001 — display only
+        return {"tf": str(e.get("trigger_tf"))}
 
 
 def pa_first_per_track(rows):
@@ -1079,11 +1160,11 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
     return dump({**keep, "dropped": "all context (payload too large)"})
 
 
-def compute(symbol, feed, now, s=None):
+def compute(symbol, feed, now, s=None, since=None):
     s3 = v22_settings(s)                                                 # dashboard swing scale + layer switches; bad ⇒ raise before any fetch
     m15, daily, ltf, fut, note = build_inputs(feed, symbol, now, s)
     m1, m1_info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)
-    r = evaluate(symbol, m15, daily, ltf, fut, s3=s3, m1=m1, m1_info=m1_info)
+    r = evaluate(symbol, m15, daily, ltf, fut, s3=s3, m1=m1, m1_info=m1_info, since=since)
     r["volume_note"] = note
     r["m1"] = m1_info                                                    # Z-1o: 1m वापरला का / fallback कारण (row payload)
     return r

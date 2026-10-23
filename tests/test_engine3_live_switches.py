@@ -22,7 +22,8 @@ OFF = {"engine3_use_1m": False}
 LEGACY = {"engine3_zone_visit_rule": ("close_away", "touch_window"), "engine3_commit_volume_rule": ("opposite",),
           "engine3_line_rule": ("sigma",), "engine3_div_degree_rule": ("all",), "engine3_verdict_rule": ("score",),
           "engine3_entry_gate": ("legacy_k",), "engine3_daily_leg_read": ("elliott",), "engine3_entry_cluster_rule": ("area",),
-          "engine3_daily_range_rule": ("c13",), "engine3_range_state_rule": ("overlap",)}
+          "engine3_daily_range_rule": ("c13",), "engine3_range_state_rule": ("overlap",),
+          "engine3_trigger_tf": ("15m",)}
 
 
 def test_switches_mirror_decision3_settings():
@@ -31,10 +32,10 @@ def test_switches_mirror_decision3_settings():
     assert set(L.METHOD_SWITCHES) == set(LEGACY)
     for key, (v22_key, allowed, _label) in L.METHOD_SWITCHES.items():
         assert key.startswith("engine3_")                                # the only keys engine_signal.engine3_settings passes on
-        assert allowed[0] == S3.DEFAULTS[v22_key]                        # default = the method = decision3's default
+        assert allowed[0] == str(S3.DEFAULTS[v22_key]).lower()           # default = the method = decision3's default (trigger_tf: 5M)
         assert set(allowed[1:]) == set(LEGACY[key])
         for v in allowed:
-            assert v in S3.REGISTER[v22_key][1]                         # every value is a registered method / legacy what-if
+            assert v in S3.REGISTER[v22_key][1].lower()                 # every value is a registered method / legacy what-if
     assert L.METHOD_SWITCHES["engine3_zone_visit_rule"][1] == E3.VISIT_RULES
 
 

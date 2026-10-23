@@ -1534,6 +1534,8 @@ def render():
                                                 "21 Oct, method) · c13 = जुनं दोन समान H + दोन समान L.",
                     "engine3_range_state_rule": "Layer 1 row range state (context): structure = प्रत्येक timeframe ची range रचनेतून (method) · "
                                                 "overlap = जुनं §5.3 overlap + doji.",
+                    "engine3_trigger_tf": "Layer 3 entry trigger: 5m = प्रत्येक model चा trigger 5M candle वर, engine दर 5M close ला (फक्त बंद "
+                                          "15M / 1H / D bars; Abhi DECISIONS 37, method) · 15m = जुनं वर्तन (what-if, byte-identical).",
                 }
                 _sw_shown = {k: _L3.switch_choice(k, engine3_switches[k]) for k in _L3.METHOD_SWITCHES}
                 if st.checkbox("Advanced: method layers (legacy fallback)",

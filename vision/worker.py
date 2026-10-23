@@ -206,6 +206,9 @@ def _body(row, res, mode, reused=False):
          else f"signal {ts:%H:%M}",
          f"मत: {e} <b>{mr}</b>" + (f" (confidence {res['confidence']:.2f})" if res.get("confidence") is not None else "")
          + (" · 15 मिनिटांतलं आधीचं मत" if reused else "")]
+    tl = CS.trigger_line(tags) if eng else ""
+    if tl:                                                               # DECISIONS 37: the 5M trigger candle in plain words
+        s.insert(3, html.escape(tl))
     a = (res.get("audits") or [None])[0]
     if a:
         if a.get("reason"):
@@ -564,7 +567,7 @@ BAR_WAIT = True                                                          # tests
 def bar_wait(row, s, now=None):
     """`vision_wait_for_bar_close`: signal चा setup bar अजून बंद नसेल तर (मूल्यमापन नंतर) ⇒ (थांबायचं?, bar माहिती)."""
     from . import context as CX
-    s_tf = CH.TF_MAP.get(str(row.get("setup_tf")).upper(), (5, 15))[0]
+    s_tf = CX.trigger_minutes(row)                                       # DECISIONS 37: the trigger candle's TF (5M entries: 5M)
     sb = CX.signal_bar(CH.to_ist_naive(row["signal_ts"]), s_tf, now or VS.now_ist(), (row.get("last_bar") or {}).get("timestamp"))
     return bool(BAR_WAIT and s.get("vision_wait_for_bar_close", True) and not sb["closed"]), sb
 

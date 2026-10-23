@@ -130,8 +130,8 @@ merge; one VPS block after the close with `--revert`, PAPER only.
 - Q8 E4b objects as known at k(u); line value at the 5M candle's float position; revisit ends by a 15M away swing; approach side DECISIONS 38.
 - Q9 required set read on 5M at the trigger; confirming pieces / zone read at 15M / 1H (k); evidence never blocks.
 - Q10 model C follows `trigger_tf`; stays OFF.
-- Q11 every-minute cron with a guard; entry-hours / store-window settings unchanged (note: with `engine_first_bar_end` 09:30 the 09:20 / 09:25
-  5M closes are read but not stored).
+- Q11 every-minute cron with a guard; entry-hours / store-window settings unchanged (review #378: in 5M mode the window is judged on the
+  end of the 15M bin holding the 5M candle, so the 09:20 / 09:25 closes are stored with the 09:30 bin).
 - Q12 catch-up of unstored 5M closes; freshness stays `engine_max_age_min`.
 - Q13 replay outcomes on 5M closes for both variants.
 - Q14 entry time difference counted in 5M candles (timestamps only as identifiers).

@@ -480,6 +480,7 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "engine3_entry_cluster_rule": "",    # "" / cluster = एकाच visit मधले overlapping areas = एक location (lead, provisional) · area = वेगळे
         "engine3_daily_range_rule": "",      # "" / structure = range रचनेतून (T7, Abhi 21 Oct) · c13 = जुनं दोन समान H + दोन समान L
         "engine3_range_state_rule": "",      # "" / structure = row चा range_state रचनेतून · overlap = जुनं §5.3 overlap + doji
+        "engine3_trigger_tf": "",            # "" / 5m = entry trigger 5M closes वर, प्रत्येक model (Abhi, DECISIONS 37) · 15m = जुनं (what-if)
         # 🎓 Abhi (entry models E1–E4, decision3 `entries`): कोणते models signal देतात (signal switch फक्त — execution ला हात नाही;
         # paper/engine_entry.model_on, चुकीचं / रिकामं ⇒ default ON). OFF ⇒ त्या model चे signals / cards नाहीत. Execution (lots, legs,
         # strikes, SL / target / TSL, एका वेळी एकच position) = याच पानाचे आजचे settings. `entries` नसलेले engine rows ⇒ जुनाच मार्ग.

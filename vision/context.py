@@ -164,6 +164,26 @@ def today_role(bars, p, buf, t=None):
 SESSION_CLOSE = pd.Timedelta(hours=15, minutes=30)
 
 
+def trigger_tf(sig, setup_tf=None):
+    """DECISIONS 37: the timeframe whose candle is the signal's trigger — an engine entry's tags `entry_trigger_tf` ("5M"); otherwise the
+    setup TF (every other signal, as before). sig = a Vision row (tags / setup_json) or a signal dict."""
+    import json
+    t = sig.get("tags") if isinstance(sig.get("tags"), dict) else None
+    if t is None:
+        try:
+            t = (json.loads(sig.get("setup_json") or "{}") or {}).get("tags") or {}
+        except (TypeError, ValueError, AttributeError):
+            t = {}
+    v = (t or {}).get("entry_trigger_tf")
+    return str(v).upper() if v else str(setup_tf or sig.get("setup_tf"))
+
+
+def trigger_minutes(sig, setup_tf=None):
+    """The trigger candle's size in minutes (TF_MAP's setup minutes of `trigger_tf`)."""
+    from .chart import TF_MAP
+    return TF_MAP.get(trigger_tf(sig, setup_tf).upper(), (5, 15))[0]
+
+
 def signal_bar(sig_t, s_tf, asof=None, last_bar_ts=None):
     """Signal ज्या setup-TF bar मध्ये आहे तो (signal च्या क्षणीचा शेवटचा पूर्ण 1m minute ज्या bar मध्ये): start, end, `asof` (मूल्यमापनाचा क्षण,
     default = signal) ला बंद झाला का, किती मिनिटं झाली."""
@@ -343,7 +363,7 @@ def build(cut, setup, sig, median_range=None, daily=None):
         "swings": [{"i": i, "kind": k, "price": p} for i, k, p in sw],
         "overlays": [{"price": r["price"], "label": r["name"], "kinds": r["kinds"], "today_role": r["today_role"], "reclaimed": r["reclaimed"]}
                      for r in rows],
-        "level": float(level) if level is not None else None, "recent_breaks": recent, "signal_bar": signal_bar(t0, s_tf, t, (sig.get("last_bar") or {}).get("timestamp")),
+        "level": float(level) if level is not None else None, "recent_breaks": recent, "signal_bar": signal_bar(t0, trigger_minutes(sig), t, (sig.get("last_bar") or {}).get("timestamp")),
         "spot_signal": float(sig.get("spot")) if sig.get("spot") is not None else None,
         "invalidation": inv, "invalidation_source": inv_src, "l_line": lline, "gap_ctx": gctx,
         "composite": composite(setup, level, bull, buf) if setup is not None else None,
@@ -356,7 +376,7 @@ def bar_end_of(row, setup_tf=None):
         import json
         from .chart import TF_MAP
         lb = (json.loads(row.get("setup_json") or "{}").get("last_bar") or {}).get("timestamp") if row.get("setup_json") else None
-        s_tf = TF_MAP.get(str(setup_tf or row.get("setup_tf")).upper(), (5, 15))[0]
+        s_tf = TF_MAP.get(str(setup_tf).upper(), (5, 15))[0] if setup_tf else trigger_minutes(row)   # DECISIONS 37: the trigger TF
         return pd.Timestamp(signal_bar(row["signal_ts"], s_tf, None, lb)["end_ts"])
     except Exception:
         return None

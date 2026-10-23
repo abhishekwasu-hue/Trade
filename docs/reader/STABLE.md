@@ -42,3 +42,11 @@ Owner decision (Abhi): Trade will be archived only on Abhi's own word; ATP ports
 | 6 | Output (charts, dossier, display finder) | 6a (the verdict: required set ⇒ enter; A / B by confirming evidence; no scores) merged (#342) — **not stable** until Abhi answers ✅. 6b (output: charts, dossier, display finder) not merged — in progress on another track. |
 
 The level bots are **not** rebuilt here (Abhi): they are rebuilt in ATP on the ported reader, and stay off in one-bot mode meanwhile.
+
+**DECISIONS 37 (the entry trigger on 5M, 23 Oct) — note for the register.** Layers 1–4 are not rewritten: the 5M trigger is an
+extension (`decision3/trigger_frame.py`, `decision3/entry_models5.py`, `V22.decide5`). `V22.decide` / `entry_models.Reader` (the 15M
+path, `trigger_tf = 15M`) are byte-identical to the code before the build — pinned by `tests/test_trigger_5m.py`
+(`test_15m_path_is_byte_identical_to_the_code_before_the_5m_build`, model C off and on) and by the 13-group replay parity (15M variant
+vs the base commit, every row equal). The layer-3 readers (zone study, handover, commitment, LTF CHoCH) are called unchanged on the 5M
+arrays; `trigger_frame.handover5` is the same loop as `method.handover_episode`, resumable (pinned equal on every prefix).
+

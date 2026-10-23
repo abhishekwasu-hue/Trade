@@ -122,6 +122,9 @@ DEFAULTS = {
     "e4b_approach_rule": "break_side",       # Abhi (DECISIONS 38, live reading check): E4 (b) retest from the BREAK side only — a revisit
                                              # from the object's original side / a rejection candle opening there and closing through the
                                              # object = a breakdown (H2), never an E4 (b). "any" = the earlier reading (what-if)
+    "trigger_tf": "5M",                      # Abhi (DECISIONS 37, owner rule): the entry trigger is read on 5M for every model — the engine
+                                             # decides at every 5M close with only the 15M / 1H / D bars CLOSED then (areas, K4, refined 15M
+                                             # base, visit unchanged; V22.decide5). "15M" = the earlier behaviour (what-if, byte-identical)
     "range_edge_areas": "on",                # Abhi (DECISIONS 40, concept L): the current Daily / 1H range edges are areas — bear call at
                                              # the upper edge, bull put at the lower edge (trade side); E1–E4 apply there. "off" = edges as
                                              # evidence only (the earlier reading, what-if)
@@ -248,6 +251,12 @@ REGISTER = {
                           "of a line / area broken DOWN (bear call) needs price to come back UP to it from below and be rejected there; "
                           "a revisit that came from the object's original side, or a rejection candle that opened there and closed "
                           "through the object, is a breakdown candle — never an E4 (b). Mirror for bull puts. any = the earlier reading"),
+    "trigger_tf": ("5M", "5M / 15M (what-if)", "Abhi नियम", "DECISIONS 37 (owner rule): the entry trigger is read on 5M for every "
+                   "model — the engine decides at every 5M close using only the 15M / 1H / D bars closed at that 5M close (a 15M bar "
+                   "in progress is never used); W state, D side, the 1H / Daily areas with the K4 lifecycle, the refined 15M base, the "
+                   "visit, once per model per visit and max_hits_per_zone stay as they are; traded_inside applies to the 5M trigger "
+                   "candle; the invalidation stays structural (never the 5M candle's own extreme). 15M = the earlier behaviour "
+                   "(what-if, byte-identical); live switch engine3_trigger_tf"),
     "range_edge_areas": ("on", "on / off (what-if)", "Abhi नियम", "DECISIONS 40 (concept L, T7): the range edges are the areas — bear "
                          "call at the upper edge, bull put at the lower edge; E1–E4 apply there as at any area (the current Daily / 1H "
                          "range from structure, trade side only — P4). off = edges as evidence only (the earlier reading)"),

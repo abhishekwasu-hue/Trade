@@ -710,3 +710,7 @@ Tests, self-review, PAPER only. Report to me in Marathi.
 ---
 ## 23 Oct — merge and continue (5)
 Merge and continue
+
+---
+## 23 Oct — speed
+Do it fast, use multiple agent
