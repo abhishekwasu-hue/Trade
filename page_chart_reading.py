@@ -67,12 +67,20 @@ def _settings_box():
         old = c6.selectbox("Old visual-audit level-count message", ["off", "on"], index=["off", "on"].index(s["visual_audit_level_message"]))
         url = st.text_input("This page's link (printed at the end of the message; empty = 'dashboard → Chart Reading')",
                             value=s["chart_reading_page_url"])
+        g1, g2, g3 = st.columns(3)                                         # DECISIONS 49: today's reading gallery (display only)
+        rg = g1.selectbox("Today's reading gallery (after the close)", ["off", "on"], index=["off", "on"].index(s["reading_gallery"]))
+        rg_max = g2.number_input("Gallery: visit charts (display cap; the rest listed)", min_value=0, max_value=500, step=5,
+                                 value=int(s["reading_gallery_max_visit_charts"]))
+        rg_dis = g3.selectbox("Gallery: charts for disarmed visits", ["off", "on"],
+                              index=["off", "on"].index(s["reading_gallery_disarmed_charts"]))
         if st.button("Save report settings", key="crr_save"):
             try:
                 ok = cloud_db.save_chart_reading_settings({"chart_reading_report": on, "chart_reading_language": lang,
                                                           "chart_reading_detail": det, "chart_reading_symbols": syms,
                                                           "chart_reading_vision": vis, "visual_audit_level_message": old,
-                                                          "chart_reading_page_url": url})
+                                                          "chart_reading_page_url": url, "reading_gallery": rg,
+                                                          "reading_gallery_max_visit_charts": int(rg_max),
+                                                          "reading_gallery_disarmed_charts": rg_dis})
                 st.success("saved") if ok else st.error("database not reachable — not saved")
             except ValueError as exc:
                 st.error(str(exc))
