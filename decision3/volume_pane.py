@@ -26,6 +26,11 @@ WORDS = ("legacy", "method")
 METHOD_NA_LINE = "volume: NA - FUT volume missing (data problem: no entry)"
 METHOD_NO_OPP_LINE = "volume: nothing to compare the commitment with (no approach leg, no opposite-side candle) - no commitment"
 METHOD_BARS_LINE = "volume: bars only - the engine's commitment comparison (approach leg + opposite side) is not in this record"
+# DECISIONS 53 (VP3, Abhi 23 Oct): the ENGINE-ENTRY card (vision/engine_card) never says "grade cap" — missing FUT volume is said as
+# "FUT volume missing — E2 cannot be read" (E2's commitment is read on FUT volume). Display only; every other chart keeps its words.
+ENGINE_NA_LINE = "volume: FUT volume missing — E2 cannot be read"
+ENGINE_NO_OPP_LINE = "volume: no opposite-side candle in the visit"
+_ENGINE_TEXT = {NA_LINE: ENGINE_NA_LINE, METHOD_NA_LINE: ENGINE_NA_LINE, NO_OPP_LINE: ENGINE_NO_OPP_LINE}
 
 
 def words_of(w):
@@ -38,6 +43,22 @@ def words_of(w):
 
 def na_line(w=None):
     return METHOD_NA_LINE if words_of(w) == "method" else NA_LINE
+
+
+def _na_text(st):
+    """The pane's NA text: the engine-entry card's own words (`engine_words`) or `na_line` (every other chart, unchanged)."""
+    return (st.get("na_text") if isinstance(st, dict) else None) or na_line(st)
+
+
+def engine_text(line):
+    """DECISIONS 53 (VP3): a volume line in the engine-entry card's words ("grade cap" never printed); other lines as given."""
+    return _ENGINE_TEXT.get(line, line)
+
+
+def engine_words(st):
+    """DECISIONS 53 (VP3): a pane study for the engine-entry card — its line / NA text without "grade cap"; no FUT volume in the pane at
+    all ⇒ "FUT volume missing — E2 cannot be read" (never a chart-side "one bar" note). Display only."""
+    return {**st, "line": ENGINE_NA_LINE if not st.get("pane") else engine_text(st.get("line")), "na_text": ENGINE_NA_LINE}
 INDEX_FUT = {"NIFTY": "NIFTY FUT", "BANKNIFTY": "BANKNIFTY FUT", "SENSEX": "SENSEX FUT", "FINNIFTY": "FINNIFTY FUT",
              "MIDCPNIFTY": "MIDCPNIFTY FUT"}
 MAX_WINDOW_BARS = 48                    # fallback arrival शोध: commitment पासून इतके bars मागे (engine चं window नसेल तेव्हाच)
@@ -427,7 +448,7 @@ def add_plotly(fig, st, row, col, x=None, title=None, commit_what="commitment"):
     ttl = title or f"vol {st.get('source') or 'futures'}"
     if not st["pane"]:
         fig.update_yaxes(range=[0, 1], row=row, col=col)
-        fig.add_annotation(x=(n - 1) / 2 if n else 0, y=0.5, text=na_line(st), showarrow=False, font=dict(size=10, color=PLOTLY["na"]),
+        fig.add_annotation(x=(n - 1) / 2 if n else 0, y=0.5, text=_na_text(st), showarrow=False, font=dict(size=10, color=PLOTLY["na"]),
                            row=row, col=col)
         fig.add_annotation(x=-0.5, y=1, text=ttl, showarrow=False, xanchor="left", yanchor="top", font=dict(size=8, color=PLOTLY["ink"]),
                            row=row, col=col)
@@ -450,7 +471,7 @@ def add_plotly(fig, st, row, col, x=None, title=None, commit_what="commitment"):
         fig.add_annotation(x=x[c], y=vv[c], text=commit_label(st, commit_what), showarrow=False, xanchor="right", yanchor="bottom",
                            font=dict(size=8, color=PLOTLY["commit"]), row=row, col=col)
     elif st["commit"] is not None:
-        fig.add_annotation(x=(n - 1) / 2, y=top * 1.2, text=(st["line"] if st["line"] != na_line(st) else na_line(st) + " (no volume in the study window)"), showarrow=False,
+        fig.add_annotation(x=(n - 1) / 2, y=top * 1.2, text=(st["line"] if st["line"] != _na_text(st) else _na_text(st) + " (no volume in the study window)"), showarrow=False,
                            font=dict(size=9, color=PLOTLY["na"]), row=row, col=col)
     return fig
 
@@ -459,4 +480,4 @@ def plotly_has_pane(fig):
     """Test helper: volume Bar trace किंवा "volume: NA" annotation."""
     if any(getattr(t, "type", None) == "bar" and getattr(t, "name", None) == "volume" for t in fig.data):
         return True
-    return any("volume: NA" in str(a.text) for a in fig.layout.annotations)
+    return any("volume: NA" in str(a.text) or ENGINE_NA_LINE in str(a.text) for a in fig.layout.annotations)

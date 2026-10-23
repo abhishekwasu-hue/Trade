@@ -105,7 +105,7 @@ def engine_gate_tags(r, direction, settings=None):
     area = sorted([float(lo), float(hi)]) if lo is not None and hi is not None else None
     return {"mode": "engine", "side": direction, "area": area, "grade": r.get("grade"), "tf": "15M",
             "trend": pay.get("trend_used") or pay.get("daily_trend"), "form": pay.get("commitment_form"),
-            "band_warn_pts": PT.band_warn_pts(settings), "band_warn_rule": PT.band_warn_rule(settings),   # layer 6b (default points)
+            "band_warn_pts": PT.band_warn_pts(settings), "band_warn_rule": PT.band_warn_rule(settings),   # layer 6b (default method, DECISIONS 53)
             "areas": engine_areas(pay), "reader": engine_reader(pay), "htf": engine_htf(pay)}
 
 
