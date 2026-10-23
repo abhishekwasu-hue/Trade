@@ -422,8 +422,18 @@ def test_settings_registered_default_off_and_validated():
 DISPLAY_ONLY = ("channels_htf",)            # PA T3 / T9 display keys added after the pin (tests/test_pa_evidence.py pins them apart)
 
 
+LINE_DISPLAY = ("break_side", "kind", "degree")    # live E4 (b) check: the line object's own description (display only, DECISIONS 41)
+
+
+def _line_plain(a):
+    if isinstance(a, dict) and isinstance(a.get("line"), dict):
+        return {**a, "line": {k: v for k, v in a["line"].items() if k not in LINE_DISPLAY}}
+    return a
+
+
 def _digest(rows, drop=()):
-    rows = [{k: (v if k != "entries" else [{a: b for a, b in e.items() if a != "pa_evidence"} for e in v])
+    rows = [{k: (v if k not in ("entries", "armed") else
+                 [{a: b for a, b in e.items() if a != "pa_evidence"} for e in v] if k == "entries" else [_line_plain(a) for a in v])
              for k, v in r.items() if k not in drop and k not in DISPLAY_ONLY} for r in rows]
     return hashlib.sha256(json.dumps(rows, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
 
@@ -451,9 +461,12 @@ def _fixture_rows(name, extra):
 def test_switch_off_engine_rows_are_byte_identical_to_the_pre_change_code(name):
     """model_c = off (default, and set explicitly) ⇒ every engine row byte-identical to the code before model C (pinned digests); ON ⇒
     the same rows plus the `model_c` key only (no CHoCH-up cycle in these fixtures ⇒ no C entry, the Daily side untouched)."""
-    assert _digest(_fixture_rows(name, {})) == PIN[name]
-    assert _digest(_fixture_rows(name, {"model_c": "off"})) == PIN[name]
-    on = _fixture_rows(name, {"model_c": "on"})
+    # the pins were taken before the live E4 (b) check (DECISIONS 38 / 40): read those two rules as the earlier reading, so this test
+    # keeps checking only "model C OFF = the code before model C" (the approach-side change is pinned in test_entry_models_live_e4b)
+    old = {"e4b_approach_rule": "any", "range_edge_areas": "off"}
+    assert _digest(_fixture_rows(name, dict(old))) == PIN[name]
+    assert _digest(_fixture_rows(name, {**old, "model_c": "off"})) == PIN[name]
+    on = _fixture_rows(name, {**old, "model_c": "on"})
     assert all("model_c" in r and not r["model_c"].get("error") for r in on if r.get("entry_gate") == "models")
     assert _digest(on, drop=("model_c",)) == PIN[name]
 
