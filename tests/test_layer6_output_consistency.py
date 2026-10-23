@@ -1,12 +1,12 @@
 """Layer 6 output consistency (the layer 6 gallery, awaiting Abhi ✅) — the card / Vision facts say what the engine read:
 
-  O-1 next area: the card's / Vision facts' next area in the trade direction (target = the next opposite area) comes from the engine's
-      own alive areas (engine3_live.alive_areas → payload `areas_alive` → tags gate.opposite_areas), not from the chart band finder;
-      the chart band finder stays the fallback when the payload carries none (older row / size cap);
+  O-1 next area: the card's / Vision facts' next area in the trade direction (the target: the next opposite area) is the engine's own
+      (engine3_live.next_area_of at the decision's 15M bar ⇒ payload entry `next_area` ⇒ tags gate.next_area), never the chart band
+      finder; the engine knows none ahead ⇒ "none known"; an older row (no next_area) keeps today's fallback;
   O-2 label: the Vision facts print the entry's A / B label (method §5, L6-a), never the model's name as "label"; no label ⇒ said so;
   O-3 label on every card layout: the evidence line carries "(label A)" / "(label B)" (the classic card had no label at all);
-  O-4 the 5M trigger line is never the first detail the 1024 caption cut drops;
-  O-5 an engine entry model's card has no level-bot "🎯 Confirmation … grade None" line; its details 'Area' line has the area's own TF.
+  O-5 an engine entry model's card has no level-bot "🎯 Confirmation … grade None" line; its details 'Area' line has the area's own TF;
+  O-6 a broken line object keeps the state the engine read (BROKEN) on the card / Vision facts.
 Display only: no reading rule, no decision, no number added (tests/test_method_no_numbers.py unchanged)."""
 import json
 
@@ -53,10 +53,10 @@ E5 = {"model": "E1", "name": "Aggressive", "direction": -1, "visit_id": "4@2026-
 
 
 def stored_row(areas_alive=True, entry=E5):
-    r = {"bar_end": "2026-10-15 10:10:00", "ts": "2026-10-15 10:05:00", "decision": "wait", "entries": [entry], "armed": [],
+    r = {"bar_end": "2026-10-15 10:10:00", "ts": "2026-10-15 10:05:00", "decision": "wait", "entries": [dict(entry)], "armed": [],
          "context_bar": 7, "level": {}, "trend_used": "DOWN", "daily_trend": "DOWN"}
-    if areas_alive:
-        L.attach_alive_areas(V(SNAP), r)
+    if areas_alive:                                                         # the live path (decide_live) attaches the engine's next area
+        L.attach_next_areas(V(SNAP), r)
     return L.row_from_v22("BANKNIFTY", r, lambda: "2026-10-15 10:11:00")
 
 
@@ -67,31 +67,31 @@ def sig_of(row, e=E5):
 
 
 # ------------------------------------------------------------------------------------------------ O-1 next area
-def test_alive_areas_keeps_only_alive_trade_location_areas():
-    got = L.alive_areas(V(SNAP), 7)
-    assert [x["id"] for x in got] == ["1", "4"]                            # BROKEN, DEAD and the context-only Weekly band left out
-    assert L.alive_areas(object(), 7) is None                              # unreadable ⇒ None, never raises
+def test_next_area_of_is_the_nearest_alive_opposite_area_beyond_the_entry():
+    nx = L.next_area_of(V(SNAP), 7, E5)                                     # bear call at 55,720.7 ⇒ the demand areas below
+    assert (nx["id"], nx["lo"], nx["hi"]) == ("1", 55100.0, 55180.0)      # BROKEN 2, context-only Weekly 3 and DEAD 5 left out
+    bp = {**E5, "direction": 1, "entry_ref": 55000.0}
+    assert L.next_area_of(V(SNAP), 7, bp)["id"] == "4"                     # bull put ⇒ the supply above
+    assert L.next_area_of(V([x for x in SNAP if x["role"] == "resistance"]), 7, E5) is None
 
 
-def test_the_payload_carries_the_alive_areas_and_drops_them_first_when_too_long():
+def test_the_payload_entry_carries_the_next_area_and_older_rows_do_not():
     pay = json.loads(stored_row()["payload"])
-    assert [x["id"] for x in pay["areas_alive"]] == ["1", "4"]
-    assert "areas_alive" not in json.loads(stored_row(areas_alive=False)["payload"])
-    big = {"engine": "decision3", "reader": {"x": 1}, "entries": [{"model": "E1", "pa_evidence": ["p"]}],
-           "areas_alive": [{"id": str(i), "lo": 1.0, "hi": 2.0, "role": "support"} for i in range(400)]}
-    out = json.loads(L.fit_payload(big, limit=400))
-    assert "areas_alive" not in out and out["reader"] == {"x": 1} and out["entries"][0]["pa_evidence"] == ["p"]
+    assert pay["entries"][0]["next_area"] == {"id": "1", "tf": "1H", "role": "support", "lo": 55100.0, "hi": 55180.0, "state": "ACTIVE"}
+    assert "next_area" not in json.loads(stored_row(areas_alive=False)["payload"])["entries"][0]
+    r = {"entries": [dict(E5)], "context_bar": 7}
+    L.attach_next_areas(object(), r)                                       # unreadable ⇒ left out, never raises
+    assert "next_area" not in r["entries"][0]
 
 
 def test_next_area_is_the_engines_own_opposite_area_not_the_chart_band_finder():
     sig, _ce = sig_of(stored_row())
-    assert [x["id"] for x in sig["tags"]["gate"]["opposite_areas"]] == ["1"]   # bear call ⇒ the demand areas only
     fb = [{"role": "support", "lo": 55500.0, "hi": 55560.0}]                   # a chart band nearer to price than the engine's area
     nx = EA.reading(sig, fallback_areas=fb)["next_area"]
     assert (nx["lo"], nx["hi"], nx["source"]) == (55100.0, 55180.0, "engine")
     assert "Next area in the trade direction: support 55,100.00 - 55,180.00." in EA.facts_text(sig, EA.reading(sig, fallback_areas=fb))
     old, _ = sig_of(stored_row(areas_alive=False))                            # older row ⇒ today's fallback, unchanged
-    assert "opposite_areas" not in old["tags"]["gate"]
+    assert "next_area" not in old["tags"]["gate"]
     assert EA.reading(old, fallback_areas=fb)["next_area"]["source"] == "chart band finder"
 
 
@@ -129,16 +129,6 @@ def card(sig, layout="classic"):
     return VW.v1_caption(row, res, d, deadline=pd.Timestamp("2026-10-15 10:20"), layout=layout, window_min=10, approval=True)
 
 
-def test_the_5m_trigger_line_survives_the_1024_cut(monkeypatch):
-    monkeypatch.setattr(VW, "engine_line", lambda row: "engine: NA")
-    sig, _ = sig_of(stored_row())
-    for layout in ("classic", "summary"):
-        cap = card(sig, layout)
-        assert "Trigger 5M: E1 candle 10:05–10:10, traded into the refined base ✓" in cap, layout
-        assert "invalidation (info)" in cap
-        assert " evidence: " in cap or (layout == "summary" and "📋 Reader: " in cap)   # summary: the 📋 Reader line carries it on top
-
-
 def test_no_level_bot_grade_line_and_the_area_tf_is_the_areas_own(monkeypatch):
     monkeypatch.setattr(VW, "engine_line", lambda row: "engine: NA")
     orig = VW._fit
@@ -164,10 +154,10 @@ def test_a_broken_line_object_keeps_its_engine_state_on_the_card_and_in_the_fact
 
 
 def test_no_opposite_area_in_the_engine_reading_means_none_known_never_a_chart_band():
-    r = {"bar_end": "2026-10-15 10:10:00", "ts": "2026-10-15 10:05:00", "decision": "wait", "entries": [E5], "armed": [],
+    r = {"bar_end": "2026-10-15 10:10:00", "ts": "2026-10-15 10:05:00", "decision": "wait", "entries": [dict(E5)], "armed": [],
          "context_bar": 7, "level": {}}
-    L.attach_alive_areas(V([x for x in SNAP if x["role"] == "resistance"]), r)      # the engine knows no demand area ahead
+    L.attach_next_areas(V([x for x in SNAP if x["role"] == "resistance"]), r)      # the engine knows no demand area ahead
     sig, _ = sig_of(L.row_from_v22("BANKNIFTY", r, lambda: "2026-10-15 10:11:00"))
-    assert sig["tags"]["gate"]["opposite_areas"] == []
+    assert "next_area" in sig["tags"]["gate"] and sig["tags"]["gate"]["next_area"] is None
     assert EA.reading(sig, fallback_areas=[{"role": "support", "lo": 55500.0, "hi": 55560.0}])["next_area"] is None
     assert "Next area in the trade direction: none known." in EA.facts_text(sig)

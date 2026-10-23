@@ -787,7 +787,7 @@ def decide_live(V, since=None):
     ⇒ every closed 5M candle of the same session after it is decided too, in order, as r["catch_up"] (a missed cycle never loses a
     trigger candle; each is read only with what was known at its own close)."""
     if getattr(V, "trigger_tf", None) != "5M" or not hasattr(V, "decide5"):
-        return attach_alive_areas(V, V.decide(len(V.m15) - 1))
+        return attach_next_areas(V, V.decide(len(V.m15) - 1))
     F = V.trigger_frame()
     if F.n == 0:
         raise EngineDataError("5M trigger frame रिकामा ⇒ 5M trigger वाचता येत नाही")
@@ -798,35 +798,44 @@ def decide_live(V, since=None):
         js = [j for j in range(F.n) if pd.Timestamp(F.end[j]) > pd.Timestamp(since) and pd.Timestamp(F.end[j]).normalize() == day] or [last]
     rows = [V.decide5(j) for j in js]
     for x in rows:                                                       # layer 6 (display): the card's next area = the engine's own
-        attach_alive_areas(V, x)
+        attach_next_areas(V, x)
     r = rows[-1]
     r["catch_up"] = rows[:-1]
     return r
 
 
-def alive_areas(V, t):
-    """Layer 6 output (display only, never read by a decision): every alive trade-location area of the engine at bar t — {id, tf, role,
-    lo, hi, state} from `levels.snapshot(t)` (BROKEN / DEAD and context-only bands left out). The card / Vision facts take the next
-    area in the trade direction (the target: the next opposite area) from these, not from the chart band finder. None ⇒ unreadable."""
-    try:
-        out = []
-        for x in V.levels.snapshot(int(t)):
-            if str(x.get("state") or "").upper() in ("BROKEN", "DEAD") or not x.get("trade_location", True):
-                continue
-            out.append({"id": None if x.get("id") is None else str(x["id"]), "tf": x.get("tf"), "role": x.get("role"),
-                        "lo": float(x["lo"]), "hi": float(x["hi"]), "state": x.get("state")})
-        return out
-    except Exception:                                                     # noqa: BLE001 — display only
+def next_area_of(V, t, e):
+    """Layer 6 output (display only, never read by a decision): the entry's next area in the trade direction — the target, the next
+    opposite area — as the engine reads it at bar t: the nearest alive trade-location area of the opposite role whose near edge lies
+    beyond the entry reference (bear call ⇒ a demand area below, bull put ⇒ a supply area above; BROKEN / DEAD and context-only bands
+    left out). ⇒ {id, tf, role, lo, hi, state} | None (none ahead). Comparison only."""
+    d, ref = int(e["direction"]), float(e["entry_ref"])
+    want = "support" if d < 0 else "resistance"
+    best, gap = None, None
+    for x in V.levels.snapshot(int(t)):
+        if x.get("role") != want or str(x.get("state") or "").upper() in ("BROKEN", "DEAD") or not x.get("trade_location", True):
+            continue
+        near = float(x["hi"]) if d < 0 else float(x["lo"])
+        g = (ref - near) if d < 0 else (near - ref)
+        if g > 0 and (gap is None or g < gap):
+            best, gap = x, g
+    if best is None:
         return None
+    return {"id": None if best.get("id") is None else str(best["id"]), "tf": best.get("tf"), "role": want, "lo": float(best["lo"]),
+            "hi": float(best["hi"]), "state": best.get("state")}
 
 
-def attach_alive_areas(V, r):
-    """r["areas_alive"] = alive_areas at the row's own 15M bar (the 5M row: its context bar — the last CLOSED 15M bar). Display only."""
+def attach_next_areas(V, r):
+    """Every entry of the row gets e["next_area"] (next_area_of at the row's own 15M bar — the 5M row: its context bar, the last CLOSED
+    15M bar). Display only; an unreadable one is left out (the card then falls back as before). Never raises."""
     if not isinstance(r, dict):
         return r
     t = r.get("context_bar", r.get("bar"))
-    if t is not None:
-        r["areas_alive"] = alive_areas(V, t)
+    for e in r.get("entries") or []:
+        try:
+            e["next_area"] = next_area_of(V, t, e)
+        except Exception:                                                 # noqa: BLE001 — display only
+            e.pop("next_area", None)
     return r
 
 
@@ -956,8 +965,6 @@ def row_from_v22(symbol, r, now_fn):
                "range_state": r.get("range_state"), "watch_list": r.get("watch_list"), "reader": reader_facts(r)}
     if "entries" in r:                                                   # entry models E1–E4 (decision data — fit_payload never drops them)
         payload["entries"] = compact_entries(r.get("entries"))
-        if isinstance(r.get("areas_alive"), list):                       # layer 6: the next area on the card = the engine's own (display)
-            payload["areas_alive"] = r["areas_alive"]
         payload["armed"] = compact_armed(r.get("armed"))
         if r.get("legacy_k_gate") is not None:                           # old step ③: a logged diagnostic only (first to go when too long)
             payload["legacy_k_gate"] = r.get("legacy_k_gate")
@@ -1053,6 +1060,10 @@ def compact_entries(entries):
         if e.get("trigger_tf"):                                          # DECISIONS 37: the 5M trigger candle (card / audit / replay)
             x["trigger_tf"] = str(e["trigger_tf"])
             x["trigger"] = trigger_of(e)
+        if "next_area" in e:                                             # layer 6: the target as the engine reads it (display; None = none)
+            na = e.get("next_area")
+            x["next_area"] = None if not isinstance(na, dict) else {k: (str(na[k]) if k == "id" and na.get(k) is not None else na.get(k))
+                                                                     for k in ("id", "tf", "role", "lo", "hi", "state")}
         pa = pa_first_per_track(e.get("pa_evidence"))
         if pa:                                                           # T9: the PA evidence (display only) — first fact per track
             x["pa_evidence"] = pa
@@ -1165,11 +1176,6 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
     out = dump(payload)
     if len(out) <= limit:
         return out
-    if "areas_alive" in payload:                                         # layer 6 display list (the card's next area): removed first,
-        payload = {k: v for k, v in payload.items() if k != "areas_alive"}   # silently ⇒ the rest is exactly the payload without it
-        out = dump(payload)
-        if len(out) <= limit:
-            return out
     if any(isinstance(e, dict) and "pa_evidence" in e for e in payload.get("entries") or ()):   # T9 PA evidence: display only, the
         payload = {**payload, "entries": [{k: v for k, v in e.items() if k != "pa_evidence"} if isinstance(e, dict) else e
                                           for e in payload["entries"]]}   # removed first (review), then "reader": today's payload kept

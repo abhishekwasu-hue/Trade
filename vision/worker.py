@@ -399,10 +399,6 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why="", layout=None, wi
             s += "\n" + no_buttons_text(why, True)
         s += f"\n<b>❌ ENTRY नाकारली</b> — {html.escape(d.reason)}. {VN.NOT_TAKEN_SHORT}"
     extra = []
-    trig = [x for x in lines if x.startswith("Trigger 5M:")]             # layer 6 (DECISIONS 37): the 5M trigger line goes first among the
-    if trig:                                                            # details, so the 1024 cut never drops it before the extras
-        lines = [x for x in lines if x not in trig]
-        extra += trig
     if manual:                                                          # ✋ /paper: तुमचे strikes / SL / T / R:R (HTML आधीच escape केलेलं)
         extra.append(manual)
     try:                                                                # engine entry model: invalidation (info) + evidence

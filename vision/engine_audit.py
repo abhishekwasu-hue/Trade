@@ -253,10 +253,14 @@ def reading(sig, fallback_areas=None):
     ref = _num(t.get("entry_ref"))
     if ref is None:
         ref = _num((sig or {}).get("spot"))
-    opp = [dict(a, source="engine") for a in (g.get("opposite_areas") or []) if isinstance(a, dict)]
-    nxt = next_area(d, ref, areas + opp)                                 # layer 6: the engine's own areas first (target = next opposite)
-    if nxt is None and fallback_areas and not isinstance(g.get("opposite_areas"), list):   # the engine's list given ⇒ its reading
-        # stands (none ahead ⇒ "none known"); the chart band finder only for an older row without the engine's areas
+    if "next_area" in g:                                                 # layer 6: the engine's own next opposite area (the target) —
+        na = g.get("next_area")                                          # None = the engine knows none ahead ⇒ "none known"
+        b = _band(na.get("lo"), na.get("hi")) if isinstance(na, dict) else None
+        nxt = None if b is None else {"role": "support" if d < 0 else "resistance", "lo": b[0], "hi": b[1],
+                                      "state": str(na.get("state") or "").upper() or None, "source": "engine", "tf": na.get("tf")}
+    else:                                                                # an older row: today's reading (gate areas, then the chart bands)
+        nxt = next_area(d, ref, areas)
+    if nxt is None and fallback_areas and "next_area" not in g:
         nxt = next_area(d, ref, [{"role": a.get("role"), "lo": a.get("lo"), "hi": a.get("hi"), "source": "chart band finder",
                                   "state": "BROKEN" if a.get("broken") and not a.get("valid") else (a.get("state") or "")}
                                  for a in fallback_areas if isinstance(a, dict)])
