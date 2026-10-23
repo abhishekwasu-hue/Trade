@@ -202,3 +202,4 @@ def _no_gate_error_telegram(monkeypatch):
         return
     monkeypatch.setattr(_GA, "_sender", lambda: (lambda line: False))
     _GA._SEEN.clear()
+    _GA._FAILED.clear()

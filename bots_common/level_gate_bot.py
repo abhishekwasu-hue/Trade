@@ -206,6 +206,20 @@ def confirm_tf(bot, settings):
     return tf
 
 
+def _forming_today(raw, now):
+    """gate_error_23oct (review 1): the raw (unclosed) fetch already holds a bar from today ⇒ today's first bar is forming. No bar from
+    today at all ⇒ data missing (an error, never a silent wait)."""
+    try:
+        ts = pd.to_datetime(raw["timestamp"])
+        if getattr(ts.dt, "tz", None) is not None:
+            ts = ts.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+        now = pd.Timestamp(now)
+        now = now.tz_convert("Asia/Kolkata").tz_localize(None) if now.tzinfo else now
+        return bool((ts.dt.normalize() == now.normalize()).any())
+    except Exception:                                                      # noqa: BLE001 — unknown ⇒ error (fail-closed, alerted)
+        return False
+
+
 def cycle_gate(bot, symbol, access_token, settings, areas, now, fetch_bars=None, fetch_daily=None, cache_dir=None, fetch_volume=None):
     """एका cycle साठी: trend (दिवसातून एकदा, cache), confirmation-TF चे बंद candles (मागचे काही दिवस median range साठी), सगळे areas."""
     s = gate_settings(settings)
@@ -226,7 +240,9 @@ def cycle_gate(bot, symbol, access_token, settings, areas, now, fetch_bars=None,
         bars = attach_futures_volume(bars, symbol, access_token, tf, now, fetch_volume)   # a2 / c0: index ⇒ त्याच्या futures चा volume
         k0 = LR.session_start_index(bars, now.tz_localize(None) if now.tzinfo else now)
         if k0 >= len(bars):
-            return CycleGate(ctx, bars, k0, areas, s, wait=f"{R_FIRST_BAR} ({tf}m) — nothing to read yet")
+            if _forming_today(raw, now):                                   # today's first bar is forming (structural) ⇒ a wait, not an error
+                return CycleGate(ctx, bars, k0, areas, s, wait=f"{R_FIRST_BAR} ({tf}m) — nothing to read yet")
+            return CycleGate(ctx, bars, k0, areas, s, err=f"{LR.R_ERROR}: no {tf}m candle from today in the data")   # data missing ⇒ error
         lt = LR.ltf_minutes_for(tf, s)                                     # c1: 15M ⇒ 5M, 5M ⇒ 1M (Abhi mapping; dashboard gate_ltf_minutes)
 
         def ltf_fetch():                                                   # त्याच fetch मार्गाने (Upstox index / MCX contract), गरज पडल्यावरच

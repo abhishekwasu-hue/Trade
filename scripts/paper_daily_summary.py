@@ -106,14 +106,15 @@ def nearest_area(ctx, zones, rng):
     return None
 
 
-def symbol_line(sym, ctx, gate, zones, rng, areas_na=None, warn_pts=None, warn_rule=None, engine=False):
+def symbol_line(sym, ctx, gate, zones, rng, areas_na=None, warn_pts=None, warn_rule=None, engine_gate=None):
     """एका symbol ची साधी ओळ (Abhi चं उदाहरण: "NIFTY: no setup today. Trend DOWN (daily), but price never reached a supply area. Nearest
     supply 22,715–22,776 (≈150 pts above the high). Daily move: mature (context only), near target 22,183.").
     ctx = trend cache (None ⇒ नाही) · gate = LV.summarize निकाल (None ⇒ bot नोंदी वाचता आल्या नाहीत) · rng = {"high", "low"} (None ⇒ नाही).
     warn_pts = `approval_band_warn_pts` (None ⇒ default 150): पट्ट्याची रुंदी दाखवतो, त्यापेक्षा रुंद ⇒ "⚠️ merged band — check" (Abhi).
     warn_rule = `approval_band_warn_rule` (layer 6b; None ⇒ "points" = आजचं): "method" ⇒ engine area (ENGINE_LEVEL_…) ला line नाही.
-    engine = the bot's signal_source is engine (gate_error_23oct): the gate counts are the OLD level-bot check (comparison only) — it never
-    decides an engine entry, so its reasons are not written as "no entry because …" (that misread a level-bot gate error as the reason)."""
+    engine_gate = LV.summarize of the rows of level bots whose OWN signal_source is engine (gate_error_23oct; None ⇒ no such bot): their
+    gate is the OLD level-bot check (comparison only) — it never decides an engine entry, so its reasons are never written as "no entry
+    because …" (that misread a level-bot gate error as the reason). `gate` then holds only the own-signal bots' rows."""
     from bots_common import level_reaction as LR
     from bots_common import plain_text as PT
     if ctx is None and gate is None and rng is None:
@@ -129,19 +130,22 @@ def symbol_line(sym, ctx, gate, zones, rng, areas_na=None, warn_pts=None, warn_r
         s.append(f"No new entries: {PT.unclear_words(ctx)}.")
     else:
         tr = PT.trend_words(ctx).replace("Daily ", "")
+        eng_armed = (engine_gate or {}).get("armed", 0)
         if gate is None:
             s.append(f"Trend {tr} (daily); bot records not available.")
+        elif armed == 0 and engine_gate is not None:
+            s.append(f"Trend {tr} (daily).")                               # own-signal bots saw nothing; the engine bots' line follows
         elif armed == 0:
             s.append(f"Trend {tr} (daily), " + ("and" if conf else "but") + f" price never reached a {kind} area.")
         else:
             why = [WHY_PLAIN.get(k, k) for k, n in sorted((gate.get("ignored") or {}).items(), key=lambda x: -x[1]) if n]
-            if engine:
-                s.append(f"Trend {tr} (daily). The old level-bot check (comparison only — engine entries come from the engine models) "
-                         f"saw price at a {kind} area {armed} time{'s' if armed != 1 else ''}"
-                         + (f"; it ignored them because {', '.join(why[:2])}." if why and not conf else "."))
-            else:
-                s.append(f"Trend {tr} (daily). Price reached a {kind} area {armed} time{'s' if armed != 1 else ''}"
-                         + (f"; no entry because {', '.join(why[:2])}." if why and not conf else "."))
+            s.append(f"Trend {tr} (daily). Price reached a {kind} area {armed} time{'s' if armed != 1 else ''}"
+                     + (f"; no entry because {', '.join(why[:2])}." if why and not conf else "."))
+        if gate is not None and eng_armed:
+            ew = [WHY_PLAIN.get(k, k) for k, n in sorted((engine_gate.get("ignored") or {}).items(), key=lambda x: -x[1]) if n]
+            s.append(f"The old level-bot check (comparison only — engine entries come from the engine models) saw price at a {kind} "
+                     f"area {eng_armed} time{'s' if eng_armed != 1 else ''}"
+                     + (f"; it ignored them because {', '.join(ew[:2])}." if ew else "."))
         if areas_na:
             s.append(f"Bot areas not available today ({areas_na}).")
         elif rng is None:
@@ -250,14 +254,36 @@ def default_warn_rule(sym):
         return PT.band_warn_rule(None)
 
 
+INDEX_BOTS = ("1m_instant", "classic_sr_reversal", "15m_dynamic_sr")      # index level bots (level_visibility.BOT_TFS keys)
+
+
 def default_engine(sym):
-    """15M SRv2 (`15m_dynamic_sr`) signal_source = engine? Not readable ⇒ False (today's wording)."""
+    """The index level bots whose OWN signal_source is engine for this symbol (each bot by its own settings). Not readable ⇒ that bot
+    counts as own (today's wording)."""
+    out = set()
     try:
         import cloud_db
         import engine_signal as ES
-        return ES.source_of(cloud_db.get_strategy_settings("15m_dynamic_sr", sym) or {}) == "engine"
     except Exception:                                                      # noqa: BLE001 — display only
-        return False
+        return out
+    for bot in INDEX_BOTS:
+        try:
+            if ES.source_of(cloud_db.get_strategy_settings(bot, sym) or {}) == "engine":
+                out.add(bot)
+        except Exception:                                                  # noqa: BLE001
+            pass
+    return out
+
+
+def split_engine_rows(rows, engine_bots, sym):
+    """(own rows, engine rows): a row belongs to the engine side only when every level bot that writes it (level_visibility.bot_matches)
+    runs with signal_source = engine (5M rows are shared by Instant + Classic)."""
+    from bots_common import level_visibility as LV
+    own, eng = [], []
+    for r in rows:
+        bots = [b for b in INDEX_BOTS if LV.bot_matches(r.get("level_type"), b, r.get("symbol") or sym)]
+        (eng if bots and all(b in engine_bots for b in bots) else own).append(r)
+    return own, eng
 
 
 def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None, range_fn=None, warn_fn=None, rule_fn=None,
@@ -280,7 +306,13 @@ def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None,
     for sym in symbols:
         ctx = _safe(ctx_fn, sym, day)
         rows, err = _safe(rows_fn, sym, day) or (None, "error")
-        gate = None if err or rows is None else _safe(LV.summarize, [r for r in rows if LV.market(r.get("symbol") or sym) == "index"])
+        gate, egate = None, None
+        if not err and rows is not None:
+            idx = [r for r in rows if LV.market(r.get("symbol") or sym) == "index"]
+            ebots = set(_safe(engine_fn, sym) or ())
+            own, eng = split_engine_rows(idx, ebots, sym)
+            gate = _safe(LV.summarize, own)
+            egate = _safe(LV.summarize, eng) if ebots else None
         zones, zerr = None, None
         if ctx is not None and ctx.get("ok"):
             try:
@@ -289,7 +321,7 @@ def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None,
                 print(f"⚠️ {sym} areas: {type(exc).__name__}: {exc}")
                 zerr = html.escape(str(exc)[:60] or type(exc).__name__, quote=False)
         out.append(symbol_line(sym, ctx, gate, zones, _safe(range_fn, sym, day), areas_na=zerr, warn_pts=_safe(warn_fn, sym),
-                               warn_rule=_safe(rule_fn, sym), engine=bool(_safe(engine_fn, sym))))
+                               warn_rule=_safe(rule_fn, sym), engine_gate=egate))
     return "\n".join(out)
 
 

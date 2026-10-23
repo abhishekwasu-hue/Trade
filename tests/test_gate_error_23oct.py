@@ -194,7 +194,13 @@ def test_alert_failed_send_is_retried_and_never_raises(tmp_path):
     def bad(x):
         raise RuntimeError("telegram down")
     assert _al(tmp_path, "KeyError: x", send=bad)[0] is False
+    calls = []
+    assert _al(tmp_path, "KeyError: x", send=lambda x: calls.append(x) or True)[0] is False
+    assert calls == []                                                      # review 3: a failed send is not retried in this run
+    GA._FAILED.clear()                                                      # next process (next cron minute) tries again
     assert _al(tmp_path, "KeyError: x", send=lambda x: False)[0] is False
+    GA._FAILED.clear()
+    assert not (tmp_path / "a.json").exists()                               # nothing recorded on failure
     assert _al(tmp_path, "KeyError: x")[0] is True                          # recorded only after a real send
     assert GA.alert("level_gate", None, None, send=lambda x: True, state_path=str(tmp_path / "dir_missing" / "a.json"),
                     now=pd.Timestamp("2026-10-23 10:00")) is True
@@ -222,8 +228,62 @@ def test_existing_engine_alert_state_is_kept(tmp_path):
 # ------------------------------------------------------------------------------------------------ the day summary wording (engine mode)
 def test_day_summary_engine_mode_does_not_say_no_entry_because_gate_error():
     from scripts import paper_daily_summary as S
+    ctx = {"ok": True, "trend": "DOWN", "sides": {LR.BEAR}, "reason": "Daily DOWN"}
     gate = {"armed": 2, "confirmed": 0, "ignored": {"error": 2}, "entry_statuses": {}}
-    own = S.symbol_line("BANKNIFTY", {"ok": True, "trend": "DOWN", "sides": {LR.BEAR}, "reason": "Daily DOWN"}, gate, None, None)
-    eng = S.symbol_line("BANKNIFTY", {"ok": True, "trend": "DOWN", "sides": {LR.BEAR}, "reason": "Daily DOWN"}, gate, None, None, engine=True)
+    empty = {"armed": 0, "confirmed": 0, "ignored": {}, "entry_statuses": {}}
+    own = S.symbol_line("BANKNIFTY", ctx, gate, None, None)
+    eng = S.symbol_line("BANKNIFTY", ctx, empty, None, None, engine_gate=gate)
     assert "no entry because a gate error" in own
-    assert "no entry because" not in eng and "old level-bot check" in eng and "engine models" in eng
+    assert "no entry because" not in eng and "never reached" not in eng and "old level-bot check" in eng and "engine models" in eng
+
+
+def test_day_summary_comparison_wording_is_per_bot_signal_source():
+    """review 5: each level bot by its OWN signal_source — SRv2 (plain SUPPORT / RESISTANCE) engine, Classic (15M DYNAMIC_SR) own."""
+    from scripts import paper_daily_summary as S
+    rows = [{"symbol": "BANKNIFTY", "level_type": "RESISTANCE", "level_price": 57000.0, "signal_time": "2026-10-23 10:00",
+             "trade_status": "SKIPPED_GATE_ERROR", "hit_type": "NO_HIT"},
+            {"symbol": "BANKNIFTY", "level_type": "DYNAMIC_SR_RESISTANCE_15M", "level_price": 57100.0, "signal_time": "2026-10-23 10:00",
+             "trade_status": "SKIPPED_GATE_BROKEN", "hit_type": "NO_HIT"},
+            {"symbol": "BANKNIFTY", "level_type": "DYNAMIC_SR_RESISTANCE_5M", "level_price": 57200.0, "signal_time": "2026-10-23 10:00",
+             "trade_status": "SKIPPED_GATE_BROKEN", "hit_type": "NO_HIT"}]
+    own, eng = S.split_engine_rows(rows, {"15m_dynamic_sr", "1m_instant"}, "BANKNIFTY")
+    assert [r["level_price"] for r in eng] == [57000.0]                    # SRv2 only
+    assert [r["level_price"] for r in own] == [57100.0, 57200.0]           # Classic own; 5M rows shared by Instant (engine) + Classic (own)
+    rows = [dict(r, signal_time="2026-10-23 09:45", trade_status="SKIPPED_GATE_WAITING_COMMITMENT") for r in rows] + rows   # armed first
+    ctx = {"ok": True, "trend": "DOWN", "sides": {LR.BEAR}, "reason": "Daily DOWN"}
+    txt = S.symbols_section("2026-10-23", symbols=("BANKNIFTY",), ctx_fn=lambda s, d: ctx, rows_fn=lambda s, d: (rows, None),
+                            zones_fn=lambda s: None, range_fn=lambda s, d: None, engine_fn=lambda s: {"15m_dynamic_sr"})
+    assert "no entry because price broke through the area" in txt          # Classic (own): today's wording
+    assert "old level-bot check (comparison only" in txt and "it ignored them because a gate error" in txt   # SRv2 (engine)
+    assert "no entry because a gate error" not in txt
+    txt_own = S.symbols_section("2026-10-23", symbols=("BANKNIFTY",), ctx_fn=lambda s, d: ctx, rows_fn=lambda s, d: (rows, None),
+                                zones_fn=lambda s: None, range_fn=lambda s, d: None, engine_fn=lambda s: set())
+    assert "old level-bot check" not in txt_own
+
+
+def test_no_bar_from_today_mid_day_is_an_error(up):
+    """review 1: Upstox returns no bar from today at 11:00 (data missing) ⇒ SKIPPED_GATE_ERROR (alerted), never a silent wait."""
+    df = _bars_yesterday_plus_forming().iloc[:-1]                          # yesterday only
+    for hm in ("09:20", "11:00"):
+        g = LGB.cycle_gate("srv2", "BANKNIFTY", "tok", {"trading_mode": "PAPER"}, [(99, 101)], pd.Timestamp(f"2026-10-23 {hm}"),
+                           fetch_bars=lambda *a: df, fetch_volume=lambda *a: None)
+        r = g.result(99, 101)
+        assert r["entry"] is False and r["state"] == "ERROR" and LGB.status_of(r) == "SKIPPED_GATE_ERROR" and GA.is_error(r)
+    tz = _bars_yesterday_plus_forming()
+    tz["timestamp"] = tz["timestamp"].dt.tz_localize("Asia/Kolkata")       # Upstox tz-aware timestamps: still the forming-bar wait
+    g = LGB.cycle_gate("srv2", "BANKNIFTY", "tok", {"trading_mode": "PAPER"}, [(99, 101)], pd.Timestamp("2026-10-23 09:20"),
+                       fetch_bars=lambda *a: tz, fetch_volume=lambda *a: None)
+    assert LGB.status_of(g.result(99, 101)) == LGB.FIRST_BAR_STATUS
+
+
+def test_alert_write_merges_a_concurrent_writer(tmp_path):
+    """review 4: the shared alert file is re-read just before the write (ES.alert_error may write between) and replaced atomically."""
+    p = tmp_path / "a.json"
+
+    def send(line):                                                        # another process writes the file while we send
+        p.write_text(json.dumps({"NIFTY": {"failing": True, "since": "x"}}), encoding="utf-8")
+        return True
+    assert GA.alert("vision", "NIFTY", "OSError: x", send=send, state_path=str(p), now=pd.Timestamp("2026-10-23 10:00"))
+    st = json.loads(p.read_text(encoding="utf-8"))
+    assert st["NIFTY"] == {"failing": True, "since": "x"} and list(st["_gate_error"].values()) == ["2026-10-23"]
+    assert [x.name for x in tmp_path.iterdir()] == ["a.json"]              # no temp file left

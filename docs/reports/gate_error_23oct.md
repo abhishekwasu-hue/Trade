@@ -60,16 +60,19 @@ because …", which reads as if the engine entry was blocked. In engine mode tha
 
 ## 4. The fix (commit on `gate-err`)
 
-1. `bots_common/level_gate_bot.py`: no closed confirmation-TF candle yet today ⇒ `CycleGate(wait=…)`; `result()` returns `IDLE`, `entry
+1. `bots_common/level_gate_bot.py`: no closed confirmation-TF candle yet today AND the raw fetch already holds today's forming bar
+   (`_forming_today`) ⇒ `CycleGate(wait=…)`; no bar from today at all (data missing, any time) ⇒ still `SKIPPED_GATE_ERROR` + ⚠️ (review 1); `result()` returns `IDLE`, `entry
    False`, reason "waiting for today's first closed candle (15m) — nothing to read yet", status `SKIPPED_GATE_FIRST_BAR_PENDING`.
    Fail-closed unchanged (no entry). Real errors (B–E) unchanged: still `SKIPPED_GATE_ERROR`.
 2. `bots_common/level_visibility.py`: the new status = category `first_bar`, a visit boundary like "price not at area"; never counted as
    ignored / error; dashboard label "⚪ waiting for today's first closed candle". `level_bots_replay.py` label added.
-3. `scripts/paper_daily_summary.py`: engine-mode wording of the per-symbol line (display only).
+3. `scripts/paper_daily_summary.py`: per-symbol line — rows of each index level bot whose OWN `signal_source` is engine are summarized
+   separately and named "the old level-bot check (comparison only)", never "no entry because …" (review 5; display only).
 4. Alert (DECISIONS 47): new small module `bots_common/gate_alert.py` — `alert(path, symbol, detail, …)` sends ONE plain-words ⚠️
    Telegram message per cause per day (cause = path + exception name, or the reason's words without numbers); state in the engine alert
    file (`data/engine_signal_alerts.json`, key `_gate_error`, today's keys only), recorded only after a successful send; never raises,
-   never blocks or changes an entry / exit. `text()` is one function so the Telegram message standard (⚠️ type) can re-skin it. Hooked
+   never blocks or changes an entry / exit. A failed send is not retried in the same run (review 3); the write re-reads the shared file
+   and replaces it atomically (review 4). `text()` is one function so the Telegram message standard (⚠️ type) can re-skin it. Hooked
    at A–K paths: SRv2 per-area gate error (`srv2_momentum_reversal_strategy.py:344-345`), engine step (`paper/bot_hooks.py:90-91`),
    engine entry (`paper/engine_entry.py:236, 489, 539, 561`), engine store (`engine_signal.py:603-604`), Vision gate
    (`vision/gate.py:59-64`). Example:
@@ -91,21 +94,24 @@ Instant / MCX bots are OFF in the one-bot mode and are not hooked yet (same help
 
 `tests/test_srv2*.py tests/test_level*.py tests/test_engine*.py tests/test_one_bot.py tests/test_trigger_5m*.py
 tests/test_gate_error_23oct.py tests/test_method_no_numbers.py tests/test_paper*.py tests/test_vision*.py tests/test_telegram_cleanup.py
-tests/test_preopen*.py tests/test_approval_band_width.py tests/test_layer6b_output.py tests/test_entry_models*.py` — 1212 passed, 2 skipped, 7 failed;
+tests/test_preopen*.py tests/test_approval_band_width.py tests/test_layer6b_output.py tests/test_entry_models*.py` — 1215 passed, 2 skipped, 7 failed (after the review fixes);
 the 7 (tests/test_vision_blind_test.py ×2, tests/test_vision_v2.py ×4, tests/test_vision_v21.py ×1) fail identically on the base
-branch without this change (pre-existing, chart / Vision rendering — not touched here). New: tests/test_gate_error_23oct.py 17 passed
+branch without this change (pre-existing, chart / Vision rendering — not touched here). New: tests/test_gate_error_23oct.py 20 passed
 (4 of them fail on the old code).
 
 ## 6. Read-only VPS command (lists every gate / engine error today)
 
 Read-only: SELECT on Supabase `signal_log` (dashboard getter), sqlite `mode=ro` for `engine_signals.db` / `vision.db`, log files read;
-secrets redacted (token / key / password / bearer / DB URL / any 40+ char string). Output also saved to `/root/gate_err_23oct.txt`.
+secrets redacted (see `vps_cmd_v2.txt`). Output also saved to `/root/gate_err_23oct.txt`.
 Sections: 1 engine `error` rows; 1b every engine entry today and the bot's decision (`engine_entry_consumed`); 2 every level-gate error
 row (time, symbol, level, exact reason, path, and whether an engine entry was pending in the 30 min before it and what the bot did);
 2b the "error N" count exactly as the 15:45 block computes it; 3 trend cache; 4 Vision rows (errors flagged); 5 distinct error lines in
 `srv2.log` / `engine_signal.log` (with counts); 6 the alert state file.
 
-Paste as ONE block (after market close where possible):
+Note: importing `cloud_db` (for the signal_log SELECT) opens the app's log file for appending (its logger setup) — the only file the
+command touches besides its own `tee` output; nothing is written to any DB.
+
+Paste as ONE block (after market close where possible) — `vps_cmd_v2.txt` (redaction reviewed):
 
 ```bash
 cd /root/Trade && set -a && . ./.env && set +a && DAY=2026-10-23 python3 - <<'PY' 2>&1 | tee /root/gate_err_23oct.txt
@@ -113,11 +119,15 @@ cd /root/Trade && set -a && . ./.env && set +a && DAY=2026-10-23 python3 - <<'PY
 import collections, glob, json, os, re, sqlite3, sys
 sys.path.insert(0, ".")
 DAY = os.environ.get("DAY")
-SECRET = re.compile(r"(?i)(token|secret|password|passwd|api[_-]?key|bearer|authorization|postgres(?:ql)?://\S+@)([\"'=:\s]*)(\S+)")
-LONG = re.compile(r"[A-Za-z0-9_\-\.]{40,}")
+SECRET = re.compile(r"(?i)(token|secret|password|passwd|pwd|api[_-]?key|bearer|authorization|cookie|jwt)([\"'=:\s]*)(\S+)")
+URLPW = re.compile(r"(?i)\b([a-z][a-z0-9+.\-]*://)[^@\s/]+@")
+LONG = re.compile(r"[A-Za-z0-9_\-\.+/=]{32,}")
 def red(s):
-    s = SECRET.sub(lambda m: f"{m.group(1)}{m.group(2)}<redacted>", str(s))
-    return LONG.sub(lambda m: m.group(0) if "/" in m.group(0) else "<redacted>", s)
+    s = URLPW.sub(lambda m: f"{m.group(1)}<redacted>@", str(s))
+    s = re.sub(r"(?i)(bearer\s+)\S+", r"\1<redacted>", s)
+    s = re.sub(r"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.?[A-Za-z0-9_\-]*", "<redacted>", s)
+    s = SECRET.sub(lambda m: f"{m.group(1)}{m.group(2)}<redacted>", s)
+    return LONG.sub("<redacted>", s)
 def P(*a): print(red(" ".join(str(x) for x in a)))
 def H(t): P("\n" + "=" * 110 + "\n" + t + "\n" + "=" * 110)
 def ro(p):

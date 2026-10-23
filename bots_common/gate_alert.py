@@ -24,6 +24,9 @@ PATH_WORDS = {
 }
 _EXC = re.compile(r"\b([A-Z][A-Za-z0-9_]*(?:Error|Exception|Timeout|Late|Missing|Rejected|Interrupt|Exit))\b")
 _SEEN = set()                                                              # this process: cause keys already handled today (no file read)
+_FAILED = set()                                                            # this process: (key, day) whose send failed ⇒ not retried in this
+                                                                           # run (Telegram down ⇒ no 10 s wait per area per cycle); the next
+                                                                           # process (next cron minute) tries again
 
 
 def _now(now=None):
@@ -88,15 +91,11 @@ def alert(path, symbol, detail, engine_entry_waiting=None, send=None, state_path
         now = _now(now)
         day = str(now.date()) if hasattr(now, "date") else str(now)[:10]
         key = cause_key(path, detail)
-        if (key, day) in _SEEN:
+        if (key, day) in _SEEN or (key, day) in _FAILED:
             return False
         p = _state_path(state_path)
-        try:
-            st = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
-        except (OSError, ValueError):
-            st = {}
-        st = st if isinstance(st, dict) else {}
-        seen = st.get("_gate_error") if isinstance(st.get("_gate_error"), dict) else {}
+        seen = _read(p).get("_gate_error")
+        seen = seen if isinstance(seen, dict) else {}
         if seen.get(key) == day:
             _SEEN.add((key, day))
             return False
@@ -109,20 +108,46 @@ def alert(path, symbol, detail, engine_entry_waiting=None, send=None, state_path
             print(f"{line}  [Telegram send failed: {type(exc).__name__}]")
             ok = False
         if not ok:
+            _FAILED.add((key, day))
             return False
         _SEEN.add((key, day))
-        seen = {k: v for k, v in seen.items() if v == day}                 # only today's keys are kept
-        seen[key] = day
-        st["_gate_error"] = seen
-        try:
-            os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
-            json.dump(st, open(p, "w", encoding="utf-8"))
-        except OSError:
-            pass
+        _record(p, key, day)
         return True
     except Exception as exc:                                               # noqa: BLE001 — an alert never stops anything
         print(f"⚠️ gate_alert: {type(exc).__name__}: {exc}")
         return False
+
+
+def _read(p):
+    try:
+        st = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    except (OSError, ValueError):
+        return {}
+    return st if isinstance(st, dict) else {}
+
+
+def _record(p, key, day):
+    """Re-read the shared alert file just before writing (engine_signal.alert_* write it too), merge only "_gate_error" (today's keys),
+    and write atomically (temp file + os.replace) ⇒ a concurrent writer's keys are kept and a reader never sees half a file."""
+    import tempfile
+    st = _read(p)
+    seen = st.get("_gate_error") if isinstance(st.get("_gate_error"), dict) else {}
+    seen = {k: v for k, v in seen.items() if v == day}                     # only today's keys are kept
+    seen[key] = day
+    st["_gate_error"] = seen
+    try:
+        d = os.path.dirname(os.path.abspath(p))
+        os.makedirs(d, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".gate_alert_", suffix=".json", dir=d)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(st, f)
+            os.replace(tmp, p)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+    except OSError:
+        pass
 
 
 def is_error(r):
