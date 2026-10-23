@@ -695,3 +695,14 @@ Abhi — reading check from a live PAPER entry: BANKNIFTY, E4 (b) sweep-retest, 
 6. Report which timeframe / degree the line came from (1H or 15M) and show it on the card. The card header shows the signal's own symbol first; the bot name ("NIFTY 15M Dynamic SR") only as a small label.
 7. List every live and replayed entry matching 1 or 2, with its result.
 Self-review, PAPER only, one VPS block for me after market close with --revert. Report to me in Marathi.
+
+---
+## 23 Oct — addition C / D (engine card, engine name)
+Abhi — addition to the two orders I just sent (the 5M entry trigger and the BANKNIFTY E4 (b) reading check). Record it in owner-orders (INBOX verbatim, a README row) and do it in the same PR.
+C. The Telegram / Vision card must show the ENGINE's reading for signal_source = engine (not the old bot's chart):
+- The chart: the HTF strip (W / D / 1H state), the 1H / Daily area or line with its lifecycle state and timeframe, the refined 15M base, the 5M trigger panel with the trigger candle, the invalidation, the next area, FUT volume. No old L-line / PDH / ORH chart for engine signals.
+- The text: the signal's own symbol first, then the model and the object in plain words ("retest of a broken 1H line from below").
+- Vision audits engine signals against this engine card and the method's concepts (the handover's T-5); the old session / gap / opening rules are context only.
+- Trade messages show the real exits from the dashboard settings (the handover's T-6).
+D. Name: for signal_source = engine the bot's UI / card label becomes "Price-action engine (PAPER)"; the old "15M Dynamic SR / reversal" name and logic are shown only when signal_source = own.
+Tests, self-review, PAPER only. Report to me in Marathi.
