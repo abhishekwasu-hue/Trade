@@ -109,6 +109,23 @@ def engine_gate_tags(r, direction, settings=None):
             "areas": engine_areas(pay), "reader": engine_reader(pay), "htf": engine_htf(pay)}
 
 
+def engine_opposite_areas(r, d):
+    """Layer 6 (display): the engine's alive areas of the OPPOSITE role (bear call ⇒ demand, bull put ⇒ supply) from the stored row's
+    payload `areas_alive` (engine3_live.alive_areas) — the card's / Vision facts' next area comes from these. None when the payload
+    carries none (older row, or dropped by the size cap ⇒ the card falls back as before). Never raises."""
+    import json
+    try:
+        pay = json.loads(r.get("payload") or "{}")
+        xs = pay.get("areas_alive")
+        if not isinstance(xs, list):
+            return None
+        want = "support" if int(d) < 0 else "resistance"
+        return [{k: x.get(k) for k in ("id", "tf", "role", "lo", "hi", "state")} for x in xs
+                if isinstance(x, dict) and x.get("role") == want and x.get("lo") is not None and x.get("hi") is not None]
+    except Exception:                                                     # noqa: BLE001 — display only
+        return None
+
+
 def engine_htf(pay):
     """T-5 (the engine card's HTF strip, display only): the engine row's own Weekly / Daily states — {weekly, daily, daily_phase}
     copied as text; none present ⇒ None. Never raises."""
@@ -394,6 +411,10 @@ def entry_gate_tags(r, e, direction, settings=None):
         if not any(isinstance(x, dict) and _num(x.get("lo")) == a[0] and _num(x.get("hi")) == a[1] for x in areas):
             areas.insert(0, {"id": ar.get("id"), "role": "support" if int(e["direction"]) > 0 else "resistance", "lo": a[0], "hi": a[1],
                              "tf": ar.get("tf"), "state": ar.get("state"), "confluence_label": None})
+        for x in areas:                                                   # layer 6: the entry's own object keeps the state the engine
+            if isinstance(x, dict) and _num(x.get("lo")) == a[0] and _num(x.get("hi")) == a[1] and x.get("state") is None \
+                    and ar.get("state"):                                  # read (a broken line's row in the payload carries none)
+                x["state"] = ar.get("state")
         g["areas"] = areas
     cl = e.get("cluster") if isinstance(e.get("cluster"), dict) else None
     if cl and isinstance(cl.get("members"), list) and len(cl["members"]) > 1:   # one location = the overlapping cluster: every member area
@@ -414,6 +435,9 @@ def entry_gate_tags(r, e, direction, settings=None):
     if ev_lines:                                                          # P8: the evidence line(s) the chart always shows
         g["evidence_lines"] = ev_lines
     g["grade"] = e.get("label") if e.get("label") in ("A", "B") else None   # this entry's own label (none ⇒ no label, never the row's)
+    opp = engine_opposite_areas(r, int(e["direction"]))
+    if opp is not None:                                                   # layer 6: the next area (target) from the engine's own areas
+        g["opposite_areas"] = opp
     ev = e.get("evidence")
     el = e.get("evidence_list") if isinstance(e.get("evidence_list"), dict) else ev
     if isinstance(el, dict) and ("required" in el or "confirming" in el):   # the 6a evidence list in the reader's own shape

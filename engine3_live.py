@@ -787,7 +787,7 @@ def decide_live(V, since=None):
     ⇒ every closed 5M candle of the same session after it is decided too, in order, as r["catch_up"] (a missed cycle never loses a
     trigger candle; each is read only with what was known at its own close)."""
     if getattr(V, "trigger_tf", None) != "5M" or not hasattr(V, "decide5"):
-        return V.decide(len(V.m15) - 1)
+        return attach_alive_areas(V, V.decide(len(V.m15) - 1))
     F = V.trigger_frame()
     if F.n == 0:
         raise EngineDataError("5M trigger frame रिकामा ⇒ 5M trigger वाचता येत नाही")
@@ -797,8 +797,36 @@ def decide_live(V, since=None):
         day = pd.Timestamp(F.end[last]).normalize()
         js = [j for j in range(F.n) if pd.Timestamp(F.end[j]) > pd.Timestamp(since) and pd.Timestamp(F.end[j]).normalize() == day] or [last]
     rows = [V.decide5(j) for j in js]
+    for x in rows:                                                       # layer 6 (display): the card's next area = the engine's own
+        attach_alive_areas(V, x)
     r = rows[-1]
     r["catch_up"] = rows[:-1]
+    return r
+
+
+def alive_areas(V, t):
+    """Layer 6 output (display only, never read by a decision): every alive trade-location area of the engine at bar t — {id, tf, role,
+    lo, hi, state} from `levels.snapshot(t)` (BROKEN / DEAD and context-only bands left out). The card / Vision facts take the next
+    area in the trade direction (the target: the next opposite area) from these, not from the chart band finder. None ⇒ unreadable."""
+    try:
+        out = []
+        for x in V.levels.snapshot(int(t)):
+            if str(x.get("state") or "").upper() in ("BROKEN", "DEAD") or not x.get("trade_location", True):
+                continue
+            out.append({"id": None if x.get("id") is None else str(x["id"]), "tf": x.get("tf"), "role": x.get("role"),
+                        "lo": float(x["lo"]), "hi": float(x["hi"]), "state": x.get("state")})
+        return out
+    except Exception:                                                     # noqa: BLE001 — display only
+        return None
+
+
+def attach_alive_areas(V, r):
+    """r["areas_alive"] = alive_areas at the row's own 15M bar (the 5M row: its context bar — the last CLOSED 15M bar). Display only."""
+    if not isinstance(r, dict):
+        return r
+    t = r.get("context_bar", r.get("bar"))
+    if t is not None:
+        r["areas_alive"] = alive_areas(V, t)
     return r
 
 
@@ -928,6 +956,8 @@ def row_from_v22(symbol, r, now_fn):
                "range_state": r.get("range_state"), "watch_list": r.get("watch_list"), "reader": reader_facts(r)}
     if "entries" in r:                                                   # entry models E1–E4 (decision data — fit_payload never drops them)
         payload["entries"] = compact_entries(r.get("entries"))
+        if isinstance(r.get("areas_alive"), list):                       # layer 6: the next area on the card = the engine's own (display)
+            payload["areas_alive"] = r["areas_alive"]
         payload["armed"] = compact_armed(r.get("armed"))
         if r.get("legacy_k_gate") is not None:                           # old step ③: a logged diagnostic only (first to go when too long)
             payload["legacy_k_gate"] = r.get("legacy_k_gate")
@@ -1135,6 +1165,11 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
     out = dump(payload)
     if len(out) <= limit:
         return out
+    if "areas_alive" in payload:                                         # layer 6 display list (the card's next area): removed first,
+        payload = {k: v for k, v in payload.items() if k != "areas_alive"}   # silently ⇒ the rest is exactly the payload without it
+        out = dump(payload)
+        if len(out) <= limit:
+            return out
     if any(isinstance(e, dict) and "pa_evidence" in e for e in payload.get("entries") or ()):   # T9 PA evidence: display only, the
         payload = {**payload, "entries": [{k: v for k, v in e.items() if k != "pa_evidence"} if isinstance(e, dict) else e
                                           for e in payload["entries"]]}   # removed first (review), then "reader": today's payload kept
