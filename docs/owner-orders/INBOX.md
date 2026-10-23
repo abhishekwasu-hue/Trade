@@ -666,3 +666,20 @@ Vision pn on kra
 ---
 ## 23 Oct — Vision budget
 Per day 5 dollar budget
+
+---
+## 23 Oct — entry trigger on 5M for every model
+Abhi — new owner rule: the entry trigger is on 5M for every model. Record it in owner-orders first (INBOX verbatim, a DECISIONS principle without dates, a README row). Report first, then build in one PR with tests and a replay before / after per model.
+- Where stays as now: W state, D side, 1H / Daily areas with the K4 lifecycle, the refined 15M base (RC2), the visit, once per model per visit, max_hits_per_zone.
+- When moves to 5M: the engine decides at every 5M close, using only CLOSED 15M / 1H / D bars as known at that 5M close (no look-ahead; a 15M bar in progress is never used).
+  - E1 = the first 5M candle that trades into the refined base in the visit.
+  - E2 = the 5M commitment candle with FUT 5M volume (the handover read on 5M; volume compared on 5M slots).
+  - E3 = the 5M CHoCH (as now).
+  - E4 (a) = the sweep and the failed push read on 5M.
+  - E4 (b) = the 5M rejection candle at the retested object, from the correct side.
+- traded_inside applies to the 5M trigger candle (it must trade into the refined base; a close outside on the trade side is allowed, never beyond the invalidation side).
+- The invalidation stays structural (refined base / area / object / sweep extreme), never the 5M candle's own extreme.
+- A dashboard setting trigger_tf = 5M (default, my rule) / 15M (what-if = today's behaviour, byte-identical).
+- The live loop runs on 5M closes; the Telegram / Vision card shows the 5M trigger panel.
+- The replay shows 15M vs 5M per model: entry time and price difference, distance to invalidation, next-area-first vs invalidation-first.
+Self-review, PAPER only, one VPS block for me after market close with --revert. Report to me in Marathi.

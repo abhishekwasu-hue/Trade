@@ -40,3 +40,4 @@ Decisions taken from orders go to DECISIONS.md (append only).
 | 33 | PA T3 / T9 | merged (#375, 7360b95; display only, entries byte-identical) | main |
 | 34 | "Merge and continue" (4) | nothing open to merge; continuing (provisional, no questions): the E4 (b) hooks left by T9 (pattern retest, range edges, D / W broken lines) behind a default-OFF reading switch + 13-group replay before / after | branch claude/hopeful-gates-hf186c |
 | 35 | Chart Reading Report + its Vision part default ON; Vision budget $5 / day | code default ON (DECISIONS 36); budget set on the VPS by the next block (saved _global setting) | cloud_db.py + VPS |
+| 36 | Entry trigger on 5M for every model (`trigger_tf` 5M default / 15M what-if) | recorded (DECISIONS 37); report first, then build in one PR + replay 15M vs 5M per model | — |

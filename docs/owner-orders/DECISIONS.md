@@ -85,3 +85,10 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     both can be switched off on the dashboard. Vision stays information only. The Vision budget is $5 per day (`vision_daily_budget_usd`
     = 5.0, a dashboard setting); PROVISIONAL with it: monthly cap 100 (the setting's maximum) and visual-audit sub-cap 2.0 (its maximum)
     so the daily budget is usable; the signals reserve stays. (Chart Reading Report switch-on + Abhi's budget)
+37. The entry trigger is read on 5M for every model (`trigger_tf = 5M`; `15M` = the earlier behaviour, what-if, byte-identical). Where
+    stays as now: W state, D side, 1H / Daily areas with the K4 lifecycle, the refined 15M base, the visit, once per model per visit,
+    max_hits_per_zone. The engine decides at every 5M close using only 15M / 1H / D bars CLOSED at that 5M close (a 15M bar in
+    progress is never used). E1 = the first 5M candle trading into the refined base in the visit; E2 = the 5M commitment candle with
+    FUT 5M volume (handover on 5M, volume compared on 5M slots); E3 = the 5M CHoCH; E4 (a) = sweep and failed push read on 5M; E4 (b) =
+    the 5M rejection candle at the retested object from the correct side. traded_inside applies to the 5M trigger candle. The
+    invalidation stays structural (refined base / area / object / sweep extreme), never the 5M candle's own extreme. (Owner rule)
