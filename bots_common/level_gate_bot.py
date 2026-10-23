@@ -27,6 +27,10 @@ STATUS = {                                                                 # sig
     LR.R_BAD_SL: "SKIPPED_GATE_INVALID_SL",
 }
 ARMED_WHY = {"absorbing": "SKIPPED_GATE_ABSORPTION", "low_volume": "SKIPPED_GATE_LOW_VOLUME"}   # ARMED चालू, पण कारण वेगळं (L5 सारांश)
+# gate_error_23oct: before today's first confirmation-TF candle has closed (15M SRv2: 09:15–09:29) there is nothing to read yet — a
+# normal wait, never an error (it was logged as SKIPPED_GATE_ERROR on every area each morning ⇒ the "error 14" count). Still no entry.
+R_FIRST_BAR = "waiting for today's first closed candle"
+FIRST_BAR_STATUS = "SKIPPED_GATE_FIRST_BAR_PENDING"
 LTF_WHY = {LR.R_LTF_MISSING: "SKIPPED_GATE_LTF_MISSING", LR.R_LTF_AGAINST: "SKIPPED_GATE_LTF_AGAINST",   # c1: ARMED, commitment आहे
            LR.R_LTF_PENDING: "SKIPPED_GATE_LTF_NO_CHOCH"}                                                # पण LTF CHoCH नाही
 
@@ -53,6 +57,8 @@ def status_of(r):
                 return v
         if r.get("ltf_wait") in LTF_WHY:
             return LTF_WHY[r["ltf_wait"]]
+    if r.get("first_bar_wait"):
+        return FIRST_BAR_STATUS
     for k, v in STATUS.items():
         if why.startswith(k):
             return v
@@ -71,8 +77,9 @@ def skip_fields(r):
 
 
 class CycleGate:
-    def __init__(self, ctx, bars, k0, areas, s, err=None, tf=None, ltf_fetch=None):
+    def __init__(self, ctx, bars, k0, areas, s, err=None, tf=None, ltf_fetch=None, wait=None):
         self.ctx, self.bars, self.k0, self.areas, self.s, self.err = ctx, bars, k0, list(areas), s, err
+        self.wait = wait                                                   # nothing to read yet (no closed candle today) — not an error
         self._cache = {}
         self.tf, self._ltf_fetch, self._ltf, self._ltf_done = tf, ltf_fetch, None, False
 
@@ -98,7 +105,9 @@ class CycleGate:
         key = (round(lo, 4), round(hi, 4))
         if key in self._cache:
             return self._cache[key]
-        if self.err:
+        if self.wait and not self.err:
+            r = {"state": LR.IDLE, "entry": False, "side": None, "reason": self.wait, "first_bar_wait": True, "events": [], "area": (lo, hi)}
+        elif self.err:
             r = {"state": "ERROR", "entry": False, "side": None, "reason": self.err, "events": [], "area": (lo, hi)}
         else:
             others = [a for a in self.areas if (round(min(a), 4), round(max(a), 4)) != key]
@@ -217,7 +226,7 @@ def cycle_gate(bot, symbol, access_token, settings, areas, now, fetch_bars=None,
         bars = attach_futures_volume(bars, symbol, access_token, tf, now, fetch_volume)   # a2 / c0: index ⇒ त्याच्या futures चा volume
         k0 = LR.session_start_index(bars, now.tz_localize(None) if now.tzinfo else now)
         if k0 >= len(bars):
-            return CycleGate(ctx, bars, k0, areas, s, err="आजचा पहिला बंद candle अजून नाही")
+            return CycleGate(ctx, bars, k0, areas, s, wait=f"{R_FIRST_BAR} ({tf}m) — nothing to read yet")
         lt = LR.ltf_minutes_for(tf, s)                                     # c1: 15M ⇒ 5M, 5M ⇒ 1M (Abhi mapping; dashboard gate_ltf_minutes)
 
         def ltf_fetch():                                                   # त्याच fetch मार्गाने (Upstox index / MCX contract), गरज पडल्यावरच

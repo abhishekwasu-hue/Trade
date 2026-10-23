@@ -37,9 +37,11 @@ CAT = {"SKIPPED_GATE_WAITING_COMMITMENT": "waiting", "SKIPPED_GATE_ABSORPTION": 
        "SKIPPED_GATE_TIMEOUT": "timeout", "SKIPPED_GATE_RR": "rr", "SKIPPED_GATE_NO_TARGET": "no_target", "SKIPPED_GATE_ERROR": "error",
        "SKIPPED_GATE_INVALID_SL": "invalid_sl",                          # SL entry च्या चुकीच्या बाजूला (R:R-निरपेक्ष guard)
        "SKIPPED_GATE_NOT_AT_AREA": "idle",
+       "SKIPPED_GATE_FIRST_BAR_PENDING": "first_bar",                   # today's first candle not closed yet — a wait, never an error
        # MCX (L4): CONFIRMED नंतर entry भावावर पुन्हा तपासणी — Abhi RR1 नंतर फक्त जुन्या rows साठी (आता dashboard SL / target)
        "SKIPPED_GATE_INVALIDATED": "invalidated", "SKIPPED_GATE_TARGET_PASSED": "target_passed", "SKIPPED_GATE_SL_TOO_WIDE": "sl_too_wide",
        "SKIPPED_GATE_CONFIRM_USED": "confirm_used"}
+IDLE_CATS = ("idle", "first_bar")                                         # nothing read at the area ⇒ a visit boundary
 POST_CONFIRM = ("invalidated", "target_passed", "sl_too_wide", "rr")       # confirmed पण gate ने entry थांबवली ⇒ ignored (शेवटचं कारण)
 ARMED_CATS = ("waiting", "absorption", "low_volume")                     # ARMED चालू
 EPISODE = ARMED_CATS + ("confirmed", "confirmed_earlier", "impulsive", "timeout", "rr", "no_target", "invalid_sl")   # ARMED नंतरच येणाऱ्या अवस्था
@@ -51,11 +53,12 @@ STATE_LABEL = {"waiting": "🟡 armed — commitment ची वाट", "absorpt
                "confirmed": "✅ confirmed", "confirmed_earlier": "✅ confirmed (आधी)", "against_trend": "⛔ against trend",
                "trend_unclear": "⛔ trend unclear", "impulsive": "⛔ impulsive approach", "broken": "💥 broken", "timeout": "⌛ timeout",
                "rr": "⛔ R:R < min", "no_target": "⛔ no target", "invalid_sl": "⛔ invalid SL", "error": "⚠️ gate error", "idle": "⚪ price not at area",
+               "first_bar": "⚪ waiting for today's first closed candle",
                "invalidated": "⛔ invalidated", "target_passed": "⛔ target passed", "sl_too_wide": "⛔ SL too wide",
                "confirm_used": "✅ confirmation वापरली"}
 _ORDER = {c: i for i, c in enumerate(("waiting", "absorption", "low_volume", "confirmed", "confirmed_earlier", "confirm_used", "impulsive",
                                       "timeout", "rr", "no_target", "invalid_sl", "invalidated", "target_passed", "sl_too_wide", "broken", "against_trend",
-                                      "trend_unclear", "error", "idle"))}
+                                      "trend_unclear", "error", "idle", "first_bar"))}
 _BARS = re.compile(r"(\d+)/(\d+) bars")
 
 
@@ -117,7 +120,7 @@ def _visits(items):
     """एका area च्या (वेळेनुसार) gate rows ⇒ भेटी. सीमा: "price not at area" row, किंवा "broken" नंतर पुन्हा armed / confirmed (flip retest)."""
     out, cur, prev = [], None, None
     for _, c, r in items:
-        if c == "idle":
+        if c in IDLE_CATS:
             if cur:
                 out.append(cur)
             cur, prev = None, c
@@ -273,7 +276,7 @@ def area_table(rows, strategy_key, now=None, tf_minutes=None, include_idle=True,
             latest[k] = (t, c, r)
     out = []
     for (sym, ltf, price), (t, c, r) in latest.items():
-        if c == "idle" and not include_idle:
+        if c in IDLE_CATS and not include_idle:
             continue
         line = str(r.get("reason") or "")
         line = line[len("[GATE]"):].strip() if line.startswith("[GATE]") else line

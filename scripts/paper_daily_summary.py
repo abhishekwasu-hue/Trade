@@ -106,12 +106,14 @@ def nearest_area(ctx, zones, rng):
     return None
 
 
-def symbol_line(sym, ctx, gate, zones, rng, areas_na=None, warn_pts=None, warn_rule=None):
+def symbol_line(sym, ctx, gate, zones, rng, areas_na=None, warn_pts=None, warn_rule=None, engine=False):
     """एका symbol ची साधी ओळ (Abhi चं उदाहरण: "NIFTY: no setup today. Trend DOWN (daily), but price never reached a supply area. Nearest
     supply 22,715–22,776 (≈150 pts above the high). Daily move: mature (context only), near target 22,183.").
     ctx = trend cache (None ⇒ नाही) · gate = LV.summarize निकाल (None ⇒ bot नोंदी वाचता आल्या नाहीत) · rng = {"high", "low"} (None ⇒ नाही).
     warn_pts = `approval_band_warn_pts` (None ⇒ default 150): पट्ट्याची रुंदी दाखवतो, त्यापेक्षा रुंद ⇒ "⚠️ merged band — check" (Abhi).
-    warn_rule = `approval_band_warn_rule` (layer 6b; None ⇒ "points" = आजचं): "method" ⇒ engine area (ENGINE_LEVEL_…) ला line नाही."""
+    warn_rule = `approval_band_warn_rule` (layer 6b; None ⇒ "points" = आजचं): "method" ⇒ engine area (ENGINE_LEVEL_…) ला line नाही.
+    engine = the bot's signal_source is engine (gate_error_23oct): the gate counts are the OLD level-bot check (comparison only) — it never
+    decides an engine entry, so its reasons are not written as "no entry because …" (that misread a level-bot gate error as the reason)."""
     from bots_common import level_reaction as LR
     from bots_common import plain_text as PT
     if ctx is None and gate is None and rng is None:
@@ -133,8 +135,13 @@ def symbol_line(sym, ctx, gate, zones, rng, areas_na=None, warn_pts=None, warn_r
             s.append(f"Trend {tr} (daily), " + ("and" if conf else "but") + f" price never reached a {kind} area.")
         else:
             why = [WHY_PLAIN.get(k, k) for k, n in sorted((gate.get("ignored") or {}).items(), key=lambda x: -x[1]) if n]
-            s.append(f"Trend {tr} (daily). Price reached a {kind} area {armed} time{'s' if armed != 1 else ''}"
-                     + (f"; no entry because {', '.join(why[:2])}." if why and not conf else "."))
+            if engine:
+                s.append(f"Trend {tr} (daily). The old level-bot check (comparison only — engine entries come from the engine models) "
+                         f"saw price at a {kind} area {armed} time{'s' if armed != 1 else ''}"
+                         + (f"; it ignored them because {', '.join(why[:2])}." if why and not conf else "."))
+            else:
+                s.append(f"Trend {tr} (daily). Price reached a {kind} area {armed} time{'s' if armed != 1 else ''}"
+                         + (f"; no entry because {', '.join(why[:2])}." if why and not conf else "."))
         if areas_na:
             s.append(f"Bot areas not available today ({areas_na}).")
         elif rng is None:
@@ -243,7 +250,18 @@ def default_warn_rule(sym):
         return PT.band_warn_rule(None)
 
 
-def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None, range_fn=None, warn_fn=None, rule_fn=None):
+def default_engine(sym):
+    """15M SRv2 (`15m_dynamic_sr`) signal_source = engine? Not readable ⇒ False (today's wording)."""
+    try:
+        import cloud_db
+        import engine_signal as ES
+        return ES.source_of(cloud_db.get_strategy_settings("15m_dynamic_sr", sym) or {}) == "engine"
+    except Exception:                                                      # noqa: BLE001 — display only
+        return False
+
+
+def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None, range_fn=None, warn_fn=None, rule_fn=None,
+                    engine_fn=None):
     """symbol-निहाय साध्या ओळी. प्रत्येक dependency injectable (tests — network नाही); कुठलीही चूक ⇒ त्या भागासाठी "not available".
     symbols None ⇒ dashboard चे `signal_symbols` (default NIFTY, BANKNIFTY — SENSEX ची ओळ नाही).
     rows_fn(sym, day) ⇒ (rows, err) — LV.fetch_rows सारखं; rows रिकामे ⇒ आज कुठलाही area armed नाही (armed 0)."""
@@ -257,6 +275,7 @@ def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None,
     range_fn = range_fn or default_range
     warn_fn = warn_fn or default_warn_pts
     rule_fn = rule_fn or default_warn_rule
+    engine_fn = engine_fn or default_engine
     out = []
     for sym in symbols:
         ctx = _safe(ctx_fn, sym, day)
@@ -270,7 +289,7 @@ def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None,
                 print(f"⚠️ {sym} areas: {type(exc).__name__}: {exc}")
                 zerr = html.escape(str(exc)[:60] or type(exc).__name__, quote=False)
         out.append(symbol_line(sym, ctx, gate, zones, _safe(range_fn, sym, day), areas_na=zerr, warn_pts=_safe(warn_fn, sym),
-                               warn_rule=_safe(rule_fn, sym)))
+                               warn_rule=_safe(rule_fn, sym), engine=bool(_safe(engine_fn, sym))))
     return "\n".join(out)
 
 

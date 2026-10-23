@@ -462,6 +462,7 @@ CATEGORY_LABEL = {
     "SKIPPED_GATE_NO_TARGET": "no opposite area for a target",
     "SKIPPED_GATE_INVALID_SL": "invalid structural SL (not beyond the entry)",
     "SKIPPED_GATE_ERROR": "gate error (fail-closed)",
+    "SKIPPED_GATE_FIRST_BAR_PENDING": "today's first closed candle not there yet (a wait, not an error)",
     "SKIPPED_GATE_NOT_AT_AREA": "no gate arrival of the same side (price already inside the area / not at the area on closed candles)",
     "SKIPPED_GATE_AFTER_CUTOFF": "gate confirmed, but after the no-new-entry cutoff",
     "GATE_HINDSIGHT": "confirmed only in hindsight (not on the live cycle)",
