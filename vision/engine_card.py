@@ -60,8 +60,51 @@ def _edge_note(fig, c, n, lo, hi, band, text, color):
                        yshift=-8 if up else 8, font=dict(size=9, color=color), row=1, col=c)
 
 
-def build_figure(setup, higher, sig, tfs, rd, vols=None, objects=None, xmaps=None, errors=None):
-    """The engine card (plotly figure). rd = vision.engine_audit.reading(sig). Same size / panels / volume panes as the level-bot card."""
+def object_label(rd):
+    """The chart label of the engine object (DECISIONS 41): "BROKEN 1H LINE (retest from below)", "BROKEN 1H AREA (retest from
+    below)", "1H RANGE UPPER EDGE tested", "AREA 1H tested"."""
+    area = rd.get("area") or {}
+    frm = "below" if rd.get("direction", -1) < 0 else "above"
+    ob = str(rd.get("object") or "")
+    if ob == "broken_line" or rd.get("line"):
+        tf = (rd.get("line") or {}).get("tf") or ""
+        return f"BROKEN {tf} LINE (retest from {frm})".replace("  ", " ")
+    if ob == "broken_area":
+        return f"BROKEN {area.get('tf') or ''} AREA (retest from {frm})".replace("  ", " ")
+    re_ = rd.get("range_edge")
+    st = str(area.get("state") or "").lower()
+    if re_:
+        return f"{re_.get('tf') or ''} RANGE {str(re_.get('edge') or '').upper()} EDGE {st}".strip().replace("  ", " ")
+    return f"AREA {area.get('tf') or ''} {st}".strip().replace("  ", " ")
+
+
+def trigger_panel(fig, trigger, rd):
+    """Plug point for the trigger timeframe (the 5M trigger build plugs in here): trigger = {"tf": "5M", "df": its candles closed by the
+    signal, with "start"} ⇒ an inset of the last candles with the trigger candle boxed, drawn over the setup panel's top-left corner.
+    Today the engine's trigger TF is the setup TF (15M) and no trigger frame is passed (the trigger is boxed on the setup panel)."""
+    import plotly.graph_objects as go
+    df = trigger.get("df")
+    if df is None or not len(df):
+        return
+    k = trigger_index(df, rd.get("trigger_ts"))
+    lo = max(0, k - 11)
+    sub = df.iloc[lo:k + 1].reset_index(drop=True)
+    fig.add_trace(go.Candlestick(x=list(range(len(sub))), open=sub["open"], high=sub["high"], low=sub["low"], close=sub["close"],
+                                 showlegend=False, xaxis="x9", yaxis="y9", increasing_line_color="#26a69a",
+                                 decreasing_line_color="#ef5350"))
+    fig.update_layout(xaxis9=dict(domain=[0.01, 0.2], anchor="y9", showticklabels=False, rangeslider_visible=False),
+                      yaxis9=dict(domain=[0.62, 0.95], anchor="x9", showticklabels=False))
+    j = len(sub) - 1
+    fig.add_shape(type="rect", xref="x9", yref="y9", x0=j - 0.45, x1=j + 0.45, y0=float(sub["low"].iloc[j]), y1=float(sub["high"].iloc[j]),
+                  line=dict(color="#ffd54f", width=1.5))
+    fig.add_annotation(xref="x9 domain", yref="y9 domain", x=0, y=1.08, text=f"trigger {trigger.get('tf') or ''} · T", showarrow=False,
+                       xanchor="left", font=dict(size=9, color="#ffd54f"))
+
+
+def build_figure(setup, higher, sig, tfs, rd, vols=None, objects=None, xmaps=None, errors=None, trigger=None):
+    """The engine card (plotly figure). rd = vision.engine_audit.reading(sig). Same size / panels / volume panes as the level-bot card.
+    trigger = an optional trigger-TF frame (see `trigger_panel`; the 5M trigger build passes it); None ⇒ the trigger candle is boxed on
+    the setup panel (today)."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     from decision3 import volume_pane as VP
@@ -113,8 +156,7 @@ def build_figure(setup, higher, sig, tfs, rd, vols=None, objects=None, xmaps=Non
             else:
                 _rect(fig, area["lo"], area["hi"], c, n, fill.format(a=STRONG if broken and not rb else FAINT),
                       dict(color=colr, width=1.5 if broken else 0.5, dash="dash" if broken else None))
-            _label(fig, c, n, area["hi"], ("BROKEN " + ("LINE" if area["lo"] == area["hi"] else "AREA") + " (retest)" if broken else
-                                           f"AREA {area.get('tf') or ''} {str(area.get('state') or '').lower()}").strip(), colr)
+            _label(fig, c, n, area["hi"], object_label(rd), colr)
         if rb:                                                             # the refined 15M base (strong)
             _rect(fig, rb[0], rb[1], c, n, fill.format(a=STRONG), dict(color=colr, width=1.5), layer="below")
             _label(fig, c, n, rb[0], "BASE 15M", colr, shift=7)
@@ -133,17 +175,20 @@ def build_figure(setup, higher, sig, tfs, rd, vols=None, objects=None, xmaps=Non
                                    font=dict(size=9, color=INV_COLOR), row=1, col=c)
         if objects:
             CH._objects(fig, objects, df, lo, hi, c, (xmaps or (None, None))[c - 1], sig=sig, inv=inv, errors=errors)
-        if c == 1:                                                         # the trigger candle
-            k = trigger_index(df, rd.get("trigger_ts"))
+        if c == 1 and trigger is None:                                     # the trigger candle (on the setup panel unless a trigger
+            k = trigger_index(df, rd.get("trigger_ts"))                    # panel of its own TF is given)
             bar = df.iloc[k]
             fig.add_shape(type="rect", x0=k - 0.45, x1=k + 0.45, y0=float(bar["low"]), y1=float(bar["high"]),
                           line=dict(color="#ffd54f", width=1.5), fillcolor="rgba(255,213,79,0.08)", row=1, col=c)
             up = d > 0
             fig.add_annotation(x=k, y=float(bar["low"]) if up else float(bar["high"]), text="T ▲" if up else "T ▼", showarrow=False,
                                yshift=-14 if up else 14, font=dict(size=12, color="#ffd54f"), row=1, col=c)
+    if trigger is not None:
+        trigger_panel(fig, trigger, rd)
     model = f"{rd['model']} {rd.get('name') or ''}".strip() if rd.get("model") else "engine setup"
-    title = (f"{sig.get('symbol', '')} · {sig.get('bot_label') or sig.get('bot', '')} · {model} · {rd['side']} · engine reading"
-             f"<br><sup>{htf_strip(rd)}</sup>")
+    import engine_signal as ES                                             # addition D: the engine's name, as a small label
+    title = (f"{sig.get('symbol', '')} · {model} · {rd['side']} · {object_label(rd).lower()}"
+             f"<br><sup>{htf_strip(rd)} · {ES.ENGINE_LABEL}</sup>")
     fig.update_yaxes(side="right", tickformat=",.0f", gridcolor="#263238", color="#eceff1")
     fig.update_layout(template="plotly_dark", width=CH.WIDTH, height=CH.HEIGHT, margin=dict(l=10, r=60, t=60, b=30),
                       paper_bgcolor="#0e1117", plot_bgcolor="#0e1117", title=dict(text=title, font=dict(size=14)), showlegend=False)

@@ -418,7 +418,24 @@ def entry_gate_tags(r, e, direction, settings=None):
             "entry_invalidation": e.get("invalidation"), "entry_evidence": ev,
             "entry_pa_evidence": e.get("pa_evidence") if isinstance(e.get("pa_evidence"), list) else None,   # T9: display only
             "entry_cluster": None if not cl else [x.get("area_id") for x in cl.get("members") or [] if isinstance(x, dict)],
-            **model_c_tags(e)}
+            **model_c_tags(e), **object_tags(e)}
+
+
+def object_tags(e):
+    """DECISIONS 41 / addition C: the entry's object in the card's words — a broken LINE with its timeframe / degree (never an area
+    band), a range edge (DECISIONS 40). {} for an ordinary area (the tags as before). Display only."""
+    ar = e.get("area") if isinstance(e.get("area"), dict) else {}
+    out = {}
+    ln = ar.get("line") if isinstance(ar.get("line"), dict) else None
+    if (e.get("object") or ar.get("object")) == "broken_line" and ln is not None:
+        from decision3 import trendline as TL
+        deg = ln.get("degree")
+        tf = ln.get("tf") or (TL.TF_OF_DEGREE.get(int(deg)) if deg is not None else None)
+        out["entry_line"] = {"tf": tf, "degree": deg, "family": ln.get("family"), "break_side": ln.get("break_side"),
+                             "value": _num(ar.get("lo")), "id": ln.get("id"), "parallel": bool(ln.get("parallel_of"))}
+    if ar.get("range_edge"):
+        out["entry_range_edge"] = {"edge": ar["range_edge"], "tf": ar.get("tf")}
+    return out
 
 
 def model_c_tags(e):

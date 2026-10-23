@@ -111,6 +111,43 @@ def _spot(row):
     return s if s is not None else _num(row.get("spot"))
 
 
+def object_words(tags, bull):
+    """DECISIONS 41 / addition C: the engine object in plain words — "broken 1H line at 55,710 (rising line of lows, broken down),
+    retest from below"; "1H range upper edge 55,900–56,010"; "broken 1H area 55,600–55,700, retest from below". None ⇒ an ordinary
+    area (the caller's own wording). Never an area band for a line. Not HTML-escaped."""
+    try:
+        t = tags or {}
+        ln = t.get("entry_line") if isinstance(t.get("entry_line"), dict) else None
+        frm = "below" if not bull else "above"                           # bear call: a line broken down, retested from below
+        if ln is not None or str(t.get("entry_object") or "") == "broken_line":
+            ln = ln or {}
+            tf = TF_NAME.get(str(ln.get("tf") or "").upper(), ln.get("tf"))
+            v = _num(ln.get("value"))
+            if v is None:
+                a = [_num(x) for x in ((t.get("gate") or {}).get("area") or [])[:1]]
+                v = a[0] if a else None
+            fam = str(ln.get("family") or "").strip()
+            brk = {"down": "broken down", "up": "broken up"}.get(str(ln.get("break_side") or ""), "broken")
+            det = ", ".join(x for x in (fam + (" (channel parallel)" if ln.get("parallel") and "parallel" not in fam else ""), brk) if x)
+            return (f"broken {tf + ' ' if tf else ''}line" + (f" at {_pt(v)}" if v is not None else "") + (f" ({det})" if det else "")
+                    + f", retest from {frm}")
+        g = t.get("gate") if isinstance(t.get("gate"), dict) else {}
+        a = [_num(x) for x in (g.get("area") or [])[:2]]
+        band = f"{_pt(min(a))}–{_pt(max(a))}" if len(a) == 2 and None not in a else ""
+        tfa = next((TF_NAME.get(str(x.get("tf")).upper(), x.get("tf")) for x in g.get("areas") or []
+                    if isinstance(x, dict) and x.get("tf") and x.get("tf") != "line" and len(a) == 2 and None not in a
+                    and _num(x.get("lo")) == min(a) and _num(x.get("hi")) == max(a)), None)
+        re_ = t.get("entry_range_edge") if isinstance(t.get("entry_range_edge"), dict) else None
+        if re_:
+            tf = TF_NAME.get(str(re_.get("tf") or "").upper(), re_.get("tf"))
+            return f"{tf + ' ' if tf else ''}range {re_.get('edge')} edge {band}".strip()
+        if str(t.get("entry_object") or "") == "broken_area":
+            return f"broken {tfa + ' ' if tfa else ''}area {band}, retest from {frm}".replace("  ", " ")
+    except Exception:                                                    # noqa: BLE001 — display only
+        return None
+    return None
+
+
 def line_where(row, ticket=None):
     """📍 area (or level) + its TF · entry / SL / target when the signal carries them · last price and its distance to the area."""
     tags = _tags(row)
@@ -120,7 +157,11 @@ def line_where(row, ticket=None):
     tf = _area_tf(row, g, area)
     tfs = f" ({html.escape(tf)})" if tf else ""
     lvl = _num(row.get("level"))
-    if area is not None:
+    ow = object_words(tags, bull) if (tags.get("engine") or g.get("mode") == "engine") else None
+    if ow is not None and area is not None:                              # DECISIONS 41: a line is a line, never "Supply X–X"
+        out = [f"📍 {html.escape(ow)}"]
+        lo, hi = area
+    elif area is not None:
         out = [f"📍 {'Demand' if bull else 'Supply'} {_pt(area[0])}–{_pt(area[1])}{tfs}"]
         lo, hi = area
     elif lvl is not None:

@@ -159,7 +159,7 @@ def test_vision_audit_gets_the_model_c_facts_and_stays_advisory():
 
 
 # the pre-change engine audit (git f25f04d): its system prompt (sha256) and version — every non-C engine card keeps them exactly
-PRE_SYSTEM_SHA = "12aaa57f7e7c69420cde0b5766825c49884cbaa1d64915c29de1eba4a6260f26"
+PRE_SYSTEM_SHA = "f0a275464c58f0f86559bf2028b4be74b6e693ac19c084387744c82467bebeaa"   # engine_check_v2 (DECISIONS 38–41); was 12aaa57f… (v1)
 
 
 def test_non_c_engine_cards_keep_the_pre_change_prompt_and_version():
@@ -168,28 +168,28 @@ def test_non_c_engine_cards_keep_the_pre_change_prompt_and_version():
     import hashlib
     from tests.test_vision_engine_audit import Fake, ok_reply
     from tests.test_vision_v0 import msg
-    assert hashlib.sha256(EA.SYSTEM_PROMPT.encode("utf-8")).hexdigest() == PRE_SYSTEM_SHA and EA.PROMPT_VERSION == "engine_check_v1"
+    assert hashlib.sha256(EA.SYSTEM_PROMPT.encode("utf-8")).hexdigest() == PRE_SYSTEM_SHA and EA.PROMPT_VERSION == "engine_check_v2"
     plain, csig = engine_sig(), _c_sig()
     p = EA.build_request(b"png", plain, "m")
     assert p["system"] == [{"type": "text", "text": EA.SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
-    assert EA.prompt_version(plain) == "engine_check_v1" and "model_c" not in EA.reading(plain)
+    assert EA.prompt_version(plain) == "engine_check_v2" and "model_c" not in EA.reading(plain)
     pc = EA.build_request(b"png", csig, "m")
     assert pc["system"][0] == p["system"][0] and pc["system"][1]["text"] == EA.MODEL_C_SYSTEM and len(pc["system"]) == 2
-    assert EA.prompt_version(csig) == "engine_check_v1+c"
-    for sig, want in ((plain, "engine_check_v1"), (csig, "engine_check_v1+c")):
+    assert EA.prompt_version(csig) == "engine_check_v2+c"
+    for sig, want in ((plain, "engine_check_v2"), (csig, "engine_check_v2+c")):
         res = EA.audit(Fake([msg(ok_reply())]), b"png", sig, "m")
         assert res["prompt_version"] == want and res["audits"][0]["engine_check"] == want, res.get("error")
-    assert EA.validate(ok_reply())[0]["engine_check"] == "engine_check_v1"
+    assert EA.validate(ok_reply())[0]["engine_check"] == "engine_check_v2"
 
 
 def test_worker_reuse_lookup_uses_the_cards_own_prompt_version(monkeypatch):
-    """A model C card reuses only a model C audit (and a Daily-side card only an engine_check_v1 one)."""
+    """A model C card reuses only a model C audit (and a Daily-side card only an engine_check_v2 one)."""
     import inspect
     from vision import worker as VW
     src = inspect.getsource(VW)
     assert "EA.prompt_version(" in src and "pv = EA.PROMPT_VERSION" not in src
     tags = _c_sig()["tags"]
-    assert EA.prompt_version({"tags": tags}) == "engine_check_v1+c" and EA.prompt_version({"tags": engine_sig()["tags"]}) == "engine_check_v1"
+    assert EA.prompt_version({"tags": tags}) == "engine_check_v2+c" and EA.prompt_version({"tags": engine_sig()["tags"]}) == "engine_check_v2"
 
 
 def test_paper_watch_labels_model_c_positions_and_links_their_own_card(monkeypatch):

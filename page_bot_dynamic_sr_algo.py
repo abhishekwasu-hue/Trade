@@ -1394,6 +1394,10 @@ def render():
 
     signal_source = settings.get("signal_source", "own")
     srv3_signal_source = settings.get("srv3_signal_source", "own")
+    if strategy_key == "15m_dynamic_sr" and str(signal_source).lower() == "engine":   # addition D (Abhi): the engine's own name
+        import engine_signal as _ESL
+        st.info(f"🧭 **{_ESL.ENGINE_LABEL}** — signals come from the price-action engine (entry models E1–E4); the old "
+                f"\"{STRATEGY_LABELS[strategy_key]}\" logic is used only when signal source = own.")
     import engine3_live as _L3                                       # तोच parser (stored "false" ⇒ unchecked; रिकामं ⇒ default ON)
     engine3_use_1m = _L3.use_1m({"engine3_use_1m": settings.get("engine3_use_1m")})
     engine3_swing_k = {d: settings.get(f"engine3_swing_k_d{d}") for d in (1, 2)}   # रिकामं ⇒ approved scale (D1 = 4, D2 = 6)

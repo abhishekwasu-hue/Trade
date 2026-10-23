@@ -30,7 +30,12 @@ def _submit(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_
     mode = VC.effective_mode(s, trading_mode)
     if mode == "off" or str(symbol).upper() not in [x.upper() for x in s.get("symbols") or []]:
         return None
-    setup = {"tags": dict(tags or {}), "invalidation": invalidation, "bot_label": VC.BOTS.get(bot, (bot,))[0], "last_bar": _bar(last_bar)}
+    import engine_signal as ES                                          # addition D: an engine signal ⇒ the engine's name (display)
+    own = VC.BOTS.get(bot, (bot,))[0]
+    label = ES.display_label(own, bool((tags or {}).get("engine")))
+    setup = {"tags": dict(tags or {}), "invalidation": invalidation, "bot_label": label, "last_bar": _bar(last_bar)}
+    if label != own:
+        setup["bot_own_label"] = own
     return VS.insert_signal({"bot": bot, "symbol": str(symbol).upper(), "trading_mode": "PAPER", "mode": mode, "signal_ts": signal_ts,
                              "direction": direction, "level": float(level) if level is not None else None, "role": role,
                              "setup_tf": setup_tf, "spot": float(spot) if spot is not None else None, "setup": setup,
