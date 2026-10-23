@@ -706,3 +706,7 @@ C. The Telegram / Vision card must show the ENGINE's reading for signal_source =
 - Trade messages show the real exits from the dashboard settings (the handover's T-6).
 D. Name: for signal_source = engine the bot's UI / card label becomes "Price-action engine (PAPER)"; the old "15M Dynamic SR / reversal" name and logic are shown only when signal_source = own.
 Tests, self-review, PAPER only. Report to me in Marathi.
+
+---
+## 23 Oct — merge and continue (5)
+Merge and continue
