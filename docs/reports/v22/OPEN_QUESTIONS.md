@@ -1311,3 +1311,11 @@ STABLE layer 1 (L1-a / L1-b / L1-c). Verdicts only — nothing in the engine cha
   previous 15M bar (09:15) holds both the swing low 56,252 and (later, by the 1m order) the true high 56,575.15; swings2 keeps one pivot
   per bar, so the H moves to 09:30 with its own high. Assumed (no change; STABLE layer 1): a question for the next layer-1 review —
   should a turn whose extreme sits in the bar of the opposite swing keep that bar's extreme (56,575.15)?
+
+### Abhi's answers on the layer 6 gallery (23 Oct) — DECISIONS 50–54
+- L6-O1 / O2 / O3 / O5 / O6: ✅ (merged with branch l6).
+- L6-O7 / O8 / O9 / O12: answered — the dossier follows the 5M trigger (its own PR).
+- L6-O4: answered — short caption, full details as a reply under the card. L6-O13: answered — 5M trigger panel beside the 15M panel.
+- L6-O10 (BW-1 / C-18): answered — no merged-band warning for engine areas (`approval_band_warn_rule = method`).
+- L6-O11 (VP3): answered — "FUT volume missing — E2 cannot be read", no grade cap.
+- L6-a label: answered — required set = the fired model's own conditions; A = + ≥ 1 confirming piece; B = the model's conditions only; never blocks.
