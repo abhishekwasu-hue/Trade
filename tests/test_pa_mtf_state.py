@@ -239,3 +239,34 @@ def test_range_detail_says_when_price_closed_beyond_an_edge_without_a_swing_beyo
     assert "closed below its low 100.00" in MS.swing_state(MS.RANGE, seq, Cd, len(Cd) - 1, [], band=band)[2]
     Cb = np.r_[C, 131.0, 99.0]                                                            # both sides ⇒ the newest close decides
     assert "below its low" in MS.swing_state(MS.RANGE, seq, Cb, len(Cb) - 1, [], band=band)[2]
+
+
+def test_swing_tf_range_word_comes_from_the_structural_range_reader():
+    """Reading check (BANKNIFTY 1H, 19 Oct close — CRR §1 MTF vs L range; concept L, DECISIONS 16): the 1H swings inside a structural
+    range rose (HL + HH: "correction in progress (UP)" by the last two highs / lows) while `range_edges` read the 1H in a range (the
+    outer pair's later swings failed to make a new extreme on both sides). One concept, one reader: the state word is "range" with the
+    structural edges; the inner swings stay in the detail. Without a structural range a swing disagreement (HH + LL) is no range ⇒
+    "unclear". Comparison only."""
+    piv = [P("H", 200, 0), P("L", 100, 10), P("H", 150, 20), P("L", 120, 30), P("H", 180, 40)]     # 180 < 200, 120 > 100: inside
+    C = np.full(50, 150.0)
+    V = NS(levels=object())
+    V.__dict__["_range_pairs_cache"] = {"1H": DD.range_pairs(piv, C)}
+    s, side, why = MS._structural_range(V, 45, "1H", MS.CORR_S, 1, "counter-move after the high 180.00")
+    assert (s, side) == (MS.RANGE_S, 0)
+    assert "range 100.00–200.00" in why and "inside it the swings read correction in progress" in why
+    s0 = MS._structural_range(V, 25, "1H", MS.UP_S, 1, "x")                  # before the range is known (no look-ahead): unchanged
+    assert s0 == (MS.UP_S, 1, "x")
+    W = NS(levels=object())
+    W.__dict__["_range_pairs_cache"] = {"1H": DD.range_pairs([P("H", 150, 0), P("L", 120, 10)], np.full(20, 130.0))}
+    assert MS._structural_range(W, 15, "1H", MS.RANGE_S, 0, "range")[0] == MS.UNCLEAR_S   # C-13 / HH + LL alone ⇒ no range
+    assert MS._structural_range(NS(), 15, "1H", MS.RANGE_S, 0, "range") == (MS.RANGE_S, 0, "range")   # stub V: unchanged
+
+
+def test_mtf_range_word_agrees_with_range_state_on_every_bar(V):
+    """The two readers never disagree on "range" for 1H / 15M on the same bars (synthetic V)."""
+    from decision3 import range_edges as RE
+    n = len(V.m15)
+    for t in range(n // 2, n, max(1, n // 40)):
+        rs = RE.range_state(V, t)
+        for tf in ("1H", "15M"):
+            assert (MS._tf_state(V, t, tf)["state"] == MS.RANGE_S) == (rs["by_tf"][tf]["state"] == "range"), (t, tf)

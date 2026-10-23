@@ -455,7 +455,9 @@ def channels(V, t, degree=None):
     """Abhi 21 Oct — CHANNELS: each line of `channel_lines` with its parallel through the opposite extreme of the same move (the
     lowest low between the anchors of a line of highs; the highest high for a line of lows). The parallel's break = the same K6.5 rule
     (a close beyond + a swing of its kind beyond). State at t: "inside" (the close between the two lines, none broken), "outside" (no
-    break), "<lower|upper> line broken", or "retest of the broken <lower|upper> line" (bar t's wick reaches the broken line again).
+    break), "<lower|upper> line broken", or "retest of the broken <lower|upper> line" (bar t's wick reaches the broken line again);
+    a broken line whose break was undone by structure (`broken_back_at`, DECISIONS 39) reads "<lower|upper> line broken, then broken
+    back (…)" — never a retest (display / evidence words only).
     Facts / evidence only (a broken rising channel in a downtrend = handover evidence); a broken line is a retest level (E4 b).
     Returns [{id, tf, degree, slope_dir, base, parallel, upper_t, lower_t, state, broken_side, broken_lines}]."""
     g = int(V.s.get("level_degree", 2)) if degree is None else int(degree)
@@ -498,8 +500,12 @@ def channels_on(A, known, lines, t, degree):
             x = max(broken, key=lambda z: z["break_bar"])
             nm = "upper" if x is up_ else "lower"
             v = line_value(x, t)
+            back = broken_back_on(C, known, x, t)                          # K6.5 mirror (DECISIONS 39): its break undone by structure
             retest = (A["high"][t] >= v) if x["break_side"] == "down" else (A["low"][t] <= v)
-            state = f"retest of the broken {nm} line" if retest else f"{nm} line broken"
+            if back is not None:                                          # display: never "retest of the broken …" once broken back
+                state = f"{nm} line broken, then broken back (closed back + a swing on its original side)"
+            else:
+                state = f"retest of the broken {nm} line" if retest else f"{nm} line broken"
             bside = x["break_side"]
         else:
             state = "inside" if lt <= C[t] <= ut else "outside (no break)"
@@ -581,18 +587,25 @@ def broken_back_at(V, ln, t):
     never a retest object for E4 (b) again. Comparison only; bars ≤ t (each bar read with the swings confirmed by it)."""
     if not ln.get("broken") or ln.get("break_bar") is None:
         return None
+    g = int(ln.get("degree") or V.s.get("level_degree", 2))
+    return broken_back_on(V.levels.A["close"], _known_deg(V, int(t), g), ln, t)
+
+
+def broken_back_on(C, known, ln, t):
+    """The core of `broken_back_at` on ANY timeframe's closes C and its swings `known` (of the line's own degree, known by bar t: kind,
+    price, bar, confirm_bar) — the same reading, used by `channels_on` for its state words on every timeframe (display)."""
+    if not ln.get("broken") or ln.get("break_bar") is None:
+        return None
     bs = ln.get("break_side")                                              # the break side (a line of highs is broken upward)
     side = (1 if bs == "up" else -1) if bs in ("up", "down") else (1 if ln["kind"] == "H" else -1)
-    C = V.levels.A["close"]
     t = int(t)
     run_end = int(ln["break_bar"])                                         # skip the break's own closes beyond
     while run_end <= t and (float(C[run_end]) - line_value(ln, run_end)) * side > 0:
         run_end += 1
     if run_end > t:
         return None
-    g = int(ln.get("degree") or V.s.get("level_degree", 2))
     back_kind = "L" if side > 0 else "H"                                   # the swing that confirms the break back
-    piv = [p for p in _known_deg(V, t, g) if p.kind == back_kind and int(p.bar) >= run_end
+    piv = [p for p in known if int(p.confirm_bar) <= t and p.kind == back_kind and int(p.bar) >= run_end
            and (float(p.price) - line_value(ln, int(p.bar))) * -side > 0]
     if not piv:
         return None

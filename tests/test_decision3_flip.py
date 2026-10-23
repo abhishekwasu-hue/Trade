@@ -1347,3 +1347,18 @@ def test_band_flip_facts_default_flipped_band_broken_again_is_dead_like_the_engi
     import pytest
     with pytest.raises(ValueError):
         LV.band_flip_facts(B, len(hi) - 1, x, start=0, s={"flip_dead_rule": "twice"})
+
+
+def test_band_flip_facts_reclaim_on_the_bar_right_after_the_break_is_kept():
+    """Display check of the #373 K4 fix (OPEN_QUESTIONS "Reading checks — E4a and E4b"): the engine lost a reclaim when the bar that
+    made the break KNOWN itself closed back (the attempt began one bar late). The chart band labels read the band check's own breaks
+    (a break is known at its own bar — no later confirming bar), and a break back the other way is a reclaim from the very next bar on:
+    a support broken down at 37 and broken back up at 38 ⇒ ACTIVE + sweep at 38 (role kept), BROKEN only at 37. Nothing to mirror."""
+    hi = [101.0, 101.5, 100.8, 101.6, 101.2, 100.9, 101.4, 101.0, 100.7, 101.3] * 3
+    hi += [101.0, 100.6, 100.4, 100.2, 100.0, 99.5, 97.5, 95.5, 99.5, 100.5, 101.0, 101.5, 102.0]
+    B = _bars_from_highs(hi, {5: 90.0})                                    # far swing (before the break) never reached
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 38, "dir": "up"}]}
+    assert LV.band_flip_facts(B, 37, x, start=0)["flip_state"] == FL.BROKEN
+    f = LV.band_flip_facts(B, 38, x, start=0)
+    assert f["flip_state"] == FL.ACTIVE and [w["bar"] for w in f["sweeps"]] == [38] and f["broken_at"] is None
+    assert LV.band_flip_facts(B, len(hi) - 1, x, start=0)["flip_state"] == FL.ACTIVE
