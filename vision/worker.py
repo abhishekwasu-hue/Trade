@@ -384,7 +384,11 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why="", layout=None, wi
         extra.append(html.escape(str(row["volume_line"])))
     tail = ("SL / T: तुमचे spot SL / T (paper watcher) + backstop generic नियम." if manual else "SL / target / exits: bot चे नेहमीचे नियम (automatic).")
     dec = [x for x in s.split("\n") if x]                               # ⏱ / ⚠️ बटणं नाहीत / ✅ ❌ — header नंतर लगेच, कधीच गाळत नाही
-    lines = lines[:1] + dec + extra + lines[1:2] + [engine_line(row)] + lines[2:] + [tail]
+    try:                                                                # T9: the PA evidence line — just before the tail, so it is the
+        pa = CS.pa_lines(tags)                                          # first detail dropped when the caption is full (display only)
+    except Exception:                                                   # noqa: BLE001
+        pa = []
+    lines = lines[:1] + dec + extra + lines[1:2] + [engine_line(row)] + lines[2:] + pa + [tail]
     # वरचा साधा भाग कधीच कापत नाही; details मधून आधी शेवटच्या ओळी, मग extra गाळतो (UTF-16 units, MARGIN सकट)
     return top + "\n" + _fit(lines, 1024 - PT.MARGIN - PT.tg_len(top) - 1, keep=1 + len(dec),
                               protect=_reason_line if CS.layout(layout) == "summary" else None)

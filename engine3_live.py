@@ -966,6 +966,9 @@ def compact_entries(entries):
         rb = e.get("refined_base")
         if isinstance(rb, dict) and rb.get("lo") is not None:            # RC2: the refined 15M base inside the area (display + card)
             x["refined_base"] = {"lo": float(rb["lo"]), "hi": float(rb["hi"]), "ts": None if rb.get("ts") is None else str(rb["ts"])}
+        pa = pa_first_per_track(e.get("pa_evidence"))
+        if pa:                                                           # T9: the PA evidence (display only) — first fact per track
+            x["pa_evidence"] = pa
         if e.get("family") == "C":                                       # model C (DECISIONS 32): family, sub-model, story, context
             x.update(model_c_of(e))
         elif isinstance(e.get("model_c_context"), dict):                 # C-f: a label on a Daily-side entry (statistics only)
@@ -976,6 +979,17 @@ def compact_entries(entries):
         if x["area"] is not None and x["area"].get("id") is not None and not isinstance(x["area"]["id"], (str, int, float)):
             x["area"]["id"] = str(x["area"]["id"])                       # numpy ints ⇒ text, never a JSON error
         out.append(x)
+    return out
+
+
+def pa_first_per_track(rows):
+    """T9 (decision3/pa_evidence rows) ⇒ the payload's compact list: the first row of each track ({track, tf, text}), in the reader's
+    order. Display only — the full list stays on the decision3 entry. Not a list ⇒ []."""
+    out, seen = [], set()
+    for r in rows if isinstance(rows, list) else []:
+        if isinstance(r, dict) and r.get("track") and r.get("text") and r["track"] not in seen:
+            seen.add(r["track"])
+            out.append({"track": str(r["track"]), "tf": None if r.get("tf") is None else str(r["tf"]), "text": str(r["text"])})
     return out
 
 
@@ -1040,6 +1054,12 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
     out = dump(payload)
     if len(out) <= limit:
         return out
+    if any(isinstance(e, dict) and "pa_evidence" in e for e in payload.get("entries") or ()):   # T9 PA evidence: display only, the
+        payload = {**payload, "entries": [{k: v for k, v in e.items() if k != "pa_evidence"} if isinstance(e, dict) else e
+                                          for e in payload["entries"]]}   # removed first (review), then "reader": today's payload kept
+        out = dump(payload)
+        if len(out) <= limit:
+            return out
     if "reader" in payload:                                              # display-only reader facts (approval card summary): too
         payload = {k: v for k, v in payload.items() if k != "reader"}     # long ⇒ removed SILENTLY, so the rest is exactly today's
         out = dump(payload)                                              # payload (no longer "dropped" list, no extra key pushed out)

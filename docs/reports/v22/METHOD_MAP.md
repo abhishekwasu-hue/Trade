@@ -57,11 +57,13 @@ They are listed so nothing claims to own a concept twice. Where a row below name
 | Daily leg nature (§2B) | **`decision3.daily_legs`** → `decision3.legs_compare` (`daily_leg_read = compare`) | Comparison with neighbouring legs; Elliott / legs2 percentiles = what-if. | — | PA T1 |
 | Market state per TF (§1, §2A) | `decision3.mtf_state` | Evidence / state only. | — | PA T1 |
 | Area base types / confluence / liquidity (§2C, §2D, §2F) | `decision3.area_types`, `decision3.confluence_pa` (`pa_fib_ratios`), `decision3.liquidity_pa` | Evidence only. | — | PA T2 |
+| Lines / channels per TF (§2E) | `decision3.trendline` (`lines_on` / `channels_on` core, `channels_by_tf`: W, D, 1H, 15M) | 1H / 15M = the two degrees of the 15M chart (unchanged, E4 b objects); W / D = their own candles + swings (row `channels_htf`, evidence only). | — | PA T3 |
 | Chart patterns (§2H, §2K) | `decision3.patterns_pa` | Evidence / retest levels (E4 b hook). | — | PA T4 |
 | Candle forms / volume reads (§2G, §2I) | `decision3.candle_forms`, `decision3.volume_read` | Evidence only. | — | PA T5 |
 | Hidden divergence (§2J) | `decision3.rsi_hidden` | Classic hidden divergence, continuation evidence. | — | PA T6 |
 | Range edges (§2L) | `decision3.range_edges` + `decision3.daily` (`daily_range_rule`, `range_state_rule`) | Range edges = areas; range from structure (both sides fail to make a new extreme). | — | PA T7 |
 | Output objects (§4) | `decision3.draw_objects` / `draw_render` (`chart_objects`, off) | Display only. | — | PA T8 |
+| Evidence wiring | `decision3.pa_evidence.for_entry` ⇒ entry `pa_evidence` (payload: first fact per track; card: one line) | Every PA track's own evidence words per entry; listed, never blocks (entries byte-identical without it — tests/test_pa_evidence.py). | — | PA T9 |
 
 ## How the open questions are resolved (per the method's resolution order; no questions to Abhi)
 

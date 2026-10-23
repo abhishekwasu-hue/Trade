@@ -5,7 +5,7 @@ Decisions taken from orders go to DECISIONS.md (append only).
 
 | # | Order (short) | Status | Where |
 |---|---|---|---|
-| 1 | Price Action Standard: coverage audit, PA tracks T1–T8, entry models E1–E4 | done (T3 channels per TF, T9 evidence wiring open) | #362 |
+| 1 | Price Action Standard: coverage audit, PA tracks T1–T8, entry models E1–E4 | done; T3 channels per TF (W / D / 1H / 15M) + T9 evidence wiring (every entry lists each track's facts, display only, entries byte-identical — pinned) built + tests, committed locally on branch pa-t3-t9 (not pushed / merged); open for Abhi: E4 (b) pattern / range-edge hooks and D / W lines as E4 (b) objects (would change entries), 5M lines (OPEN_QUESTIONS T3 / T9) | #362; docs/knowledge/pa_standard/t3_t9_coverage.md |
 | 2 | Standing rules in CLAUDE.md + REPORT_STANDARD enforced by tests | done | #363 |
 | 3 | Root-cause fixes RC1–RC6 + concept-C base fixes | done, deployed to PAPER 22 Oct (#365 block, status ✅ clean, reviewed) | #364 |
 | 4 | Trigger reading "traded inside, close on the trade side allowed" | merged; deploy after close | #365 |

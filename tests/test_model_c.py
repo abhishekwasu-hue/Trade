@@ -419,8 +419,12 @@ def test_settings_registered_default_off_and_validated():
         E3.V22(m15, s={"model_c": "maybe"}, ltf=ltf, futures=fut)
 
 
+DISPLAY_ONLY = ("channels_htf",)            # PA T3 / T9 display keys added after the pin (tests/test_pa_evidence.py pins them apart)
+
+
 def _digest(rows, drop=()):
-    rows = [{k: v for k, v in r.items() if k not in drop} for r in rows]
+    rows = [{k: (v if k != "entries" else [{a: b for a, b in e.items() if a != "pa_evidence"} for e in v])
+             for k, v in r.items() if k not in drop and k not in DISPLAY_ONLY} for r in rows]
     return hashlib.sha256(json.dumps(rows, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
 
 

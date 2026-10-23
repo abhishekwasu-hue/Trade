@@ -1139,3 +1139,20 @@ Reading checks seen in the sample (19 Oct close; never tuned — misread candida
 - **C / Z-1u overlaps.** Overlapping same-role 1H areas at the named places — BANKNIFTY demand #341 / #342 / #345 (55,283–55,419),
   supply #324 / #346; NIFTY supply #271 / #273 / #274 (23,116–23,178). Counted once by the engine; listed as reading checks.
 - **C width (Z-1x).** NIFTY Weekly demand #247 21,281–23,290 spans most of the recent swing range — a base-width reading check.
+
+## PA T3 (channels per timeframe) + T9 (evidence wiring) — provisional choices (2026-10-22; docs/knowledge/pa_standard/t3_t9_coverage.md)
+Checked against CLAUDE.md ("evidence is listed and never blocks", no number / rule / setting added, P8 display only), DECISIONS 3, 5, 6,
+7, 9, 14, 28, 35 and the method doc §8. Assumed — no answer needed unless Abhi objects:
+- **T3-1 5M has no lines / channels.** The 5M swing in the reader is the LTF-CHoCH trigger definition (a high above its left neighbour),
+  not a structure swing; lines on it would read wiggles (method §3). Lines / channels are read on W, D (their own candles and the fold's
+  swings, the ones `mtf_state` reads) and 1H / 15M (the existing two degrees of the 15M chart, unchanged).
+- **T3-2 Daily / Weekly channels are evidence only.** Their broken lines are NOT E4 (b) retest objects (that would add trade locations
+  ⇒ new entries; Abhi's word + a replay first). The row carries them as `channels_htf`.
+- **T9-1 hooks not wired.** `patterns_pa.retest_levels` (`PATTERN_HOOK`, E4 b) and `range_edges.armable` (range edges as armed areas)
+  change entries — a reading change, not evidence. Left off; listed for Abhi.
+- **T9-2 Vision input unchanged.** The PA list goes to the entry (`pa_evidence`), the payload (first fact per track) and the approval
+  card (one line, the first detail dropped when the caption is full) — not into Vision's prompt (its input and paid size as before).
+- **T9-3 selection = identity only.** The area's own base / confluence / inducement by its id; liquidity = the reader's own "nearest"
+  extremes; channels = the one price is in, a retest of a broken line, a counter channel broken in the trade direction; range edges =
+  overlap with the entry band. No ranking, no score.
+- **T8 objects into the gate tags** (`chart_objects`, default off): still open (display, a separate item).

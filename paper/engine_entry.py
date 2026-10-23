@@ -416,6 +416,7 @@ def entry_gate_tags(r, e, direction, settings=None):
             "entry_object": e.get("object") or ar.get("object"),       # T-5: area / broken_area / broken_line (the engine card + audit)
             "entry_trigger_ts": None if e.get("trigger_ts") is None else str(e["trigger_ts"]), "entry_ref": e.get("entry_ref"),
             "entry_invalidation": e.get("invalidation"), "entry_evidence": ev,
+            "entry_pa_evidence": e.get("pa_evidence") if isinstance(e.get("pa_evidence"), list) else None,   # T9: display only
             "entry_cluster": None if not cl else [x.get("area_id") for x in cl.get("members") or [] if isinstance(x, dict)],
             **model_c_tags(e)}
 

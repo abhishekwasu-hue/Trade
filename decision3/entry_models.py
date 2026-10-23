@@ -55,6 +55,7 @@ import pandas as pd
 from . import flip as FL
 from . import liquidity as LQ
 from . import method as M
+from . import pa_evidence as PE
 from . import trendline as TL
 
 MODELS = ("E1", "E2", "E3", "E4")
@@ -811,6 +812,7 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             ok6, why6, cm = cm6
             ev = R.evidence(t, d, lvl, int(vi["start"]), cm=cm, read_ok=ok6, move_from=cm.get("move_from_bar"))
             area = {k: lvl.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
+            arm0, mf0 = int(vi["start"]), cm.get("move_from_bar")
         elif f["kind"] == "area":
             x = f["raw"]
             lvl2 = {**x, "visit_from": f["start"]}
@@ -818,6 +820,7 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             ev = R.evidence(t, d, lvl2, f["start"], cm=cm6[2], read_ok=cm6[0], move_from=cm6[2].get("move_from_bar"))
             area = {k: x.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
             lvl = lvl2
+            arm0, mf0 = int(f["start"]), cm6[2].get("move_from_bar")
         else:
             ln = f["raw"]
             v = round(TL.line_value(ln, t), 2)
@@ -825,6 +828,10 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
                    "fresh": None, "confluence_line": True, "confluence": []}
             ev = R.evidence(t, d, lvl, f["start"])
             area = {"id": lvl["id"], "tf": "line", "role": a["role"], "lo": v, "hi": v, "state": "BROKEN", "line": a.get("line")}
+            arm0, mf0 = int(f["start"]), None
+        # T9 (PA evidence wiring, CLAUDE.md "evidence is listed and never blocks"): every PA track's facts for this entry — read after
+        # the decision, never fed back into it (the entry's fields above are unchanged; tests/test_pa_evidence.py pins it).
+        pa_ev = PE.for_entry(V, t, d, {**area, "object": a["object"]}, lvl=lvl, arm=arm0, move_from=mf0)
         m = f["model"]
         name = NAME[m] + (f" ({f['variant']})" if m == "E4" else "")
         cl = f.get("cluster")
@@ -836,7 +843,7 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
                     "trigger_bar_end": str(V.bar_end[t]), "entry_ref": round(float(A["close"][t]), 2),
                     "invalidation": f["invalidation"], "invalidation_rule": f["invalidation_rule"], "facts": f.get("facts") or {},
                     "label": ev["label"], "evidence": ev["evidence"], "evidence_list": ev["evidence_list"],
-                    "channel_evidence": ev["channel_evidence"],
+                    "channel_evidence": ev["channel_evidence"], "pa_evidence": pa_ev,
                     "confirming": ev["confirming"], "_eval": ev, "_lvl": lvl})
     return {"entries": out, "armed": armed, "first_area": first_area, "reader": R}
 

@@ -25,6 +25,7 @@ import pandas as pd
 LAYOUT_KEY = "approval_card_layout"
 LAYOUTS = ("classic", "summary")
 REASON_MAX = 90                                                          # Vision's reason on the summary: one line (full text in details)
+PA_MAX = 240                                                             # display: the card's one PA evidence line (full list in the tags)
 CONFIRM_WORDS = {"volume_growing": "volume growing", "rsi_divergence": "RSI div", "confluence": "confluence",
                  "correction_line_closed_through": "line closed through"}   # decision3/method.CONFIRMING, in its order
 VERDICT = {"agree": ("✅", "सहमत"), "gray": ("🟡", "संदिग्ध"), "disagree": ("❌", "असहमत"), "unavailable": ("⚪", "उपलब्ध नाही")}
@@ -289,6 +290,31 @@ def model_lines(tags):
     if ev:
         out.append(f"📋 {html.escape(lab)} evidence: {html.escape(ev)}")
     return out
+
+
+PA_TRACKS = ("T1", "T2", "T3", "T4", "T5", "T6", "T7")                  # decision3/pa_evidence.TRACK_ORDER (the standard's order)
+
+
+def pa_brief(rows, limit=PA_MAX):
+    """T9: the entry's PA evidence (decision3/pa_evidence rows) as one plain line — the first fact of each track in the standard's
+    order, its bracketed detail left out (the full list stays in the signal's tags). Empty / unreadable ⇒ "". Never raises."""
+    try:
+        first = {}
+        for r in rows or ():
+            if isinstance(r, dict) and r.get("track") in PA_TRACKS and r.get("text") and r["track"] not in first:
+                first[r["track"]] = re.sub(r"\s*\([^()]*\)", "", str(r["text"])).strip()
+        t = " · ".join(first[k] for k in PA_TRACKS if first.get(k))
+        return t if len(t) <= limit else t[:limit - 1].rstrip() + "…"
+    except Exception:                                                    # noqa: BLE001 — display only
+        return ""
+
+
+def pa_lines(tags):
+    """The card's PA evidence line (listed, never blocks) for an engine entry model; [] when none. HTML-safe. The caption builder puts it
+    last before the tail, so it is the first detail dropped when the 1024 caption is full (today's lines never give way to it)."""
+    lab = model_label(tags)
+    b = pa_brief(tags.get("entry_pa_evidence")) if lab else ""
+    return [f"🧩 {html.escape(lab)} PA evidence (listed, never blocks): {html.escape(b)}"] if b else []
 
 
 def line_head(row, status, res=None, ticket=None):
