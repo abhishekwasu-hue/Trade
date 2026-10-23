@@ -179,3 +179,5 @@ E1 / E2 / E3 entries are identical entry by entry (trigger, entry ref, invalidat
   refined base); outer range kept (T7, Abhi 21 Oct). Logged as provisional.
 - No number added (two word settings, `tests/test_method_no_numbers.py` passes); no look-ahead (bars ≤ t); evidence still never blocks;
   no execution setting; PAPER only.
+- Approach side after a single overshoot close from below (review M1): the rejection candle opening above still counts as "from
+  above" — PROVISIONAL (OPEN_QUESTIONS); affects 03 Sep and 09 Oct of the 7 removed entries.

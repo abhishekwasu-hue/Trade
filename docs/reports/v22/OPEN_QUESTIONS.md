@@ -1180,3 +1180,9 @@ Checked against CLAUDE.md, DECISIONS 6, 23, 27, 28, 38–41, method P4 / §8 (T7
   (…, broken down), retest from below"; header symbol first; engine name "Price-action engine (PAPER)" (addition D); Vision prompt
   `engine_check_v2`. E4 (b) lines are always the 1H degree (D2).
 - **Live list (item 7):** needs the read-only VPS export (command in the report); the replay list is in the report.
+- **Approach side after an overshoot (review M1), PROVISIONAL.** `e4b_approach_rule = break_side` also blocks a rejection candle that
+  OPENS on the object's original side right after a single overshoot close from the break side (no swing formed beyond). By the sweep
+  reading (DECISIONS 23) that overshoot is a sweep, not acceptance, so such a retest may be a valid E4 (b) from below. Provisional
+  default: a rejection candle opening on the original side counts as "from above" even after one overshoot close (no number added to
+  separate it from the live case, where price closed above four times without a swing of the line's degree). Affects 2 of the 7
+  removed replay entries (03 Sep, 09 Oct: "trigger opened above"). Abhi decides; `any` restores the earlier reading.
