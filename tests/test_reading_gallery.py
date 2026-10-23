@@ -300,3 +300,87 @@ def test_cron_install_is_idempotent_and_reverts(tmp_path):
     assert txt.count("# reading-gallery-close") == 1 and "40 10 * * 1-5" in txt and "trade_monitor.py" in txt
     subprocess.run(["bash", str(sh), "--revert"], env=env, check=True, capture_output=True)
     assert "reading-gallery" not in cron.read_text() and "trade_monitor.py" in cron.read_text()
+
+
+# ------------------------------------------------------------------------------------------------------------------------ review fixes
+def _clone(tmp_path):
+    import reading_gallery_today as G
+    bare, work = tmp_path / "remote.git", tmp_path / "td"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
+    subprocess.run(["git", "clone", "-q", str(bare), str(work)], check=True, capture_output=True)
+    rel = os.path.join(G.REL_BASE, DAY)
+    (work / rel).mkdir(parents=True)
+    (work / rel / "old.png").write_bytes(b"old")
+    (work / "keep.txt").write_text("x")
+    G.git(str(work), "add", ".")
+    G.git(str(work), "commit", "-q", "-m", "init")
+    G.git(str(work), "push", "-q", "origin", "HEAD:main")
+    return G, bare, work, rel
+
+
+def _remote_files(bare):
+    return subprocess.run(["git", "--git-dir", str(bare), "ls-tree", "-r", "--name-only", "main"], capture_output=True, text=True).stdout
+
+
+def test_push_never_records_a_working_tree_deletion(tmp_path):
+    G, bare, work, rel = _clone(tmp_path)
+    (work / rel / "old.png").unlink()                                          # a file gone from the working tree (a re-run)
+    (work / rel / "index.html").write_text("<html></html>")
+    G.push_and_verify(str(work), rel, "gallery")
+    ls = _remote_files(bare)
+    assert f"{rel}/old.png" in ls and f"{rel}/index.html" in ls               # trade-data never loses a file
+
+
+def test_push_refuses_a_staged_deletion(tmp_path):
+    G, bare, work, rel = _clone(tmp_path)
+    G.git(str(work), "rm", "-q", "keep.txt")                                   # someone else's staged deletion
+    (work / rel / "index.html").write_text("<html></html>")
+    with pytest.raises(RuntimeError, match="deletion"):
+        G.push_and_verify(str(work), rel, "gallery")
+    assert "keep.txt" in _remote_files(bare)
+
+
+def test_push_refuses_on_index_lock(tmp_path):
+    G, bare, work, rel = _clone(tmp_path)
+    (work / ".git" / "index.lock").write_text("")
+    with pytest.raises(RuntimeError, match="index.lock"):
+        G.push_and_verify(str(work), rel, "gallery")
+    assert (work / ".git" / "index.lock").exists()                            # never deleted
+
+
+def test_failed_rebase_is_aborted(tmp_path):
+    G, bare, work, rel = _clone(tmp_path)
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(bare), str(other)], check=True, capture_output=True)
+    (other / rel / "index.html").write_text("theirs")
+    G.git(str(other), "add", ".")
+    G.git(str(other), "commit", "-q", "-m", "theirs")
+    G.git(str(other), "push", "-q", "origin", "HEAD:main")
+    (work / rel / "index.html").write_text("ours")                             # the same new file ⇒ a rebase conflict
+    with pytest.raises(G.PushPending):
+        G.push_and_verify(str(work), rel, "gallery")
+    assert not (work / ".git" / "rebase-merge").exists() and not (work / ".git" / "rebase-apply").exists()
+    assert G.git(str(work), "status", "--porcelain").stdout.strip() == ""      # clean, our commit kept
+    assert "gallery" in G.git(str(work), "log", "-1", "--format=%s").stdout
+
+
+def test_marathi_fallback_strips_setting_names_and_variant_tags():
+    for raw in ("max_hits_per_zone reached for this place", "entry_area_refine = setup_tf keeps the models waiting",
+                "never an E4 (b) on this candle", "E1 and E3 wait"):
+        t = RG.to_mr(raw)
+        assert RG.code_free(t), (raw, t)
+    assert "retest" in RG.to_mr("never an E4 (b) on this candle")
+    assert not RG.code_free("max_hits_per_zone") and not RG.code_free("an (b) tag")
+
+
+def test_line_never_taken_from_after_the_decision(monkeypatch):
+    from decision3 import trendline as TL
+    seen = []
+
+    def lines(V, t, degree=None):
+        seen.append(t)
+        return [{"id": "L1", "p1": [0, 100.0], "slope": 0.0}] if t == 99 else []
+    monkeypatch.setattr(TL, "channel_lines", lines)
+    monkeypatch.setattr(TL, "channels", lambda V, t, degree=None: [])
+    V = SimpleNamespace(m15=pd.DataFrame({"timestamp": range(100)}))
+    assert RG.find_line(V, "L1", 40) is None and seen == [40]                  # only listed later ⇒ not drawn
