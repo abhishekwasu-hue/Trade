@@ -484,7 +484,8 @@ def test_schedule_installer_idempotent_and_revert_exact(tmp_path):
 
 def test_schedule_revert_restores_todays_15m_engine_line_only(tmp_path):
     """DECISIONS 37 deploy rollback: `--revert` puts back today's 15M engine line (1,16,31,46 4-9) in place of the every-minute guarded
-    line and changes nothing else; without an every-minute line it is the full revert (as before)."""
+    line (ENGINE3_TRIGGER_TF=15m) and changes nothing else; a second `--revert` changes nothing (never the full revert); the pre-37
+    15M line is replaced the same way; no engine line ⇒ nothing written; the full revert is only `--revert-all`."""
     cron = tmp_path / "cron"
     cron.write_text(ORIG)
     _install(cron)
@@ -495,8 +496,17 @@ def test_schedule_revert_restores_todays_15m_engine_line_only(tmp_path):
                          .replace("$REPO_DIR", "/root/Trade"))
     _install(cron, "--revert")
     assert cron.read_text() == today and "1,16,31,46 4-9 * * 1-5" in today and "--guard" not in today
-    _install(cron, "--revert")                                        # no every-minute line ⇒ the full revert
+    assert "ENGINE3_TRIGGER_TF=15m" in today
+    r = _install(cron, "--revert")                                    # re-run of the same block ⇒ idempotent
+    assert cron.read_text() == today and "already reverted" in r.stdout
+    old15 = today.replace("ENGINE3_TRIGGER_TF=15m ", "")             # the pre-37 15M line (no variable) ⇒ the same 15M revert line
+    cron.write_text(old15)
+    _install(cron, "--revert")
+    assert cron.read_text() == today
+    _install(cron, "--revert-all")
     assert cron.read_text() == ORIG
+    r = _install(cron, "--revert")                                    # no engine line ⇒ nothing written
+    assert cron.read_text() == ORIG and "❌" in r.stdout
 
 
 def test_schedule_installer_keeps_auto_trader_line_with_open_position(tmp_path):

@@ -50,7 +50,11 @@ def _token_check(tok, check_fn=None):
 
 
 def _settings(sym, settings_fn=None):
-    return ES.engine3_settings(sym) if settings_fn is None else ES.engine3_settings(sym, settings_fn)
+    """The symbol's engine3 settings. Env ENGINE3_TRIGGER_TF (set only by the `install_engine_schedule.sh --revert` cron line,
+    DECISIONS 37 rollback) overrides the dashboard `engine3_trigger_tf` for this run."""
+    s = ES.engine3_settings(sym) if settings_fn is None else ES.engine3_settings(sym, settings_fn)
+    env = os.environ.get("ENGINE3_TRIGGER_TF", "").strip()
+    return {**(s or {}), "engine3_trigger_tf": env} if env else s
 
 
 def trigger_tf(sym, settings_fn=None):
@@ -71,7 +75,7 @@ def due_symbols(syms, now=None, path=None, settings_fn=None):
     out = []
     for sym in syms:
         b5 = ES.due_bar_end(now, "5M")
-        if not ES.in_window(b5) or ES.has_bar(sym, b5, path):
+        if not ES.in_window(ES.window_bar(b5, "5M")) or ES.has_bar(sym, b5, path):
             continue
         tf = trigger_tf(sym, settings_fn)
         b = b5 if tf == "5M" else ES.due_bar_end(now, "15M")
@@ -186,7 +190,9 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                     ES.save_error(sym, bar_for(sym), msg, engine=engine)
                 except Exception as exc2:                                # noqa: BLE001
                     print(f"⚠️ {sym}: error row लिहिता आली नाही: {exc2}")
-                if getattr(exc, "token_rejected", False):               # engine3_live.TokenRejected ⇒ तीच 🔴 ओळ (दर bar, एकदाच)
+                if getattr(exc, "bar_late", False) and getattr(exc, "one_bar", False):   # DECISIONS 37: one 5M close late ⇒ retry next minute
+                    print(f"   ⏳ {sym}: the 5M bar is late at Upstox ⇒ silent retry next minute (no Telegram)")
+                elif getattr(exc, "token_rejected", False):               # engine3_live.TokenRejected ⇒ तीच 🔴 ओळ (दर bar, एकदाच)
                     try:
                         ES.alert_token_rejected(send=send, state_path=alert_path, now=now, detail=str(exc))
                     except Exception as exc2:                            # noqa: BLE001

@@ -48,7 +48,18 @@ class FutVolumeMissing(EngineDataError):
     data_problem = True
 
 
-class FutBarLate(EngineDataError):
+class BarLate(EngineDataError):
+    """DECISIONS 37 (trigger_tf 5M): the 5M bar (spot / FUT) of the 5M close being decided is not at Upstox yet ⇒ this cycle fails closed
+    (error row); the next minute's cycle decides it (catch-up). one_bar = only that one close is missing (the bar before it is there) ⇒
+    the caller retries silently (no Telegram); more missing ⇒ the usual error line."""
+    bar_late = True
+
+    def __init__(self, msg, one_bar=False):
+        super().__init__(msg)
+        self.one_bar = bool(one_bar)
+
+
+class FutBarLate(BarLate):
     """DECISIONS 37 (trigger_tf 5M): the FUT 5M bar of the 5M close being decided is not at Upstox yet ⇒ this cycle fails closed (error
     row); the next minute's cycle decides it (catch-up). Not the Z-1c "FUT volume missing" data problem."""
 
@@ -439,7 +450,8 @@ def build_inputs(feed, symbol, now, s=None, levels_only=False):
     want5 = now.floor("5min")
     in5 = SESSION_OPEN <= (want5.hour, want5.minute) <= SESSION_CLOSE and want5.normalize() == m15["timestamp"].iloc[-1].normalize()
     if tf5 and in5 and pd.Timestamp(ltf["bar_end"].iloc[-1]) < want5:   # DECISIONS 37: the 5M close being decided must be there
-        raise EngineDataError(f"{symbol}: शेवटचा बंद 5M spot ({want5:%H:%M}) अजून Upstox कडे नाही (last {ltf['bar_end'].iloc[-1]:%H:%M})")
+        raise BarLate(f"{symbol}: शेवटचा बंद 5M spot ({want5:%H:%M}) अजून Upstox कडे नाही (last {ltf['bar_end'].iloc[-1]:%H:%M})",
+                      one_bar=pd.Timestamp(ltf["bar_end"].iloc[-1]) >= want5 - pd.Timedelta(minutes=5))
     fut, note = None, None
     try:                                                                 # c0 / a2 volume (raw FUT bars, method §3; approach leg may reach back)
         fut = closed_session_bars(feed.futures(symbol, "5minute", s["engine3_fut_days"]), 5, now)
@@ -448,7 +460,8 @@ def build_inputs(feed, symbol, now, s=None, levels_only=False):
             fut, note = None, f"{symbol}: FUT 5M volume (आज) नाही"
         elif tf5 and in5 and pd.Timestamp(today_fut["bar_end"].iloc[-1]) < want5:   # DECISIONS 37: the FUT 5M bar of that close too
             raise FutBarLate(f"{symbol}: शेवटचा बंद FUT 5M ({want5:%H:%M}) अजून Upstox कडे नाही "
-                                  f"(last {today_fut['bar_end'].iloc[-1]:%H:%M})")
+                                  f"(last {today_fut['bar_end'].iloc[-1]:%H:%M})",
+                             one_bar=pd.Timestamp(today_fut["bar_end"].iloc[-1]) >= want5 - pd.Timedelta(minutes=5))
     except (TokenRejected, FutBarLate):                                  # token नाकारला / 5M FUT bar उशिरा ⇒ खरं कारण
         raise
     except Exception as exc:                                             # noqa: BLE001

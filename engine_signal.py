@@ -165,6 +165,17 @@ def in_window(bar_end, s=None):
     return _hm(s["engine_first_bar_end"]) <= (b.hour, b.minute) <= _hm(s["engine_last_bar_end"])
 
 
+def window_bar(bar_end, tf="15M"):
+    """The bar_end the store window is judged on. 15M ⇒ itself. 5M (DECISIONS 37) ⇒ the end of the 09:15-anchored 15M bin holding that
+    5M candle (trigger_frame.bin_start), so the 09:20 / 09:25 candles count with the 09:30 opening bar and 15:05 / 15:10 stay out —
+    the same window as the 15M bars."""
+    b = pd.Timestamp(bar_end)
+    if str(tf).upper() != "5M":
+        return b
+    from decision3.trigger_frame import BAR15, bin_start
+    return pd.Timestamp(bin_start([b - pd.Timedelta(minutes=5)]).iloc[0]) + BAR15
+
+
 def expected_bar_end(now, tf="15M"):
     """आत्ता (IST) शेवटचा बंद व्हायला हवा तो bar_end — 15M (default, आजचं) / 5M (trigger_tf 5M, DECISIONS 37)."""
     return _naive(now).floor("5min" if str(tf).upper() == "5M" else "15min")
@@ -416,7 +427,7 @@ def run3(symbol, access_token, feed=None, path=None, now=None, s=None, dry_run=F
     for row in rows:
         if pd.Timestamp(row["bar_ts"]) > now:
             raise ValueError("शेवटचा 5M candle अजून बंद नाही")
-        if not in_window(row["bar_ts"], s) or pd.Timestamp(row["bar_ts"]).normalize() != now.normalize():
+        if not in_window(window_bar(row["bar_ts"], "5M"), s) or pd.Timestamp(row["bar_ts"]).normalize() != now.normalize():
             row["skipped"] = f"bar {pd.Timestamp(row['bar_ts']):%Y%m%d %H:%M} entry window ({DEFAULTS['engine_first_bar_end']}–" \
                              f"{DEFAULTS['engine_last_bar_end']}, आजचा) बाहेर ⇒ store मध्ये नाही"
             continue

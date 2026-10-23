@@ -98,9 +98,9 @@ def test_run3_5m_stores_the_caught_up_rows_inside_the_window_and_reads_since_fro
     monkeypatch.setattr(L, "compute", compute)
     r = ES.run3("NIFTY", "tok", feed=object(), path=p, now=pd.Timestamp("2030-01-07 09:41"))
     assert seen == [pd.Timestamp("2030-01-07")]                            # nothing stored yet ⇒ the session from its start
-    assert r["bar_ts"] == "2030-01-07 09:40:00" and r["caught_up"] == ["2030-01-07 09:30:00", "2030-01-07 09:35:00"]
+    assert r["bar_ts"] == "2030-01-07 09:40:00" and r["caught_up"] == ["2030-01-07 09:25:00", "2030-01-07 09:30:00", "2030-01-07 09:35:00"]
     assert ES.latest("NIFTY", "2030-01-07 09:41", path=p)["bar_ts"] == "2030-01-07 09:40:00"
-    assert not ES.has_bar("NIFTY", "2030-01-07 09:25", p) and ES.has_bar("NIFTY", "2030-01-07 09:30", p)   # 09:25 outside the window
+    assert ES.has_bar("NIFTY", "2030-01-07 09:25", p) and ES.has_bar("NIFTY", "2030-01-07 09:30", p)   # 09:25: inside the 09:30 bin
     ES.run3("NIFTY", "tok", feed=object(), path=p, now=pd.Timestamp("2030-01-07 09:46"))
     assert seen[-1] == pd.Timestamp("2030-01-07 09:40")                    # the next cycle continues from the last stored row
     ES.save_error("NIFTY", "2030-01-07 09:45", "late", path=p)
@@ -125,8 +125,11 @@ def test_guard_runs_only_when_the_due_bar_is_not_stored_and_inside_the_window(tm
     assert ESR.due_symbols(["NIFTY"], "2030-01-07 10:21", settings_fn=fivem) == ["NIFTY"]
     ES.save(L.row_from_v22("NIFTY", v22_setup("NIFTY", "2030-01-07 10:20"), lambda: "x"), p)
     assert ESR.due_symbols(["NIFTY"], "2030-01-07 10:22", settings_fn=fivem) == []
-    assert ESR.due_symbols(["NIFTY"], "2030-01-07 09:26", settings_fn=fivem) == []          # 09:25 is outside the store window
-    assert ESR.due_symbols(["NIFTY"], "2030-01-07 15:06", settings_fn=fivem) == []          # after 15:00
+    assert ESR.due_symbols(["NIFTY"], "2030-01-07 09:21", settings_fn=fivem) == ["NIFTY"]   # 09:20 / 09:25: the 09:30 opening bin
+    assert ESR.due_symbols(["NIFTY"], "2030-01-07 09:26", settings_fn=fivem) == ["NIFTY"]
+    assert ESR.due_symbols(["NIFTY"], "2030-01-07 15:01", settings_fn=fivem) == ["NIFTY"]   # 15:00 = the last 15M bar's end
+    assert ESR.due_symbols(["NIFTY"], "2030-01-07 15:06", settings_fn=fivem) == []          # 15:05 / 15:10: the 15:15 bin, outside
+    assert ESR.due_symbols(["NIFTY"], "2030-01-07 15:11", settings_fn=fivem) == []
     ES.save_error("NIFTY", "2030-01-07 10:25", "late", path=p)
     assert ESR.due_symbols(["NIFTY"], "2030-01-07 10:26", settings_fn=fivem) == ["NIFTY"]   # an error row is retried
     m15 = lambda strat, sym: {"engine3_trigger_tf": "15m"}                # noqa: E731
@@ -208,3 +211,43 @@ def test_card_text_prompt_and_trigger_panel_on_a_5m_entry(monkeypatch):
     assert any(t.startswith("trigger 5M · T") for t in texts) and "CHoCH 5M" in texts and meta["trigger_panel"]["tf"] == "5M"
     fig15 = CH.engine_figure(cut, setup, higher, tfs, s, {}, None, {})
     assert not any(str(t).startswith("trigger 5M") for t in [a.text for a in fig15.layout.annotations])
+
+
+# ------------------------------------------------------------------------------------------------ review fixes (#378)
+def test_store_window_of_a_5m_candle_is_its_15m_bin_end():
+    w = lambda b: str(ES.window_bar(b, "5M"))                             # noqa: E731
+    assert w("2030-01-07 09:20") == w("2030-01-07 09:25") == w("2030-01-07 09:30") == "2030-01-07 09:30:00"
+    assert w("2030-01-07 15:00") == "2030-01-07 15:00:00" and w("2030-01-07 15:05") == "2030-01-07 15:15:00"
+    assert str(ES.window_bar("2030-01-07 09:15", "15M")) == "2030-01-07 09:15:00"   # 15M ⇒ the bar itself (today)
+
+
+def test_env_trigger_tf_overrides_the_dashboard_for_the_revert_line(monkeypatch):
+    fivem = lambda strat, sym: {"engine3_trigger_tf": "5m"}               # noqa: E731
+    assert ESR.trigger_tf("NIFTY", fivem) == "5M"
+    monkeypatch.setenv("ENGINE3_TRIGGER_TF", "15m")
+    assert ESR.trigger_tf("NIFTY", fivem) == "15M" and ESR._settings("NIFTY", fivem)["engine3_trigger_tf"] == "15m"
+
+
+def test_one_late_5m_bar_is_a_silent_retry_more_is_the_error_line(tmp_path, monkeypatch):
+    monkeypatch.setenv("ENGINE_SIGNAL_DB", str(tmp_path / "es.db"))
+    with pytest.raises(L.BarLate) as e:
+        L.build_inputs(Feed5(cut5="2030-03-25 10:15"), "BANKNIFTY", NOW)
+    assert e.value.one_bar
+    with pytest.raises(L.FutBarLate) as e:
+        L.build_inputs(Feed5(cutfut="2030-03-25 10:15"), "BANKNIFTY", NOW)
+    assert e.value.one_bar
+    with pytest.raises(L.FutBarLate) as e:
+        L.build_inputs(Feed5(cutfut="2030-03-25 10:05"), "BANKNIFTY", NOW)
+    assert not e.value.one_bar
+    fivem = lambda strat, sym: {"engine3_trigger_tf": "5m"}               # noqa: E731
+    sent = []
+
+    def run(exc):
+        def f(s, t):
+            raise exc
+        return ESR.main(["--symbols", "NIFTY"], token_fn=lambda: "tok", run_fn=f, market_fn=lambda: True, send=sent.append,
+                        alert_path=str(tmp_path / "a.json"), now=pd.Timestamp("2030-01-07 10:21"), symbols_fn=lambda: ["NIFTY"],
+                        settings_fn=fivem, check_fn=lambda t: "ok")
+    assert run(L.FutBarLate("late", one_bar=True)) == 1 and sent == []
+    assert not ES.has_bar("NIFTY", "2030-01-07 10:20", str(tmp_path / "es.db"))   # error row only ⇒ retried next minute
+    assert run(L.FutBarLate("late", one_bar=False)) == 1 and len(sent) == 1 and "❌" in sent[0]

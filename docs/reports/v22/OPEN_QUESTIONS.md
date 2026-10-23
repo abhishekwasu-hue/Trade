@@ -1209,9 +1209,11 @@ Abhi objects — each is in the code as written here:
   lines at the last closed 15M bar k; evidence never blocks.
 - Q10 model C follows `trigger_tf` (its reads go through the 5M reader); it stays OFF.
 - Q11 every-minute cron `* 3-10 * * 1-5` with `--guard` + flock (exits unless the bar closed a minute ago is due and unstored); the
-  entry-hours / store-window settings unchanged (the 09:20 / 09:25 5M closes are read, not stored).
+  entry-hours / store-window settings unchanged; in 5M mode the window is judged on the end of the 15M bin holding the 5M candle
+  (review #378), so the 09:20 / 09:25 closes are stored with the 09:30 opening bin and 15:05 / 15:10 stay out, as for 15M bars.
 - Q12 catch-up: a due run decides every unstored closed 5M bar of the session in order (since = the last stored non-error row); the
-  freshness stays `engine_max_age_min`. A FUT 5M bar not yet at Upstox fails the cycle closed (error row, retried next minute).
+  freshness stays `engine_max_age_min`. A 5M bar (spot / FUT) not yet at Upstox fails the cycle closed (error row, retried next
+  minute); only that one close missing ⇒ silent retry (no Telegram, review #378), more than one ⇒ the usual error line.
 - Q13 / Q14 replay outcomes on 5M closes for both variants; entry time difference counted in 5M candles.
 - Q15 groups without FUT: one line each + the reading-only E1 / E3 / E4 comparison "without volume evidence".
 - Q16 the 5M history window stays `engine3_ltf_days` = 10; a visit whose first 15M bar has no 5M candles ⇒ its 5M models wait with a
@@ -1219,8 +1221,9 @@ Abhi objects — each is in the code as written here:
 - Q17 built on the DECISIONS 38–41 fix (8ff504e + c1cf6ed). Q18 the card keeps the 15M and 1H panels and adds the 5M trigger panel
   (inset), display only; Vision's bar wait / signal bar / apply_facts read the trigger candle's TF; a 5M card adds a prompt block
   (`engine_check_v2+5m`), SYSTEM_PROMPT unchanged for 15M cards.
-- Deploy rollback: `install_engine_schedule.sh --revert` now restores today's 15M engine line in place (the full one-bot revert moved to
-  `--revert-all`; deploy_one_bot.sh uses it).
+- Deploy rollback: `install_engine_schedule.sh --revert` now restores the 15M engine line in place with `ENGINE3_TRIGGER_TF=15m` (the run
+  reads the 15M trigger whatever the dashboard says; pre-37 code ignores it); re-running it changes nothing; no engine line ⇒ nothing
+  written. The full one-bot revert is only `--revert-all` (deploy_one_bot.sh uses it).
 - Logged, out of scope (report §9.12): `zone_entries_today` counts `max_hits_per_zone` by day; CLAUDE.md says per visited area.
 - Noted while building (not changed here): on 8ff504e `tests/test_model_c.py::test_switch_off…[oct12_bear]` failed (the DECISIONS 38–41
   rows vs the old pin) — fixed on the branch by c1cf6ed (merged into this build).

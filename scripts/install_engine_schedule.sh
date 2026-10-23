@@ -13,8 +13,10 @@
 #     असेल (किंवा तपासता आलं नाही) तर ओळ चालू (exits / position management साठी) + ⚠️; नवे PAPER entries settings `symbol_enabled` = false
 #     ने बंद (scripts/set_one_bot_mode.py). `--mode LIVE` / `--mode=LIVE` / quoted ओळींना हात नाही (इशारा).
 #   • 15M SRv2 bot ची cron ओळ नसेल तर deploy/README ची शिफारस केलेली ओळ (tag `# one-bot-srv2`) — engine setups वापरणारा तोच.
-#   --revert ⇒ DECISIONS 37 rollback: the every-minute engine line ⇒ today's 15M line (1,16,31,46 4-9), in place; nothing else changes.
-#     No every-minute line installed ⇒ the full revert below (as before).
+#   --revert ⇒ DECISIONS 37 rollback: the every-minute engine line (or the pre-37 15M line) ⇒ the 15M line (1,16,31,46 4-9) with
+#     ENGINE3_TRIGGER_TF=15m (the run then reads the 15M trigger whatever the dashboard says; code before DECISIONS 37 ignores the
+#     variable), in place; nothing else changes. Already reverted ⇒ nothing changes (idempotent). No engine line at all ⇒ ❌ stop,
+#     nothing written (the full one-bot revert is only `--revert-all`).
 #   --revert-all ⇒ आमच्या (tagged) ओळी काढतो आणि `#one-bot-off# ` comments परत चालू करतो (बाकी ओळी / रिकाम्या ओळी तशाच).
 #   --dry-run ⇒ नवा crontab फक्त दाखवतो.
 # Env: CRONTAB_FILE (tests: crontab ऐवजी ही file), REPO_DIR (default /root/Trade), ONE_BOT_OPEN_SOURCES (tests: open positions असलेले
@@ -49,7 +51,8 @@ if [ "$MODE" = "install" ] && ! has_monitor "$CUR"; then
 fi
 write_cron() { if [ -n "${CRONTAB_FILE:-}" ]; then cat > "$CRONTAB_FILE"; else crontab -; fi; }
 
-ENGINE15_LINE="1,16,31,46 4-9 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && flock -n /tmp/engine_signal_run.lock python3 scripts/engine_signal_run.py --engine decision3 >> $REPO_DIR/engine_signal.log 2>&1 # one-bot-engine"
+OLD15_LINE="1,16,31,46 4-9 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && flock -n /tmp/engine_signal_run.lock python3 scripts/engine_signal_run.py --engine decision3 >> $REPO_DIR/engine_signal.log 2>&1 # one-bot-engine"
+ENGINE15_LINE="1,16,31,46 4-9 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && ENGINE3_TRIGGER_TF=15m flock -n /tmp/engine_signal_run.lock python3 scripts/engine_signal_run.py --engine decision3 >> $REPO_DIR/engine_signal.log 2>&1 # one-bot-engine"
 ENGINE_LINE="* 3-10 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && flock -n /tmp/engine_signal_run.lock python3 scripts/engine_signal_run.py --engine decision3 --guard >> $REPO_DIR/engine_signal.log 2>&1 # one-bot-engine"
 WARM_LINE="20 3 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && flock -n /tmp/engine_signal_run.lock python3 scripts/engine_signal_run.py --engine decision3 --dry-run --force >> $REPO_DIR/engine_signal.log 2>&1 # one-bot-engine-warm"
 SRV2_LINES="45-59 3 * * 1-5 cd $REPO_DIR && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> $REPO_DIR/srv2.log 2>&1 # one-bot-srv2
@@ -57,12 +60,19 @@ SRV2_LINES="45-59 3 * * 1-5 cd $REPO_DIR && sleep 30 && python3 srv2_momentum_re
 PREOPEN_LINE="30 3 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && python3 scripts/level_gate_preopen.py >> $REPO_DIR/level_gate_preopen.log 2>&1 # one-bot-preopen"
 TAGS=(-e '# one-bot-engine$' -e '# one-bot-engine-warm$' -e '# one-bot-srv2$' -e '# one-bot-preopen$')
 
-if [ "$MODE" = "revert5" ] && ! printf '%s\n' "$CUR" | grep -qxF -- "$ENGINE_LINE"; then
-  echo "ℹ️ every-minute engine line not installed ⇒ full revert (--revert-all)"
-  MODE="revert"
+has_line() { printf '%s\n' "$CUR" | grep -qxF -- "$1"; }
+if [ "$MODE" = "revert5" ] && ! has_line "$ENGINE_LINE" && ! has_line "$OLD15_LINE"; then
+  if has_line "$ENGINE15_LINE"; then
+    echo "ℹ️ already reverted (15M engine line with ENGINE3_TRIGGER_TF=15m) ⇒ nothing changed"
+  else
+    echo "❌ no engine line found ⇒ nothing changed (the full one-bot revert is: bash scripts/install_engine_schedule.sh --revert-all)"
+  fi
+  [ "$DRY" = 1 ] && { echo "---- crontab (dry-run, unchanged) ----"; printf '%s\n' "$CUR"; }
+  exit 0
 fi
 if [ "$MODE" = "revert5" ]; then
-  NEW="$(printf '%s\n' "$CUR" | awk -v new="$ENGINE_LINE" -v old="$ENGINE15_LINE" '$0 == new { print old; next } { print }')"
+  NEW="$(printf '%s\n' "$CUR" | awk -v new="$ENGINE_LINE" -v old15="$OLD15_LINE" -v rep="$ENGINE15_LINE" \
+    '$0 == new || $0 == old15 { print rep; next } { print }')"
 elif [ "$MODE" = "revert" ]; then
   NEW="$( { printf '%s\n' "$CUR" | grep -v "${TAGS[@]}" || true; } | sed "s|^$OFF||")"
 else
