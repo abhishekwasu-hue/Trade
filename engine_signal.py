@@ -386,7 +386,10 @@ def engine3_settings(symbol, settings_fn=None):
 
 
 def run3(symbol, access_token, feed=None, path=None, now=None, s=None, dry_run=False):
-    """decision3 (V22) चा एक service cycle: शेवटच्या **बंद** 15M bar चा निर्णय ⇒ store. रिटर्न row (+ "skipped" कारण, असल्यास).
+    """decision3 (V22) चा एक service cycle: शेवटच्या **बंद** bar चा निर्णय ⇒ store. रिटर्न row (+ "skipped" कारण, असल्यास).
+    DECISIONS 37 (`engine3_trigger_tf`, default 5M): the last closed 5M candle + the catch-up of every unstored closed 5M candle of the
+    session (since = `last_stored`), each stored when inside the store window; row["caught_up"] = the earlier bar_ts stored. 15M (what-if)
+    = today's cycle (the last closed 15M bar), unchanged.
     Data नाही / अपूर्ण / exception ⇒ raise (caller: error row + Telegram ओळ). dry_run ⇒ store मध्ये लिहीत नाही."""
     import engine3_live as L
     now = _naive(now or now_ist())

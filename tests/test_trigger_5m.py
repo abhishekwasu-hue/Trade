@@ -412,3 +412,50 @@ def test_model_c_follows_trigger_tf_and_stays_off_by_default(oct12_5m, monkeypat
         r = Vc.decide5(j)
         assert "model_c" in r and not (r["model_c"] or {}).get("error")
     assert all(x is not None for x in seen)                                 # every model C read went through the 5M reader
+
+
+# ------------------------------------------------------------------------------------------------ no look-ahead on real data (private)
+def test_no_look_ahead_real_banknifty_decide5_full_equals_cut_at_the_5m_close():
+    """The mandatory full-vs-cut test (report §3) on the private BANKNIFTY export (skips cleanly without it; nothing stored here): one
+    session built as engine3_live builds it at the close vs built with the data cut at a 5M close T (15M bars closed by T, 5M / FUT ≤ T,
+    1m ≤ the last closed 15M end) — decide5 gives the same entries / armed / decision at T (the session's 5M trigger candles + the
+    candle after each + the first and the last)."""
+    import engine3_live as L
+    import instruments as INS
+    from bots_common import level_reaction as LR
+    from decision3 import history as HI
+    from tests.test_entry_models_real_bn_oct07 import _inputs
+    m15_all, m5_all, m1_all, fut_all, daily_all = _inputs()
+    D = pd.Timestamp("2026-10-15")
+    S = L.DEFAULTS
+    prev = INS.current()
+    INS.set_current("BANKNIFTY")
+
+    def build(now):
+        def cut(df, days, minutes):
+            x = df[(df["timestamp"] >= D - pd.Timedelta(days=days)) & (df["timestamp"] < D + pd.Timedelta(days=1))]
+            return L.closed_session_bars(x, minutes, now)
+        m15 = cut(m15_all, S["engine3_m15_days"], 15)
+        dd = daily_all[daily_all["timestamp"] <= D]
+        daily = LR.prepare_daily(L._naive(dd)[["timestamp", "open", "high", "low", "close"]], D)
+        m1 = m1_all[(m1_all["timestamp"] >= m15["timestamp"].iloc[0]) & (m1_all["timestamp"] + pd.Timedelta(minutes=1) <= m15["bar_end"].iloc[-1])]
+        return E3.V22(m15.drop(columns=["volume"], errors="ignore"), m1.reset_index(drop=True), daily, sealed=HI.sealed_fn("BANKNIFTY"),
+                      ltf=cut(m5_all, S["engine3_ltf_days"], 5), futures=cut(fut_all, S["engine3_fut_days"], 5))
+
+    def clean(r):
+        return json.loads(json.dumps({"entries": [{k: v for k, v in e.items() if not k.startswith("_") and k != "pa_evidence"}
+                                                  for e in r.get("entries") or []], "armed": r.get("armed"),
+                                      "decision": r.get("decision")}, default=str))
+    try:
+        full = build(D + pd.Timedelta(hours=15, minutes=31))
+        F = full.trigger_frame()
+        js = [j for j in range(F.n) if pd.Timestamp(F.ts[j]).normalize() == D]
+        ent = [j for j in js if full.decide5(j).get("entries")]
+        assert ent, "the 15 Oct session has 5M entries"
+        for j in sorted({js[0], js[-1], *ent, *[x + 1 for x in ent if x + 1 <= js[-1]]}):
+            Vc = build(pd.Timestamp(F.end[j]))
+            Fc = Vc.trigger_frame()
+            assert pd.Timestamp(Fc.end[Fc.n - 1]) == pd.Timestamp(F.end[j])
+            assert clean(full.decide5(j)) == clean(Vc.decide5(Fc.n - 1)), F.T(j)
+    finally:
+        INS.set_current(prev)

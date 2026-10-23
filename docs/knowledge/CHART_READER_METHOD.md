@@ -33,8 +33,13 @@ HOW TO USE IT
  a) Weekly: the overall market state.
  b) Daily: the trend (degree-aware Dow structure). A correction in progress does not change the trend; the trend stays that of the impulse before it.
  c) 1H: the buyer and seller areas (where the next reaction is likely).
- d) 15M: the pullback into the area and the behaviour inside it.
- e) Lower timeframe (5M): the change of character inside the area.
+ d) 15M: the pullback into the area and the behaviour inside it (the refined base, the visit). DECISIONS 37: the handover /
+    absorption that gates the trigger and the commitment are read on the visit's 5M candles (the trigger timeframe); the 15M / 1H
+    reading stays the context.
+ e) Lower timeframe (5M): the change of character inside the area — and, DECISIONS 37 (Abhi's owner rule), the entry trigger of every
+    model: the 5M candle that trades into the refined base (E1), the 5M commitment candle with its FUT 5M volume (E2), the 5M CHoCH
+    candle (E3), the 5M sweep and failed push (E4 a), the 5M rejection candle at the retested object (E4 b). Read at every 5M close
+    with only the 15M / 1H / Daily bars closed at that close.
  f) Volume from futures (the index has none); structure, areas and RSI from the spot chart.
  g) Context lines (market sentiment, flows, global cues) are reported as context, never as a trigger.
 
@@ -177,6 +182,13 @@ HOW TO USE IT
    beyond + a swing formed beyond is the area broken (flip); a later return from the other side is the retest of the flipped area ⇒
    E4 (b). A single close beyond the refined base ends only E1 and is not by itself a break of the area; E2 / E3 / E4 are each judged
    against their own invalidation at their own trigger.
+ - Trigger timeframe (DECISIONS 37, owner rule; setting `trigger_tf = 5M`, `15M` = the earlier behaviour, what-if): the trigger
+   candle of every model is a 5M candle. The W state, the D side, the 1H / Daily areas with their lifecycle, the refined 15M base, the
+   visit, once per model per visit and the trades per zone stay as they are, read only from bars closed at the 5M close (a 15M bar in
+   progress is never read; a visit may begin on a 5M candle inside it). The trigger-candle rules above (traded into the refined base,
+   never beyond the invalidation side, never a breakout candle) apply to the 5M candle; the E3 trigger is the 5M candle whose close
+   makes the CHoCH and it must trade into the refined base. The invalidation stays structural (refined base / area / object / sweep
+   extreme), never the 5M candle's own extreme.
  - Trades per zone: the dashboard `max_hits_per_zone` is 4 (Abhi 22 Oct: up to four model entries per visit); a dashboard setting.
  - Overlapping areas are never one area (Z-1u): the cluster only counts one signal per model per place. The area's edges, the trigger
    check and the invalidation always come from the actual area price is visiting, never from the union of the cluster.
