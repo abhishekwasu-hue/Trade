@@ -130,7 +130,7 @@ def test_four_models_one_visit_four_cards_then_four_positions(db, es, opened, mo
         head = cap.split("\n")[0]
         assert head.startswith(f"{SYM} · {tags['entry_model']} — {NAMES[tags['entry_model']]}:")      # classic title line: the symbol first (DECISIONS 41)
         assert "invalidation (info): 25,135 — 15M close above the area high" in cap                   # the model invalidation (info)
-        assert "evidence: ✓ handover · ✗ volume growing · NA confluence" in cap
+        assert "evidence (label A): ✓ handover · ✗ volume growing · NA confluence" in cap      # layer 6 O-3: the label on every layout
         summ = VW.v1_caption(r, {"verdict": "agree"}, d, r["deadline"], layout="summary")
         assert summ.split("\n")[0].startswith(f"🟡 {SYM} · {tags['entry_model']} — {NAMES[tags['entry_model']]} · bear call · Label A")
         assert tags["gate"]["area"] == [25080.0, 25120.0] and tags["entry_visit"] == VISIT

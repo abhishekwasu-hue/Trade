@@ -201,7 +201,7 @@ def _body(row, res, mode, reused=False):
     s = [head,
          f"{row['symbol']} · {DIR_MR.get(str(row.get('direction')).upper(), row.get('direction'))} · {setup_kind(row)}",
          f"{html.escape(ow[0].upper() + ow[1:])} · signal {ts:%H:%M}" if ow else
-         f"Area {PT.band_range(*ga)} ({row.get('role')}, {row.get('setup_tf')}) · signal {ts:%H:%M}" if len(ga) == 2
+         f"Area {PT.band_range(*ga)} ({row.get('role')}, {_area_tf_of(row, eng)}) · signal {ts:%H:%M}" if len(ga) == 2
          else f"Level {float(row['level']):,.0f} ({row.get('role')}, {row.get('setup_tf')}) · signal {ts:%H:%M}" if row.get("level") is not None
          else f"signal {ts:%H:%M}",
          f"मत: {e} <b>{mr}</b>" + (f" (confidence {res['confidence']:.2f})" if res.get("confidence") is not None else "")
@@ -231,6 +231,19 @@ def _body(row, res, mode, reused=False):
     if res.get("cost_usd"):
         s.append(f"खर्च ${res['cost_usd']:.4f} · {res.get('latency_ms', 0) / 1000:.1f}s")
     return "\n".join(s)                                                 # कापणी callers (_fit, ओळी-निहाय) करतात
+
+
+def _area_tf_of(row, eng):
+    """The details line's area TF: an engine entry model ⇒ the area's own TF (1H / Daily, card_summary._area_tf); every other signal ⇒
+    the setup TF (today's card, byte for byte)."""
+    if not eng or not _row_tags(row).get("entry_model"):
+        return row.get("setup_tf")
+    try:
+        from . import card_summary as CS
+        g = _row_tags(row).get("gate") or {}
+        return CS._area_tf(row, g, CS._area(row, g)) or row.get("setup_tf")
+    except Exception:                                                    # noqa: BLE001 — display only
+        return row.get("setup_tf")
 
 
 def band_flag_line(row):
@@ -396,8 +409,9 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why="", layout=None, wi
         extra.append("Vision: NA" + (f" ({html.escape(str(res.get('error'))[:80])})" if (res or {}).get("error") else "") +   # ओळींमुळे
                      " — बटणं तरीही चालतात")                            # 1024 मर्यादेत कधीच गळत नाही
     try:                                                                # level bots confirmation (§9): trend / area / form / entry / SL / target / R:R
-        from bots_common import level_gate_bot as _LGB
-        extra += [html.escape(x) for x in _LGB.gate_caption_lines(tags)]
+        from bots_common import level_gate_bot as _LGB                  # — not for an engine entry model (its own lines above carry the
+        if not (tags.get("engine") and tags.get("entry_model")):        # area, label, invalidation; the old line printed "grade None")
+            extra += [html.escape(x) for x in _LGB.gate_caption_lines(tags)]
     except Exception:
         pass
     if row.get("volume_line"):                                          # chart च्या volume pane ची एक ओळ (NA ⇒ "volume: NA (grade cap B)")

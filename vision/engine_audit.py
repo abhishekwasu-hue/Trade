@@ -253,8 +253,14 @@ def reading(sig, fallback_areas=None):
     ref = _num(t.get("entry_ref"))
     if ref is None:
         ref = _num((sig or {}).get("spot"))
-    nxt = next_area(d, ref, areas)
-    if nxt is None and fallback_areas:
+    if "next_area" in g:                                                 # layer 6: the engine's own next opposite area (the target) —
+        na = g.get("next_area")                                          # None = the engine knows none ahead ⇒ "none known"
+        b = _band(na.get("lo"), na.get("hi")) if isinstance(na, dict) else None
+        nxt = None if b is None else {"role": "support" if d < 0 else "resistance", "lo": b[0], "hi": b[1],
+                                      "state": str(na.get("state") or "").upper() or None, "source": "engine", "tf": na.get("tf")}
+    else:                                                                # an older row: today's reading (gate areas, then the chart bands)
+        nxt = next_area(d, ref, areas)
+    if nxt is None and fallback_areas and "next_area" not in g:
         nxt = next_area(d, ref, [{"role": a.get("role"), "lo": a.get("lo"), "hi": a.get("hi"), "source": "chart band finder",
                                   "state": "BROKEN" if a.get("broken") and not a.get("valid") else (a.get("state") or "")}
                                  for a in fallback_areas if isinstance(a, dict)])
@@ -290,6 +296,18 @@ def _p(x):
     return "n/a" if x is None else f"{float(x):,.2f}"
 
 
+def label_words(rd):
+    """Layer 6 / L6-a (method §5): the entry's A / B label as the engine output it — " | label A (the required set + at least one
+    confirming piece)", " | label B (the required set only)", or, for an entry model whose required set reads absent, " | no A / B label
+    (the required set reads absent)". The model's own name is never printed as the label. No entry model ⇒ ""."""
+    g = rd.get("grade")
+    if g == "A":
+        return " | label A (the required set + at least one confirming piece)"
+    if g == "B":
+        return " | label B (the required set only)"
+    return " | no A / B label (the required set reads absent)" if rd.get("model") else ""
+
+
 OBJECT_WORDS = {"area": "the visited area", "broken_area": "a broken (flipped) area being retested from the other side",
                 "broken_line": "a broken line being retested from the other side"}
 
@@ -303,7 +321,7 @@ def facts_text(sig, rd=None):
         f"Signal: {sig.get('symbol')} | {rd['side']} ({'bullish' if rd['direction'] > 0 else 'bearish'}) | setup timeframe 15M"
         + (" | areas 1H / Daily, refined base 15M, trigger 5M" if rd.get("trigger_tf") == "5M" else ""),
         "Entry model: " + (f"{rd['model']} {rd['name'] or ''}".strip() if rd["model"] else "the engine's setup (no entry model)")
-        + (f" | label {rd['label']}" if rd.get("label") else "") + ".",
+        + label_words(rd) + ".",
         f"Trend side (engine): {rd['trend'] or 'n/a'}"
         + (f" | Weekly {h.get('weekly')}" if h.get("weekly") else "") + (f" | Daily {h.get('daily')}" if h.get("daily") else "")
         + (f" ({h.get('daily_phase')})" if h.get("daily_phase") else "") + ".",

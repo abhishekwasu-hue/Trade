@@ -779,3 +779,18 @@ Owner decision — READER-READY FOCUS (record in DECISIONS). Until the reader is
 Definition of ready: (1) my ✅ on chart galleries for layer 5 (RSI) and layer 6 (verdict / output); (2) two consecutive weeks with no new reading error found in live PAPER; (3) per-model PAPER results shown with charts.
 Daily loop: after the close, build a "Today's reading gallery" in the private trade-data repo — every entry and every place an armed area was visited without an entry, each with the 1H + 15M + 5M charts, the object with its lifecycle events, the approach side, the trigger, the invalidation, the decision bar line with later bars faded, and one Marathi line of the reader's reason. I send it for review; the consolidated corrections come back as one message; fix them by the next open with tests and before / after charts. Keep a running "reading errors" log (concept, case, fix PR, proven by chart).
 Report to me in Marathi; first, the plan to make layers 5 and 6 stable and what each still lacks.
+
+---
+## 23 Oct — layer 6 gallery answers
+Layer 6 gallery reviewed (charts checked). My answers — record them in DECISIONS / OPEN_QUESTIONS:
+1. ✅ the layer-6 output fixes (O-1 next area from the engine, O-2 label, O-3 classic card label, O-5 old level-bot "grade" line + the area's own TF, O-6 broken-line state) — merge branch l6 after self-review; deploy after the close.
+2. The dossier follows the 5M trigger (its own PR): O-7 / O-8 / O-9 (E4 (b) objects) / O-12 (the Daily frame for liquidity) — every output reads exactly what the engine read at the 5M decision.
+3. O-4: keep the card caption short (bullets per the message standard) and send the full details (5M trigger, evidence, invalidation) as a reply under the card — nothing cut by the 1024 limit. O-13: draw the 5M trigger as its own panel beside the 15M panel on the engine card (no inset over the 15M chart).
+4. BW-1: remove the 150-pt "merged band — check" line for engine areas (approval_band_warn_rule = method); wide areas stay in the comparison-based reading check. VP3: remove "grade cap B"; say "FUT volume missing — E2 cannot be read".
+5. Label: required set = the fired MODEL's own conditions (so every fired entry has it); A = the model's conditions + ≥ 1 confirming evidence piece (RSI divergence, volume growing inside, confluence, correction line closed through, counter channel broken); B = the model's conditions only. The label never blocks. Rebuild the gallery's label column with this rule and show the A / B split per model.
+6. Layer 5: send me the layer-5 (RSI) gallery and the exact L5-b / L5-c / C-L5-1 questions — push them to the repo; they are not on any pushed branch.
+Report to me in Marathi.
+
+---
+## 23 Oct — merge and continue (6)
+Merge and continue
