@@ -70,7 +70,7 @@ def _walk(x, path=()):
 def test_every_section_present_with_status_and_owner(world):
     *_, as_of, d = world
     assert d["schema"] == D.SCHEMA and d["as_of"] == str(as_of)
-    assert set(d["sections"]) == set(D.SECTIONS) == set(D.OWNERS)
+    assert set(d["sections"]) == set(D.SECTIONS_5M) == set(D.OWNERS) == set(D.sections_of("5M"))   # default trigger_tf = 5M (DECISIONS 51)
     for name, sec in d["sections"].items():
         assert sec["status"] in (D.OK, D.NA), name
         assert sec["owner"], name
@@ -350,9 +350,11 @@ def visit_world():
 
 def test_visit_study_is_the_decisions_own_read(visit_world):
     """Layer 6b: the Vision facts read the SAME method as the decision — the visit by structure (V22.visit), its approach leg, the
-    handover episode, the commitment (approach leg + opposite side, push excluded) and the LTF change of character (V22._confirm)."""
+    handover episode, the commitment (approach leg + opposite side, push excluded) and the LTF change of character (V22._confirm).
+    This is the 15M trigger read (trigger_tf = 15M, the what-if); the 5M default is tests/test_facts_dossier_5m.py (DECISIONS 51)."""
     from decision3 import engine as E3
-    m15, fut, ltf, one, as_of, d = visit_world[False]
+    m15, fut, ltf, one, as_of, _ = visit_world[False]
+    d = _dossier(m15, fut, ltf, one, as_of, cfg={"decision3": {"trigger_tf": "15M"}})
     S = d["sections"]
     st = S["candles"]["area_studies"]
     assert len(st) == 1

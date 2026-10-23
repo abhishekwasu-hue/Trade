@@ -71,6 +71,24 @@ context-only Weekly band) whose visit by structure (`V22.visit`, method §3: beg
 a break / flip or a failed commitment closing outside — never by time or a bar count) is in progress at `as_of`; arrival = the visit's
 start. The reaction side is the area's role (support ⇒ up, resistance ⇒ down) — a fact about the area, not a trade direction.
 
+### The dossier follows the 5M trigger (DECISIONS 37 / 51; L6-O7 / O8 / O9 / O12)
+
+With decision3 `trigger_tf = 5M` (the default) the dossier reads exactly what the engine read at the 5M decision, on the same V22 —
+reused, never re-derived on the last closed 15M bar. `trigger_tf = 15M` (what-if) = the table above, byte for byte (pinned:
+`tests/fixtures/dossier_15m_pin.json.gz`).
+
+| Section (5M) | What the engine read (function called) | Output keys |
+|---|---|---|
+| `trigger` (new) | `V22.decide5(j)` — j = the last 5M candle closed at `as_of`, k = the last 15M bar closed at that 5M close | `candle` (bar5, ts, bar_end, OHLC), `context_bar`, `trend_used`, `watch_list`, `armed[]` (every object the models read: areas, range edges, E4 (b) objects, each model's state), `entries[]` (the fired entries as the engine wrote them — the stored payload's source), `why` |
+| `areas` / `lines` / `confluence` | as above, at the decision's 15M bar k | as above |
+| `candles.area_studies` | per visit in progress at the 5M decision: `entry_models5.Reader5.visit5` (a visit may start on a 5M candle inside the 15M bar in progress), `confirm5` (required set on the visit's 5M candles), `c0` (commitment), `absorbing`, `refined(k)`, the engine's armed record | `visit_id`, `arrival.{tf, bar5, ts5, ts (15M bin = the visit id), bin15_in_progress}`, `approach_5m`, `refined_base`, `zone_study` (5M, the confirmation's a2 window), `handover`, `absorption`, `commitment`, `required_set.{read, handover, commitment, ltf_choch, wait}`, `models`, `disarmed`, `entries[]` |
+| `ltf_choch.visits` | the 5M CHoCH inside `confirm5` | `visit_id`, `study_from` (the visit's first 5M candle) / `study_to` (the 5M close), CHoCH facts |
+| `divergence.at_visits` | `V22.rsi_divergence(k, d, arm15, tf, move_from)` as the evidence list reads it | + `visit_id`, `arm_ts` |
+| `e4b_objects` (new) | `Reader.broken_objects(k, d)` + `Reader5.broken5` (revisit `touch_visit5`, E4 state) + `confirm5` | `objects[]` — broken area (band, broken_at, lifecycle) / broken line (p1, p2, slope, broken_at, break_known_at, value at the 5M decision, lifecycle), `revisit` (visit id, 5M start, models) or `revisit_why`, `required_set`, `entries[]` |
+| `liquidity` | `liquidity.pools` / `sweeps_and_traps` on the engine's own V22 levels (built WITH the Daily frame), at k; per visit the evidence window (start = the visit's 15M arrival) | `pools`, `sweeps`, `traps`, `window_from`, `at_visits[]`, `daily_frame.{daily_bars, prior_levels}` |
+
+No 5M spot bars (and no 1m to build them) ⇒ `trigger` / `e4b_objects` NA and `area_studies` None with the reason — never a 15M re-read.
+
 ## Open questions (R1b; for Abhi — not decided here)
 
 - **Legs owner vs reader2 gate:** design §3 names `reader2` the legs owner, but reader2 is research-only until its gallery gate passes
