@@ -57,6 +57,11 @@ def entry_gate(bot, symbol, trading_mode, direction, level, role, setup_tf, sign
         return _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts, spot, lots, naked_lots, tags, last_bar,
                      origin, path, forced)
     except Exception as exc:                                             # vision ची चूक bot ला थांबवत नाही — algorithm चा निर्णय
+        try:                                                             # DECISIONS 47: one plain-words ⚠️ per cause per day (never blocks)
+            from bots_common import gate_alert as GA
+            GA.alert("vision", symbol, f"{type(exc).__name__}: {exc}", engine_entry_waiting=bool((tags or {}).get("engine")) or None)
+        except Exception:                                                # noqa: BLE001
+            pass
         if forced:
             print(f"⚠️ vision gate त्रुटी (forced level ⇒ entry नाही): {type(exc).__name__}: {exc}")
             return _stale(f"gate error: {exc}")

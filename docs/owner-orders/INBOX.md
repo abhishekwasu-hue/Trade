@@ -772,3 +772,10 @@ k. My controls: /mute 30m (then one summary of what was muted; 🎯 and ⚠️ a
 l. Remove the old level-bot section (5M Instant / Classic / MCX / SRv2 legacy counts) from Telegram — dashboard only; the comparison tracking (skipped / shadow trades) = one bullet with a link.
 m. Formatting: Indian number format (₹1.2 L), no paise, consistent icons; a snapshot test per message type (length limit, concept order, no internal codes, MR / EN) so the format never drifts.
 Send me samples of EVERY type (including 🔔, the pinned message and the weekly review) built from real data before deploying. Self-review; PAPER only; one VPS block after market close with --revert. Report to me in Marathi.
+
+---
+## 23 Oct — READER-READY FOCUS
+Owner decision — READER-READY FOCUS (record in DECISIONS). Until the reader is declared ready, Trade work is ONLY reader correctness: no new features (model C stays OFF; the Telegram message standard and other display work wait unless they fix a reading error; the urgent gate-error fix continues).
+Definition of ready: (1) my ✅ on chart galleries for layer 5 (RSI) and layer 6 (verdict / output); (2) two consecutive weeks with no new reading error found in live PAPER; (3) per-model PAPER results shown with charts.
+Daily loop: after the close, build a "Today's reading gallery" in the private trade-data repo — every entry and every place an armed area was visited without an entry, each with the 1H + 15M + 5M charts, the object with its lifecycle events, the approach side, the trigger, the invalidation, the decision bar line with later bars faded, and one Marathi line of the reader's reason. I send it for review; the consolidated corrections come back as one message; fix them by the next open with tests and before / after charts. Keep a running "reading errors" log (concept, case, fix PR, proven by chart).
+Report to me in Marathi; first, the plan to make layers 5 and 6 stable and what each still lacks.

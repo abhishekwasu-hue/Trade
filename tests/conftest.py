@@ -190,3 +190,16 @@ def elliott_leg_read(monkeypatch):
     `@pytest.mark.usefixtures("elliott_leg_read")` (their assertions unchanged)."""
     from decision3 import settings as _S3
     monkeypatch.setitem(_S3.DEFAULTS, "daily_leg_read", "elliott")
+
+
+@pytest.fixture(autouse=True)
+def _no_gate_error_telegram(monkeypatch):
+    """DECISIONS 47 alert (bots_common.gate_alert): a bot / engine test that hits a gate error never sends a real Telegram message and
+    never writes the repo's alert state (the default sender returns False ⇒ nothing recorded). Alert tests pass `send` / `state_path`."""
+    try:
+        from bots_common import gate_alert as _GA
+    except Exception:                                                    # noqa: BLE001
+        return
+    monkeypatch.setattr(_GA, "_sender", lambda: (lambda line: False))
+    _GA._SEEN.clear()
+    _GA._FAILED.clear()
