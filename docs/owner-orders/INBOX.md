@@ -790,3 +790,7 @@ Layer 6 gallery reviewed (charts checked). My answers — record them in DECISIO
 5. Label: required set = the fired MODEL's own conditions (so every fired entry has it); A = the model's conditions + ≥ 1 confirming evidence piece (RSI divergence, volume growing inside, confluence, correction line closed through, counter channel broken); B = the model's conditions only. The label never blocks. Rebuild the gallery's label column with this rule and show the A / B split per model.
 6. Layer 5: send me the layer-5 (RSI) gallery and the exact L5-b / L5-c / C-L5-1 questions — push them to the repo; they are not on any pushed branch.
 Report to me in Marathi.
+
+---
+## 23 Oct — merge and continue (6)
+Merge and continue
