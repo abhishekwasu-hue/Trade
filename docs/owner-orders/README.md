@@ -39,3 +39,4 @@ Decisions taken from orders go to DECISIONS.md (append only).
 | 32 | Reading checks (E4a, E4b-parallel, RC2, MTF) | merged (#373, 3809ea2): E4b broken-back lines + K4 reclaim fix (E4b 28 → 17, worst MAE 919 → 591); E4a / RC2 / MTF not bugs | main |
 | 33 | PA T3 / T9 | merged (#375, 7360b95; display only, entries byte-identical) | main |
 | 34 | "Merge and continue" (4) | nothing open to merge; continuing (provisional, no questions): the E4 (b) hooks left by T9 (pattern retest, range edges, D / W broken lines) behind a default-OFF reading switch + 13-group replay before / after | branch claude/hopeful-gates-hf186c |
+| 35 | Chart Reading Report + its Vision part default ON; Vision budget $5 / day | code default ON (DECISIONS 36); budget set on the VPS by the next block (saved _global setting) | cloud_db.py + VPS |

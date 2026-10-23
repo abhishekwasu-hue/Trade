@@ -654,3 +654,15 @@ Vps block
 ---
 ## 23 Oct — do remaining job
 Do remaining job
+
+---
+## 23 Oct — Chart reading default ON
+Chart reading tumhich on kra default
+
+---
+## 23 Oct — Chart reading Vision ON
+Vision pn on kra
+
+---
+## 23 Oct — Vision budget
+Per day 5 dollar budget

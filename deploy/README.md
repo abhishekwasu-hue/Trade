@@ -898,8 +898,8 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
   वरून वाचन (MR / EN, ≤ एक Telegram संदेश, शेवटी dashboard **Chart Reading** पानाची link); 09:05 IST ला छोटा pre-open refresh (close नंतर काय
   बदललं). फक्त माहिती — order / gate / reading बदलत नाही. `scripts/chart_reading_report.py --mode close|preopen`.
 - Settings (dashboard → Chart Reading → ⚙️; strategy_settings row `__chart_reading_report__`, migration नाही): `chart_reading_report` (default
-  **off** — Abhi sample मंजूर करेपर्यंत), `chart_reading_symbols` (रिकामं ⇒ signal_symbols), `chart_reading_language` (mr), `chart_reading_detail`
-  (short), `chart_reading_vision` (default **off** — on ⇒ Dual-Eye audit decision3 च्या alive areas वर, visual audit चीच budget मर्यादा),
+  **on** — Abhi 23 Oct: "Chart reading तुम्हीच on करा default"; dashboard वरून off करता येतो), `chart_reading_symbols` (रिकामं ⇒ signal_symbols), `chart_reading_language` (mr), `chart_reading_detail`
+  (short), `chart_reading_vision` (default **on** — Abhi 23 Oct "Vision pn on kra"; on ⇒ Dual-Eye audit decision3 च्या alive areas वर, visual audit चीच budget मर्यादा),
   `chart_reading_page_url`, `visual_audit_level_message` (default **off** — `run_visual_audit.py` चा जुना level-count संदेश आणि त्याचे review chart photos;
   audit आणि data साठवणं तसंच). `--dry-run` ⇒ Vision call नाही (खर्च नाही).
 - Cron: `bash scripts/install_chart_reading_schedule.sh` (idempotent; `--revert` फक्त त्याच्या दोन ओळी काढतो). Setting off असताना script लगेच

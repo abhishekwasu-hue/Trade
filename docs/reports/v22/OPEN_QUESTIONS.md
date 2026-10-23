@@ -1109,8 +1109,8 @@ platform limit and display windows), 4 / 8 (Vision information only, never a gat
 merged — said as a reading check), 13 / 26 (FUT volume missing is said, never spot volume), 14 (P8 clean charts, `chart_max_lines`),
 27 (dead areas never drawn), 32 / 34 (model C stays OFF; the other side says "only via model C (OFF)"), 35 (the order), CLAUDE.md
 (no day / date / session framing in the reading; no paid call without approval; PAPER untouched; private charts never in this repo).
-- **CRR-1 report default OFF.** `chart_reading_report = off` until Abhi approves the sample (DECISIONS 35: sample before deploy). The cron
-  lines exit at once while it is off.
+- ~~**CRR-1 report default OFF.**~~ — RESOLVED by Abhi (DECISIONS 36): `chart_reading_report` and `chart_reading_vision` default **on**; Vision budget
+  $5 / day (provisional with it: monthly 100, visual-audit sub-cap 2.0 — the settings' maxima). Both can be switched off on the dashboard.
 - **CRR-2 detail.** `short` (default) = each section's main lines (≈ the order's layout); `full` = every line, still one Telegram
   message (extra lines dropped bottom-up when too long, then whole sections; the plan and the link always stay). Length counted in
   Telegram's UTF-16 units. The full detail (every armed area, every overlap group, every pattern, every concept's facts) is the page.
