@@ -93,11 +93,14 @@ def _rows15(name, extra):
     return [V.decide(t) for t in range(len(ts)) if ts.dt.normalize().iloc[t] == last]
 
 
-# V22.decide rows of the code BEFORE the 5M build (git 8ff504e), every key, computed on these fixtures
-PIN15 = {"abc": "b629eeb2aac645b48d4b478206070385ca39d06feec79c3c94fee7a2d2e462de",
+# V22.decide rows of the code BEFORE the 5M build (git 8ff504e), every key, computed on these fixtures. "abc" re-pinned (CRR reading
+# checks, OPEN_QUESTIONS): only display / evidence words changed — `channels[].state` (a line broken back reads "… broken, then broken
+# back", never a retest) and `pa_evidence` text (the 1H / 15M "range" word from the structural range, DECISIONS 16); every other key,
+# every entry, identical (diffed key by key against 806b74a).
+PIN15 = {"abc": "4f2bb23b8419d47ff469f3a24fc4f5696a15e08b201fdbbe529a2491da2f14ae",
          "oct12_bear": "b958c1981998c89a5cc706c5544e45be41eb2e9ac02265b572a80e82f69a002b",
          "oct12_bull": "cccbc4d26c792f72dcfc755c643d81dd008d41cd0fa567e535af1f1927a50602"}
-PIN15_C = {"abc": "fc218b0817b2648dd4177cf8d414da4660dee55db7928f9eae7448565a741f2e",
+PIN15_C = {"abc": "29e1526ca51b490a1abbd4b02add478eb1c207060b91f3b1ad4aa1648c503b86",
            "oct12_bear": "20d14e2757185d322c0013f76147183f2b1e30cf493d1250925cc0f7f856ecd7",
            "oct12_bull": "c596545e7de3a9b357808ee2ae7d111aa1a92e155f2541084a73c94e5c6d8823"}
 
