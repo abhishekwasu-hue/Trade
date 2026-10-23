@@ -1167,6 +1167,12 @@ Reading checks seen in the sample (19 Oct close; never tuned — misread candida
   bottom (the close) of about 2,000 points. The band rule (TA4 / Z-1x: wick to body, never a numeric width) gives exactly that; a
   width limit would be a number in a reading rule (DECISIONS 2). Weekly = context only (Z-1u). The week is inside the sealed holdout
   period — read only as level history (Z-1t), its date not shown.
+- **Replay parity (the two fixes above + the channel label).** BANKNIFTY walk-forward, 13 groups 13 Apr – 21 Oct, base 806b74a vs this
+  branch, same outcome rule: every entry identical (56 = 56, same trigger / model / entry / invalidation / outcome / area). Per model
+  (entries, next first / invalidation first): E1 25 (8 / 17) · E2 2 (2 / 0) · E3 19 (12 / 7) · E4 a 0 · E4 b 10 (5 / 5), worst MAE
+  590.8 · all 56 (27 / 29) — before and after. The 15M decide rows of the `abc` fixture differ only in `channels[].state` and
+  `pa_evidence` text (key-by-key diff; `tests/test_trigger_5m.py` pins re-hashed with that note). STABLE layer 4 (lines):
+  `broken_back_at` behaviour unchanged (refactor into `broken_back_on`); only the channel display words changed.
 
 ## PA T3 (channels per timeframe) + T9 (evidence wiring) — provisional choices (2026-10-22; docs/knowledge/pa_standard/t3_t9_coverage.md)
 Checked against CLAUDE.md ("evidence is listed and never blocks", no number / rule / setting added, P8 display only), DECISIONS 3, 5, 6,
