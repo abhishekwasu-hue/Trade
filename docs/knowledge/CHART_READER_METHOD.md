@@ -187,6 +187,12 @@ HOW TO USE IT
    base's far side and the visit's extreme). No refined base yet: the models wait.
  - E4 (b) revisit: a broken line or area is being revisited only while price is actually back at it; the revisit ends when price leaves
    it by structure (a new swing that does not reach it).
+ - E4 (b) approach side (DECISIONS 38): the retest of an object broken down (bear call) needs price to come back UP to it from below
+   and be rejected there; a revisit that came from the object's original side, or a rejection candle that opened there and closed
+   through the object, is a breakdown candle (P4: never a breakout entry) — never an E4 (b). Mirror for bull puts. A line flips once
+   too (DECISIONS 39): broken, then closed back through with a swing formed on its original side ⇒ dead, never a retest object again.
+ - Range edges armed (DECISIONS 40, T7): the edges of the current Daily / 1H range (from structure) are areas for E1–E4 — bear call at
+   the upper edge, bull put at the lower edge, on the trade side. Cards name a line as a line with its timeframe (DECISIONS 41).
  - Model C (DECISIONS 32, Abhi T-3 / Appendix A; code decision3/model_c.py, switch `model_c`, default OFF): the counter-trend C leg of a
    correction against the Daily side is a SEPARATE, switchable entry model with its own statistics — the one owner-ordered exception to
    P4's "never a counter-trend entry" (P4 stands for E1–E4 on the Daily side; the conflict is logged in docs/reports/v22/OPEN_QUESTIONS.md,

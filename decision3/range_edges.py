@@ -25,7 +25,8 @@ leaves the band ⇒ the range state ends) is CONTEXT only — Abhi does not trad
 
 Output entries have every key of `Levels.snapshot` (id, tf, role, lo, hi, births, anchor, tests, sweeps, flips, fresh, score, dist, …,
 trade_location, not_location_why, state, broken_at, far_swing, flipped_at …) plus `range_edge`, `trade_side`, `lifecycle`, `members`,
-`range`, so the entry models can arm at the edges later (hook: `armable`; wiring = track T9 — engine.py / entry_models.py untouched).
+`range`, so the entry models arm at the edges (DECISIONS 40: `trade_edges` ⇒ `entry_models.Reader.range_edge_areas`, the current
+Daily / 1H range, trade side; `range_edge_areas = off` = what-if).
 Timeframes: Daily (trade-side areas), Weekly (context only, Abhi Z-1u). 1H / 15M rectangles: `edges_from_rectangle` (hook for the
 rectangle reader, track T4).
 No look-ahead: everything at 15M bar t reads Daily / Weekly states with known_at ≤ bar_end[t], pivots confirmed by t and bars ≤ t.
@@ -521,6 +522,7 @@ def range_state(V, t):
     by = {"W": read_tf(V, t, "W", snap), "D": read_tf(V, t, "D", snap)}
     for tf in ("1H", "15M"):
         by[tf] = read_intraday(V, t, tf, snap)
+    V.__dict__.setdefault("_range_edges_full", {})[t] = {k: list(by[k]["edges"]) for k in by}   # trade_edges (DECISIONS 40)
     in_r = [tf for tf in STATE_TFS if by[tf]["state"] == "range"]
     tf = in_r[0] if in_r else None
     out = {"rule": "structure", "in_range": bool(in_r), "tf": tf, "tfs_in_range": in_r,
@@ -530,6 +532,16 @@ def range_state(V, t):
                    "sides; edges = areas (range_edges); a breakout is context only"}
     cache[t] = out
     return out
+
+
+def trade_edges(V, t, tfs=("D", "1H")):
+    """DECISIONS 40 (concept L): the edges of the CURRENT range of each timeframe in `tfs`, read from structure exactly as the row's
+    `range_state` reads them (same cache), that are trade locations at t (fresh / tested; not broken / flipped / dead; not Weekly; a
+    Daily edge overlapped by an alive 1H zone gives the 1H zone — Z-1u). Full `Levels.snapshot`-shaped dicts (+ range keys) for the
+    entry models. Bars ≤ t only."""
+    range_state(V, t)
+    full = (V.__dict__.get("_range_edges_full") or {}).get(t) or {}
+    return [e for tf in tfs for e in full.get(tf, []) if e.get("current") and e.get("trade_location")]
 
 
 # ------------------------------------------------------------------------------------------------ chart objects (T8)

@@ -77,7 +77,7 @@ def test_engine_signal_is_audited_with_the_engine_card_and_checklist(monkeypatch
     setup, higher, tfs, cut = CH.panels(df, TS, "15M", return_cut=True)
     fig = CH.engine_figure(cut, setup, higher, tfs, s, {}, None, {})
     texts = [a.text for a in fig.layout.annotations]
-    for want in ("BASE 15M", "BROKEN AREA (retest)", "T ▼"):
+    for want in ("BASE 15M", "BROKEN 1H AREA (retest from below)", "T ▼"):
         assert want in texts, texts
     assert any(t.startswith("INV ") for t in texts) and any(t.startswith("NEXT demand") for t in texts)
     assert not any("L RESISTANCE" in t or "PDH" in t or "ORH" in t or "OPEN" in t for t in texts)

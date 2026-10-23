@@ -171,8 +171,14 @@ def plain_head(row):
     who = "your manual" if tags.get("manual") else "a"
     tf = str(row.get("setup_tf") or "").strip()
     from . import card_summary as CS
-    ml = CS.model_label(tags)                                            # engine entry model ⇒ "E1 — Aggressive · " first (title line)
-    return (f"{ml + ' · ' if ml else ''}{row.get('symbol')}: {who} {trade} trade at {where}" + (f" ({tf} chart)" if tf else "") + ". Look at the area and the last "
+    ml = CS.model_label(tags)                                            # engine entry model ⇒ "<symbol> · E1 — Aggressive: …"
+    if ml:                                                               # DECISIONS 41 / addition C: the signal's own symbol first, then
+        ow = CS.object_words(tags, bull)                                 # the model and the object in plain words (a line is a line)
+        where = ow or where
+        what = "line" if ow and "line" in ow.split(",")[0] else "area"
+        return (f"{row.get('symbol')} · {ml}: {who} {trade} trade at {'the ' if ow else ''}{where}" + (f" ({tf} chart)" if tf else "")
+                + f". Look at the {what} and the last candle: did {'buyers' if bull else 'sellers'} really take over there?")
+    return (f"{row.get('symbol')}: {who} {trade} trade at {where}" + (f" ({tf} chart)" if tf else "") + ". Look at the area and the last "
             f"candle: did {'buyers' if bull else 'sellers'} really take over there?")
 
 
@@ -182,8 +188,19 @@ def _body(row, res, mode, reused=False):
     e, mr = VERDICT_MR.get(res.get("verdict") or "unavailable", ("⚪", res.get("verdict")))
     ts = pd.Timestamp(row["signal_ts"])
     ga = [x for x in ((_row_tags(row).get("gate") or {}).get("area") or [])[:2] if x is not None]   # engine / gate पट्टा (TA4) असेल तर तोच
-    s = [f"👁 <b>Vision V0 — फक्त माहिती</b> · {html.escape(str(row.get('bot_label') or row['bot']))}",
+    tags = _row_tags(row)
+    eng = bool(tags.get("engine"))
+    if eng:                                                              # addition D / DECISIONS 41: the signal's own symbol first, the
+        import engine_signal as ES                                       # engine's name only as a small label
+        bl = ES.display_label(str(row.get("bot_label") or row["bot"]), True)
+        head = f"👁 <b>{html.escape(str(row['symbol']))}</b> · <b>Vision V0 — फक्त माहिती</b> · <i>{html.escape(bl)}</i>"
+    else:
+        head = f"👁 <b>Vision V0 — फक्त माहिती</b> · {html.escape(str(row.get('bot_label') or row['bot']))}"
+    from . import card_summary as CS
+    ow = CS.object_words(tags, str(row.get("direction") or "").upper() == "BULLISH") if eng else None
+    s = [head,
          f"{row['symbol']} · {DIR_MR.get(str(row.get('direction')).upper(), row.get('direction'))} · {setup_kind(row)}",
+         f"{html.escape(ow[0].upper() + ow[1:])} · signal {ts:%H:%M}" if ow else
          f"Area {PT.band_range(*ga)} ({row.get('role')}, {row.get('setup_tf')}) · signal {ts:%H:%M}" if len(ga) == 2
          else f"Level {float(row['level']):,.0f} ({row.get('role')}, {row.get('setup_tf')}) · signal {ts:%H:%M}" if row.get("level") is not None
          else f"signal {ts:%H:%M}",
@@ -330,7 +347,7 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why="", layout=None, wi
     no-reply rule was applied at once (why = its reason) ⇒ "Buttons unavailable: <why>; this signal will be skipped"."""
     from bots_common import plain_text as PT
     from . import card_summary as CS
-    s = _body(row, res, row["mode"]).replace("👁 <b>Vision V0 — फक्त माहिती</b>", f"👁 <b>Vision V1 — {row['mode']}</b>")
+    s = _body(row, res, row["mode"]).replace("<b>Vision V0 — फक्त माहिती</b>", f"<b>Vision V1 — {row['mode']}</b>", 1)
     try:
         tags = json.loads(row.get("setup_json") or "{}").get("tags") or {}
     except (ValueError, TypeError, AttributeError):

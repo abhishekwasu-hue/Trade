@@ -25,6 +25,13 @@ BOT_LABEL = {"dynamic_sr_instant": "5-Min Instant", "srv2_momentum_reversal": "1
              "manual": "✋ Manual", "classic_sr": "Classic SR"}
 
 
+def bot_label(bot, signal_source=None):
+    """Addition D (Abhi): an engine-sourced trade / bot shows "Price-action engine (PAPER)"; the bot's own name only for signal_source =
+    own (or when the source is not known). Display only."""
+    import engine_signal as ES
+    return ES.display_label(BOT_LABEL.get(bot, bot), signal_source)
+
+
 def _db_path():
     from config import DB_PATH
     return DB_PATH
@@ -447,7 +454,7 @@ def on_entry(t, orders, send=None, jpath=None, tag="", ss_settings=None, engine_
     else:
         risk = (f"net credit ₹{net_credit_total:,.0f} · max loss ₹{max_loss_total:,.0f} · SL ₹{t.get('sl_pnl_level') or 0:,.0f} · "
                 f"target ₹{t.get('target_pnl_level') or 0:,.0f} · R:R {row['rr'] if row['rr'] is not None else 'NA'}\n")
-    _say(send, f"🟢 <b>PAPER entry</b> · {BOT_LABEL.get(bot, bot)}{ml} · {t['symbol']} {t.get('strategy') or ''}\n"
+    _say(send, f"🟢 <b>PAPER entry</b> · {bot_label(bot, src)}{ml} · {t['symbol']} {t.get('strategy') or ''}\n"
                f"legs: {_legs_text(t, epx)}\n"
                f"{risk}"
                f"entry charges ₹{ech:,.0f} · Vision: {v} · approver: {link.get('approver') or '—'} · signal_source: {src}\n"
@@ -496,7 +503,7 @@ def on_exit(t, orders, j, send=None, jpath=None, tag=""):
                "exit_charges": xch, "net_pnl": net}, jpath)
     model = trade_model(t)
     ml = f" · {_model_label(model)}" if model else ""                    # engine entry model ("E1 — Aggressive")
-    _say(send, f"{exit_head(t.get('exit_reason'))} · {BOT_LABEL.get(j['bot'], j['bot'])}{ml} · {t['symbol']} · कारण: {t.get('exit_reason')}\n"
+    _say(send, f"{exit_head(t.get('exit_reason'))} · {bot_label(j['bot'], j.get('signal_source'))}{ml} · {t['symbol']} · कारण: {t.get('exit_reason')}\n"
                f"gross ₹{gross:,.0f} − charges ₹{float(j.get('entry_charges') or 0) + xch:,.0f} ⇒ <b>net ₹{net:,.0f}</b>", tag)
     return net
 
@@ -544,7 +551,7 @@ def on_open(t, orders, j, access_token, now, cfg, send=None, jpath=None, tag="",
             msgs.append(f"⏱ P&L ₹{p:,.0f} · {sl_t} · {tg_t}")
     PJ.upsert(upd, jpath)
     if msgs:
-        _say(send, f"📊 {BOT_LABEL.get(j['bot'], j['bot'])} · {t['symbol']} {t.get('strategy') or ''}\n" + "\n".join(msgs), tag)
+        _say(send, f"📊 {bot_label(j['bot'], j.get('signal_source'))} · {t['symbol']} {t.get('strategy') or ''}\n" + "\n".join(msgs), tag)
     return p
 
 

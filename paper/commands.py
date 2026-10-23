@@ -68,7 +68,9 @@ def status_text(token_fn=None, market_fn=None, kill_fn=None, pause_fn=None, sett
     lines = ["📋 <b>/status</b>", f"Upstox token: {tok}", f"बाजार: {mkt}", f"Kill-switch: {_try(_kill)}",
              f"Dashboard pause (PAPER + LIVE): {pz}", f"PAPER pause (/pause /resume): {ppz}"]
     for bot, key, sk in BOT_KEYS:
-        lines.append(f"{PW.BOT_LABEL.get(bot, bot)}: signal_source = {_try(lambda: ES.source_of(settings_fn(key, symbol), sk))}")
+        src = _try(lambda: ES.source_of(settings_fn(key, symbol), sk))
+        lines.append(f"{PW.bot_label(bot, src)}: signal_source = {src}" +   # addition D: engine ⇒ the engine's name
+                     (f" (bot: {PW.BOT_LABEL.get(bot, bot)})" if src == "engine" else ""))
     lines.append(f"✋ manual_profile (/paper strikes न दिल्यास): {_try(_manual_profile)} · /help")
     lines.append(_try(_vision_health))                                   # T-1: approval बटणं (can_ask) + listener
     lines.append(_try(lambda: ES.opinion(symbol)))

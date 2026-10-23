@@ -22,7 +22,7 @@ CLASSIC_MAIN = {  # captured from origin/main (16203b2) for the fake rows below 
         'NIFTY: a bear call (bearish) trade at supply area 22,544–22,622 (78 pts) (15M chart). Look at the area and the last candle: did sellers really take over there?\n'
         '<b>Decision needed: approve / reject</b> by 09:55\n'
         '── details ──\n'
-        '👁 <b>Vision V1 — veto_then_confirm</b> · NIFTY 15M Dynamic SR\n'
+        '👁 <b>NIFTY</b> · <b>Vision V1 — veto_then_confirm</b> · <i>Price-action engine (PAPER)</i>\n'  # addition D: engine signal
         '⏱ <b>Decide by 09:55</b>. ✅ take · ❌ skip. No reply ⇒ taken (full size).\n'
         '🎯 Confirmation: supply 22,544–22,622 · grade A · trend: DOWN\n'
         'NIFTY · Bearish · Reversal (touch)\n'
@@ -40,7 +40,7 @@ CLASSIC_MAIN = {  # captured from origin/main (16203b2) for the fake rows below 
         'NIFTY: a bear call (bearish) trade at supply area 22,544–22,622 (78 pts) (15M chart). Look at the area and the last candle: did sellers really take over there?\n'
         '<b>Decision needed: approve / reject</b> by 09:55\n'
         '── details ──\n'
-        '👁 <b>Vision V1 — veto_then_confirm</b> · NIFTY 15M Dynamic SR\n'
+        '👁 <b>NIFTY</b> · <b>Vision V1 — veto_then_confirm</b> · <i>Price-action engine (PAPER)</i>\n'  # addition D: engine signal
         '⏱ <b>Decide by 09:55</b>. ✅ take · ❌ skip. No reply ⇒ taken (full size).\n'
         '🎯 Confirmation: supply 22,544–22,622 · grade B · trend: DOWN\n'
         'NIFTY · Bearish · Reversal (touch)\n'
