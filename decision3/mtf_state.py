@@ -549,7 +549,8 @@ def _structural_range(V, t, tf, state, side, detail):
         in the detail ("inside it: …") — the inner swings of a range are not the timeframe's trend;
       • the last two highs / lows disagreeing (or C-13 equal) with no structural range in force ⇒ no trend structure and no range
         ⇒ "unclear" (the detail says why).
-    Comparison only; no new setting. A V without the area engine (a stub) ⇒ unchanged."""
+    Comparison only; no new setting. A V without the area engine (a stub) ⇒ unchanged. The `daily_range_rule = c13` what-if switches
+    `range_state` to the C-13 reader while this word stays structural (DECISIONS 16), so under that what-if only they may differ."""
     if getattr(V, "levels", None) is None:
         return state, side, detail
     from . import range_edges as RE
