@@ -19,6 +19,14 @@ Rules:
     (`V22.visit`, never a bar count), the confirmation (`V22._confirm`) and `V22.rsi_divergence` (pushes inside the move, degree,
     zone degree). `cfg["display_finder"] = "validity"` keeps the R1a display finder (facts.validity) for the areas / lines /
     confluence sections only (legacy, for the R1a golden comparison).
+  • DECISIONS 37 / 51 (Abhi: "every output reads exactly what the engine read at the decision"): with decision3 `trigger_tf = 5M` (the
+    default) the dossier follows the engine's 5M decision — `V22.decide5(j)` at the last 5M candle closed at as_of, on the same V22 —
+    instead of re-deriving the visit on the last closed 15M bar: the areas / lines at that decision's 15M bar k(j), the visits by the
+    engine's 5M functions (`entry_models5.Reader5.visit5`: a visit may start on a 5M candle inside the 15M bar in progress), the
+    required set on the visit's 5M candles (`confirm5` / `c0`), the E4 (b) objects it read (section `e4b_objects`: broken areas / lines
+    with their lifecycle, the revisit, the E4 state), the liquidity on the engine's own levels (with the Daily frame), and the engine's
+    row itself (section `trigger`: the 5M candle, every armed object with each model's state, the fired entries — the payload's source).
+    Reused, never re-read. `trigger_tf = 15M` (what-if) = the earlier dossier, byte for byte (pinned by tests).
 """
 import math
 import re
@@ -55,6 +63,18 @@ NOT_FACTS = frozenset({"grade", "score", "scores", "vote", "votes", "conviction"
 GRADE_TXT = re.compile(r"\s*·\s*grade\s+\S+")                          # decision3 commitment text carries its grade ⇒ removed
 SECTIONS = ("structure", "legs", "areas", "lines", "confluence", "patterns", "candles", "volume", "ltf_choch", "liquidity", "gaps",
             "context", "divergence")
+# DECISIONS 37 / 51 (trigger_tf = 5M, the default): the dossier follows the 5M trigger — two more sections, the engine's own 5M decision
+# (`trigger`) and the E4 (b) objects it read (`e4b_objects`). trigger_tf = 15M (what-if) = SECTIONS only, byte for byte as before.
+SECTIONS_5M = SECTIONS + ("trigger", "e4b_objects")
+TRIGGER_TFS = ("5M", "15M")
+OWNER_5M = {"candles": "decision3.method.candle_read / reversal_form + the visit's 5M study (entry_models5.Reader5: visit5 / confirm5 / c0 / "
+                       "absorbing) at the engine's 5M decision",
+            "ltf_choch": "decision3.method.ltf_choch (c1, close-only CHoCH on 5M) via decision3.entry_models5.Reader5.confirm5"}
+
+
+def sections_of(trigger_tf):
+    """The section names of a dossier read with this trigger frame (decision3 setting `trigger_tf`)."""
+    return SECTIONS_5M if str(trigger_tf).upper() == "5M" else SECTIONS
 
 
 # ------------------------------------------------------------------------------------------------ JSON-safe facts
@@ -268,6 +288,30 @@ class _Ctx:
         """The method's reads at as_of (memo): trend side, areas, armed areas (with their line labels), lines, visits in progress."""
         return self.memo("decision3 method reads", lambda: _method_reads(self))
 
+    def trigger_tf(self):
+        """decision3 `trigger_tf` (DECISIONS 37): "5M" (default) ⇒ the dossier follows the engine's 5M decision; "15M" ⇒ as before."""
+        tf = str(self.s3().get("trigger_tf", "5M")).upper()
+        if tf not in TRIGGER_TFS:                                          # a typo never silently picks a frame
+            raise ValueError(f"build_dossier: trigger_tf {tf!r} — allowed: {', '.join(TRIGGER_TFS)}")
+        return tf
+
+    def decision5(self):
+        """DECISIONS 37 / 51: the engine's own decision at the 5M close — `V22.decide5(j)` on the same V22 (j = the last 5M candle closed
+        at as_of; k = the last 15M bar closed at that 5M close) and the 5M reader whose memo that decision filled (`entry_models5.Reader5`,
+        the same functions, never a second reading). Fails (⇒ NA with the reason) without 5M spot bars."""
+        def build():
+            from decision3 import entry_models5 as EM5
+            V = self.v22()
+            F = V.trigger_frame()
+            if not F.n:
+                raise ValueError("5M spot bars missing — the engine's 5M decision cannot be read (DECISIONS 37: the trigger is read on 5M)")
+            j = int(np.searchsorted(F.end, np.datetime64(self.as_of, "ns"), side="right")) - 1
+            if j < 0:
+                raise ValueError("no 5M candle closed at or before as_of")
+            row = V.decide5(j)
+            return {"V": V, "F": F, "j": j, "k": int(F.k_of[j]), "row": row, "R": EM5.Reader5(V, j)}
+        return self.memo("decision3.engine.V22.decide5", build)
+
 
 class _Upstream(Exception):
     pass
@@ -457,6 +501,16 @@ def _method_reads(c):
     from decision3 import trendline as TL
     V = c.v22()
     t = c.t
+    d5, why5 = None, None
+    if c.trigger_tf() == "5M":                                             # DECISIONS 51: read at the 5M decision's own 15M bar k(j)
+        try:
+            d5 = c.decision5()
+            if d5["k"] < 0:
+                d5, why5 = None, "no 15M bar closed at the 5M decision yet"
+            else:
+                t = d5["k"]
+        except _Upstream as exc:
+            why5 = str(exc)
     ok1, why1, st, ctx = V.step1(t)
     tr = ctx["trend"]
     armed = V.step2(t, tr, ctx.get("band"))[2] if ok1 else []
@@ -470,6 +524,12 @@ def _method_reads(c):
         rt = TL.reaction_touch(V, t, d, ln)
         met = TL.confluence_areas(V, t, d, V.levels.active(t, "DOWN" if d < 0 else "UP"))
         lines.append({"d": d, "line": ln, "reaction_touch": rt, "areas_met": met})
+    trend = {"daily": st.trend, "used": tr, "weekly": ctx["weekly"], "resolution": ctx["resolution"],
+             "trade_side": list(DD.trade_side(tr)), "why": why1}
+    if c.trigger_tf() == "5M":
+        visits = _visits5(V, t, d5, areas, armed, tr) if d5 is not None else []
+        return {"V": V, "t": t, "trend": trend, "areas": areas, "armed": [x["id"] for x in armed], "lines": lines, "visits": visits,
+                "d5": d5, "visits_reason": why5}
     visits = []
     for x in areas:
         if x.get("state") in (FLP.BROKEN, FLP.DEAD) or not x.get("trade_location", True):
@@ -489,6 +549,61 @@ def _method_reads(c):
     trend = {"daily": st.trend, "used": tr, "weekly": ctx["weekly"], "resolution": ctx["resolution"],
              "trade_side": list(DD.trade_side(tr)), "why": why1}
     return {"V": V, "t": t, "trend": trend, "areas": areas, "armed": [x["id"] for x in armed], "lines": lines, "visits": visits}
+
+
+# ------------------------------------------------------------------------------------------------ DECISIONS 51: the engine's 5M reads
+ENTRY_FACTS = ("model", "name", "variant", "direction", "side", "object", "area", "visit_id", "visit_start", "visit_start5", "area_visit_id",
+               "area_visit_start", "cluster", "refined_base", "key", "trigger_tf", "trigger_ts", "trigger_bar_end", "trigger_ohlc",
+               "trigger_volume", "trigger_bar15_ts", "context_bar_ts", "context_bar_end", "entry_ref", "invalidation", "invalidation_rule",
+               "facts", "label", "evidence", "evidence_list", "confirming", "channel_evidence", "line_values")
+
+
+def _entry_facts(e):
+    """An engine entry (V22.decide5 row) as the dossier carries it: its own fields, unchanged (nothing re-read)."""
+    return {k: e.get(k) for k in ENTRY_FACTS if k in e}
+
+
+def _visits5(V, t, d5, areas, armed, trend):
+    """The visits in progress at the 5M decision, read by the engine's own 5M functions on the same V22 (whose memo the decision filled):
+    the visit `Reader5.visit5` (a visit may start on a 5M candle inside the 15M bar in progress), the required set `Reader5.confirm5`,
+    the commitment `Reader5.c0`, the absorption gate `Reader5.absorbing`, the refined base `Reader.refined(k)`, the RSI read at the
+    entry's 15M context (`V22.rsi_divergence(k, …, arm15, …, move_from)`, as the evidence list reads it), and the engine's armed record
+    and entries of that visit. Areas: every alive trade-location area (the reaction side = its role) + the range edges the engine arms
+    (DECISIONS 40)."""
+    from decision3 import flip as FLP
+    R, F, j, row = d5["R"], d5["F"], d5["j"], d5["row"]
+    lvls = [x for x in areas if x.get("state") not in (FLP.BROKEN, FLP.DEAD) and x.get("trade_location", True)]
+    edges = R.range_edge_areas(t, trend, armed) if hasattr(R, "range_edge_areas") else []
+    have = {x.get("id") for x in lvls}
+    lvls += [x for x in edges if x.get("id") not in have]
+    arm_ids = {x["id"] for x in armed} | {x.get("id") for x in edges}
+    out = []
+    for x in lvls:
+        d = 1 if x["role"] == "support" else -1
+        vi = R.visit5(j, x, d)
+        if vi["start5"] is None and vi.get("data") is None:
+            continue
+        lid = x.get("parent_level", x.get("id"))
+        vid = f"{lid}@{vi['vid']}"
+        eng = next((a for a in row.get("armed") or [] if a.get("object") == "area" and a.get("visit_id") == vid), None)
+        ents = [_entry_facts(e) for e in row.get("entries") or [] if e.get("area_visit_id") == vid]
+        v = {"area": x, "d": d, "visit5": vi, "visit_id": vid, "armed": x.get("id") in arm_ids, "engine": eng, "entries": ents,
+             "start5": vi["start5"]}
+        if vi["start5"] is not None:
+            start = int(vi["start5"])
+            appr = R.appr5(vi)
+            ok5, cm5 = R.confirm5(x, d, start, appr)
+            arm15 = min(int(F.b_of[start]), t)
+            mf = (int(vi["approach_from15"]) - 1) if vi.get("approach_from15") is not None else None
+            v.update(arm=arm15, commit=cm5, required_ok=bool(ok5), c0=R.c0(j, x, d, start, appr), absorbing=R.absorbing(j, x, d, start),
+                     refined=R.refined(t, x, d) if R.refine_on() else None, appr=appr, move_from=mf,
+                     rsi=V.rsi_divergence(t, d, arm15, x.get("tf", "1H") if x.get("tf") in ("1H", "D") else "1H", mf))
+        out.append(v)
+    return out
+
+
+def _f5(d5, i):
+    return None if i is None else d5["F"].T(int(i))
 
 
 def _area_fact(c, x, armed=()):
@@ -631,6 +746,50 @@ def _study(c, v):
                            "read": M.candle_read(Av, t, V.s, a), **commit}}
 
 
+def _study5(c, m, v):
+    """One visit in progress at the 5M decision (DECISIONS 37 / 51) as the engine read it: the 5M visit start (and the 15M bin that holds
+    it = the visit id), the approach leg on 5M, the refined base, the handover episode / commitment / LTF CHoCH (the required set read on
+    the visit's 5M candles), the absorption gate, each model's state and the entries the engine fired there — the engine's own values."""
+    from decision3 import method as M
+    d5 = m["d5"]
+    V, F, j, k = d5["V"], d5["F"], d5["j"], d5["k"]
+    x, d, vi = v["area"], v["d"], v["visit5"]
+    eng = v.get("engine") or {}
+    out = {"band_tf": x.get("tf"), "band": [x["lo"], x["hi"]], "area_id": x["id"], "role": x["role"], "state": x.get("state"),
+           "reaction_side": _side(d), "armed": v["armed"], "confluence_label": x.get("confluence_label"), "trigger_tf": "5M",
+           "range_edge": x.get("range_edge"), "visit_id": v["visit_id"],
+           "arrival": {"tf": "5M", "bar5": vi["start5"], "ts5": _f5(d5, vi["start5"]), "ts": vi["vid"],
+                       "bin15_in_progress": None if vi.get("s15") is None else bool(int(vi["s15"]) > k)},
+           "approach_from": _ts(c, vi["approach_from15"]) if vi.get("approach_from15") is not None and int(vi["approach_from15"]) < len(c.m15)
+           else None,
+           "models": eng.get("models"), "disarmed": eng.get("disarmed"), "side_since": eng.get("side_since"),
+           "visit_extreme": eng.get("visit_extreme"), "entries": v["entries"]}
+    if vi["start5"] is None:
+        out["data"] = vi.get("data")
+        return out
+    start, cm = int(vi["start5"]), v["commit"]
+    hs = cm.get("handover_state") or {}
+    ok0, why0, cm0 = v["c0"]
+    ap = v.get("appr")
+    a_ab = int(hs.get("window_start", start))
+    commit = {kk: val for kk, val in cm0.items() if kk not in COMMIT_OUT}
+    out.update(
+        approach_5m=None if not ap else {"from": _f5(d5, ap[0]), "to": _f5(d5, ap[-1]), "candles": len(ap)},
+        bars_in_study=j - start + 1, refined_base=v.get("refined"),
+        zone_study=M.zone_study(F.A, a_ab, j - 1, d, V.s) if j - 1 >= a_ab else None,
+        handover={"present": hs.get("present"), "form": hs.get("form"), "seen_ts": _f5(d5, hs.get("seen_at")),
+                  "cancelled": hs.get("cancelled"), "cancelled_ts": _f5(d5, hs.get("cancelled_at")), "tf": "5M"},
+        absorption=v.get("absorbing"),
+        commitment={"present": bool(ok0), "reason": GRADE_TXT.sub("", str(why0 or "")), "read": M.candle_read(F.A, j, V.s, start),
+                    "tf": "5M", **commit},
+        required_set={"read": "present" if v["required_ok"] else "absent", "handover": hs.get("present"),
+                      "commitment": bool(ok0), "ltf_choch": (cm.get("choch") or {}).get("done"), "wait": cm.get("confirm_wait"),
+                      "tf": "5M", "by_model": {e["model"]: (e.get("evidence_list") or {}).get("required") for e in v["entries"]},
+                      "note": "read = the shared confirmation on the visit's 5M candles (Reader5.confirm5: handover + commitment + volume "
+                              "+ 5M CHoCH); by_model = each fired entry's required set exactly as the engine wrote it in its evidence list"})
+    return out
+
+
 def candles(c):
     owner = "decision3.method.candle_read / reversal_form + the visit's zone study / commitment via decision3.engine.V22"
     from decision3 import method as M
@@ -645,10 +804,17 @@ def candles(c):
         f = M.reversal_form(A, t, d, s3, tss)
         forms[name] = None if f is None else {"form": f[0], "candles": f[1]}
     try:
-        studies, why = [_study(c, v) for v in c.method()["visits"]], None
+        m = c.method()
+        if c.trigger_tf() == "5M":                                         # DECISIONS 51: the visit / required set the 5M decision read
+            studies, why = [_study5(c, m, v) for v in m["visits"]], m.get("visits_reason")
+            studies = None if why and not studies else studies
+        else:
+            studies, why = [_study(c, v) for v in m["visits"]], None
     except _Upstream as exc:                                               # the engine failed ⇒ no study, the reason kept (never silent)
         studies, why = None, str(exc)
     extra = {} if why is None else {"area_studies_reason": why}
+    if c.trigger_tf() == "5M":
+        owner = OWNER_5M["candles"]
     return _ok(owner, last_bar=last, reversal_form_at_last_bar=forms, area_studies=studies, volume_source=vsrc, **extra,
                **c.stale_facts(),
                note="area_studies = every alive area whose visit (by structure, method §3) is in progress at as_of — the engine's own "
@@ -735,6 +901,20 @@ def ltf_choch(c):
     if c.f.get("5M") is None:
         return _na(owner, "5M spot bars missing")
     m = c.method()
+    if c.trigger_tf() == "5M":                                             # DECISIONS 51: the CHoCH the 5M decision read
+        d5 = m.get("d5")
+        out = []
+        for v in m["visits"]:
+            if v.get("start5") is None:
+                continue
+            x, ch = v["area"], v["commit"].get("choch")
+            body = dict(ch) if ch else {"done": None, "line": "not read: the visit's study stopped earlier (absorption)"}
+            out.append({"band_tf": x.get("tf"), "band": [x["lo"], x["hi"]], "area_id": x["id"], "role": x["role"],
+                        "reaction_side": _side(v["d"]), "visit_id": v["visit_id"], "trigger_tf": "5M",
+                        "context_from": _f5(d5, v["start5"]), "study_from": _f5(d5, v["start5"]), "study_to": d5["F"].E(d5["j"]), **body})
+        extra = {} if not m.get("visits_reason") else {"visits_reason": m["visits_reason"]}
+        return _ok(OWNER_5M["ltf_choch"], visits=out, **extra, note="read at every visit in progress at the 5M decision (DECISIONS 37 / 51): the visit's "
+                                                    "first 5M candle … the 5M decision close, as the engine's required set reads it")
     t_end = str(c.m15["bar_end"].iloc[c.t])
     out = []
     for v in m["visits"]:
@@ -748,7 +928,43 @@ def ltf_choch(c):
 
 
 # ------------------------------------------------------------------------------------------------ K5 liquidity — decision3.liquidity
+def _liquidity5(c):
+    """DECISIONS 51 (O-12): liquidity on the engine's own levels — the V22 the 5M decision read (its Levels carry the Daily frame: Daily
+    swings, Q40 prior levels), at that decision's 15M bar k; the current leg's window as before, and at every visit in progress the
+    window the evidence list reads (`sweeps_and_traps(V, k, start = the visit's 15M arrival)`)."""
+    owner = "decision3.liquidity.pools / sweeps_and_traps on the engine's V22 levels (with the Daily frame) at the 5M decision"
+    from decision3 import liquidity as LQ
+    m = c.method()
+    V, t = m["V"], m["t"]
+    s3 = V.s
+    pools = LQ.pools(V, t)
+    ts = pd.Series(pd.to_datetime(V.m15["timestamp"])).reset_index(drop=True)
+    if s3.get("liquidity_rule", "equal") == "equal":
+        sw_bars = [p.bar for p in getattr(V.levels, "_known0", []) if p.confirm_bar <= t and p.bar < t]
+        start = max(sw_bars) if sw_bars else 0
+        sw, tr = LQ.sweeps_and_traps(V, t, start=start)
+        win = {"window_from": str(ts.iloc[max(1, start)])}
+    else:
+        sw, tr = LQ.sweeps_and_traps(V, t, int(s3["liquidity_lookback"]))
+        win = {"lookback_bars": int(s3["liquidity_lookback"])}
+    for x in sw + tr:
+        x["ts"] = str(ts.iloc[x["bar"]])
+    at = []
+    for v in m["visits"]:
+        if v.get("arm") is None:
+            continue
+        vs, vt = LQ.sweeps_and_traps(V, t, start=int(v["arm"]))
+        for x in vs + vt:
+            x["ts"] = str(ts.iloc[x["bar"]])
+        at.append({"visit_id": v["visit_id"], "area_id": v["area"]["id"], "window_from": str(ts.iloc[int(v["arm"])]), "sweeps": vs,
+                   "traps": vt})
+    frame = {"daily_bars": int(len(V.daily_df)), "prior_levels": getattr(V.levels, "prior_note", None) or "read (Daily bars before the 15M window)"}
+    return _ok(owner, pools=pools, sweeps=sw, traps=tr, **win, at_visits=at, daily_frame=frame, asof_bar=str(ts.iloc[t]))
+
+
 def liquidity(c):
+    if c.trigger_tf() == "5M":
+        return _liquidity5(c)
     owner = "decision3.liquidity.pools / sweeps_and_traps"
     from decision3 import levels as LV
     from decision3 import liquidity as LQ
@@ -833,7 +1049,9 @@ def divergence(c):
     r = V._rsi.read(t)
     hist = [x for x in V._rsi.history(t) if x["type"] == "regular"]
     at = [{"band_tf": v["area"].get("tf"), "band": [v["area"]["lo"], v["area"]["hi"]], "area_id": v["area"]["id"],
-           "reaction_side": _side(v["d"]), "zone_side": "bear" if v["d"] < 0 else "bull", **v["rsi"]} for v in m["visits"]]
+           "reaction_side": _side(v["d"]), "zone_side": "bear" if v["d"] < 0 else "bull",
+           **({"visit_id": v["visit_id"], "arm_ts": _ts(c, v["arm"])} if "visit_id" in v else {}), **v["rsi"]}
+          for v in m["visits"] if "visit_id" not in v or v.get("rsi") is not None]
     return _ok(owner, rsi15_at_asof=r["rsi"], rsi_warmup=r["rsi_warmup"], known_count=len(hist),
                last=[_div_brief(c, x) for x in hist[-int(c.cfg["divergences_max"]):]],
                latest=[y["statement"] for y in r["latest"]], at_visits=at,
@@ -842,13 +1060,102 @@ def divergence(c):
                     "zone's own degree reported too — evidence, never a trigger")
 
 
+# ------------------------------------------------------------------------------------------------ DECISIONS 51: the 5M decision itself
+def trigger(c):
+    """The engine's own decision at the 5M close (V22.decide5): the 5M candle, its 15M context bar, the trend side, every armed object with
+    each model's state and every entry it fired — the engine's fields unchanged (what the stored payload is built from)."""
+    owner = "decision3.engine.V22.decide5 (DECISIONS 37: the entry trigger on 5M) — the engine's own row"
+    d5 = c.decision5()
+    F, j, row = d5["F"], d5["j"], d5["row"]
+    ohlc = {kk: float(F.A[kk][j]) for kk in ("open", "high", "low", "close")}
+    return _ok(owner, trigger_tf="5M", candle={"bar5": j, "ts": F.T(j), "bar_end": F.E(j), **ohlc},
+               context_bar={"bar": d5["k"], "ts": row.get("context_ts"), "bar_end": row.get("context_bar_end")},
+               trend_used=row.get("trend_used"), watch_list=[x.get("id") for x in row.get("watch_list") or []],
+               entries=[_entry_facts(e) for e in row.get("entries") or []], armed=row.get("armed") or [], why=row.get("why"),
+               note="the engine's row at this 5M close: armed = every object the entry models read (areas, range edges, E4 (b) objects) "
+                    "with each model's state; entries = the fired entries as the engine wrote them (the stored payload's source)")
+
+
+def _events(c, L, k):
+    out = [{"bar": int(L.born_bar), "ts": _ts(c, L.born_bar), "event": "born", "detail": "/".join(L.births)}]
+    for b, kind, det in L.events:
+        if int(b) <= k:
+            out.append({"bar": int(b), "ts": _ts(c, b), "event": kind, "detail": str(det)})
+    if L.dead_bar is not None and int(L.dead_bar) <= k and not any(x["event"] == "dead" for x in out):
+        out.append({"bar": int(L.dead_bar), "ts": _ts(c, L.dead_bar), "event": "dead", "detail": "dead"})
+    return out
+
+
+def e4b_objects(c):
+    """DECISIONS 51 (O-9): the E4 (b) objects the engine read at the 5M decision — every trade-direction BROKEN area / line known at k
+    (`Reader.broken_objects`), its lifecycle known at k, the revisit the engine reads (`Reader5.touch_visit5`: price back AT it; ends
+    by a 15M swing away), the E4 state, the required set on the revisit's 5M candles (`Reader5.confirm5`, as the entry reads it) and the
+    E4 (b) entry when one fired."""
+    owner = "decision3.entry_models.Reader.broken_objects + entry_models5.Reader5 (touch_visit5 / broken5 / confirm5) at the 5M decision"
+    from decision3 import trendline as TL
+    m = c.method()
+    d5 = m.get("d5")
+    if d5 is None:
+        return _na(owner, m.get("visits_reason") or "the engine's 5M decision could not be read")
+    V, F, R, j, k, row = d5["V"], d5["F"], d5["R"], d5["j"], d5["k"], d5["row"]
+    tr = m["trend"]["used"]
+    if tr not in ("UP", "DOWN"):
+        return _ok(owner, objects=[], reason=f"the engine reads E4 (b) objects only with a trend side (UP / DOWN); trend side: {tr}")
+    if "E4" not in R.on:
+        return _ok(owner, objects=[], reason="E4 is off (entry_models_on)")
+    d = M3._dir(tr)
+    objs = []
+    for kind, obj, _t, _a, _sw, born in R.broken_objects(k, d):
+        oid = obj["id"] if kind == "area" else f"line:{obj['id']}"
+        eng = next((a for a in row.get("armed") or [] if a.get("object") == "broken_" + kind and str(a.get("area_id")) == str(oid)), None)
+        x = {"object": "broken_" + kind, "id": oid, "direction": int(d), "known_from": _ts(c, born) if int(born) < len(c.m15) else
+             "the next 15M bar", "known_at_k": bool(int(born) <= k)}
+        if kind == "area":
+            x.update({kk: obj.get(kk) for kk in ("tf", "role", "lo", "hi", "state", "break_dir", "confluence_label")},
+                     broken_at=_ts(c, obj.get("broken_at")), lifecycle=_events(c, V.levels.L[obj["id"]], k))
+        else:
+            kb = TL.break_known_at(V, obj)
+            x.update(tf=obj.get("tf"), family=obj.get("family"), degree=obj.get("degree"), kind=obj.get("kind"),
+                     role="support" if d < 0 else "resistance", break_side=obj.get("break_side"), touches=obj.get("touches"),
+                     p1=_bar_pt(c, obj["p1"]), p2=_bar_pt(c, obj["p2"]) if obj.get("p2") is not None else None, slope_per_bar=obj.get("slope"),
+                     broken_at=_ts(c, obj.get("break_bar")), break_known_at=_ts(c, kb), parallel_of=obj.get("parallel_of"),
+                     value_at_decision=round(F.line_value(obj, j), 2),
+                     lifecycle=[{"ts": _ts(c, obj["p2"][0]) if obj.get("p2") is not None else None, "event": "line drawn (2nd touch)"},
+                                {"ts": _ts(c, obj.get("break_bar")), "event": "broken", "detail": obj.get("break_side")}])
+        if eng is None:
+            x["revisit"] = None
+            x["revisit_why"] = "no revisit in progress at the 5M decision (price is not back at it, or it left by structure)"
+        else:
+            x["revisit"] = {kk: eng.get(kk) for kk in ("visit_id", "visit_start", "visit_start5", "lo", "hi", "models", "disarmed",
+                                                         "side_since")}
+            st5 = int(eng["visit_start_bar"])
+            if kind == "area":
+                lvl = {**obj, "visit_from": min(int(F.b_of[st5]), k)}
+            else:
+                v = round(F.line_value(obj, j), 2)
+                lvl = {"id": oid, "lo": v, "hi": v, "tf": "line", "role": eng.get("role"), "births": ["tl"], "sweeps": 0, "fresh": None,
+                       "confluence_line": True, "confluence": []}
+            if not eng.get("disarmed"):
+                ok5, cm5 = R.confirm5(lvl, d, st5, None)
+                hs = cm5.get("handover_state") or {}
+                x["required_set"] = {"read": "present" if ok5 else "absent", "handover": hs.get("present"),
+                                     "ltf_choch": (cm5.get("choch") or {}).get("done"), "wait": cm5.get("confirm_wait"), "tf": "5M"}
+        x["entries"] = [_entry_facts(e) for e in row.get("entries") or [] if e.get("object") == "broken_" + kind
+                        and str((e.get("area") or {}).get("id")) == str(oid)]
+        objs.append(x)
+    return _ok(owner, direction=int(d), objects=objs,
+               note="E4 (b): a broken area / line of the trade direction; a revisit only while price is back AT it (ends by a 15M swing "
+                    "away); approach side and the 5M rejection candle as the engine reads them (DECISIONS 37, 38)")
+
+
 OWNERS = {"structure": structure, "legs": legs, "areas": areas, "lines": lines, "confluence": confluence, "patterns": patterns,
           "candles": candles, "volume": volume, "ltf_choch": ltf_choch, "liquidity": liquidity, "gaps": gaps, "context": context,
-          "divergence": divergence}
+          "divergence": divergence, "trigger": trigger, "e4b_objects": e4b_objects}
 OWNER_NAMES = {"structure": "swings2 (+ pivots)", "legs": "reader2", "areas": "decision3.levels", "lines": "decision3.trendline",
                "confluence": "decision3.levels + decision3.trendline", "patterns": "patterns2", "candles": "decision3.method",
                "volume": "opportunity_engine.volume", "ltf_choch": "decision3.method.ltf_choch", "liquidity": "decision3.liquidity",
-               "gaps": "vision.gap_context", "context": "vision.context", "divergence": "rsi2.engine.Divergence"}
+               "gaps": "vision.gap_context", "context": "vision.context", "divergence": "rsi2.engine.Divergence",
+               "trigger": "decision3.engine.V22.decide5", "e4b_objects": "decision3.entry_models5 (E4 b objects)"}
 
 
 # ------------------------------------------------------------------------------------------------ the dossier
@@ -879,7 +1186,7 @@ def build_dossier(symbol, bars_by_tf, fut_bars_by_tf=None, as_of=None, cfg=None)
         frames["1H"] = None
     fut5 = _closed(fut_bars_by_tf.get("5M"), 5, as_of, keys=_fut_keys(fut_bars_by_tf.get("5M")))
     c = _Ctx(symbol, frames, fut5, as_of, cfg)
-    sections = {name: _run(OWNER_NAMES[name], lambda fn=fn: fn(c)) for name, fn in OWNERS.items()}
+    sections = {name: _run(OWNER_NAMES[name], lambda fn=OWNERS[name]: fn(c)) for name in sections_of(c.trigger_tf())}
     return {"schema": SCHEMA, "symbol": symbol, "as_of": str(as_of),
             "asof_bar": {"tf": "15M", "ts": str(m15["timestamp"].iloc[-1]), "close": round(float(m15["close"].iloc[-1]), 2),
                          **c.stale_facts()},
