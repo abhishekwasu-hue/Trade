@@ -1411,3 +1411,59 @@ DECISIONS 46, 49, 50, 54, method §4 / §5, L6-a, Z-1u, T3 / K6.5. `label_rule =
   "✓ E1 — the model's own conditions (required set)" first, then the five pieces, then each condition by name (the card line is cut by
   length; the full list is in the evidence list and the Vision facts). Summary card 📋 Reader line: "✓ the E1 model's own conditions".
   The Vision system prompt (cached) is unchanged — it already lists the evidence as never deciding.
+
+- Done (branch `card6`, engine-entry Vision cards only; display only; level-bot cards byte-identical; older engine-setup rows without an entry model also take the engine volume wording and, under `method`, lose the merged-band line — DECISIONS 53 applies to all engine areas): L6-O4 — the caption is
+  short bullets (trend, area + refined base, 5M trigger, invalidation, next area, evidence ✓, Vision, FUT-missing note, decision lines;
+  ≤ 1024, no key field cut) and the full details (5M trigger with OHLC / FUT volume / model facts, invalidation rule, evidence list, PA
+  evidence, Vision's reading) go as reply(ies) threaded under the card's message id (`vision/worker.engine_caption / engine_details /
+  send_details`; buttons stay on the card; works with Vision NA). L6-O13 — the engine card is setup 15M | trigger 5M | higher (own panel,
+  no inset). L6-O10 — `approval_band_warn_rule` = method (default) / width (what-if, the 150-pt line), on the 15M SRv2 dashboard;
+  "points" (old name) reads as width. L6-O11 — the engine card's volume words: "volume: FUT volume missing — E2 cannot be read" (no grade
+  cap); other charts unchanged. Not changed: the V0 `notify` caption of an engine entry (PAPER approval always runs V1 human_confirm).
+
+## Dossier follows the 5M trigger (DECISIONS 51; L6-O7 / O8 / O9 / O12) — branch `dossier5m` (local)
+
+Built: `facts/dossier.build_dossier` reads, with decision3 `trigger_tf = 5M` (the default), exactly what the engine read at the 5M
+decision — `V22.decide5(j)` on the same V22 (j = the last 5M candle closed at as_of) and the engine's own 5M functions whose memo that
+decision filled (`entry_models5.Reader5.visit5 / confirm5 / c0 / absorbing / broken_objects / broken5`), never a 15M re-read. New
+sections `trigger` (the engine's row: 5M candle, context 15M bar, every armed object with each model's state, the fired entries =
+the payload's source) and `e4b_objects` (broken areas / lines with lifecycle, revisit, E4 state, required set); `candles.area_studies`
+/ `ltf_choch` / `divergence.at_visits` per visit at the 5M decision (visit id, first 5M candle, 15M bin in progress, required set on
+5M, models, entries); `liquidity` on the engine's own levels (with the Daily frame) + the evidence window per visit. `trigger_tf =
+15M` = the earlier dossier byte for byte (pinned, `tests/fixtures/dossier_15m_pin.json.gz`). No reading rule, no number, no engine
+change (entries identical: the engine is not touched).
+
+Replay check (53 BANKNIFTY entries of the layer 6 gallery; tool `trade-data review/layer6_gallery/dossier5m/tools/dcheck.py`):
+| check (entries with the mismatch) | before | after |
+|---|---|---|
+| O-7 the entry's visit in progress, visit id / 15M bin / first 5M candle = the engine's | 10 (E1, visit began inside the 15M bar in progress) | 0 |
+| O-8 the required set at that visit = the engine's | 1 (L6-53, E2) + the 10 O-7 entries (no visit seen) | 0 |
+| O-9 the E4 (b) object (id, band / line value, broken at, revisit, E4 fired, the entry) in the dossier | 10 | 0 |
+| O-12 liquidity = the engine's levels (pools at k, Daily frame) + the visit's evidence window | 43 (pools equal 53 / 53; no Daily frame, no visit window) | 0 |
+| every payload field of the entry = the dossier's trigger entry | 53 (no 5M section) | 0 |
+| no look-ahead (dossier on bars cut at the 5M close = on the whole session) | 0 | 0 |
+
+Before / after charts of the 21 changed reading cases: trade-data `review/layer6_gallery/dossier5m/index.html`.
+
+Provisional (checked against DECISIONS 37, 46, 49, 51, 54, CLAUDE.md "Trigger reading" / "E4 (b)" / Safety, method §3 visit):
+- **D5M-1** The 15M what-if keeps its old liquidity (Levels without the Daily frame) — the order pins 15M byte-identical (DECISIONS 37
+  "15M = the earlier behaviour, byte-identical"); the Daily frame applies under the default 5M. (Pools were equal on all 53 entries;
+  the Daily frame did not change a pool here.)
+- **D5M-2** Visits listed = every alive trade-location area (both roles) + the range edges the engine arms (DECISIONS 40), read with
+  the engine's 5M visit; `armed` says which ones the engine arms (trade side). Non-armed areas are facts, as before.
+- **D5M-3** `required_set.read` = the shared confirmation as `Reader5.confirm5` reads it on the visit's 5M candles; `by_model` = each
+  fired entry's required set exactly as the engine wrote it (so DECISIONS 54 — the model's own conditions — flows through unchanged
+  when that build lands; the dossier never computes a label).
+- **D5M-4** `zone_study` in a 5M study = the confirmation's a2 window on 5M (the read that decides absorption); the 15M zone read of
+  the evidence list stays in the entry's own evidence list.
+- **D5M-5** No 5M spot bars (and no 1m to build them) ⇒ `trigger` / `e4b_objects` NA and `area_studies` None with the reason — never
+  a silent 15M fallback (fail-closed, DECISIONS 47 spirit). Trend side RANGE ⇒ `e4b_objects` empty with the reason (the engine reads
+  E4 (b) only with a trend side).
+- The dossier is still not wired into the live Vision card (no live change); before / after charts: trade-data
+  `review/layer6_gallery/dossier5m/` — awaiting Abhi ✅ (DECISIONS 46).
+
+### Abhi's answers (23 Oct) — DECISIONS 55–57
+- L54-e: answered — counter channel = the pullback's channel at the trend degree (1H) only; confluence = a Daily / Weekly area overlap or an object of a different kind (line, liquidity pool) at the same place, never nearness. Not separating ⇒ the card shows the evidence list + count (Abhi decides).
+- L5-b: answered — count the forming push (marked "forming", bars ≤ t), "confirmed" once its swing confirms.
+- L5-c: answered — RSI divergence at a broken line / area retest like at any area (the retest = the pullback to the object).
+- C-L5-1: awaits Abhi's ✅ after the charts (layer 5 gallery ZIP).

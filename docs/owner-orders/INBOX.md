@@ -794,3 +794,11 @@ Report to me in Marathi.
 ---
 ## 23 Oct — merge and continue (6)
 Merge and continue
+
+---
+## 23 Oct — label tightening, L5-b / L5-c answers
+My answers (record in DECISIONS / OPEN_QUESTIONS):
+1. Label (L54-e): tighten the confirming pieces — "counter channel broken" counts only the PULLBACK's (correction's) channel at the trend degree (1H); "confluence" counts only when a Daily / Weekly area overlaps the traded area, or an object of a different kind (a line, a liquidity pool) lies at the same place — mere nearness does not count. Rebuild the 53-entry label column and show the A / B split per model. If it still does not separate, replace A / B on the card with the evidence list + its count (information only, no threshold); I decide after seeing the split.
+2. L5-b: yes — count the push still forming at the decision bar, marked "forming", read only from bars ≤ t (no look-ahead), shown as "confirmed" once the swing confirms. L5-c: yes — read RSI divergence at the retest of a broken line / area like at any area (the retest is the pullback to the object).
+3. C-L5-1 and the galleries: I give ✅ only after the charts are checked — send the Fix proof gallery (sections 1–6) and the layer-5 gallery as ZIPs.
+I am running the VPS block now and will paste its output. Report to me in Marathi.

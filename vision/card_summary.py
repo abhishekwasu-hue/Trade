@@ -310,10 +310,9 @@ def _mark(v):
         return str(v)
 
 
-def evidence_text(ev, limit=300):
-    """The entry's 6a evidence list as one plain line ("✓ handover · ✗ volume growing · NA confluence"), copied as given: a dict (nested
-    dicts flattened), a list of {name / label / key, mark / state / value / present} items, (name, mark) pairs or plain strings. Empty /
-    unreadable ⇒ "". Never raises."""
+def evidence_parts(ev):
+    """The entry's 6a evidence list as plain "<mark> <name>" pieces, copied as given: a dict (nested dicts flattened), a list of
+    {name / label / key, mark / state / value / present} items, (name, mark) pairs or plain strings. Unreadable ⇒ []. Never raises."""
     try:
         parts = []
 
@@ -337,32 +336,39 @@ def evidence_text(ev, limit=300):
             elif x not in (None, ""):
                 parts.append(str(x))
         walk(ev)
-        t = " · ".join(p for p in parts if p.strip())
-        return t if len(t) <= limit else t[:limit - 1].rstrip() + "…"
+        return [p for p in parts if p.strip()]
     except Exception:                                                    # noqa: BLE001 — display only
-        return ""
+        return []
 
 
-def model_lines(tags):
+def evidence_text(ev, limit=300):
+    """The entry's 6a evidence list as one plain line ("✓ handover · ✗ volume growing · NA confluence") — `evidence_parts` joined.
+    Empty / unreadable ⇒ "". Never raises."""
+    t = " · ".join(evidence_parts(ev))
+    return t if len(t) <= limit else t[:limit - 1].rstrip() + "…"
+
+
+def model_lines(tags, full=False):
     """Card details for an engine entry model: its invalidation (info — the trade's SL / target are the dashboard's) and its evidence.
-    Not an entry-model signal ⇒ [] (today's card). HTML-safe."""
+    Not an entry-model signal ⇒ [] (today's card). HTML-safe. full (DECISIONS 52: the details reply under the card) ⇒ nothing shortened."""
     lab = model_label(tags)
     if not lab:
         return []
     out = []
+    big = 1 << 20
     st = " ".join(str(tags.get("entry_story") or "").split())
     if st:                                                               # model C (DECISIONS 32, C-10): the one-line story
-        out.append(f"🌊 {html.escape(st[:400])}")
+        out.append(f"🌊 {html.escape(st[:big if full else 400])}")
     inv = tags.get("entry_invalidation")
     if isinstance(inv, dict):
         px = _num(inv.get("price"))
         rule = " ".join(str(inv.get("rule") or "").split())
         if px is not None or rule:
             out.append(f"🧷 {html.escape(lab)} invalidation (info): " + (_px(px) if px is not None else "NA")
-                       + (f" — {html.escape(rule[:160])}" if rule else "") + " · trade SL / target = dashboard")
+                       + (f" — {html.escape(rule[:big if full else 160])}" if rule else "") + " · trade SL / target = dashboard")
     elif _num(inv) is not None:
         out.append(f"🧷 {html.escape(lab)} invalidation (info): {_px(_num(inv))} · trade SL / target = dashboard")
-    ev = evidence_text(tags.get("entry_evidence"))
+    ev = evidence_text(tags.get("entry_evidence"), limit=big if full else 300)
     if ev:                                                               # layer 6 / L6-a: the entry's own A / B label on every layout
         g = _gate(tags)
         gl = f" (label {g['grade']})" if g.get("grade") in ("A", "B") else ""
@@ -393,6 +399,132 @@ def pa_lines(tags):
     lab = model_label(tags)
     b = pa_brief(tags.get("entry_pa_evidence")) if lab else ""
     return [f"🧩 {html.escape(lab)} PA evidence (listed, never blocks): {html.escape(b)}"] if b else []
+
+
+# ------------------------------------------------------------------------------------------------ DECISIONS 52 (O-4): engine-entry card
+# The engine-entry card's caption is short bullets (the key fields, DECISIONS 48 order); the full details (5M trigger, evidence,
+# invalidation, PA evidence, Vision's reading) go as a reply under the card. Every value from the signal's tags, copied, never read here.
+def is_engine_entry(tags):
+    """An engine entry-model signal (signal_source = engine: tags engine + entry_model) — the cards DECISIONS 52 / 53 change."""
+    t = tags if isinstance(tags, dict) else {}
+    return bool(t.get("engine") and str(t.get("entry_model") or "").strip())
+
+
+def _area_row(g, area):
+    for x in g.get("areas") or []:
+        if isinstance(x, dict) and area is not None and _num(x.get("lo")) is not None and _num(x.get("hi")) is not None \
+                and abs(float(x["lo"]) - area[0]) < 1e-6 and abs(float(x["hi"]) - area[1]) < 1e-6:
+            return x
+    return {}
+
+
+def bullet_trend(tags):
+    """"Trend: DOWN (Daily DOWN, impulse · Weekly UP)" — the trade side the engine used + the HTF strip; "" when the tags carry none."""
+    g = _gate(tags)
+    h = g.get("htf") if isinstance(g.get("htf"), dict) else {}
+    parts = [f"Daily {h['daily']}" + (f", {h['daily_phase']}" if h.get("daily_phase") else "") if h.get("daily") else None,
+             f"Weekly {h['weekly']}" if h.get("weekly") else None]
+    det = " · ".join(p for p in parts if p)
+    if not g.get("trend") and not det:
+        return ""
+    return f"Trend: {g.get('trend') or 'NA'}" + (f" ({det})" if det else "")
+
+
+def bullet_area(row, tags):
+    """"Area: supply 55,699–55,970 (1H, flipped) · refined base 55,699–55,763" (a line object in its own words, DECISIONS 41)."""
+    g = _gate(tags)
+    bull = str(row.get("direction") or "").upper() == "BULLISH"
+    area = _area(row, g)
+    ow = object_words(tags, bull)
+    if ow:
+        out = f"Object: {ow}"
+    elif area is not None:
+        ar = _area_row(g, area)
+        tf = _area_tf(row, g, area)
+        st = str(ar.get("state") or "").strip().lower()
+        det = ", ".join(x for x in (tf, st) if x)
+        out = f"Area: {'demand' if bull else 'supply'} {_pt(area[0])}–{_pt(area[1])}" + (f" ({det})" if det else "")
+    elif _num(row.get("level")) is not None:
+        out = f"Level: {'support' if bull else 'resistance'} {_pt(_num(row.get('level')))}"
+    else:
+        return ""
+    rb = g.get("refined") if isinstance(g.get("refined"), dict) else None
+    if rb and _num(rb.get("lo")) is not None and _num(rb.get("hi")) is not None:
+        out += f" · refined base {_pt(min(float(rb['lo']), float(rb['hi'])))}–{_pt(max(float(rb['lo']), float(rb['hi'])))}"
+    return out
+
+
+def bullet_invalidation(tags):
+    """"Invalidation (info): 56,065.5 · trade SL / target = dashboard" (the rule itself is in the details reply)."""
+    inv = tags.get("entry_invalidation")
+    px = _num(inv.get("price")) if isinstance(inv, dict) else _num(inv)
+    return f"Invalidation (info): {_px(px)} · trade SL / target = dashboard" if px is not None else ""
+
+
+def bullet_next(tags):
+    """"Next area: demand 55,284–55,341 (1H)" — the engine's own next opposite area (L6-O1); "none known" when the engine read none;
+    "" for an older row without it."""
+    g = _gate(tags)
+    if "next_area" not in g:
+        return ""
+    nx = g.get("next_area")
+    if not isinstance(nx, dict) or _num(nx.get("lo")) is None or _num(nx.get("hi")) is None:
+        return "Next area: none known"
+    lo, hi = sorted((float(nx["lo"]), float(nx["hi"])))
+    word = "demand" if str(nx.get("role") or "").lower() == "support" else "supply"
+    tf = TF_NAME.get(str(nx.get("tf") or "").upper(), str(nx.get("tf") or ""))
+    return f"Next area: {word} {_pt(lo)}–{_pt(hi)}" + (f" ({tf})" if tf else "")
+
+
+def bullet_evidence(tags, limit=200):
+    """"Evidence ✓: required set · volume growing inside · confluence" — the entry's own evidence pieces marked present (the bracketed
+    detail left out; the full ✓ / ✗ / NA list is in the details reply); "Evidence ✓: none" when none; "" without an evidence list."""
+    parts = evidence_parts(tags.get("entry_evidence"))
+    if not parts:
+        return ""
+    names = [re.sub(r"\s*\([^()]*\)", "", p[2:]).strip() for p in parts if p.startswith("✓ ")]
+    t = " · ".join(n for n in names if n) or "none"
+    return "Evidence ✓: " + (t if len(t) <= limit else t[:limit - 1].rstrip() + "…")
+
+
+def trigger_details(tags):
+    """The 5M trigger in full for the details reply: the trigger line + the candle's OHLC, its FUT 5M volume, the visit's first 5M
+    candle and the model's own 5M facts (form, CHoCH level, sweep extreme, failed push). [] for a 15M-trigger signal. Not escaped."""
+    tl = trigger_line(tags)
+    if not tl:
+        return []
+    tr = tags.get("entry_trigger") if isinstance(tags.get("entry_trigger"), dict) else {}
+    oh = tr.get("ohlc") if isinstance(tr.get("ohlc"), dict) else {}
+    out = [tl]
+    o = [f"{k[0].upper()} {_px(_num(oh.get(k)))}" for k in ("open", "high", "low", "close") if _num(oh.get(k)) is not None]
+    vol = _num(tr.get("volume"))
+    if o or vol is not None or tr.get("bar15_ts"):
+        out.append("5M candle: " + " ".join(o) + (f" · FUT volume {vol:,.0f}" if vol is not None else " · FUT volume NA")
+                   + (f" · inside the 15M bar {str(tr['bar15_ts'])[11:16]}" if tr.get("bar15_ts") else ""))
+    if tr.get("visit_start5"):
+        out.append(f"Visit's first 5M candle: {str(tr['visit_start5'])[:16]}")
+    f = tr.get("facts") if isinstance(tr.get("facts"), dict) else {}
+    fx = []
+    if f.get("form"):
+        fx.append(f"form {str(f['form']).replace('_', ' ')}")
+    for k, w in (("choch_level", "5M CHoCH level"), ("sweep_extreme", "sweep extreme"), ("push_price", "failed push")):
+        if _num(f.get(k)) is not None:
+            fx.append(f"{w} {_px(_num(f.get(k)))}" + (f" ({str(f.get('push_ts'))[11:16]})" if k == "push_price" and f.get("push_ts") else ""))
+    if fx:
+        out.append("Model's 5M facts: " + " · ".join(fx))
+    return out
+
+
+def pa_full(tags):
+    """The entry's PA evidence in full for the details reply (one line per fact, in the standard's order; listed, never blocks). HTML-safe."""
+    rows = [r for r in tags.get("entry_pa_evidence") or [] if isinstance(r, dict) and r.get("text")]
+    if not rows or not model_label(tags):
+        return []
+    order = {k: i for i, k in enumerate(PA_TRACKS)}
+    rows = sorted(rows, key=lambda r: order.get(r.get("track"), len(order)))
+    return ["🧩 PA evidence (listed, never blocks):"] + [
+        f"• {html.escape(str(r.get('track') or ''))}{(' ' + html.escape(str(r['tf']))) if r.get('tf') else ''}: {html.escape(str(r['text']))}"
+        for r in rows]
 
 
 def line_head(row, status, res=None, ticket=None):

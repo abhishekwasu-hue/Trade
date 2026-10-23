@@ -254,7 +254,7 @@ def band_flag_line(row):
         g = _row_tags(row).get("gate") or {}
         area = [x for x in (g.get("area") or [])[:2] if x is not None]
         return PT.band_flag(*area, g.get("band_warn_pts"), g.get("band_warn_rule"),        # layer 6b: approval_band_warn_rule
-                            engine_area=g.get("mode") == "engine") if len(area) == 2 else ""   # (default points = today)
+                            engine_area=g.get("mode") == "engine") if len(area) == 2 else ""   # (default method, DECISIONS 53)
     except Exception:                                                    # noqa: BLE001 — फक्त माहिती, caption कधीच अडत नाही
         return ""
 
@@ -363,11 +363,13 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why="", layout=None, wi
     no-reply rule was applied at once (why = its reason) ⇒ "Buttons unavailable: <why>; this signal will be skipped"."""
     from bots_common import plain_text as PT
     from . import card_summary as CS
-    s = _body(row, res, row["mode"]).replace("<b>Vision V0 — फक्त माहिती</b>", f"<b>Vision V1 — {row['mode']}</b>", 1)
     try:
         tags = json.loads(row.get("setup_json") or "{}").get("tags") or {}
     except (ValueError, TypeError, AttributeError):
         tags = {}
+    if CS.is_engine_entry(tags):                                         # DECISIONS 52 (O-4): short bullets; details = the reply
+        return engine_caption(row, res, d, deadline, buttons=buttons, why=why, approval=approval, no_buttons=no_buttons, tags=tags)
+    s = _body(row, res, row["mode"]).replace("<b>Vision V0 — फक्त माहिती</b>", f"<b>Vision V1 — {row['mode']}</b>", 1)
     head = html.escape(plain_head(row))                                   # Abhi (TELEGRAM_CLEANUP 3): ओळ 1 साधी, ओळ 2 निर्णय
     if tags.get("test_only"):                                           # Abhi: the TEST card — the real path, never a position
         head = "🧪 TEST — not a trade · " + head
@@ -428,6 +430,150 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why="", layout=None, wi
                               protect=_reason_line if CS.layout(layout) == "summary" else None)
 
 
+# ------------------------------------------------------------------------------------------------ DECISIONS 52 / 53: engine-entry card
+DETAILS_POINTER = "📎 Full details (5M trigger, evidence, invalidation): the reply under this card."
+
+
+def _decision_lines(d, deadline, buttons, why, approval, no_buttons):
+    """The card's decision lines (⏱ deadline / ⚠️ no buttons / ✅ ❌ automatic) — the same words as today's V1 card."""
+    from . import notify as VN
+    out = []
+    if d.status == "PENDING_HUMAN":
+        out.append(deadline_text(d, deadline, approval))
+        if not buttons:
+            out.append(no_buttons_text(why, _skipped_on_timeout(d, approval)))
+    elif d.status == "APPROVED":
+        if no_buttons:
+            out.append(no_buttons_text(why, approval))
+        out.append(f"<b>✅ ENTRY मंजूर</b> ({_fmr(d.factor)}) — {html.escape(d.reason)}. Bot पुढच्या मिनिटाला drift guard नंतर entry घेईल "
+                   "(त्याचा trade संदेश येईल).")
+    else:
+        if no_buttons:
+            out.append(no_buttons_text(why, True))
+        out.append(f"<b>❌ ENTRY नाकारली</b> — {html.escape(d.reason)}. {VN.NOT_TAKEN_SHORT}")
+    return out
+
+
+def _vision_bullet(res):
+    """"Vision: ✅ सहमत (0.82) — <first sentence>" / "Vision: NA (<why>) — buttons still work"."""
+    from . import card_summary as CS
+    res = res or {}
+    if res.get("verdict") in (None, "unavailable"):
+        return "Vision: NA" + (f" ({str(res.get('error'))[:80]})" if res.get("error") else "") + " — बटणं तरीही चालतात"
+    e, mr = VERDICT_MR.get(res.get("verdict"), ("⚪", str(res.get("verdict"))))
+    a = (res.get("audits") or [None])[0]
+    r = CS.short_reason(a.get("reason")) if isinstance(a, dict) else ""
+    return (f"Vision: {e} {mr}" + (f" ({res['confidence']:.2f})" if res.get("confidence") is not None else "")
+            + (f' — "{r}"' if r else ""))
+
+
+def fut_missing(row):
+    """DECISIONS 53 (VP3): the chart's volume line says FUT volume is missing ⇒ "FUT volume missing — E2 cannot be read"."""
+    from decision3 import volume_pane as VP
+    return VP.engine_text(str(row.get("volume_line") or "")) == VP.ENGINE_NA_LINE
+
+
+def engine_caption(row, res, d, deadline=None, buttons=True, why="", approval=False, no_buttons=False, tags=None):
+    """DECISIONS 52 (O-4) — the engine-entry card caption: short bullets per the message standard (DECISIONS 48: line 1 = what and the
+    action, then the key fields in the concept order: trend, area + refined base, 5M trigger, invalidation, next area, evidence, Vision),
+    the decision lines (the deadline and the buttons' words, once), and a pointer to the details reply (`engine_details`). Always
+    ≤ 1024 (UTF-16) without cutting a key field; the "⚠️ merged band — check" line only under `approval_band_warn_rule = width`
+    (DECISIONS 53). Display only. The A / B label is printed as the tags carry it."""
+    from bots_common import plain_text as PT
+    from . import card_summary as CS
+    tags = tags if isinstance(tags, dict) else _row_tags(row)
+    g = tags.get("gate") if isinstance(tags.get("gate"), dict) else {}
+    bull = str(row.get("direction") or "").upper() == "BULLISH"
+    lab = f" · label {g['grade']}" if g.get("grade") in ("A", "B") else ""
+    head = (f"🎯 <b>{html.escape(str(row.get('symbol') or '?'))} · {'bull put' if bull else 'bear call'} · "
+            f"{html.escape(CS.model_label(tags))}{lab}</b>")
+    head += (" — decide now" if d.status == "PENDING_HUMAN" else
+             " — entry approved automatically" if d.status == "APPROVED" else " — entry rejected automatically")
+    if tags.get("test_only"):
+        head = "🧪 TEST — not a trade · " + head
+    elif tags.get("dry_run"):
+        head = "🧪 [DRY-RUN] " + head
+    flag = band_flag_line(row)
+    top = [head] + ([html.escape(flag)] if flag else [])
+    dec = _decision_lines(d, deadline, buttons, why, approval, no_buttons)
+    bullets = []
+    for fn in (lambda: CS.bullet_trend(tags), lambda: CS.bullet_area(row, tags), lambda: CS.trigger_line(tags),
+               lambda: CS.bullet_invalidation(tags), lambda: CS.bullet_next(tags), lambda: CS.bullet_evidence(tags),
+               lambda: _vision_bullet(res), lambda: "FUT volume missing — E2 cannot be read" if fut_missing(row) else ""):
+        try:
+            b = fn()
+        except Exception:                                                # noqa: BLE001 — display only: that bullet is left out
+            b = ""
+        if b:
+            bullets.append("• " + html.escape(b))
+    lines = top + dec + bullets + [DETAILS_POINTER]
+    return _fit(lines, 1024 - PT.MARGIN, keep=len(top) + len(dec))
+
+
+def engine_details(row, res, d=None, deadline=None):
+    """DECISIONS 52 (O-4) — the full details of an engine-entry card, sent as a reply under the card (never cut by the 1024 caption
+    limit): today's details lines (Vision's reading and checklist, the object / area line), the 5M trigger in full, the model's
+    invalidation rule and evidence list in full, the volume line (engine words, DECISIONS 53), the engine's shadow opinion, the PA
+    evidence in full. HTML. `details_parts` splits it at line ends for Telegram's 4096 text limit."""
+    from . import card_summary as CS
+    tags = _row_tags(row)
+    mode = row.get("mode") or ""
+    bull = str(row.get("direction") or "").upper() == "BULLISH"
+    body = _body(row, res or {}, mode).replace("<b>Vision V0 — फक्त माहिती</b>", f"<b>Vision V1 — {html.escape(str(mode))}</b>", 1)
+    body = body.replace("Bot ने नेहमीप्रमाणे निर्णय घेतला — vision चा trade वर परिणाम नाही (V0).", "")
+    lines = [x for x in body.split("\n") if x]
+    head = (f"📎 <b>Details</b> · {html.escape(str(row.get('symbol') or '?'))} · {html.escape(CS.model_label(tags))} · "
+            f"{'bull put' if bull else 'bear call'} (the card above)")
+    tl = CS.trigger_line(tags)
+    trig = [html.escape(x) for x in CS.trigger_details(tags)]
+    if tl and html.escape(tl) in lines:                                  # the trigger line of the old details ⇒ the full trigger block
+        i = lines.index(html.escape(tl))
+        lines = lines[:i] + trig + lines[i + 1:]
+    else:
+        lines = lines[:3] + trig + lines[3:]
+    extra = CS.model_lines(tags, full=True)                              # Vision NA: its "मत / कारण" lines are in the details above
+    if row.get("volume_line"):                                           # DECISIONS 53 (VP3): the engine card's words
+        from decision3 import volume_pane as VP
+        extra.append(html.escape(VP.engine_text(str(row["volume_line"]))))
+    extra.append(engine_line(row))
+    extra += CS.pa_full(tags)
+    extra.append("SL / target / exits: bot चे नेहमीचे नियम (automatic).")
+    return "\n".join([head] + lines + extra)
+
+
+def details_parts(text, limit=None):
+    """The details text in Telegram text messages (≤ 4096 UTF-16 each, split at line ends; a single over-long line is cut there only)."""
+    from bots_common import plain_text as PT
+    from . import tg as TG
+    limit = (limit or TG.TEXT_LIMIT) - PT.MARGIN
+    parts, cur = [], []
+    for ln in str(text or "").split("\n"):
+        if PT.tg_len(ln) > limit:
+            ln = PT.tg_cut(re.sub(r"<[^>]+>", "", ln), limit)
+        if cur and PT.tg_len("\n".join(cur + [ln])) > limit:
+            parts.append("\n".join(cur))
+            cur = []
+        cur.append(ln)
+    if cur:
+        parts.append("\n".join(cur))
+    return [p for p in parts if p.strip()]
+
+
+def send_details(message_id, row, res, d=None, deadline=None, reply_fn=None):
+    """DECISIONS 52: the engine-entry card's details as reply(ies) threaded under the card's message id (vision/tg.reply). The card
+    keeps its ✅ / ❌ buttons (the reply has none). No message id ⇒ nothing sent (never a details message without its card). Returns the
+    reply ids; never raises (display only)."""
+    if not message_id:
+        return []
+    try:
+        from . import tg as TG
+        reply_fn = reply_fn or TG.reply
+        return [reply_fn(message_id, p) for p in details_parts(engine_details(row, res, d, deadline))]
+    except Exception as exc:                                             # noqa: BLE001 — display only: the card is already sent
+        print(f"⚠️ engine card details reply: {type(exc).__name__}: {str(exc)[:120]}")
+        return []
+
+
 def _reason_line(x):
     """Vision's full reason in the details (the summary shows only its first sentence) — kept while other detail lines go."""
     return x.startswith("<b>कारण:</b> ")
@@ -481,6 +627,9 @@ def v1_notify(row, res, d, png, path, reused=False):
                      modify=modify, approval=_approval(row, path), no_buttons=no_btn)
     mid = TG.send_photo(png, cap, btn)
     VS.update(sid, path, tg_message_id=mid, notified=1 if mid else 0, tg_caption=cap)   # T-1: मूळ caption ⇒ outcome जोडून, कधीच पुसून नाही
+    from . import card_summary as CS
+    if mid and CS.is_engine_entry(_row_tags({**row, **r})):              # DECISIONS 52 (O-4): the details as a reply under the card
+        send_details(mid, {**row, **r}, res, d, r.get("deadline"))
     return mid
 
 

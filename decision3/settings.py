@@ -357,7 +357,7 @@ REGISTER = {
 # them. {key: (default, options, where it is read)}. The facts dossier's own `display_finder` (facts/dossier.py, not wired live) is listed
 # in REGISTER for completeness.
 OUTPUT = {
-    "approval_band_warn_rule": ("points", ("points", "method"),
+    "approval_band_warn_rule": ("method", ("method", "width"),           # DECISIONS 53 (BW-1): method = Abhi's default
                                 "bots_common.plain_text.band_flag / band_wide_words ⇐ vision.approval (ticket), vision.worker (caption), "
                                 "paper.engine_entry (gate tags), scripts.level_gate_preopen (pre-open), scripts.paper_daily_summary (15:45)"),
     "vision_chart_band_finder": ("validity", ("validity", "method"),
@@ -375,11 +375,12 @@ OUTPUT = {
                         "reports; reader_report.standard.validate_chart (legend ≤ it); vision/config.py"),
 }
 REGISTER.update({
-    "approval_band_warn_rule": ("points", "points / method", "setting",
-                                "layer 6b display (C-18): points = today's '⚠️ merged band — check' over approval_band_warn_pts; method = an "
-                                "engine area is one base, never merged (#329, Z-1u) ⇒ width as a fact, no line; other sources keep points"),
+    "approval_band_warn_rule": ("method", "method / width", "setting",
+                                "layer 6b display (C-18, DECISIONS 53 BW-1): method (Abhi) = an engine area is one base, never merged "
+                                "(#329, Z-1u) ⇒ width as a fact, no '⚠️ merged band — check' line (wide areas stay in the comparison-based "
+                                "reading check); width (what-if) = the line over approval_band_warn_pts for every band; other sources keep it"),
     "approval_band_warn_pts": (150, "pts (display only)", "setting",
-                               "C-18 display alert (cloud_db default 150); read only under approval_band_warn_rule = points / non-engine bands"),
+                               "C-18 display alert (cloud_db default 150); read only under approval_band_warn_rule = width / non-engine bands"),
     "vision_chart_band_finder": ("validity", "validity / method", "setting",
                                  "layer 6b display: with vision_chart_bands ON, validity = the R1a band finder (today); method = the "
                                  "decision's own areas (engine gate tags: one base, K4 state, confluence label)"),

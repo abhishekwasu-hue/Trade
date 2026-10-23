@@ -125,20 +125,26 @@ BAND_WARN_KEY = "approval_band_warn_pts"
 BAND_WARN_PTS_DEFAULT = 150
 
 
-# Layer 6b (Abhi's method, C-18): setting `approval_band_warn_rule` (display only, registered in decision3/settings.py OUTPUT):
-#   "points" (default = today's output): width > `approval_band_warn_pts` ⇒ the line;
-#   "method": an ENGINE area is one base, wick to body, never merged or widened (#329, Abhi Z-1u) — a "merged band" cannot be one of them
-#   (Z-1x: a zone that looks too wide is fixed in its construction, never flagged by a width) ⇒ its width is shown as a fact, no line;
-#   a band from any other source (a bot's own zones) keeps the points line (display only; the method has no width definition — question).
+# Layer 6b (Abhi's method, C-18) + DECISIONS 53 (BW-1, Abhi 23 Oct): setting `approval_band_warn_rule` (display only, registered in
+# decision3/settings.py OUTPUT; dashboard 15M SRv2 → 🧭 Signal source):
+#   "method" (default, Abhi): an ENGINE area is one base, wick to body, never merged or widened (#329, Abhi Z-1u) — a "merged band" cannot
+#   be one of them (Z-1x: a zone that looks too wide is fixed in its construction, never flagged by a width; wide areas stay in the
+#   comparison-based reading check) ⇒ its width is shown as a fact, no line; a band from any other source (a bot's own zones) keeps the
+#   width line (display only);
+#   "width" (what-if = the output before DECISIONS 53): width > `approval_band_warn_pts` ⇒ the line for every band.
+# "points" = the earlier name of "width" (rows / settings stored before DECISIONS 53 read the same).
 BAND_WARN_RULE_KEY = "approval_band_warn_rule"
-BAND_WARN_RULES = ("points", "method")
+BAND_WARN_RULES = ("method", "width")
+BAND_WARN_RULE_ALIASES = {"points": "width"}
 
 
 def band_warn_rule(value=None):
-    """Setting ⇒ "points" / "method"; settings dict ⇒ its BAND_WARN_RULE_KEY. Empty / unknown ⇒ "points" (today's output)."""
+    """Setting ⇒ "method" / "width"; settings dict ⇒ its BAND_WARN_RULE_KEY. "points" (old name) ⇒ "width". Empty / unknown ⇒ "method"
+    (DECISIONS 53)."""
     if isinstance(value, dict):
         value = value.get(BAND_WARN_RULE_KEY)
     v = str(value or "").strip().lower()
+    v = BAND_WARN_RULE_ALIASES.get(v, v)
     return v if v in BAND_WARN_RULES else BAND_WARN_RULES[0]
 
 
