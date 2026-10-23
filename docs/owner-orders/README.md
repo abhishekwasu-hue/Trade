@@ -37,3 +37,5 @@ Decisions taken from orders go to DECISIONS.md (append only).
 | 30 | "No questions, continue non-stop" | provisional defaults everywhere (logged in OPEN_QUESTIONS); continuing: Chart Reading Report build + sample, reading checks from the 6-month galleries (RC2 26 May, E4a never fired, channel-parallel E4b losses, MTF 9–11 Jun) | — |
 | 31 | visual_audit_symbols has BANKNIFTY | answered: a Vision dashboard save on 11 Oct 18:34 (same save: monthly budget 5→10, cap 0.1→0.3); not code / .env / cron; Abhi changes it on the Vision page if wanted | VPS setting |
 | 32 | Reading checks (E4a, E4b-parallel, RC2, MTF) | merged (#373, 3809ea2): E4b broken-back lines + K4 reclaim fix (E4b 28 → 17, worst MAE 919 → 591); E4a / RC2 / MTF not bugs | main |
+| 33 | PA T3 / T9 | merged (#375, 7360b95; display only, entries byte-identical) | main |
+| 34 | "Merge and continue" (4) | nothing open to merge; continuing (provisional, no questions): the E4 (b) hooks left by T9 (pattern retest, range edges, D / W broken lines) behind a default-OFF reading switch + 13-group replay before / after | branch claude/hopeful-gates-hf186c |
