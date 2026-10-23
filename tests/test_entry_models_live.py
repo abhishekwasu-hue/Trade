@@ -126,13 +126,17 @@ def test_four_models_one_visit_four_cards_then_four_positions(db, es, opened, mo
         _pending(r["signal_id"])
         r = VS.get_signal(r["signal_id"])
         tags = VG._row_tags(r)
-        cap = VW.v1_caption(r, {"verdict": "agree", "audits": [{"reason": "Sellers took over."}]}, d, r["deadline"])
-        head = cap.split("\n")[0]
-        assert head.startswith(f"{SYM} · {tags['entry_model']} — {NAMES[tags['entry_model']]}:")      # classic title line: the symbol first (DECISIONS 41)
-        assert "invalidation (info): 25,135 — 15M close above the area high" in cap                   # the model invalidation (info)
-        assert "evidence: ✓ handover · ✗ volume growing · NA confluence" in cap
+        res = {"verdict": "agree", "audits": [{"reason": "Sellers took over."}]}
+        cap = VW.v1_caption(r, res, d, r["deadline"])
+        head = cap.split("\n")[0]                                                # DECISIONS 52: the engine-entry card = short bullets
+        assert head.startswith(f"🎯 <b>{SYM} · bear call · {tags['entry_model']} — {NAMES[tags['entry_model']]} · label A</b>")
+        assert "• Invalidation (info): 25,135 · trade SL / target = dashboard" in cap                  # the model invalidation (info)
+        assert "• Evidence ✓: handover" in cap and len(cap) <= 1024
+        det = VW.engine_details(r, res, d)                                         # the full details = the reply under the card
+        assert "invalidation (info): 25,135 — 15M close above the area high" in det
+        assert "evidence (label A): ✓ handover · ✗ volume growing · NA confluence" in det      # layer 6 O-3: the label on every layout
         summ = VW.v1_caption(r, {"verdict": "agree"}, d, r["deadline"], layout="summary")
-        assert summ.split("\n")[0].startswith(f"🟡 {SYM} · {tags['entry_model']} — {NAMES[tags['entry_model']]} · bear call · Label A")
+        assert summ.split("\n")[0] == head                                       # one engine-entry card on every layout
         assert tags["gate"]["area"] == [25080.0, 25120.0] and tags["entry_visit"] == VISIT
     for r in rows:
         _approve(r["signal_id"], NOW + dt.timedelta(minutes=1))

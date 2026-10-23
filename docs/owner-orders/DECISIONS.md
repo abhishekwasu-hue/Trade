@@ -130,3 +130,23 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     entry and every armed-area visit without an entry, 1H + 15M + 5M charts, lifecycle, approach side, trigger, invalidation,
     decision bar with later bars faded, one Marathi reason line) in trade-data; Abhi's consolidated corrections are fixed by the next
     open with tests and before / after charts; a running reading-errors log (concept, case, fix PR, chart proof). (Owner decision)
+50. Layer 6 output fixes approved (Abhi ✅ on the gallery): the card / Vision facts take the next area from the engine (O-1), print the
+    A / B label (O-2, O-3), drop the old level-bot "grade" line and show the area's own TF (O-5), show a broken line as BROKEN (O-6).
+    (Owner decision)
+51. Every output reads exactly what the engine read at the decision: the facts dossier follows the 5M trigger (visit, required set,
+    E4 (b) objects, the Daily frame for liquidity). (Owner decision)
+52. The card caption stays short; the full details (5M trigger, evidence, invalidation) go as a reply under the card — nothing is cut by
+    a length limit. The engine card draws the 5M trigger as its own panel beside the 15M panel, never over it. (Owner decision)
+53. No "merged band — check" warning for engine areas (approval_band_warn_rule = method; wide areas stay in the comparison-based
+    reading check). Missing FUT volume is said as "FUT volume missing — E2 cannot be read", never as a grade cap. (Owner decision)
+54. Label: the required set is the fired model's own conditions (every fired entry has it); A = the model's conditions + at least one
+    confirming evidence piece (RSI divergence, volume growing inside, confluence, correction line closed through, counter channel
+    broken); B = the model's conditions only. The label never blocks. (Owner rule)
+55. Label confirming pieces tightened: "counter channel broken" = only the pullback's (correction's) channel at the trend degree (1H);
+    "confluence" = only a Daily / Weekly area overlapping the traded area, or an object of a different kind (a line, a liquidity pool)
+    at the same place — nearness alone never counts. If A / B still does not separate, the card shows the evidence list + its count
+    instead (information only, no threshold); Abhi decides after seeing the split. (Owner rule)
+56. RSI divergence (L5-b): the push still forming at the decision bar counts as a push, marked "forming", read only from bars ≤ t, shown
+    "confirmed" once its swing confirms. (L5-c): RSI divergence is read at the retest of a broken line / area like at any area — the
+    retest is the pullback to the object. (Owner rule)
+57. A fix is approved only after Abhi has checked its charts: galleries are sent as ZIPs for review. (Owner decision)

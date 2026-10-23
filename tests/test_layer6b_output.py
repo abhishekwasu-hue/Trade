@@ -127,7 +127,7 @@ def test_engine_areas_never_breaks_the_gate_tags():
     base = {"level_lo": 22600.0, "level_hi": 22650.0, "grade": "A"}
     for wl in ([{"id": [1, 2], "lo": 1.0, "hi": 2.0}], 5, "junk", [None, {"lo": None}]):
         g = EE.engine_gate_tags({**base, "payload": json.dumps({"watch_list": wl})}, "BEARISH")
-        assert g["mode"] == "engine" and g["area"] == [22600.0, 22650.0] and g["band_warn_rule"] == "points"
+        assert g["mode"] == "engine" and g["area"] == [22600.0, 22650.0] and g["band_warn_rule"] == "method"
         assert g["areas"] is None or isinstance(g["areas"], list)
     assert EE.engine_areas({"watch_list": 5}) is None
 
@@ -162,7 +162,8 @@ def test_daily_summary_follows_the_band_rule():
     zones = pd.DataFrame([{"zone_type": "ENGINE_LEVEL_1H", "zone_low": 22700.0, "zone_high": 23000.0, "status": "ACTIVE"}])
     gate = {"confirmed": 0, "armed": 0, "ignored": {}}
     rng = {"high": 22650.0, "low": 22500.0}
-    assert "merged band" in S.symbol_line("NIFTY", ctx, gate, zones, rng)                       # default = today (points)
+    assert "merged band" not in S.symbol_line("NIFTY", ctx, gate, zones, rng)                   # default = method (DECISIONS 53)
+    assert "merged band" in S.symbol_line("NIFTY", ctx, gate, zones, rng, warn_rule="width")    # what-if: the earlier line
     m = S.symbol_line("NIFTY", ctx, gate, zones, rng, warn_rule="method")
     assert "merged band" not in m and "300 pts wide" in m
     own = zones.assign(zone_type="DYNAMIC_SR_RESISTANCE_15M")                                  # not an engine area ⇒ points

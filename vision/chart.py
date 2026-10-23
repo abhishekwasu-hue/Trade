@@ -537,11 +537,13 @@ def volume_words(sig):
     return VP.words_of((sig.get("ctx_settings") or {}).get("vision_volume_words"))
 
 
-def _volume_line(setup, sig, vols):
+def _volume_line(setup, sig, vols, engine=False):
+    """The caption's volume line (the setup pane's study). engine (the engine card, DECISIONS 53 VP3) ⇒ its words (`VP.engine_words`)."""
     from decision3 import volume_pane as VP
     v = (vols or (None,))[0]
-    return VP.study(setup, vol=np.full(len(setup), np.nan) if v is None else v, info=sig, d=sig.get("direction"), area=_area_of(sig),
-                    words=volume_words(sig))["line"]
+    st = VP.study(setup, vol=np.full(len(setup), np.nan) if v is None else v, info=sig, d=sig.get("direction"), area=_area_of(sig),
+                  words=volume_words(sig))
+    return VP.engine_words(st)["line"] if engine else st["line"]
 
 
 def render(df1m, sig, daily=None, fut=None):
@@ -654,7 +656,7 @@ def engine_figure(cut, setup, higher, tfs, sig, ctx, vols, meta, fut=None):
     fig = EC.build_figure(setup, higher, sig, tfs, rd, vols, objs or None, xmaps, errors=errors, trigger=trig)
     if errors:
         meta["objects_error"] = "; ".join(errors)[:240]
-    meta["volume_line"] = _volume_line(setup, sig, vols)
+    meta["volume_line"] = _volume_line(setup, sig, vols, engine=True)    # DECISIONS 53 (VP3): the engine card's words, no "grade cap"
     meta["card"] = "engine"
     if trig is not None:
         meta["trigger_panel"] = {"tf": "5M", "bars": int(len(trig["df"]))}

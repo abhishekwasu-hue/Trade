@@ -105,7 +105,7 @@ def engine_gate_tags(r, direction, settings=None):
     area = sorted([float(lo), float(hi)]) if lo is not None and hi is not None else None
     return {"mode": "engine", "side": direction, "area": area, "grade": r.get("grade"), "tf": "15M",
             "trend": pay.get("trend_used") or pay.get("daily_trend"), "form": pay.get("commitment_form"),
-            "band_warn_pts": PT.band_warn_pts(settings), "band_warn_rule": PT.band_warn_rule(settings),   # layer 6b (default points)
+            "band_warn_pts": PT.band_warn_pts(settings), "band_warn_rule": PT.band_warn_rule(settings),   # layer 6b (default method, DECISIONS 53)
             "areas": engine_areas(pay), "reader": engine_reader(pay), "htf": engine_htf(pay)}
 
 
@@ -394,6 +394,10 @@ def entry_gate_tags(r, e, direction, settings=None):
         if not any(isinstance(x, dict) and _num(x.get("lo")) == a[0] and _num(x.get("hi")) == a[1] for x in areas):
             areas.insert(0, {"id": ar.get("id"), "role": "support" if int(e["direction"]) > 0 else "resistance", "lo": a[0], "hi": a[1],
                              "tf": ar.get("tf"), "state": ar.get("state"), "confluence_label": None})
+        for x in areas:                                                   # layer 6: the entry's own object keeps the state the engine
+            if isinstance(x, dict) and _num(x.get("lo")) == a[0] and _num(x.get("hi")) == a[1] and x.get("state") is None \
+                    and ar.get("state"):                                  # read (a broken line's row in the payload carries none)
+                x["state"] = ar.get("state")
         g["areas"] = areas
     cl = e.get("cluster") if isinstance(e.get("cluster"), dict) else None
     if cl and isinstance(cl.get("members"), list) and len(cl["members"]) > 1:   # one location = the overlapping cluster: every member area
@@ -414,6 +418,8 @@ def entry_gate_tags(r, e, direction, settings=None):
     if ev_lines:                                                          # P8: the evidence line(s) the chart always shows
         g["evidence_lines"] = ev_lines
     g["grade"] = e.get("label") if e.get("label") in ("A", "B") else None   # this entry's own label (none ⇒ no label, never the row's)
+    if "next_area" in e:                                                  # layer 6: the next area (target) as the engine read it
+        g["next_area"] = e.get("next_area") if isinstance(e.get("next_area"), dict) else None
     ev = e.get("evidence")
     el = e.get("evidence_list") if isinstance(e.get("evidence_list"), dict) else ev
     if isinstance(el, dict) and ("required" in el or "confirming" in el):   # the 6a evidence list in the reader's own shape

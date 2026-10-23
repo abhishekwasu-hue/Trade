@@ -488,6 +488,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 Abhi (merged band — check): approval संदेश / pre-open / 15:45 सारांशात पट्ट्याची रुंदी (pts) दाखवतो; रुंदी यापेक्षा जास्त ⇒
         # "⚠️ merged band — check" ओळ. फक्त दाखवणं — निर्णय / gate / order बदलत नाही (bots_common/plain_text.band_warn_pts). Default 150.
         "approval_band_warn_pts": 150,
+        # 🎓 Abhi (DECISIONS 53, BW-1): engine areas ना "merged band — check" ओळ नाही (method = default; एक base, कधीच merge नाही) ·
+        # width = जुनी 150-pt ओळ (what-if). Bot चे स्वतःचे पट्टे ⇒ ओळ तशीच. फक्त दाखवणं (bots_common/plain_text.band_warn_rule).
+        "approval_band_warn_rule": "method",
         # 🎓 Abhi (pre-open charts): pre-open संदेशाच्या वर लहान crux (जवळचा area, entry क्रम, invalidation, target) + प्रत्येक symbol चे
         # Daily / 1H / 15M charts (album). फक्त दाखवणं — निर्णय / gate / order बदलत नाही; chart अयशस्वी ⇒ "(chart unavailable)", संदेश
         # तसाच जातो. Default ON (Abhi ने मागितलं); बंद ⇒ जुनाच संदेश (bots_common/preopen_crux.py).
@@ -1344,10 +1347,15 @@ CHART_READING_STRATEGY_KEY = "__chart_reading_report__"
 CHART_READING_SYMBOL_KEY = "ALL"
 CHART_READING_DEFAULTS = {"chart_reading_report": "on", "chart_reading_symbols": [], "chart_reading_language": "mr",
                           "chart_reading_detail": "short", "chart_reading_vision": "on", "chart_reading_page_url": "",
-                          "visual_audit_level_message": "off"}
+                          "visual_audit_level_message": "off",
+                          # DECISIONS 49 — today's reading gallery (scripts/reading_gallery_today.py): DISPLAY-ONLY settings (what is
+                          # drawn / listed), never a reading rule, a gate or an entry setting.
+                          "reading_gallery": "on", "reading_gallery_max_visit_charts": 40, "reading_gallery_disarmed_charts": "on"}
 CHART_READING_CHOICES = {"chart_reading_report": ("off", "on"), "chart_reading_language": ("mr", "en"),
                          "chart_reading_detail": ("short", "full"), "chart_reading_vision": ("off", "on"),
-                         "visual_audit_level_message": ("off", "on")}
+                         "visual_audit_level_message": ("off", "on"), "reading_gallery": ("off", "on"),
+                         "reading_gallery_disarmed_charts": ("off", "on")}
+READING_GALLERY_MAX_VISIT_CHARTS = (0, 500)                                 # display range of the cap (charts per gallery)
 
 
 def clean_chart_reading_settings(changes):
@@ -1370,6 +1378,13 @@ def clean_chart_reading_settings(changes):
             bad = [x for x in v if x not in SIGNAL_SYMBOLS_CHOICES]
             if bad:
                 raise ValueError(f"chart_reading_symbols: {bad} — {SIGNAL_SYMBOLS_CHOICES}")
+        elif k == "reading_gallery_max_visit_charts":
+            try:
+                v = int(str(v).strip())
+            except ValueError:
+                raise ValueError(f"{k} = {v!r} — a whole number {READING_GALLERY_MAX_VISIT_CHARTS}") from None
+            if not READING_GALLERY_MAX_VISIT_CHARTS[0] <= v <= READING_GALLERY_MAX_VISIT_CHARTS[1]:
+                raise ValueError(f"{k} = {v} — {READING_GALLERY_MAX_VISIT_CHARTS}")
         elif k == "chart_reading_page_url":
             v = str(v or "").strip()
             if v and not v.startswith(("http://", "https://")):

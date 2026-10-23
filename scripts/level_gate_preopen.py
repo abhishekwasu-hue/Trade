@@ -102,7 +102,7 @@ def warn_pts_for(active, sym):
 
 
 def warn_rule_for(active, sym):
-    """Layer 6b: चालू bots च्या settings मधला `approval_band_warn_rule` (त्या symbol चा पहिला); नाही ⇒ "points" (आजचं)."""
+    """Layer 6b: चालू bots च्या settings मधला `approval_band_warn_rule` (त्या symbol चा पहिला); नाही ⇒ "method" (DECISIONS 53)."""
     for a in active or ():
         if a.get("symbol") == sym and a.get("band_warn_rule") is not None:
             return PT.band_warn_rule(a["band_warn_rule"])
@@ -353,7 +353,7 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
             wk = None
         per_bot = [] if legacy or not ctx.get("ok") or last is None else active_bot_areas(sym, active, ctx, last, zones, engine_areas_fn)
         warn = warn_pts_for(active if not legacy else None, sym)          # Abhi: merged band — check (setting, default 150)
-        rule = warn_rule_for(active if not legacy else None, sym)         # layer 6b: approval_band_warn_rule (default points)
+        rule = warn_rule_for(active if not legacy else None, sym)         # layer 6b: approval_band_warn_rule (default method, DECISIONS 53)
         if legacy:
             plain.append(symbol_line(sym, ctx, wk, last, zones, tfs, warn_pts=warn, warn_rule=rule))
         else:
