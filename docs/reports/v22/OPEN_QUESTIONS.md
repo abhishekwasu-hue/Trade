@@ -1262,3 +1262,52 @@ Abhi objects — each is in the code as written here:
 - Noted while building (not changed here): on 8ff504e `tests/test_model_c.py::test_switch_off…[oct12_bear]` failed (the DECISIONS 38–41
   rows vs the old pin) — fixed on the branch by c1cf6ed (merged into this build).
 
+
+## Reading check — Daily trend side over six months (BANKNIFTY regression sample, origin/main 5243383; trade-data `review/fix_proof_gallery/sec6.html`)
+
+Checked against CLAUDE.md (Trading / reading), DECISIONS 1–3, 17, 46, method §1 P2 / P4, §2 b), §3 Structure / Area lifecycle, §8 T1,
+STABLE layer 1 (L1-a / L1-b / L1-c). Verdicts only — nothing in the engine changed; no rule, number or golden expectation touched.
+
+- **D-SIDE-1 (concept: Daily trend — Q15 impulse-degree Dow, A1 parent gate, Q49 (a), ABC_FIX 3, trend first). Verdict: correct
+  reading by the method, not a bug.** The engine's Daily fold (impulse mode, `daily_leg_read = compare`, `daily_pivot_n = 2`) reads:
+  DOWN from 23 Mar 2026 (origin 53,562 closed below + opposite structure, leg (3) 55,554 → 51,324 impulse-natured by comparison);
+  8 Apr close 55,704 above the impulse origin 54,146 ⇒ counter-move 49,955 → 55,778 corrective vs the leg it corrects (54,146 → 49,955:
+  smaller bodies, more overlap; Daily has no volume, T1) ⇒ same-degree correction (A1), parent 61,765 held ⇒ side stays DOWN (cap B);
+  17 Jun HL 52,783 + close above 57,456 ⇒ Daily structure UP ⇒ trend first: NEUTRAL (sessions 18 – 29 Jun, no bear call); a flip
+  needed a close above the parent 61,765 — never came; 29 Jun the C top 58,706 lay inside the sharp-fall supply 58,394–59,840 (ABC_FIX
+  2) and the close 57,727 was below it (ABC_FIX 3) ⇒ correction ended, new DOWN impulse, protected 58,706; Jul – Oct lower highs (58,597,
+  58,248, 58,025, 56,996, 56,066) and lower lows (57,457 … 53,786), no close above 58,706. Bug hypotheses checked, all clean: look-ahead
+  (52 prefix folds = the full fold), warm-up (the live 3,650-day cut gives identical 2026 states), stale state (all 3,075 replay rows'
+  `trend_used` = the fold's side of the previous Daily close), truncated Daily bars (Upstox D to 9 Oct + complete 15M sessions; no gap),
+  the compare reader stuck (re-read at every new counter-move extreme; corrective each time). What-if (display only): judging the
+  counter-move against the whole fall 61,765 → 49,955 changes nothing (impulse-natured, but its own inner pullback is smaller than the
+  trend's ⇒ lower degree, Q22 ⇒ still a correction).
+- **D-SIDE-2 (concept: Swing degree, L1-c `daily_pivot_n`) — information for Abhi, assumed: no change.** The six-month side depends
+  strongly on Abhi's provisional N = 2: N = 3 reads the Feb – Apr fall as a same-degree correction of the 2025 uptrend (parent 47,703
+  held) ⇒ UP (bull put) all six months; N = 1 reads trend first NEUTRAL (LH 61,679 + close below 59,645) all six months. N stays 2 until
+  Abhi changes it on the dashboard (DECISIONS 2; L1-c).
+- **D-SIDE-3 (display wording, layer 1 `daily.fold_impulse` why text) — assumed: logged only.** On 29 Jun the why reads "close beyond
+  the counter-move's last HL 58,393.55"; 58,393.55 is the sharp-fall zone's edge (ABC_FIX 3 branch), not an HL swing. Wording only;
+  the reading is unchanged. A fix (say "the sharp-fall zone edge") belongs to the next layer-1 bug-fix batch with Abhi's ✅.
+- **K4-W1 (concept: Area lifecycle — Broken vs Sweep; R5-N01) — verdict: replay warm-up, not a K4 misread.** Area 77 (D resistance
+  56,105–56,161) logged "119 closes beyond, back inside" as a sweep on 24 Apr because the replay's 15M history starts 13 Apr and the
+  swing engine (swings2, σ over 20 sessions) had NO swing at any degree until 13 May — so "a swing formed beyond" could never be read.
+  Sessions before ~13 May (groups 13 Apr – 9 May and part of 10 – 24 May) are structure warm-up and should not count as K4 / E3 / E4
+  evidence. Noted (operational, not a reading rule): the replay / live data floor (`len(m15) < 200` ⇒ EngineDataError) is shorter than
+  the swing warm-up; live has 90 days of 15M so it is unaffected. Provisional: mark those sessions "warm-up — structure not readable" in
+  replay reports.
+- **K6.5-R1 (concept: line broken / broken back, DECISIONS 39; R5-N05) — verdict: correct.** The 1H line D2:H+:1148-1262|par broke
+  down 30 Jun 14:45 (swing 57,457 beyond); price closed back above from 30 Jun 15:15, but no 1H-degree (D2) swing low formed above the
+  line by 2 Jul 14:15 (price rose to 58,242, then drifted down without a confirmed D2 low) ⇒ the break is not undone, the line stays
+  BROKEN; E4 (b) correctly waits because the revisit came from above (DECISIONS 38).
+- **E4b-G1 (concept: E4 (b) after a gap break; R5-E08) — verdict: correct.** D support 274 (56,024–56,169): the 11 Sep 09:15 bar
+  opened below it (a gap = the next candle, P2), the D1 swing low 55,699 was confirmed at 10:00 ⇒ BROKEN (close beyond + swing beyond =
+  broken (flip), CLAUDE.md / DECISIONS 23); price came back up to it from below and the 5M rejection closed below ⇒ E4 (b) bear call
+  10:25. "No far-side swing known" = no D2 swing beyond from before the break; the D2 flip event follows at 11:00 when 55,699 is
+  confirmed at that degree. The elapsed time between break and retest never matters (P2).
+- **TA4-B1 (concept: Swing placement → refined base wick to body; R5-N08) — verdict: TA4 applied as written; the thin band comes from
+  layer 1, logged for Abhi.** The refined base 56,551.65–56,552.85 is NOT a near-doji: it is the upper wick (1.2 pts) of a strong
+  bearish 15M candle (10 Sep 09:30, O 56,551.65 H 56,552.85 L 56,452.95 C 56,464). The swing high was placed on that candle because the
+  previous 15M bar (09:15) holds both the swing low 56,252 and (later, by the 1m order) the true high 56,575.15; swings2 keeps one pivot
+  per bar, so the H moves to 09:30 with its own high. Assumed (no change; STABLE layer 1): a question for the next layer-1 review —
+  should a turn whose extreme sits in the bar of the opposite swing keep that bar's extreme (56,575.15)?
