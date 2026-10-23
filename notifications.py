@@ -73,10 +73,11 @@ def _load_telegram_credentials():
     return _read_telegram_from_env_file()
 
 
-def send_telegram_message(message, timeout=10):
+def send_telegram_message(message, timeout=10, silent=False):
     """
     Telegram वर संदेश पाठवणे. Credentials नसतील, किंवा पाठवताना काहीही चूक झाली, तर script
     थांबता कामा नये — म्हणून सर्व अपयश शांतपणे local log मध्ये नोंदवले जातात, कधीही raise होत नाही.
+    silent=True ⇒ disable_notification (आवाज नाही — माहितीचे संदेश; default False = आजचंच वर्तन).
     रिटर्न: True (यशस्वी) / False (अयशस्वी किंवा credentials नाहीत).
     """
     token, chat_id = _load_telegram_credentials()
@@ -86,7 +87,7 @@ def send_telegram_message(message, timeout=10):
     try:
         resp = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"},
+            json={"chat_id": chat_id, "text": message, "parse_mode": "HTML", **({"disable_notification": True} if silent else {})},
             timeout=timeout,
         )
         return resp.status_code == 200

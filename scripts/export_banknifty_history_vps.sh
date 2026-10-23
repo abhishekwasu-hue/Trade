@@ -77,7 +77,14 @@ stash_note() {  # autostash re-apply conflicted ⇒ git keeps the local changes 
   fi
 }
 "${G[@]}" add --ignore-removal -- "$REL" || { echo "❌ git add अयशस्वी — commit नाही"; move_out; exit 1; }
-"${G[@]}" commit -q -m "banknifty/vps_history/$STAMP: BANKNIFTY history from the VPS (read-only export)" -- "$REL" \
+# commit ONLY what is staged (a pathspec commit would also record working-tree DELETIONS despite --ignore-removal); a staged deletion
+# or any staged path outside $REL ⇒ no commit (trade-data never loses a file, never takes someone else's change)
+DELS=$("${G[@]}" diff --cached --name-only --diff-filter=D)
+OTHER=$("${G[@]}" diff --cached --name-only | grep -v "^$REL/" || true)
+if [ -n "$DELS" ] || [ -n "$OTHER" ]; then
+  echo "❌ trade-data मध्ये delete / इतर staged बदल आहेत (${DELS:-}${OTHER:+ $OTHER}) — commit नाही"; move_out; exit 1
+fi
+"${G[@]}" commit -q -m "banknifty/vps_history/$STAMP: BANKNIFTY history from the VPS (read-only export)" \
   || { echo "❌ commit अयशस्वी — commit नाही"; move_out; exit 1; }
 if ! "${G[@]}" push -q origin HEAD:main; then
   echo "↻ push नाकारला — pull --rebase --autostash करून एकदा पुन्हा"
