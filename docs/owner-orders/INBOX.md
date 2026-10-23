@@ -714,3 +714,7 @@ Merge and continue
 ---
 ## 23 Oct — speed
 Do it fast, use multiple agent
+
+---
+## 23 Oct — VPS command + see all work
+Vps comand dya, आतापर्यंत झालेले सर्व काम मला बघायचे आहे
