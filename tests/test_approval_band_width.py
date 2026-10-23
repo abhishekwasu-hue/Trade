@@ -14,6 +14,7 @@ from paper import engine_entry as EE
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FLAG = "merged band — check"
+WIDTH = {"approval_band_warn_rule": "width"}           # DECISIONS 53: the 150-pt line on engine areas = the what-if `width` only
 
 
 def _load(name):
@@ -77,7 +78,8 @@ def test_approval_caption_shows_width_no_flag_when_narrow(monkeypatch):
 
 
 def test_approval_caption_flags_wide_band_after_decision_line(monkeypatch):
-    cap = _v1(_row(22300.0, 22750.0, direction="BEARISH"), monkeypatch)
+    assert FLAG not in _v1(_row(22300.0, 22750.0, direction="BEARISH"), monkeypatch)      # DECISIONS 53: default method
+    cap = _v1(_row(22300.0, 22750.0, WIDTH, direction="BEARISH"), monkeypatch)
     lines = PT.first_part(cap).strip("\n").splitlines()
     assert "supply area 22,300–22,750 (450 pts)" in lines[0]
     assert lines[1].replace("<b>", "").startswith(PT.DECISION_APPROVE)          # ओळ 2 = निर्णय (TELEGRAM_CLEANUP आकार तसाच)
@@ -89,14 +91,14 @@ def test_approval_caption_flags_wide_band_after_decision_line(monkeypatch):
 def test_approval_caption_setting_override(monkeypatch):
     wide_ok = _v1(_row(22300.0, 22750.0, {"approval_band_warn_pts": 500}), monkeypatch)
     assert FLAG not in wide_ok and "(450 pts)" in wide_ok
-    narrow_flag = _v1(_row(22544.0, 22622.0, {"approval_band_warn_pts": 50}), monkeypatch)
+    narrow_flag = _v1(_row(22544.0, 22622.0, {"approval_band_warn_pts": 50, **WIDTH}), monkeypatch)
     assert "⚠️ merged band — check (width 78 pts &gt; 50)" in PT.first_part(narrow_flag)
 
 
 def test_v0_caption_flag_and_missing_band(monkeypatch):
     from vision import worker as VW
     res = {"verdict": "agree", "audits": []}
-    v0 = VW.caption(_row(22300.0, 22750.0), res, "notify")
+    v0 = VW.caption(_row(22300.0, 22750.0, WIDTH), res, "notify")
     assert FLAG in PT.first_part(v0) and "(450 pts)" in v0
     # पट्टा नाही (engine band NA / gate नाही / अर्धवट) ⇒ जुना "Level" मजकूर, width / flag नाही, crash नाही
     for tags in ({"engine": True, "gate": EE.engine_gate_tags({"level_lo": None, "level_hi": None}, "BULLISH")}, {},
@@ -124,12 +126,12 @@ def _preopen_msg(P, extra=None):
 
 def test_preopen_lines_show_width_and_flag():
     P = _load("level_gate_preopen")
-    top, det = _preopen_msg(P).split(PT.SEP)
+    top, det = _preopen_msg(P, WIDTH).split(PT.SEP)
     assert "supply 22,600–22,950 (1H, ≈35 pts above), 350 pts wide ⚠️ merged band — check (over 150 pts)" in top
     assert "demand 50,800–50,900 (1H, ≈350 pts below), 100 pts wide." in top
     assert "watching supply 22,600–22,950 (350 pts) ⚠️ merged band — check (width 350 pts &gt; 150)" in det
     assert "watching demand 50,800–50,900 (100 pts)" in det and det.count(FLAG) == 1
-    over = _preopen_msg(P, {"approval_band_warn_pts": 400})                   # setting override ⇒ इशारा नाही
+    over = _preopen_msg(P, {"approval_band_warn_pts": 400, **WIDTH})                   # setting override ⇒ इशारा नाही
     assert FLAG not in over and "350 pts wide" in over
     assert P.area_words(LR.BEAR, 22781.0, 22781.0, "DYNAMIC_SR_RESISTANCE_15M", 22700.0) == "supply 22,781 (15-min, ≈81 pts above)"
 
@@ -140,12 +142,12 @@ def test_summary_lines_show_width_flag_override_and_missing():
     ctx = CTX["NIFTY"]
     zones = pd.DataFrame([{"zone_type": "ENGINE_LEVEL_1H", "zone_low": 22700.0, "zone_high": 23000.0, "status": "ACTIVE"}])
     gate = {"confirmed": 0, "armed": 0, "ignored": {}}
-    away = S.symbol_line("NIFTY", ctx, gate, zones, {"high": 22650.0, "low": 22500.0})
+    away = S.symbol_line("NIFTY", ctx, gate, zones, {"high": 22650.0, "low": 22500.0}, warn_rule="width")
     assert "Nearest supply 22,700–23,000 (1H, ≈50 pts above the high), 300 pts wide ⚠️ merged band — check (over 150 pts)." in away
     inside = S.symbol_line("NIFTY", ctx, gate, zones, {"high": 22750.0, "low": 22500.0}, warn_pts=500)
     assert "Price traded into supply 22,700–23,000 (1H) today, 300 pts wide." in inside and FLAG not in inside
     conf = zones.assign(zone_type="ENGINE_LEVEL_1H|confluence: Daily 22,725–22,810")   # Abhi Z-1u: label "Nearest" ओळीतही
-    near = S.symbol_line("NIFTY", ctx, gate, conf, {"high": 22650.0, "low": 22500.0})
+    near = S.symbol_line("NIFTY", ctx, gate, conf, {"high": 22650.0, "low": 22500.0}, warn_rule="width")
     assert "Nearest supply 22,700–23,000 (1H, ≈50 pts above the high; confluence: Daily 22,725–22,810), 300 pts wide" in near
     na = S.symbol_line("NIFTY", ctx, gate, None, {"high": 22650.0, "low": 22500.0}, areas_na="Upstox login missing")
     assert "pts wide" not in na and FLAG not in na
@@ -155,7 +157,7 @@ def test_summary_lines_show_width_flag_override_and_missing():
     assert "300 pts wide." in txt and FLAG not in txt
     bad = S.symbols_section("2026-10-14", symbols=("NIFTY",), ctx_fn=lambda s, d: ctx, rows_fn=lambda s, d: ([], None),
                             zones_fn=lambda s: zones, range_fn=lambda s, d: {"high": 22650.0, "low": 22500.0},
-                            warn_fn=lambda s: 1 / 0)                         # setting वाचता नाही ⇒ default 150
+                            warn_fn=lambda s: 1 / 0, rule_fn=lambda s: "width")   # setting वाचता नाही ⇒ default 150
     assert FLAG in bad
 
 
@@ -181,21 +183,32 @@ def test_modify_ticket_shows_band_width_and_flag_after_decision_line():
 
 
 # ------------------------------------------------------------------------------------------------ layer 6b: the method statement (setting)
-def test_band_warn_rule_setting_default_is_todays_output():
-    """Layer 6b (C-18): `approval_band_warn_rule` — default "points" = today's line byte-for-byte; "method" = an engine area is one base,
-    never merged (#329, Abhi Z-1u) ⇒ the width stays as a fact, no "merged band" line; any other source keeps the points line."""
+def test_band_warn_rule_setting_default_is_method():
+    """Layer 6b (C-18) + DECISIONS 53 (BW-1, Abhi): `approval_band_warn_rule` — default "method" = an engine area is one base, never
+    merged (#329, Abhi Z-1u) ⇒ the width stays as a fact, no "merged band" line; any other source keeps the width line. "width" = the
+    earlier output (what-if); "points" (the earlier name) reads as "width"."""
     from decision3 import settings as S3
-    assert S3.OUTPUT["approval_band_warn_rule"][0] == PT.band_warn_rule(None) == PT.band_warn_rule({}) == "points"
-    assert S3.REGISTER["approval_band_warn_rule"][2] == "setting" and PT.band_warn_rule("junk") == "points"
-    assert PT.band_warn_rule({"approval_band_warn_rule": " Method "}) == "method"
+    assert S3.OUTPUT["approval_band_warn_rule"][:2] == ("method", ("method", "width"))
+    assert S3.OUTPUT["approval_band_warn_rule"][0] == PT.band_warn_rule(None) == PT.band_warn_rule({}) == "method"
+    assert S3.REGISTER["approval_band_warn_rule"][:3] == ("method", "method / width", "setting") and PT.band_warn_rule("junk") == "method"
+    assert PT.band_warn_rule({"approval_band_warn_rule": " Width "}) == "width" == PT.band_warn_rule("points")
+    assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]["approval_band_warn_rule"] == "method"
+    assert "approval_band_warn_rule" not in S3.DEFAULTS                                         # display only, never a reading setting
     wide = (22300.0, 22750.0)
-    assert PT.band_flag(*wide, None, "points", engine_area=True) == PT.band_flag(*wide) != ""
-    assert PT.band_flag(*wide, None, "method", engine_area=True) == ""
-    assert PT.band_flag(*wide, None, "method", engine_area=False) == PT.band_flag(*wide)        # not an engine area ⇒ points
+    assert PT.band_flag(*wide, None, "width", engine_area=True) == PT.band_flag(*wide) != ""   # not an engine area ⇒ the line
+    assert PT.band_flag(*wide, None, "points", engine_area=True) == PT.band_flag(*wide)        # old rows' tags read the same
+    assert PT.band_flag(*wide, None, "method", engine_area=True) == "" == PT.band_flag(*wide, engine_area=True)
+    assert PT.band_flag(*wide, None, "method", engine_area=False) == PT.band_flag(*wide)        # not an engine area ⇒ width
     assert PT.band_wide_words(*wide, None, "method", engine_area=True) == "450 pts wide"
     r = {"level_lo": 22300.0, "level_hi": 22750.0, "grade": "B"}
-    assert EE.engine_gate_tags(r, "BEARISH")["band_warn_rule"] == "points"
-    assert EE.engine_gate_tags(r, "BEARISH", {"approval_band_warn_rule": "method"})["band_warn_rule"] == "method"
+    assert EE.engine_gate_tags(r, "BEARISH")["band_warn_rule"] == "method"
+    assert EE.engine_gate_tags(r, "BEARISH", WIDTH)["band_warn_rule"] == "width"
+
+
+def test_dashboard_offers_the_band_rule():
+    """The setting is on the 15M SRv2 dashboard page (🧭 Signal source) and saved with the page's settings (display only)."""
+    src = open(os.path.join(ROOT, "page_bot_dynamic_sr_algo.py"), encoding="utf-8").read()
+    assert "_PT.BAND_WARN_RULES" in src and "new_settings[_PT.BAND_WARN_RULE_KEY] = _PT.band_warn_rule(approval_band_warn_rule)" in src
 
 
 def test_band_warn_rule_method_in_captions_and_preopen(monkeypatch):
@@ -207,4 +220,4 @@ def test_band_warn_rule_method_in_captions_and_preopen(monkeypatch):
     P = _load("level_gate_preopen")
     msg = _preopen_msg(P, {"approval_band_warn_rule": "method"})
     assert FLAG not in msg and "350 pts wide" in msg and "22,600–22,950 (350 pts)" in msg
-    assert FLAG in _preopen_msg(P)                                                              # default unchanged
+    assert FLAG not in _preopen_msg(P) and FLAG in _preopen_msg(P, WIDTH)                         # default = method (DECISIONS 53)

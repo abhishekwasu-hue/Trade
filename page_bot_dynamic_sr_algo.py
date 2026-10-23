@@ -1415,6 +1415,7 @@ def render():
                                             ", ".join(f"{r:g}" for r in _S3C.DEFAULTS["c_projections"]))}
     from bots_common import plain_text as _PT
     approval_band_warn_pts = _PT.band_warn_pts(settings)
+    approval_band_warn_rule = _PT.band_warn_rule(settings)                 # DECISIONS 53 (BW-1): default method
     from bots_common import preopen_crux as _PC
     preopen_charts = _PC.charts_on(settings.get(_PC.SETTING_KEY))           # stored "false" ⇒ unchecked; रिकामं ⇒ default ON
     if strategy_key in ("1m_instant", "15m_dynamic_sr"):
@@ -1440,6 +1441,12 @@ def render():
                                                          value=float(approval_band_warn_pts), step=10.0,
                                                          key=_widget_key(strategy_key, symbol, "approval_band_warn_pts"),
                                                          help="फक्त Telegram संदेशात इशारा — निर्णय / gate / order बदलत नाही. Default 150.")
+                # 🎓 Abhi (DECISIONS 53, BW-1): engine areas = एक base (कधीच merge नाही) ⇒ "merged band" ओळ नाही (method, default)
+                approval_band_warn_rule = st.selectbox("Approval: 'merged band — check' नियम", _PT.BAND_WARN_RULES,
+                                                       index=_PT.BAND_WARN_RULES.index(approval_band_warn_rule),
+                                                       key=_widget_key(strategy_key, symbol, _PT.BAND_WARN_RULE_KEY),
+                                                       help="method (default, Abhi) = engine area ला ओळ नाही (रुंदी फक्त माहिती); bot चे स्वतःचे "
+                                                            "पट्टे ⇒ वरची pts ओळ · width = जुनी ओळ प्रत्येक पट्ट्याला (what-if). फक्त दाखवणं.")
                 # 🎓 Abhi: pre-open संदेशाच्या वर crux + प्रत्येक symbol चे Daily / 1H / 15M charts (फक्त दाखवणं)
                 preopen_charts = st.checkbox("Pre-open: crux + charts (Daily / 1H / 15M)", value=preopen_charts,
                                              key=_widget_key(strategy_key, symbol, "preopen_charts"),
@@ -1606,6 +1613,7 @@ def render():
             new_settings["engine3_daily_pivot_n"] = _L3.pivot_n_to_save(engine3_daily_pivot_n)   # रिकामं ("") ⇒ provisional N = 2
             new_settings.update(_L3.switches_to_save(engine3_switches)[0])    # रिकामं ("") ⇒ method; incoherent ⇒ visit / volume method
             new_settings["approval_band_warn_pts"] = float(approval_band_warn_pts)
+            new_settings[_PT.BAND_WARN_RULE_KEY] = _PT.band_warn_rule(approval_band_warn_rule)
             new_settings["preopen_charts"] = bool(preopen_charts)
             for _m, _on in engine3_models.items():                        # entry models E1–E4: signal switch only
                 new_settings[_EE.model_key(_m, "on")] = bool(_on)

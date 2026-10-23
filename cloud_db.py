@@ -488,6 +488,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 Abhi (merged band — check): approval संदेश / pre-open / 15:45 सारांशात पट्ट्याची रुंदी (pts) दाखवतो; रुंदी यापेक्षा जास्त ⇒
         # "⚠️ merged band — check" ओळ. फक्त दाखवणं — निर्णय / gate / order बदलत नाही (bots_common/plain_text.band_warn_pts). Default 150.
         "approval_band_warn_pts": 150,
+        # 🎓 Abhi (DECISIONS 53, BW-1): engine areas ना "merged band — check" ओळ नाही (method = default; एक base, कधीच merge नाही) ·
+        # width = जुनी 150-pt ओळ (what-if). Bot चे स्वतःचे पट्टे ⇒ ओळ तशीच. फक्त दाखवणं (bots_common/plain_text.band_warn_rule).
+        "approval_band_warn_rule": "method",
         # 🎓 Abhi (pre-open charts): pre-open संदेशाच्या वर लहान crux (जवळचा area, entry क्रम, invalidation, target) + प्रत्येक symbol चे
         # Daily / 1H / 15M charts (album). फक्त दाखवणं — निर्णय / gate / order बदलत नाही; chart अयशस्वी ⇒ "(chart unavailable)", संदेश
         # तसाच जातो. Default ON (Abhi ने मागितलं); बंद ⇒ जुनाच संदेश (bots_common/preopen_crux.py).

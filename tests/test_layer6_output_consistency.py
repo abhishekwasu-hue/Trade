@@ -136,8 +136,13 @@ def test_no_level_bot_grade_line_and_the_area_tf_is_the_areas_own(monkeypatch):
     sig, _ = sig_of(stored_row())
     cap = card(sig)
     monkeypatch.setattr(VW, "_fit", orig)
-    assert "🎯 Confirmation:" not in cap and "grade None" not in cap
-    assert "(Resistance, 1H) · signal 10:10" in cap
+    det = VW.engine_details({"signal_id": "x", "bot": "srv2_momentum_reversal", "symbol": "BANKNIFTY", "mode": "human_confirm",
+                             "signal_ts": pd.Timestamp("2026-10-15 10:10"), "direction": "BEARISH", "level": 55834.8,
+                             "role": "Resistance", "setup_tf": "15M", "tags": sig["tags"], "bot_label": "Price-action engine (PAPER)"},
+                            {"verdict": "unavailable"})                           # DECISIONS 52: the details = the reply
+    for t in (cap, det):
+        assert "🎯 Confirmation:" not in t and "grade None" not in t
+    assert "(Resistance, 1H) · signal 10:10" in det and "• Area: supply 55,699–55,970 (1H, flipped)" in cap
 
 
 def test_a_broken_line_object_keeps_its_engine_state_on_the_card_and_in_the_facts():

@@ -1379,3 +1379,11 @@ engine's entries are identical before / after (53 / 53). Display only: no readin
 - L6-O10 (BW-1 / C-18): answered — no merged-band warning for engine areas (`approval_band_warn_rule = method`).
 - L6-O11 (VP3): answered — "FUT volume missing — E2 cannot be read", no grade cap.
 - L6-a label: answered — required set = the fired model's own conditions; A = + ≥ 1 confirming piece; B = the model's conditions only; never blocks.
+- Done (branch `card6`, engine-entry Vision cards only; display only; level-bot / non-engine cards byte-identical): L6-O4 — the caption is
+  short bullets (trend, area + refined base, 5M trigger, invalidation, next area, evidence ✓, Vision, FUT-missing note, decision lines;
+  ≤ 1024, no key field cut) and the full details (5M trigger with OHLC / FUT volume / model facts, invalidation rule, evidence list, PA
+  evidence, Vision's reading) go as reply(ies) threaded under the card's message id (`vision/worker.engine_caption / engine_details /
+  send_details`; buttons stay on the card; works with Vision NA). L6-O13 — the engine card is setup 15M | trigger 5M | higher (own panel,
+  no inset). L6-O10 — `approval_band_warn_rule` = method (default) / width (what-if, the 150-pt line), on the 15M SRv2 dashboard;
+  "points" (old name) reads as width. L6-O11 — the engine card's volume words: "volume: FUT volume missing — E2 cannot be read" (no grade
+  cap); other charts unchanged. Not changed: the V0 `notify` caption of an engine entry (PAPER approval always runs V1 human_confirm).
