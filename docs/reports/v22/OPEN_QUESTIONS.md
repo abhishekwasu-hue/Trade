@@ -13,6 +13,7 @@ resolved" near the end.
 |---|---|---|---|
 | R-BN-1 … R-BN-5 | BANKNIFTY replay: does Abhi agree with "no handover" (E29 / E31), see a handover on any G3 visit (E14, E17, E20, E21, E24, E29), and is E26 / M06 only a note? R-BN-5 = data note (re-run when more history lands) | no change to the reader | trade-data `review/replay_banknifty_6m/04a8b40/ABHI_QUESTIONS_MR.md` (simple Marathi, charts side by side); last section of this file |
 | L5 / L6a ✅ | Layer 5 (RSI divergence inside the move into the zone, L5-a) and layer 6a (verdict: required set ⇒ enter; A = + ≥ 1 confirming, B = required only) — ✅ / ✏️ | as merged; not stable until ✅ | trade-data `review/layer5_6a_report/2b43f17/README.md`; `docs/reader/STABLE.md` |
+| L5-b / L5-c / C-L5-1 | Layer 5 gallery (23 Oct): count the second push still FORMING as a push (13 visits)? read the move into a broken LINE retest (7 E4 (b) entries, NA now)? ✅ the C-L5-1 fix (E4 (b) broken area on the 5M path: RSI move start) | as coded; NA; fix awaiting ✅ (branch `l5`) | trade-data `review/layer5_gallery/README.md`; last section of this file |
 | R0-3 | Golden Vision V4 expectations (12 Oct, 29 Sep): ✅ the drafts | drafts; every V4 result PROVISIONAL; live V4 off (R0-8) | trade-data `golden_v4/cases.json`; section "Chart Reader R0" |
 | R1a-13 | Bands on the Vision approval chart (`vision_chart_bands`) — turn on, and change the Vision legend with it? | OFF (image unchanged) | section "R1 (a)" |
 | BW-1 / C-18 | Keep the 150-pt "merged band — check" alert now that bands are never merged (Z-1u)? | 150, display only | decided with layer 6 (output) |
@@ -1311,3 +1312,16 @@ STABLE layer 1 (L1-a / L1-b / L1-c). Verdicts only — nothing in the engine cha
   previous 15M bar (09:15) holds both the swing low 56,252 and (later, by the 1m order) the true high 56,575.15; swings2 keeps one pivot
   per bar, so the H moves to 09:30 with its own high. Assumed (no change; STABLE layer 1): a question for the next layer-1 review —
   should a turn whose extreme sits in the bar of the opposite swing keep that bar's extreme (56,575.15)?
+
+### Layer 5 RSI gallery (23 Oct) — reading checks against L5-a (BANKNIFTY 13 groups 13 Apr – 21 Oct, 5M trigger; NIFTY golden 12 Oct)
+
+> **status (2026-10-23):** gallery for Abhi's ✅ in trade-data `review/layer5_gallery/` (index.html, README.md). 53 entries, 13 visits with a
+> divergence and no entry, 12 seeded no-divergence visits (seed 20261023), golden 12 Oct, findings. Every recorded read (2,338) re-run identical;
+> no divergence compared a swing from before the move.
+
+| id | Concept | Finding | Default / fix | Where |
+|---|---|---|---|---|
+| C-L5-1 | RSI divergence (L5-a "the move into the zone") | READING ERROR: on the 5M path (`entry_models5.read5`) an E4 (b) entry at a BROKEN AREA passed `move_from = None`, so the RSI evidence always read NA "the move into the zone is not known" although the swing built away from the broken area exists — the 15M path (`V._confirm` on the area counted from its break) reads it. | FIXED in branch `l5` (awaiting Abhi ✅): the 5M path uses the retest visit's approach (`visit5(...)["approach_from15"] − 1`), the same move start as the 15M path. Evidence only; entries unchanged. 1 of 3 replay entries changes (11 Sep: NA → ✗ "fewer than two pushes"). Test `tests/test_trigger_5m.py::test_e4b_broken_area_rsi_reads_the_move_into_the_retest_as_the_15m_path`. | gallery §4, L5-X01 before / after |
+| L5-b | RSI divergence (L5-a "pushes") | QUESTION: the reader counts only CONFIRMED pushes. With one confirmed push inside the move and the second push still forming (rsi2 "forming"), it says "fewer than two pushes" and compares nothing — yet with two confirmed pushes it does compare a forming third push. In 13 visits (18 reads) the forming second push is a regular divergence (incl. visits with E1 / E3 entries: 13 Jul, 17 Jul, 9 Oct, 15 Oct). | as coded (not changed) until Abhi answers: count the push in progress as the second push? | gallery §4b, L5-P01 … P13 |
+| L5-c | RSI divergence (move into a line retest) | QUESTION: an E4 (b) at a broken LINE reads RSI NA on both paths — no move start is defined for a line (7 replay entries). | NA (evidence only) | gallery §1 (broken_line entries) |
+| L5-d | RSI divergence on the 5M trigger (DECISIONS 37) | OBSERVATION: the RSI read uses closed 15M bars only, so an entry inside the 15M bar that makes the second push does not see that push (golden 12 Oct: E1 09:15 / E2 09:20 ✗; the same divergence ✓ from 09:30). Consistent with DECISIONS 37; no change. | no change | gallery §3, G01–G03 |

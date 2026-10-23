@@ -290,6 +290,35 @@ def test_e4b_on_5m_rejection_at_the_broken_area_from_the_break_side(mirror):
 
 
 @MIRRORS
+def test_e4b_broken_area_rsi_reads_the_move_into_the_retest_as_the_15m_path(mirror):
+    """Layer 5 gallery (C-L5-1, awaiting Abhi ✅): an E4 (b) entry at a BROKEN AREA on the 5M path passes the move into the retest (the
+    last swing built away from the area, counted from its break) to the RSI read — the same move start the 15M path reads
+    (V._confirm's move_from_bar) — instead of None ("the move into the zone is not known"). Evidence only: the entry itself is unchanged."""
+    rows = [(103.0, 103.2, 101.8, 102.0, 1.0), (102.0, 102.1, 99.0, 99.2, 1.0), (99.2, 99.3, 97.0, 97.2, 1.0),
+            (97.2, 98.6, 97.1, 98.5, 1.0), (98.5, 99.6, 98.4, 99.5, 1.0), (99.5, 100.6, 99.4, 100.3, 1.0),
+            (100.3, 100.4, 98.9, 99.0, 1.0), (99.0, 99.1, 98.0, 98.1, 1.0)]
+    br = {"id": 1, "lo": 100.0, "hi": 102.0, "role": LV.SUP, "state": "BROKEN", "break_dir": -1, "broken_at": 2,
+          "trade_location": True, "tf": "1H", "sweeps": 0, "births": ["a:D2"], "fresh": False, "confluence": []}
+    if mirror:
+        br = {**br, "lo": 2 * MID - 102.0, "hi": 2 * MID - 100.0, "role": LV.RES, "break_dir": 1}
+    L1 = NS(id=1, born_bar=0, state_at=lambda u: "BROKEN", events=[], dead_bar=None)
+    rr = _mirror_rows(rows) if mirror else rows
+    V, _lvl, d = _bare(rows, [("L", 97.0, 2, 3)], mirror=mirror, snapshot=lambda t: [br], extra_L=[L1], ltf=_ltf_from(rr))
+    F = TF.of(V)
+    j = next(j for j in range(9, F.n) if EM5.Reader5(V, j).broken5(d)[1])
+    V._em5_memo = {}
+    seen = []
+    V.rsi_divergence = lambda t, dd, arm, ztf="1H", move_from=None: seen.append((t, dd, arm, move_from)) or {"found": False}
+    V.range_structure = lambda t: None
+    out = EM5.read5(V, j, "UP" if mirror else "DOWN", [])
+    e = next(x for x in out["entries"] if x["model"] == "E4" and x["object"] == "broken_area")
+    k, arm = int(F.k_of[j]), seen[-1][2]
+    want = V._confirm(k, d, {**br, "visit_from": arm}, {})[2].get("move_from_bar")
+    assert want is not None and seen[-1] == (k, d, arm, want)               # the 15M path's move start, never None
+    assert e["invalidation"] is not None and e["facts"]["object"] == "broken_area"
+
+
+@MIRRORS
 def test_a_visit_may_start_on_a_5m_candle_inside_the_15m_bar_in_progress(mirror):
     """The live cut: 15M bars closed up to bar 7, the 5M children of bar 8 (in progress) known; the second child trades into the refined
     base ⇒ E1 on that 5M candle, before the 15M bar closes; the visit id = area @ the visit's 15M bin (the same id the 15M bar gets later)."""

@@ -653,7 +653,11 @@ def read5(V, j, trend, act, side_fn=None, keep=None, extra=None, prefix="", brok
             x = f["raw"]
             lvl = {**x, "visit_from": arm15}
             ok5, cm5 = R.confirm5(lvl, d, start5, None)
-            mf = None
+            # L5-a (RSI evidence only, never a gate): the move into the retest of the broken area begins at the last swing built away
+            # from it — the same visit / approach the 15M path reads (V._confirm's move_from_bar on the area counted from its break).
+            # Without it the RSI read said "the move into the zone is not known" although that swing exists (layer 5 gallery, C-L5-1).
+            vb = R.visit5(j, lvl, d)
+            mf = (int(vb["approach_from15"]) - 1) if vb.get("approach_from15") is not None else None
             area = {kk: x.get(kk) for kk in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
         else:
             ln = f["raw"]
