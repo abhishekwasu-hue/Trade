@@ -600,6 +600,8 @@ def pending_entries(bot, symbol, settings, now=None, path=None):
                         out.append((x, {**e, "visit_id": k[0], "model": k[1], "direction": int(e["direction"])}))
     except Exception as exc:                                             # noqa: BLE001 — fail closed
         print(f"⚠️ engine_signal.pending_entries: {type(exc).__name__}: {exc}")
+        from bots_common import gate_alert as GA                         # DECISIONS 47: one ⚠️ per cause per day (never blocks)
+        GA.alert("engine_store", symbol, f"{type(exc).__name__}: {exc}")
         return []
     return out if models else None
 

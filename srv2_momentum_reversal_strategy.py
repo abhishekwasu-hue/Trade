@@ -26,6 +26,7 @@ import argparse
 import pandas as pd
 
 import cloud_db
+from bots_common import gate_alert as GA
 from bots_common import level_gate_bot as LGB
 from config import get_ist_now
 from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl_exit_time, run_auto_backup_if_due
@@ -340,6 +341,8 @@ def process_symbol(access_token, symbol, lot_size=None):
             _area = _gate_area(level_price, settings)
             _gr = (_gate.result(*_area) if _gate is not None
                    else {"state": "ERROR", "entry": False, "side": None, "reason": _gate_err, "area": _area})
+            if GA.is_error(_gr):                                           # DECISIONS 47: one plain-words ⚠️ per cause per day (never blocks)
+                GA.alert("level_gate", symbol, _gr.get("reason"))
             # Vision forced level: ✅ approval हीच confirmation ⇒ r["entry"] पुन्हा नको; दिशा submission वेळची (role), नाहीतर CONFIRMED gate ची
             # बाजू; शंका / gate exception ⇒ entry नाही.
             _fdir = None

@@ -158,6 +158,13 @@ def engine_areas(pay):
 _AREAS_WARNED = False
 
 
+def _alert(path, symbol, exc):
+    """DECISIONS 47: an error on an engine entry ⇒ one plain-words ⚠️ Telegram per cause per day (bots_common.gate_alert); never raises,
+    never changes the fail-closed result (no entry)."""
+    from bots_common import gate_alert as GA
+    GA.alert(path, symbol, f"{type(exc).__name__}: {exc}", engine_entry_waiting=True)
+
+
 def process(bot, access_token, symbol, settings, lot_size, source, now=None, has_open=None, gate_fn=None, open_fn=None, chain=None,
             path=None, cutoff=None, vpath=None, symbols_fn=None):
     """engine mode चा एक cycle. रिटर्न संदेश (None = engine mode नाही / नवा setup नाही). One cycle per (bot, symbol) at a time
@@ -226,6 +233,7 @@ def _process(bot, access_token, symbol, settings, lot_size, source, now, has_ope
                     tags={"engine": True, "engine_bar": r["bar_ts"], "engine_grade": r.get("grade"), "gate": engine_gate_tags(r, direction, settings)},
                     path=vpath)
     except Exception as exc:
+        _alert("engine_entry", symbol, exc)
         return f"{symbol}: engine setup — gate त्रुटी ⇒ entry नाही ({exc})"
     if g is None or (g.action == "HOLD" and not getattr(g, "final", False)):
         return f"{symbol}: engine setup {direction} — Vision / ✅ ची वाट ({getattr(g, 'note', 'gate नाही')})"
@@ -478,6 +486,7 @@ def _process_models(bot, access_token, symbol, settings, lot_size, source, now, 
             out.append(_one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e, has_open, gate_fn, open_fn,
                                   box, path, cutoff, vpath))
         except Exception as exc:                                         # noqa: BLE001 — this entry only; no position
+            _alert("engine_entry", symbol, exc)
             out.append(f"{symbol} {ES.model_label(e)}: त्रुटी ⇒ entry नाही ({type(exc).__name__}: {exc})")
     return "\n".join(out)
 
@@ -527,6 +536,7 @@ def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e,
         g = gate_fn(bot, symbol, "PAPER", direction, level, role, "15M", pd.Timestamp(bar), spot, lots, naked,
                     tags=entry_gate_tags(r, e, direction, settings), path=vpath)
     except Exception as exc:
+        _alert("vision", symbol, exc)
         return f"{who}: gate त्रुटी ⇒ entry नाही ({exc})"
     if g is None or (g.action == "HOLD" and not getattr(g, "final", False)):
         return f"{who}: Vision / ✅ ची वाट ({getattr(g, 'note', 'gate नाही')})"
@@ -548,6 +558,7 @@ def _one_entry(bot, access_token, symbol, settings, lot_size, source, now, r, e,
                                  reason_tag=model_tag(m, e.get("family"), e.get("sub_model")))
     except Exception as exc:                                             # noqa: BLE001 — claimed ⇒ never a second try for this visit
         ES.set_entry_status(bot, symbol, visit, m, f"OPEN_FAILED: {type(exc).__name__}: {exc}", path)
+        _alert("engine_entry", symbol, exc)
         return f"{who}: PAPER open त्रुटी ⇒ position नाही ({type(exc).__name__}: {exc})"
     ES.set_entry_status(bot, symbol, visit, m, "EXECUTED", path)
     try:

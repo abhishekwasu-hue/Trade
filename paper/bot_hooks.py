@@ -87,6 +87,8 @@ def pre_cycle(bot, access_token, symbol, settings, lot_size=None, cfg=None, reso
                 msg = engine_fn(bot, access_token, symbol, sts, lot_size, source or bot, now=now) or f"{symbol}: engine — काही नाही"
             except Exception as exc:
                 msg = f"{symbol}: engine त्रुटी ⇒ entry नाही ({type(exc).__name__}: {exc})"
+                from bots_common import gate_alert as GA                   # DECISIONS 47: one ⚠️ per cause per day (never blocks)
+                GA.alert("engine_entry", symbol, f"{type(exc).__name__}: {exc}", engine_entry_waiting=None)
         print(msg)
         return Pre(False, msg, lot_size, src)
     return Pre(False, lot_size=lot_size, lot_src=src)
