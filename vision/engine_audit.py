@@ -128,6 +128,24 @@ when the facts say so), and B has not died (a close beyond the origin O and a sw
 judge every other item as for any signal. It is still a pullback or retest entry, never a breakout entry."""
 
 
+# DECISIONS 37 (the entry trigger on 5M): a THIRD system block, sent only with a 5M-trigger card — SYSTEM_PROMPT (and its cache) stays
+# byte-identical for every 15M-trigger signal.
+TRIGGER_5M_SYSTEM = """TRIGGER ON 5M (this card; an owner decision)
+The areas come from the 1H / Daily timeframes, the refined base from the 15M timeframe, and the trigger candle from the 5M timeframe. The
+small inset at the top left of the setup panel is the 5M trigger panel: the visit's 5M candles up to the trigger candle (yellow box, "T"),
+the refined 15M base (strong band), the context area (faint), the invalidation (dashed, "INV") and, when present, the 5M CHoCH level, the
+sweep extreme with the failed 5M push, or the broken line's value on each 5M candle. On the 15M setup panel the box marks the 15M bar that
+contains the 5M trigger; that 15M bar may still be in progress at the trigger, and the reading above the trigger (trend, areas, refined
+base, visit) uses only 15M / 1H / Daily bars closed at the 5M close. Judge trigger_in_base and invalidation_side on the 5M trigger candle:
+it must trade into the refined base; a close beyond on the invalidation side is not allowed; the invalidation stays the structural one
+(refined base / area / object / sweep extreme), never the 5M candle's own extreme."""
+
+
+def is_trigger_5m(sig):
+    """A 5M-trigger card: tags["entry_trigger_tf"] == "5M" (paper/engine_entry.trigger_tags, DECISIONS 37)."""
+    return str(_tags(sig).get("entry_trigger_tf") or "").upper() == "5M"
+
+
 def is_model_c(sig):
     """A model C card: tags["entry_family"] == "C" (paper/engine_entry.model_c_tags)."""
     return str(_tags(sig).get("entry_family") or "").upper() == "C"
@@ -136,7 +154,7 @@ def is_model_c(sig):
 def prompt_version(sig):
     """The audit's prompt version for this card: "engine_check_v1" for every engine signal as before; "engine_check_v1+c" for a model C
     card (its extra system block) — stamped on the audit (validate), the result (audit) and the worker's reuse lookup."""
-    return MODEL_C_VERSION if is_model_c(sig) else PROMPT_VERSION
+    return (MODEL_C_VERSION if is_model_c(sig) else PROMPT_VERSION) + ("+5m" if is_trigger_5m(sig) else "")
 
 
 # ------------------------------------------------------------------------------------------------------------------ which signals
@@ -262,6 +280,9 @@ def reading(sig, fallback_areas=None):
             "others": [{"role": a.get("role"), "lo": _num(a.get("lo")), "hi": _num(a.get("hi")), "state": a.get("state")}
                        for a in areas if _band(a.get("lo"), a.get("hi")) not in (area,)], **({"model_c": mc} if mc else {}),
             **({"line": t["entry_line"]} if isinstance(t.get("entry_line"), dict) else {}),          # DECISIONS 41: the line, its TF
+            **({"trigger_tf": str(t["entry_trigger_tf"]).upper(),
+                "trigger": t.get("entry_trigger") if isinstance(t.get("entry_trigger"), dict) else {}}
+               if t.get("entry_trigger_tf") else {}),                                                # DECISIONS 37: the 5M trigger
             **({"range_edge": t["entry_range_edge"]} if isinstance(t.get("entry_range_edge"), dict) else {})}   # DECISIONS 40
 
 
@@ -279,7 +300,8 @@ def facts_text(sig, rd=None):
     a, nx = rd["area"], rd["next_area"]
     h = rd["htf"] or {}
     lines = [
-        f"Signal: {sig.get('symbol')} | {rd['side']} ({'bullish' if rd['direction'] > 0 else 'bearish'}) | setup timeframe 15M",
+        f"Signal: {sig.get('symbol')} | {rd['side']} ({'bullish' if rd['direction'] > 0 else 'bearish'}) | setup timeframe 15M"
+        + (" | areas 1H / Daily, refined base 15M, trigger 5M" if rd.get("trigger_tf") == "5M" else ""),
         "Entry model: " + (f"{rd['model']} {rd['name'] or ''}".strip() if rd["model"] else "the engine's setup (no entry model)")
         + (f" | label {rd['label']}" if rd.get("label") else "") + ".",
         f"Trend side (engine): {rd['trend'] or 'n/a'}"
@@ -310,8 +332,17 @@ def facts_text(sig, rd=None):
     lines.append(f"Refined 15M base: {_p(rb[0])} - {_p(rb[1])}." if rb else
                  "Refined 15M base: none in the signal" + (" (E4 (b) is judged at the retested object)." if str(rd['object'] or '')
                                                              .startswith("broken") else "."))
-    lines.append("Trigger candle: boxed and marked T on the setup panel (the chart ends at its close)"
-                 + (f"; its close (entry reference) {_p(rd['entry_ref'])}." if rd["entry_ref"] is not None else "."))
+    if rd.get("trigger_tf") == "5M":                                    # DECISIONS 37: the 5M trigger candle, its own panel
+        tr = rd.get("trigger") or {}
+        oh = tr.get("ohlc") or {}
+        lines.append("Trigger candle (5M): boxed T on the 5M trigger panel (the chart ends at its close); the 15M bar containing it is "
+                     "boxed on the setup panel" + (f"; 5M candle open {_p(oh.get('open'))} high {_p(oh.get('high'))} low "
+                                                   f"{_p(oh.get('low'))} close {_p(oh.get('close'))}" if oh.get("close") is not None else "")
+                     + (f"; its close (entry reference) {_p(rd['entry_ref'])}" if rd["entry_ref"] is not None else "")
+                     + "; context = the last closed 15M bar.")
+    else:
+        lines.append("Trigger candle: boxed and marked T on the setup panel (the chart ends at its close)"
+                     + (f"; its close (entry reference) {_p(rd['entry_ref'])}." if rd["entry_ref"] is not None else "."))
     lines.append(f"Invalidation: {_p(rd['invalidation'])}" + (f" ({rd['invalidation_rule']})" if rd.get("invalidation_rule") else "")
                  + ".")
     lines.append(f"Next area in the trade direction: {nx['role']} {_p(nx['lo'])} - {_p(nx['hi'])}"
@@ -352,7 +383,8 @@ def build_request(png, sig, model, max_tokens=None, effort=None, thinking=None, 
         "model": model,
         "max_tokens": int(max_tokens or SA.max_output_tokens()),
         "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
-        + ([{"type": "text", "text": MODEL_C_SYSTEM}] if is_model_c(sig) else []),
+        + ([{"type": "text", "text": MODEL_C_SYSTEM}] if is_model_c(sig) else [])
+        + ([{"type": "text", "text": TRIGGER_5M_SYSTEM}] if is_trigger_5m(sig) else []),
         "messages": [{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.standard_b64encode(png).decode("utf-8")}},
             {"type": "text", "text": text if text is not None else facts_text(sig)}]}],

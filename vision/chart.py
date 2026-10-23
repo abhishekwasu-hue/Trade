@@ -573,7 +573,7 @@ def render(df1m, sig, daily=None, fut=None):
             vols, meta["vol_error"] = None, f"{type(exc).__name__}: {str(exc)[:120]}"
         from . import engine_audit as EA
         if EA.use_engine(sig):                                           # T-5: an engine signal ⇒ the engine's own card
-            return _render_engine(cut, setup, higher, tfs, sig, ctx, vols, meta)
+            return _render_engine(cut, setup, higher, tfs, sig, ctx, vols, meta, fut=fut)
         bands = None                                                    # default (setting OFF) ⇒ जुनं drawing, ctx तसाच
         if ctx is not None and (sig.get("ctx_settings") or {}).get("vision_chart_bands"):
             try:
@@ -607,7 +607,25 @@ def render(df1m, sig, daily=None, fut=None):
         return None, meta
 
 
-def engine_figure(cut, setup, higher, tfs, sig, ctx, vols, meta):
+def trigger_frame(cut, sig, rd, fut=None):
+    """DECISIONS 37: the 5M trigger panel's frame — the 5M candles of the 1m cut (closed by the signal) + their FUT 5M volume; None for
+    a signal without a 5M trigger (the card as before)."""
+    if str(rd.get("trigger_tf") or "").upper() != "5M":
+        return None
+    t5 = resample(cut, 5).reset_index(drop=True)
+    vol = None
+    try:
+        from decision3 import volume_pane as VP
+        src = fut if VP.is_index(sig.get("symbol")) else None
+        if src is not None and len(src) and len(t5):
+            src = src.assign(timestamp=to_ist_naive(pd.to_datetime(src["timestamp"])))
+            vol = VP.bar_volume(t5["start"], t5["end"], src, sig.get("asof") if sig.get("asof") is not None else sig.get("signal_ts"))
+    except Exception:                                                    # noqa: BLE001 — display only: the panel without volume
+        vol = None
+    return {"tf": "5M", "df": t5, "vol": vol}
+
+
+def engine_figure(cut, setup, higher, tfs, sig, ctx, vols, meta, fut=None):
     """T-5: the engine card's figure + the context marked for the engine audit (ctx["signal_source"] = "engine", ctx["engine"] = the
     engine's reading). The old context (levels, l_line, gap_ctx …) stays in ctx for the record / context lines only. The next area
     comes from the engine's areas; only when the engine row carries no opposite area, from the chart band finder (no look-ahead)."""
@@ -632,15 +650,18 @@ def engine_figure(cut, setup, higher, tfs, sig, ctx, vols, meta):
         except Exception as exc:                                         # noqa: BLE001 — display only
             objs, xmaps, meta["objects_error"] = None, None, f"{type(exc).__name__}: {str(exc)[:120]}"
     errors = []
-    fig = EC.build_figure(setup, higher, sig, tfs, rd, vols, objs or None, xmaps, errors=errors)
+    trig = trigger_frame(cut, sig, rd, fut)
+    fig = EC.build_figure(setup, higher, sig, tfs, rd, vols, objs or None, xmaps, errors=errors, trigger=trig)
     if errors:
         meta["objects_error"] = "; ".join(errors)[:240]
     meta["volume_line"] = _volume_line(setup, sig, vols)
     meta["card"] = "engine"
+    if trig is not None:
+        meta["trigger_panel"] = {"tf": "5M", "bars": int(len(trig["df"]))}
     return fig
 
 
-def _render_engine(cut, setup, higher, tfs, sig, ctx, vols, meta):
-    fig = engine_figure(cut, setup, higher, tfs, sig, ctx, vols, meta)
+def _render_engine(cut, setup, higher, tfs, sig, ctx, vols, meta, fut=None):
+    fig = engine_figure(cut, setup, higher, tfs, sig, ctx, vols, meta, fut=fut)
     png = fig.to_image(format="png", width=WIDTH, height=int(fig.layout.height or HEIGHT), scale=1)
     return png, meta

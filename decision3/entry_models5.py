@@ -672,6 +672,11 @@ def read5(V, j, trend, act, side_fn=None, keep=None, extra=None, prefix="", brok
         name = EM.NAME[m] + (f" ({f['variant']})" if m == "E4" else "")
         cl = f.get("cluster")
         vid, vstart = (cl["visit_id"], cl["visit_start"]) if cl else (a["visit_id"], a["visit_start"])
+        facts = dict(f.get("facts") or {})
+        if m == "E3":                                                      # the CHoCH level (card: the 5M CHoCH line)
+            facts["choch_level"] = R.c1(j, lvl, d, start5).get("lh")
+        lv = [[F.T(i), round(F.line_value(f["raw"], i), 2)] for i in range(start5, j + 1)] if f.get("kind") == "line" else None
+        f = {**f, "facts": facts}
         ohlc = {kk: round(float(A5[kk][j]), 2) for kk in ("open", "high", "low", "close")}
         vol5 = A5["volume_raw"][j]
         out.append({"model": m, "name": name, "direction": int(d), "side": EM.side_of(d), "object": a["object"],
@@ -680,7 +685,7 @@ def read5(V, j, trend, act, side_fn=None, keep=None, extra=None, prefix="", brok
                     "key": f"{vid.split('@')[0]}|{vstart}|{m}", "trigger_tf": "5M", "trigger_bar": int(j), "trigger_ts": F.T(j),
                     "trigger_bar_end": F.E(j), "trigger_ohlc": ohlc, "trigger_volume": None if not np.isfinite(vol5) else float(vol5),
                     "trigger_bar15_ts": F.bin_T(j), "context_bar": int(k), "context_bar_ts": str(pd.Timestamp(V._ts[k])),
-                    "context_bar_end": str(V.bar_end[k]), "visit_start5": a.get("visit_start5"),
+                    "context_bar_end": str(V.bar_end[k]), "visit_start5": a.get("visit_start5"), "line_values": lv,
                     "entry_ref": round(float(A5["close"][j]), 2),
                     "invalidation": f["invalidation"], "invalidation_rule": f["invalidation_rule"], "facts": f.get("facts") or {},
                     "label": ev["label"], "evidence": ev["evidence"], "evidence_list": ev["evidence_list"],

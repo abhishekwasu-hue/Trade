@@ -250,6 +250,38 @@ MARK = {True: "✓", False: "✗", None: "NA", "present": "✓", "absent": "✗"
         "no": "✗"}
 
 
+def trigger_line(tags):
+    """DECISIONS 37: the 5M trigger in plain words — "Trigger 5M: E1 candle 10:05–10:10, traded into the refined base ✓, close 55,720.7;
+    context = last closed 15M bar 09:45" (E4 (b): "at the retested object"). "" for a 15M-trigger signal (the card as before). Every value
+    from the tags; display only; not HTML-escaped."""
+    try:
+        t = tags or {}
+        if str(t.get("entry_trigger_tf") or "").upper() != "5M":
+            return ""
+        tr = t.get("entry_trigger") if isinstance(t.get("entry_trigger"), dict) else {}
+        oh = tr.get("ohlc") if isinstance(tr.get("ohlc"), dict) else {}
+        m = str(t.get("entry_model") or "").upper()
+        when = ""
+        if tr.get("ts") and tr.get("bar_end"):
+            when = f" {str(tr['ts'])[11:16]}–{str(tr['bar_end'])[11:16]}"
+        g = _gate(t)
+        rb = g.get("refined") if isinstance(g.get("refined"), dict) else None
+        lo, hi = _num(oh.get("low")), _num(oh.get("high"))
+        if str(t.get("entry_object") or "").startswith("broken"):
+            where = "at the retested object ✓"
+        elif rb and lo is not None and hi is not None and _num(rb.get("lo")) is not None:
+            ok = lo <= float(rb["hi"]) and hi >= float(rb["lo"])
+            where = "traded into the refined base " + ("✓" if ok else "✗")
+        else:
+            where = "traded into the area"
+        c = _num(oh.get("close")) if oh else _num(t.get("entry_ref"))
+        ctx = tr.get("context_bar_ts")
+        return (f"Trigger 5M: {m + ' ' if m else ''}candle{when}, {where}" + (f", close {_px(c)}" if c is not None else "")
+                + (f"; context = last closed 15M bar {str(ctx)[11:16]}" if ctx else ""))
+    except Exception:                                                    # noqa: BLE001 — display only
+        return ""
+
+
 def model_label(tags):
     """Engine entry model of the signal ("E1 — Aggressive"), or "" for every other signal (the card stays today's)."""
     try:

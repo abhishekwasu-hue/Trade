@@ -165,9 +165,41 @@ def in_window(bar_end, s=None):
     return _hm(s["engine_first_bar_end"]) <= (b.hour, b.minute) <= _hm(s["engine_last_bar_end"])
 
 
-def expected_bar_end(now):
-    """आत्ता (IST) शेवटचा बंद व्हायला हवा तो 15M bar_end."""
-    return _naive(now).floor("15min")
+def expected_bar_end(now, tf="15M"):
+    """आत्ता (IST) शेवटचा बंद व्हायला हवा तो bar_end — 15M (default, आजचं) / 5M (trigger_tf 5M, DECISIONS 37)."""
+    return _naive(now).floor("5min" if str(tf).upper() == "5M" else "15min")
+
+
+def due_bar_end(now, tf="15M"):
+    """The every-minute guard (DECISIONS 37): the bar the cycle at `now` should decide = the last bar closed at least one minute ago
+    (the old cron's minute-1 offset: Upstox has the bar by then)."""
+    return expected_bar_end(_naive(now) - pd.Timedelta(minutes=1), tf)
+
+
+def has_bar(symbol, bar_ts, path=None):
+    """A non-error row stored for (symbol, bar_ts)? Store error ⇒ False (the cycle runs; fail closed there)."""
+    try:
+        with connect(path) as c:
+            r = c.execute("SELECT 1 FROM engine_signals WHERE symbol=? AND bar_ts=? AND decision!=?",
+                          (str(symbol).upper(), str(pd.Timestamp(bar_ts)), ERROR)).fetchone()
+        return r is not None
+    except Exception as exc:                                             # noqa: BLE001
+        print(f"⚠️ engine_signal.has_bar: {type(exc).__name__}: {exc}")
+        return False
+
+
+def last_stored(symbol, now, path=None):
+    """Catch-up (DECISIONS 37, report §5): the newest non-error bar_ts stored for the symbol on now's day (≤ now), else that day's
+    midnight (the whole session is decided). Store error ⇒ None (only the last bar is decided — today's behaviour)."""
+    now = _naive(now)
+    try:
+        with connect(path) as c:
+            r = c.execute("SELECT MAX(bar_ts) AS b FROM engine_signals WHERE symbol=? AND decision!=? AND bar_ts<=? AND bar_ts>=?",
+                          (str(symbol).upper(), ERROR, str(now), str(now.normalize()))).fetchone()
+        return pd.Timestamp(r["b"]) if r is not None and r["b"] else now.normalize()
+    except Exception as exc:                                             # noqa: BLE001
+        print(f"⚠️ engine_signal.last_stored: {type(exc).__name__}: {exc}")
+        return None
 
 
 def save_error(symbol, bar_ts, msg, path=None, engine="decision3"):
@@ -361,17 +393,36 @@ def run3(symbol, access_token, feed=None, path=None, now=None, s=None, dry_run=F
     if feed is None:
         L.prune_cache((s or {}).get("engine3_cache_keep_days"))           # जुन्या cache files (hist_ / fold_) — एक listdir, स्वस्त
         feed = L.UpstoxFeed(access_token, now.date())
-    r = L.compute(str(symbol).upper(), feed, now, s)
-    row = L.row_from_v22(symbol, r, now_ist)
-    if pd.Timestamp(row["bar_ts"]) > now:
-        raise ValueError("शेवटचा 15M candle अजून बंद नाही")
-    if not in_window(row["bar_ts"], s) or pd.Timestamp(row["bar_ts"]).normalize() != now.normalize():
-        row["skipped"] = f"bar {pd.Timestamp(row['bar_ts']):%Y%m%d %H:%M} entry window ({DEFAULTS['engine_first_bar_end']}–" \
-                         f"{DEFAULTS['engine_last_bar_end']}, आजचा) बाहेर ⇒ store मध्ये नाही"
+    tf = L.trigger_tf_of(s)
+    if tf != "5M":                                                       # trigger_tf 15M (what-if): today's cycle, unchanged
+        r = L.compute(str(symbol).upper(), feed, now, s)
+        row = L.row_from_v22(symbol, r, now_ist)
+        if pd.Timestamp(row["bar_ts"]) > now:
+            raise ValueError("शेवटचा 15M candle अजून बंद नाही")
+        if not in_window(row["bar_ts"], s) or pd.Timestamp(row["bar_ts"]).normalize() != now.normalize():
+            row["skipped"] = f"bar {pd.Timestamp(row['bar_ts']):%Y%m%d %H:%M} entry window ({DEFAULTS['engine_first_bar_end']}–" \
+                             f"{DEFAULTS['engine_last_bar_end']}, आजचा) बाहेर ⇒ store मध्ये नाही"
+            return row
+        if not dry_run:
+            save(row, path)
         return row
-    if not dry_run:
-        save(row, path)
-    return row
+    # DECISIONS 37: the 5M close + catch-up — every closed 5M candle of the session after the last stored row is decided, in order
+    r = L.compute(str(symbol).upper(), feed, now, s, since=last_stored(symbol, now, path))
+    rows = [L.row_from_v22(symbol, x, now_ist) for x in (r.pop("catch_up", None) or [])] + [L.row_from_v22(symbol, r, now_ist)]
+    stored = []
+    for row in rows:
+        if pd.Timestamp(row["bar_ts"]) > now:
+            raise ValueError("शेवटचा 5M candle अजून बंद नाही")
+        if not in_window(row["bar_ts"], s) or pd.Timestamp(row["bar_ts"]).normalize() != now.normalize():
+            row["skipped"] = f"bar {pd.Timestamp(row['bar_ts']):%Y%m%d %H:%M} entry window ({DEFAULTS['engine_first_bar_end']}–" \
+                             f"{DEFAULTS['engine_last_bar_end']}, आजचा) बाहेर ⇒ store मध्ये नाही"
+            continue
+        if not dry_run:
+            save(row, path)
+        stored.append(row["bar_ts"])
+    last = rows[-1]
+    last["caught_up"] = [x for x in stored if x != last["bar_ts"]]
+    return last
 
 
 # ---------------------------------------------------------------------------------------------------------------- adapter
