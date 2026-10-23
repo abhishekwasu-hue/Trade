@@ -23,7 +23,7 @@ import base64
 import json
 import time
 
-PROMPT_VERSION = "engine_check_v1"
+PROMPT_VERSION = "engine_check_v2"            # v2 (DECISIONS 38–41): E4 (b) approach side, lines flip once, range edges, line wording
 MODEL_C_VERSION = PROMPT_VERSION + "+c"            # a model C card (DECISIONS 32): + the model C system block
 SETTING = "vision_engine_audit"
 MODES = ("engine", "legacy")
@@ -94,6 +94,14 @@ THE METHOD (a closed concept list: judge only with these concepts)
   entered the area; E4 (a) sweep-retest = after a sweep the next push fails inside the sweep extreme (invalidation beyond the sweep
   extreme); E4 (b) = price comes back from the other side to a broken (flipped) area or a broken line and is rejected there
   (invalidation beyond the retest extreme). E2 and E3 never fire while the zone study reads absorption without a handover.
+- E4 (b) approach side: the retest of an object broken down (bear call) must come back UP to it from below and be rejected there
+  (mirror for a bull put). A candle coming from the object's original side, where price was accepted, and closing through it is a
+  breakout / breakdown candle, never an E4 (b). A line (like an area) flips only once: a broken line that price closed back through
+  with a swing formed on its original side is dead and is never a retest object again.
+- Range: when a timeframe is in a range (later swings fail to make a new extreme on both sides), the range edges are the areas — bear
+  call at the upper edge, bull put at the lower edge. An entry at the wrong end of a range (its invalidation at the opposite edge) is
+  not the method's trade location.
+- A line object is a line (a price on the line at the trigger), with its timeframe; it is not an area band.
 - Evidence (listed, never blocks): a handover (slow form: trend-side candles grow while the other side shrinks; fast form: a rejected
   push taken back by a dominant opposite candle), a commitment candle on higher futures volume than the candles it is compared with,
   a lower-timeframe change of character, volume growing inside the area, RSI divergence, confluence (a line or a higher-timeframe area
@@ -252,7 +260,9 @@ def reading(sig, fallback_areas=None):
             "invalidation": ip, "invalidation_rule": rule, "next_area": nxt, "evidence": ev,
             "cluster": None if not cl else {"n": cl.get("n"), "members": t.get("entry_cluster")},
             "others": [{"role": a.get("role"), "lo": _num(a.get("lo")), "hi": _num(a.get("hi")), "state": a.get("state")}
-                       for a in areas if _band(a.get("lo"), a.get("hi")) not in (area,)], **({"model_c": mc} if mc else {})}
+                       for a in areas if _band(a.get("lo"), a.get("hi")) not in (area,)], **({"model_c": mc} if mc else {}),
+            **({"line": t["entry_line"]} if isinstance(t.get("entry_line"), dict) else {}),          # DECISIONS 41: the line, its TF
+            **({"range_edge": t["entry_range_edge"]} if isinstance(t.get("entry_range_edge"), dict) else {})}   # DECISIONS 40
 
 
 def _p(x):
@@ -277,7 +287,19 @@ def facts_text(sig, rd=None):
         + (f" ({h.get('daily_phase')})" if h.get("daily_phase") else "") + ".",
         f"Object: {OBJECT_WORDS.get(rd['object'], rd['object'] or 'n/a')}.",
     ]
-    if a:
+    ln, re_ = rd.get("line"), rd.get("range_edge")
+    if a and (ln or rd["object"] == "broken_line"):                      # DECISIONS 41: a line object is a line with its timeframe
+        ln = ln or {}
+        frm = "below" if rd["direction"] < 0 else "above"
+        brk = {"down": "broken down", "up": "broken up"}.get(str(ln.get("break_side") or ""), "broken")
+        lines.append(f"Retested object: broken {ln.get('tf') or ''} line".replace("  ", " ")
+                     + (f" ({ln['family']}, {brk})" if ln.get("family") else f" ({brk})")
+                     + f" at {_p(a['lo'])} at the trigger; retest from {frm} — price must come back to the line from the break side and "
+                       f"be rejected there | state {a.get('state') or 'n/a'}.")
+    elif a and re_:                                                      # DECISIONS 40: a range edge = the area
+        lines.append(f"Visited area: {re_.get('tf') or ''} range {re_.get('edge')} edge ({a['role']} side): band {_p(a['lo'])} - "
+                     f"{_p(a['hi'])} | state {a.get('state') or 'n/a'}.")
+    elif a:
         kind = "line value" if a["lo"] == a["hi"] else "band"
         lines.append(f"{'Retested object' if str(rd['object'] or '').startswith('broken') else 'Visited area'} ({a['role']} side, "
                      f"{a.get('tf') or 'n/a'}): {kind} {_p(a['lo'])}" + ("" if a["lo"] == a["hi"] else f" - {_p(a['hi'])}")

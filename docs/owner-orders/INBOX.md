@@ -666,3 +666,47 @@ Vision pn on kra
 ---
 ## 23 Oct — Vision budget
 Per day 5 dollar budget
+
+---
+## 23 Oct — entry trigger on 5M for every model
+Abhi — new owner rule: the entry trigger is on 5M for every model. Record it in owner-orders first (INBOX verbatim, a DECISIONS principle without dates, a README row). Report first, then build in one PR with tests and a replay before / after per model.
+- Where stays as now: W state, D side, 1H / Daily areas with the K4 lifecycle, the refined 15M base (RC2), the visit, once per model per visit, max_hits_per_zone.
+- When moves to 5M: the engine decides at every 5M close, using only CLOSED 15M / 1H / D bars as known at that 5M close (no look-ahead; a 15M bar in progress is never used).
+  - E1 = the first 5M candle that trades into the refined base in the visit.
+  - E2 = the 5M commitment candle with FUT 5M volume (the handover read on 5M; volume compared on 5M slots).
+  - E3 = the 5M CHoCH (as now).
+  - E4 (a) = the sweep and the failed push read on 5M.
+  - E4 (b) = the 5M rejection candle at the retested object, from the correct side.
+- traded_inside applies to the 5M trigger candle (it must trade into the refined base; a close outside on the trade side is allowed, never beyond the invalidation side).
+- The invalidation stays structural (refined base / area / object / sweep extreme), never the 5M candle's own extreme.
+- A dashboard setting trigger_tf = 5M (default, my rule) / 15M (what-if = today's behaviour, byte-identical).
+- The live loop runs on 5M closes; the Telegram / Vision card shows the 5M trigger panel.
+- The replay shows 15M vs 5M per model: entry time and price difference, distance to invalidation, next-area-first vs invalidation-first.
+Self-review, PAPER only, one VPS block for me after market close with --revert. Report to me in Marathi.
+
+---
+## 23 Oct — reading check from a live PAPER entry (BANKNIFTY E4 (b) sweep-retest bear call)
+Abhi — reading check from a live PAPER entry: BANKNIFTY, E4 (b) sweep-retest, a bear call at a broken horizontal line (I approved it; the entry was wrong by the method). Record it in owner-orders first (INBOX verbatim, DECISIONS principles without dates, a README row). Report first, then fix in one PR together with the handover's T-2, with tests and a replay before / after per model.
+1. Approach side (E4 b): a bear-call retest of a line broken DOWN requires price to come back UP to it from below and be rejected there (a close back below). Here price came DOWN from above, where it had been accepted for a long time, and the trigger candle closed through the line: that is a breakdown candle (H2, no breakout entries), never an E4 (b). Mirror for bull puts.
+2. Dead after a second break (the T-2 principle applies to LINES too): the line was broken down (a close + a swing below), then price closed back above it and formed swings above ⇒ the line is dead ⇒ no E4 (b) on it.
+3. Range state (concept L): after that, price ranged between that line and an upper edge it rejected several times; the engine's own invalidation sat exactly at that upper edge, so the entry was at the wrong end of the range. Explain why no model fired at the upper edge (were the range edges built as areas? was the range state read?) and fix it per the method: range edges are the areas — bear call at the upper edge, bull put at the lower edge; E1–E4 apply there.
+4. Evidence: the entry had "required set ✗" (no handover, no commitment, no LTF CHoCH) and grade None. Report how E4 (b) is allowed to fire with none of them and whether that matches the method's E4 (b) definition (the rejection form at the retested object).
+5. Card text: a line object is described as a line ("broken 1H line at X, retest from below"), never as "supply area X–X (0 pts)". Fix the Telegram card and the Vision prompt.
+6. Report which timeframe / degree the line came from (1H or 15M) and show it on the card. The card header shows the signal's own symbol first; the bot name ("NIFTY 15M Dynamic SR") only as a small label.
+7. List every live and replayed entry matching 1 or 2, with its result.
+Self-review, PAPER only, one VPS block for me after market close with --revert. Report to me in Marathi.
+
+---
+## 23 Oct — addition C / D (engine card, engine name)
+Abhi — addition to the two orders I just sent (the 5M entry trigger and the BANKNIFTY E4 (b) reading check). Record it in owner-orders (INBOX verbatim, a README row) and do it in the same PR.
+C. The Telegram / Vision card must show the ENGINE's reading for signal_source = engine (not the old bot's chart):
+- The chart: the HTF strip (W / D / 1H state), the 1H / Daily area or line with its lifecycle state and timeframe, the refined 15M base, the 5M trigger panel with the trigger candle, the invalidation, the next area, FUT volume. No old L-line / PDH / ORH chart for engine signals.
+- The text: the signal's own symbol first, then the model and the object in plain words ("retest of a broken 1H line from below").
+- Vision audits engine signals against this engine card and the method's concepts (the handover's T-5); the old session / gap / opening rules are context only.
+- Trade messages show the real exits from the dashboard settings (the handover's T-6).
+D. Name: for signal_source = engine the bot's UI / card label becomes "Price-action engine (PAPER)"; the old "15M Dynamic SR / reversal" name and logic are shown only when signal_source = own.
+Tests, self-review, PAPER only. Report to me in Marathi.
+
+---
+## 23 Oct — merge and continue (5)
+Merge and continue

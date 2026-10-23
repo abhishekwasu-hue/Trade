@@ -128,7 +128,7 @@ def test_four_models_one_visit_four_cards_then_four_positions(db, es, opened, mo
         tags = VG._row_tags(r)
         cap = VW.v1_caption(r, {"verdict": "agree", "audits": [{"reason": "Sellers took over."}]}, d, r["deadline"])
         head = cap.split("\n")[0]
-        assert head.startswith(f"{tags['entry_model']} — {NAMES[tags['entry_model']]} · {SYM}:")      # classic title line
+        assert head.startswith(f"{SYM} · {tags['entry_model']} — {NAMES[tags['entry_model']]}:")      # classic title line: the symbol first (DECISIONS 41)
         assert "invalidation (info): 25,135 — 15M close above the area high" in cap                   # the model invalidation (info)
         assert "evidence: ✓ handover · ✗ volume growing · NA confluence" in cap
         summ = VW.v1_caption(r, {"verdict": "agree"}, d, r["deadline"], layout="summary")

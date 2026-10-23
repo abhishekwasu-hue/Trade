@@ -44,7 +44,9 @@ from the trade side, never fires (V22._at_area's own checks). The entry hours ar
 outside them is consumed and listed, never an entry; so is one whose visit has the existing FUT-volume data problem (RF-2 b, Z-1c).
 Range (Abhi's method L): the existing Daily RANGE (Q27) state — `Levels.active(t, "RANGE", band)` gives the edge areas (support in the
 band's lower half, resistance in its upper half) — is read the same way: bull put at the lower edge, bear call at the upper (E1–E4 a;
-E4 b is read for an UP / DOWN trend only). Lines (trendline.channel_lines / channels): both sides, both directions, on the trend
+E4 b is read for an UP / DOWN trend only); DECISIONS 40: the current Daily / 1H range edges from structure
+(`range_edges.trade_edges`) are armed as areas too (trade side, `range_edge_areas`). E4 (b) approach side (DECISIONS 38,
+`e4b_approach_rule`): a retest only from the break side. Lines (trendline.channel_lines / channels): both sides, both directions, on the trend
 degree (1H) and D1 (15M), whatever the trend; a broken counter channel is listed as evidence (never a gate, not in the A / B label);
 E4 (b) reads the main swings' broken lines + broken channel parallels, and `PATTERN_HOOK` (a broken pattern boundary — patterns track).
 Bars ≤ t only; LTF bars ≤ the bar's close; swings confirmed by the bar being read. No order, no broker, no AI call.
@@ -216,7 +218,7 @@ class Reader:
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
         kind = "H" if d < 0 else "L"
         L = self.V.levels.L[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(self.V.levels.L) else None
-        born = int(getattr(L, "born_bar", 0) or 0) if L is not None else 0
+        born = int(getattr(L, "born_bar", 0) or 0) if L is not None else int(lvl.get("born_bar") or 0)   # a range edge: its own birth
         sw = [p for p in getattr(self.V.levels, "_known0", []) if p.kind == kind and p.confirm_bar <= u and lo <= float(p.price) <= hi]
         birth = [p for p in sw if p.confirm_bar <= born]
         floor = max(int(p.bar) for p in birth) if birth else born
@@ -371,6 +373,41 @@ class Reader:
             return "the rejection candle is not at the retested object (price already away from it)"
         ext = self.back(max(self.P(i, d) for i in range(start, u + 1)), d)
         return self.beyond(u, ext, d)                                      # guard: ext includes bar u, so today it never trips
+
+    APPROACH_RULES = ("break_side", "any")
+    FORM_SPAN = {"star": 2, "inside_break": 2}                          # forms read on u − 2 … u; the other two-candle forms: u − 1 … u
+
+    def approach_rule(self):
+        r = str(self.V.s.get("e4b_approach_rule", "break_side"))
+        if r not in self.APPROACH_RULES:
+            raise ValueError(f"e4b_approach_rule {r!r} — {' / '.join(self.APPROACH_RULES)}")
+        return r
+
+    def approach_side(self, u, form, start, edge, d):
+        """DECISIONS 38 (live reading check, H2): the retest of an object broken DOWN (bear call) needs price to come back UP to it from
+        BELOW and be rejected there; a candle coming DOWN from above (the object's original side, where price was accepted) and closing
+        through it is a breakdown candle — never an E4 (b). Mirror for bull puts. edge(i) = the object's original-side edge at bar i (a
+        line: its value; a broken support area: its high; a broken resistance area: its low). Comparison only, bars ≤ u:
+          • the revisit came from the break side — the close before the revisit's first bar is not beyond the original-side edge;
+          • the rejection form's first candle opened from the break side — its open is not beyond the original-side edge (one-candle
+            form: bar u; a two-candle form: its first candle).
+        None ⇒ ok, else why (a wait text). `e4b_approach_rule = any` = the earlier reading (no approach check, what-if)."""
+        if self.approach_rule() == "any":
+            return None
+        C, O = self.A["close"], self.A["open"]
+
+        def orig(x, i):                                                    # beyond the object on its ORIGINAL side (bear call: above)
+            return (float(x) - float(edge(i))) * d < 0
+        word = "above" if d < 0 else "below"
+        p = int(start) - 1
+        if p >= 0 and orig(C[p], p):
+            return (f"the revisit came from {word} the broken object (its original side, where price was accepted) — not a retest from "
+                    f"the break side (DECISIONS 38, H2)")
+        f0 = int(u) if form.get("form") in self.ONE_CANDLE_FORMS else int(u) - self.FORM_SPAN.get(form.get("form"), 1)
+        if f0 >= 0 and orig(O[f0], f0):
+            return (f"the rejection candle came from {word} the broken object and closed through it — a breakout / breakdown candle, "
+                    f"never an E4 (b) (DECISIONS 38, H2)")
+        return None
 
     # ------------------------------------------------------------------------------------------ one armed area
     def area(self, t, lvl, d):
@@ -584,6 +621,44 @@ class Reader:
             return round(ext, 2), f"price {word} the visit's extreme {ext:,.2f}", facts
         return info["sweep_extreme"], f"price {word} the sweep extreme {info['sweep_extreme']:,.2f}", dict(info)
 
+    # ------------------------------------------------------------------------------------------ range edges (concept L)
+    RANGE_EDGE_TFS = ("D", "1H")                                        # the area timeframes (15M = the setup TF: refined base / trigger)
+
+    def range_edges_on(self):
+        r = str(self.V.s.get("range_edge_areas", "on"))
+        if r not in ("on", "off"):
+            raise ValueError(f"range_edge_areas {r!r} — on / off")
+        return r == "on"
+
+    def range_edge_areas(self, t, trend, act):
+        """DECISIONS 40 (concept L, method §8 T7): in a range the range EDGES are the areas — bear call at the upper edge, bull put at
+        the lower edge — and E1–E4 apply there as at any area. The edges = `range_edges.trade_edges` (the current Daily / 1H range from
+        structure, each edge = its swing candle wick to body, fresh / tested, not broken / flipped / dead — the levels' own K4 machine),
+        on the trade side only (P4: Daily DOWN ⇒ the upper edge, UP ⇒ the lower edge, RANGE ⇒ both), ahead of price as `Levels.active`
+        reads an area (a resistance not below price, a support not above it). An edge whose band is an already armed area (same band,
+        `same_level`) is that area. The visit counts from the bar the range is known (`visit_from`). `range_edge_areas = off` = the
+        earlier reading (edges evidence only, what-if). Bars ≤ t only."""
+        if not self.range_edges_on() or trend not in ("UP", "DOWN", "RANGE"):
+            return []
+        from . import range_edges as RE
+        try:
+            edges = RE.trade_edges(self.V, t, self.RANGE_EDGE_TFS)
+        except Exception as exc:                                           # noqa: BLE001 — a reading error arms nothing (logged)
+            import logging
+            logging.getLogger(__name__).warning("entry models: range edges not read at bar %s: %s", t, exc)
+            return []
+        ids = {x.get("id") for x in act}
+        out = []
+        for e in edges:
+            d = M._dir(trend, e.get("role"))
+            if d == 0 or (e.get("range_edge") == "upper") != (d < 0) or e.get("same_level") in ids:
+                continue
+            if (d < 0 and e.get("below")) or (d > 0 and e.get("above")) or e.get("id") in ids:
+                continue
+            ids.add(e.get("id"))
+            out.append({**e, "visit_from": int(e.get("born_bar") or 0)})
+        return out
+
     # ------------------------------------------------------------------------------------------ E4 (b): broken objects
     def touch_visit(self, t, oid, born, touches, away_fn_swing, d):
         """A revisit of a broken object, by the visit's own structure rule (V22._visit_structure, sparse): it starts at the first bar
@@ -677,7 +752,8 @@ class Reader:
                     "direction": int(d), "side": side_of(d), "visit_id": f"{oid}@{self.T(start)}", "visit_start": self.T(start),
                     "visit_start_bar": int(start), "broken_at": self.T(obj.get("broken_at") if kind == "area" else obj.get("break_bar"))}
             if kind == "line":
-                base["line"] = {k: obj.get(k) for k in ("id", "family", "tf", "p1", "p2", "slope", "touches", "break_bar", "parallel_of")}
+                base["line"] = {k: obj.get(k) for k in ("id", "family", "tf", "p1", "p2", "slope", "touches", "break_bar", "parallel_of",
+                                                         "degree", "kind", "break_side")}
             if kind == "area":
                 L = V.levels.L[obj["id"]]
                 back = [b for b, k, _ in L.events if k in ("reclaim", "flip", "dead") and start <= b <= t]
@@ -686,17 +762,26 @@ class Reader:
                                 models={"E4": {"status": "disarmed"}})
                     armed.append(base)
                     continue
-            first = None
+            if kind == "area":                                             # DECISIONS 38: the object's original-side edge
+                e0 = float(obj["hi"]) if d < 0 else float(obj["lo"])
+                edge = (lambda i, e0=e0: e0)
+            else:
+                edge = (lambda i, ln=obj: TL.line_value(ln, i))
+            first, appr_why = None, None
             for u in range(w0, t + 1):
                 if self.touch_visit(u, oid, born, touch, aw_sw, d) != start:
                     continue
                 r = self.rejection(u, d, lambda i: len(touch(i, i)) > 0, start, away)
                 if r is not None and self.retest_ok(u, r, touch, start, d) is None:
+                    why = self.approach_side(u, r, start, edge, d)
+                    if why is not None:                                    # a breakdown candle / a revisit from the original side
+                        appr_why = why
+                        continue
                     first = (u, r)
                     break
             if first is None:
-                base["models"] = {"E4": {"status": "waiting", "waiting": "revisit in progress; waiting for a rejection candle that closes "
-                                                                         "away from the broken " + kind}}
+                base["models"] = {"E4": {"status": "waiting", "waiting": appr_why or ("revisit in progress; waiting for a rejection candle "
+                                                                                      "that closes away from the broken " + kind)}}
             elif first[0] < t:
                 base["models"] = {"E4": {"status": "fired_earlier", "at": self.T(first[0]), "bar": int(first[0])}}
             elif self.data_problem(start, t):
@@ -780,6 +865,9 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
     ("MC…", never clashing with the Daily side's "C…"), broken_on = False reads the areas only. The defaults = today's path."""
     R = Reader(V) if side_fn is None else Reader(V, side_fn)          # the default call exactly as before (model C only injects)
     A = R.A
+    edges_fn = getattr(R, "range_edge_areas", None)                    # (a stub reader in tests may not have it)
+    if edges_fn is not None and side_fn is None and keep is None and extra is None:   # DECISIONS 40 (concept L): range edges = areas
+        act = list(act) + edges_fn(t, trend, act)
     armed, entries, cands = [], [], []
     first_area = None
     for lvl in act:
@@ -812,6 +900,8 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             ok6, why6, cm = cm6
             ev = R.evidence(t, d, lvl, int(vi["start"]), cm=cm, read_ok=ok6, move_from=cm.get("move_from_bar"))
             area = {k: lvl.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
+            if lvl.get("range_edge"):                                      # DECISIONS 40: a range edge (card / audit wording)
+                area["range_edge"] = lvl["range_edge"]
             arm0, mf0 = int(vi["start"]), cm.get("move_from_bar")
         elif f["kind"] == "area":
             x = f["raw"]

@@ -85,3 +85,20 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     both can be switched off on the dashboard. Vision stays information only. The Vision budget is $5 per day (`vision_daily_budget_usd`
     = 5.0, a dashboard setting); PROVISIONAL with it: monthly cap 100 (the setting's maximum) and visual-audit sub-cap 2.0 (its maximum)
     so the daily budget is usable; the signals reserve stays. (Chart Reading Report switch-on + Abhi's budget)
+37. The entry trigger is read on 5M for every model (`trigger_tf = 5M`; `15M` = the earlier behaviour, what-if, byte-identical). Where
+    stays as now: W state, D side, 1H / Daily areas with the K4 lifecycle, the refined 15M base, the visit, once per model per visit,
+    max_hits_per_zone. The engine decides at every 5M close using only 15M / 1H / D bars CLOSED at that 5M close (a 15M bar in
+    progress is never used). E1 = the first 5M candle trading into the refined base in the visit; E2 = the 5M commitment candle with
+    FUT 5M volume (handover on 5M, volume compared on 5M slots); E3 = the 5M CHoCH; E4 (a) = sweep and failed push read on 5M; E4 (b) =
+    the 5M rejection candle at the retested object from the correct side. traded_inside applies to the 5M trigger candle. The
+    invalidation stays structural (refined base / area / object / sweep extreme), never the 5M candle's own extreme. (Owner rule)
+38. E4 (b) approach side: the retest of a line / area broken DOWN (bear call) needs price to come back UP to it from below and be
+    rejected there (a close back below); a candle coming down from above, where price was accepted, and closing through the object is
+    a breakdown candle (H2) — never an E4 (b). Mirror for bull puts. (Live reading check)
+39. Lines flip once too (as DECISIONS 27): a line broken (close + swing beyond), then closed back through with swings formed on the
+    original side, is dead — never an E4 (b) object again. (Live reading check)
+40. Range (concept L): the range edges are the areas — bear call at the upper edge, bull put at the lower edge; E1–E4 apply there as at
+    any area. (Live reading check)
+41. Cards and the Vision prompt describe a line object as a line with its timeframe / degree ("broken 1H line at X, retest from
+    below"), never as an area band; the card header shows the signal's own symbol first, the bot name only as a small label. (Live
+    reading check)

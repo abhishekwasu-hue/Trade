@@ -1156,3 +1156,33 @@ Checked against CLAUDE.md ("evidence is listed and never blocks", no number / ru
   extremes; channels = the one price is in, a retest of a broken line, a counter channel broken in the trade direction; range edges =
   overlap with the entry band. No ranking, no score.
 - **T8 objects into the gate tags** (`chart_objects`, default off): still open (display, a separate item).
+
+## Live reading check — BANKNIFTY E4 (b) bear call at a broken line (owner-orders DECISIONS 38–41; report docs/reports/live_e4b_check.md)
+Checked against CLAUDE.md, DECISIONS 6, 23, 27, 28, 38–41, method P4 / §8 (T7, E4 (b)), H2.
+- **FIXED — E4 (b) approach side (DECISIONS 38).** Was: no read of where price came from; a candle opening on the object's original side
+  and closing through it (a breakdown, H2) passed as the rejection. Now `Reader.approach_side` (`e4b_approach_rule = break_side`; `any`
+  = what-if): the close before the revisit's first bar and the open of the rejection form's first candle are not beyond the original
+  side. Replay: E4 (b) 17 → 10 (7 removed: 5 next first, 2 invalidation first); E1–E3 identical.
+- **Covered — lines dead after a second break (DECISIONS 39 / T-2).** `trendline.broken_back_at` (#373). The live VPS (last confirmed
+  deploy c3e9f0a) most likely ran without it — the VPS command in the report prints the commit. For Abhi's eye (no change): the swing
+  that undoes a line's break is read on the line's own degree (1H); 15M swings alone keep the line broken.
+- **FIXED — range edges as areas (DECISIONS 40).** Was: range read as evidence only, edges never armed (`armable` hook unwired). Now
+  `range_edges.trade_edges` ⇒ `Reader.range_edge_areas` (`range_edge_areas = on`): current Daily / 1H range edges, trade side only.
+  Replay: no new entry (the outer ranges were never visited). Provisional, assumed unless Abhi objects:
+  (a) **15M range edges are not armed** (15M = the setup TF of the refined base / trigger; areas are 1H / Daily context);
+  (b) **the counter-trend edge is not armed** when the Daily is UP / DOWN (P4; with a Daily RANGE both edges are);
+  (c) **the outer range only** (T7, 21 Oct: "the range in force = the oldest such pair not broken"): an inner range inside it (e.g. the
+  broken line ↔ an upper edge rejected several times) is not read as a range — question for Abhi: should the newest (inner) range of a
+  timeframe give the edges too?
+- **Not a bug — evidence ✗ / label None on an E4 (b).** Evidence never blocks (DECISIONS 6); the missing part of the E4 (b) form was the
+  approach side (fixed above).
+- **FIXED — card / Vision text for a line (DECISIONS 41).** `entry_line` tag (tf, degree, family, break side, value) ⇒ "broken 1H line at X
+  (…, broken down), retest from below"; header symbol first; engine name "Price-action engine (PAPER)" (addition D); Vision prompt
+  `engine_check_v2`. E4 (b) lines are always the 1H degree (D2).
+- **Live list (item 7):** needs the read-only VPS export (command in the report); the replay list is in the report.
+- **Approach side after an overshoot (review M1), PROVISIONAL.** `e4b_approach_rule = break_side` also blocks a rejection candle that
+  OPENS on the object's original side right after a single overshoot close from the break side (no swing formed beyond). By the sweep
+  reading (DECISIONS 23) that overshoot is a sweep, not acceptance, so such a retest may be a valid E4 (b) from below. Provisional
+  default: a rejection candle opening on the original side counts as "from above" even after one overshoot close (no number added to
+  separate it from the live case, where price closed above four times without a swing of the line's degree). Affects 2 of the 7
+  removed replay entries (03 Sep, 09 Oct: "trigger opened above"). Abhi decides; `any` restores the earlier reading.

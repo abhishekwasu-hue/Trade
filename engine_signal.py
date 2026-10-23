@@ -21,6 +21,14 @@ import pandas as pd
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SOURCES = ("own", "engine", "both")
+# Abhi (addition D, 23 Oct): for signal_source = engine the bot's UI / card / trade-message label is the engine's own name; the old bot
+# name ("15M Dynamic SR …") is shown only when the signal comes from the bot itself (signal_source = own). Display only.
+ENGINE_LABEL = "Price-action engine (PAPER)"
+
+
+def display_label(own_label, source=None):
+    """The label to show: ENGINE_LABEL for an engine signal / an engine-sourced bot (source "engine" or True), else the bot's own label."""
+    return ENGINE_LABEL if source is True or str(source or "").lower() == "engine" else own_label
 DEFAULTS = {"signal_source": "own", "engine_max_age_min": 30, "engine_lookback_days": 100, "engine_name": "decision3",
             "engine_first_bar_end": "09:30", "engine_last_bar_end": "15:00"}       # decision3: फक्त या वेळांत बंद होणारे 15M bars
 ENGINES = ("decision3", "decision2")

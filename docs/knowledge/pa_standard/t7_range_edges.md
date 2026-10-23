@@ -55,7 +55,7 @@ Daily edge (Abhi Z-1u: then the 1H band is the location — named in `inside_1h`
   Each edge has every key of a `Levels.snapshot` entry (id `range:<tf>:<edge>:<anchor bar>`, births `["range"]` (+ `"c"` once flipped),
   role, lo, hi, tests, sweeps, fresh, dist, state, far_swing, trade_location, …) plus `range_edge`, `trade_side`, `lifecycle`, `members`,
   `range`, `current`, `same_level` (the existing level with the same band, lineage), `inside_1h`, `evidence`.
-* `armable(V, t, d=None)` — hook for the entry models (T9 wiring): the current edges that are trade locations, nearest first.
+* `armable(V, t, d=None)` — the current edges that are trade locations, nearest first. `trade_edges(V, t, tfs=("D", "1H"))` — the entry models' edges (DECISIONS 40, wired: `entry_models.Reader.range_edge_areas`, setting `range_edge_areas`, trade side only).
 * `read_tf(V, t, tf)` (D / W), `read_intraday(V, t, tf)` (1H / 15M), `edges_from_rectangle(V, t, rect)` (hook for a rectangle reader,
   e.g. T4: swings2-shaped pivots, the last two highs / lows must be C-13 equal).
 * `range_state(V, t)` — the row's structural range state: `{rule: "structure", in_range, tf (highest of D > 1H > 15M in range),

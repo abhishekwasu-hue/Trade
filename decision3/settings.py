@@ -119,6 +119,12 @@ DEFAULTS = {
                                              # E1 / E2 / E3 / E4 a: the trigger candle itself trades into the refined 15M base (Abhi 22 Oct).
                                              # "inside" = the 21 Oct RC3 reading (#364: the close inside the area, what-if); "legacy" = the
                                              # da7cbbc trigger (what-if / old fixtures)
+    "e4b_approach_rule": "break_side",       # Abhi (DECISIONS 38, live reading check): E4 (b) retest from the BREAK side only — a revisit
+                                             # from the object's original side / a rejection candle opening there and closing through the
+                                             # object = a breakdown (H2), never an E4 (b). "any" = the earlier reading (what-if)
+    "range_edge_areas": "on",                # Abhi (DECISIONS 40, concept L): the current Daily / 1H range edges are areas — bear call at
+                                             # the upper edge, bull put at the lower edge (trade side); E1–E4 apply there. "off" = edges as
+                                             # evidence only (the earlier reading, what-if)
     "entry_area_refine": "setup_tf",         # Abhi 21 Oct RC2 (RESEARCH DEFAULT, review after replay): 1H / Daily area = context; the
                                              # refined 15M base inside it (TA4) = trigger location (the trigger candle trades into it), E1 and invalidation. "area" = the context
                                              # area itself (the da7cbbc reading, what-if)
@@ -238,6 +244,13 @@ REGISTER = {
                            "allowed (a commitment / rejection candle trades into the area and closes away from it); E4 (b): the rejection "
                            "form trades at the retested object and closes on its trade side. inside = the 21 Oct RC3 reading (#364: the "
                            "close inside the area's own band, what-if); legacy = the da7cbbc trigger (what-if, old fixtures)"),
+    "e4b_approach_rule": ("break_side", "break_side / any (what-if)", "Abhi नियम", "DECISIONS 38 (live reading check, H2): the retest "
+                          "of a line / area broken DOWN (bear call) needs price to come back UP to it from below and be rejected there; "
+                          "a revisit that came from the object's original side, or a rejection candle that opened there and closed "
+                          "through the object, is a breakdown candle — never an E4 (b). Mirror for bull puts. any = the earlier reading"),
+    "range_edge_areas": ("on", "on / off (what-if)", "Abhi नियम", "DECISIONS 40 (concept L, T7): the range edges are the areas — bear "
+                         "call at the upper edge, bull put at the lower edge; E1–E4 apply there as at any area (the current Daily / 1H "
+                         "range from structure, trade side only — P4). off = edges as evidence only (the earlier reading)"),
     "entry_area_refine": ("setup_tf", "setup_tf / area", "Abhi नियम", "Abhi 21 Oct RC2 — RESEARCH DEFAULT, review after the replay: "
                           "the 1H / Daily area (levels' TA4 band) is the context (where); inside it the refined base on the setup TF "
                           "(the newest 15M turn of the area's side inside the band, wick to body by the same TA4 rule) gives the trigger "
