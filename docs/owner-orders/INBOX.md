@@ -736,3 +736,15 @@ Rules re-read first. My answers — record them in DECISIONS / owner-orders:
 4. STABLE layer 2: ✅ — tag reader-layer2-stable-v2 on the current main and re-export its parity fixtures to the private trade-data repo per docs/reader/STABLE.md (the stale v1 fixtures stay as they are; a new row in the register).
 5. I will paste the output of the read-only BANKNIFTY E4 command separately.
 Merge #379 when CI is green. Report to me in Marathi.
+
+---
+## 23 Oct — Fix proof gallery (standing rule)
+I do not accept fixes on numbers alone — show me charts. Build a "Fix proof gallery" (one HTML in the private trade-data repo, the same style as the replay galleries; chart text in English, one plain Marathi line under each chart) and send it to me. Record this as a standing rule in DECISIONS: every reading fix is proven with before / after charts and is "done" only after my ✅ on the gallery.
+For every case: the 1H chart + the 15M chart + the 5M trigger panel; the object (area / line) drawn with its lifecycle events marked on the chart (born, broken = close + swing beyond, reclaimed / broken back, dead); an arrow for the side price approached from; the trigger candle highlighted; the invalidation; the next area; a vertical line at the decision bar, with the bars AFTER it faded and labelled "after the decision" (proof of no look-ahead); one line "Before: … / After: … because …".
+Sections, in this order:
+1. The live BANKNIFTY E4 (b) bear call (the broken horizontal line approached from above): before vs after #377 / #373 — show why no entry now, and show the range's upper edge as an area and whether / where a model fires there.
+2. Every E4 (b) entry removed by the broken-back / approach-side / flip-once fixes (all of them, each with before / after).
+3. The K4 reclaim fix cases.
+4. 5M vs 15M: every entry of the replay group as a pair side by side (the 5M entry and its 15M twin, or "no twin"), with entry, invalidation and what price did next.
+5. Regression check: 10 random entries and 10 random "no entry" places from the current code across the groups, each with its chart and the reader's reason.
+Never put charts in this public repo. Report to me in Marathi with the gallery path.

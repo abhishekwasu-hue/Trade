@@ -111,3 +111,7 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     never deleted. (Owner decision)
 45. STABLE layer 2 approved again: tag reader-layer2-stable-v2 on main; its parity fixtures re-exported to trade-data; the v1 fixtures
     stay as they are. (Owner decision)
+46. Every reading fix is proven with before / after charts (Fix proof gallery in the private trade-data repo: 1H + 15M + 5M trigger
+    panel, the object with its lifecycle events, approach-side arrow, trigger candle, invalidation, next area, a decision-bar line
+    with the later bars faded "after the decision", one "Before / After / because" line) and is "done" only after Abhi's ✅ on the
+    gallery — numbers alone never prove a fix. (Standing rule)

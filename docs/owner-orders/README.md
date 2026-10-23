@@ -46,5 +46,6 @@ Decisions taken from orders go to DECISIONS.md (append only).
 | 39 | 5M stays live; 15M "would-have" shadow per live 5M signal, weekly report per model | recorded (DECISIONS 42); building | — |
 | 40 | Entry-by-entry 5M vs 15M diagnosis of the 07–21 Oct replay (paired twins; why the 5M one failed) | recorded (DECISIONS 43); building — diagnosis only, findings as reading checks in OPEN_QUESTIONS | — |
 | 41 | Old PRs: close #311 / #299 (branches kept); #358 merge only if the live-diagnosis command needs it, else close | recorded (DECISIONS 44); in progress | GitHub |
-| 42 | STABLE layer 2 ✅: tag reader-layer2-stable-v2 on main, re-export parity fixtures to trade-data, new register row | recorded (DECISIONS 45); in progress | docs/reader/STABLE.md |
+| 42 | STABLE layer 2 ✅: tag reader-layer2-stable-v2 on main, re-export parity fixtures to trade-data, new register row | recorded (DECISIONS 45); paused (Abhi stopped the step 23 Oct; waits for his word) | docs/reader/STABLE.md |
 | 43 | Read-only BANKNIFTY E4 command output | waiting for Abhi's paste | docs/reports/live_e4b_check.md |
+| 44 | Fix proof gallery (sections 1–5: live E4 (b) case, removed E4 (b) entries, K4 reclaim cases, 5M vs 15M pairs, regression sample) | recorded (DECISIONS 46, standing rule); building in trade-data review/fix_proof_gallery/ | trade-data |
