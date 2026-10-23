@@ -1428,3 +1428,9 @@ Provisional (checked against DECISIONS 37, 46, 49, 51, 54, CLAUDE.md "Trigger re
   E4 (b) only with a trend side).
 - The dossier is still not wired into the live Vision card (no live change); before / after charts: trade-data
   `review/layer6_gallery/dossier5m/` — awaiting Abhi ✅ (DECISIONS 46).
+
+### Abhi's answers (23 Oct) — DECISIONS 55–57
+- L54-e: answered — counter channel = the pullback's channel at the trend degree (1H) only; confluence = a Daily / Weekly area overlap or an object of a different kind (line, liquidity pool) at the same place, never nearness. Not separating ⇒ the card shows the evidence list + count (Abhi decides).
+- L5-b: answered — count the forming push (marked "forming", bars ≤ t), "confirmed" once its swing confirms.
+- L5-c: answered — RSI divergence at a broken line / area retest like at any area (the retest = the pullback to the object).
+- C-L5-1: awaits Abhi's ✅ after the charts (layer 5 gallery ZIP).
