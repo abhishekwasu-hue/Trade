@@ -115,3 +115,11 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     panel, the object with its lifecycle events, approach-side arrow, trigger candle, invalidation, next area, a decision-bar line
     with the later bars faded "after the decision", one "Before / After / because" line) and is "done" only after Abhi's ✅ on the
     gallery — numbers alone never prove a fix. (Standing rule)
+47. A gate / engine error never enters (fail-closed), and is never silent: each cause sends ONE plain-words ⚠️ Telegram alert per
+    day; the cause is fixed with a test. (Owner decision)
+48. Telegram message standard: only seven message types (🌅 prep, 🔔 approaching area, 🎯 decide now, 📈 trade update, 🌙 today +
+    tomorrow's prep, 📊 weekly review, ⚠️ alert); the first line states the purpose and the action; short bullets in the fixed concept
+    order, no internal codes, no repeats; only 🎯 and ⚠️ ring; one event = one message (updates reply to the trade's card, one pinned
+    "Open positions" message edited in place); language MR / EN (default MR), chart text English; "nearness" for 🔔 is a display
+    setting, never a reading rule; the old level-bot counts leave Telegram (dashboard only). A snapshot test per type keeps the format.
+    (Owner decision)

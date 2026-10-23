@@ -748,3 +748,27 @@ Sections, in this order:
 4. 5M vs 15M: every entry of the replay group as a pair side by side (the 5M entry and its 15M twin, or "no twin"), with entry, invalidation and what price did next.
 5. Regression check: 10 random entries and 10 random "no entry" places from the current code across the groups, each with its chart and the reader's reason.
 Never put charts in this public repo. Report to me in Marathi with the gallery path.
+
+---
+## 23 Oct — gate error 14 (urgent) + Telegram message standard
+Two items. Record both in owner-orders first (INBOX verbatim, DECISIONS principles, a README row).
+
+1. URGENT — report first: the SRv2 confirmation gate logged "error 14" today, and BANKNIFTY had "no entry because a gate error" while price was in its supply area. Show every error today: time, symbol, the exact exception and where, which path (engine or the old level-bot gate), and whether it blocked an engine entry. Fix the cause with a test; fail-closed stays (an error never enters). From now on any gate / engine error sends ONE ⚠️ Telegram alert per cause per day in plain words.
+
+2. TELEGRAM MESSAGE STANDARD for all Trade messages (based on research on alert fatigue, structured trading signals and professional pre-market routines). Language setting MR / EN, default MR; chart text stays English.
+a. Only these types; the FIRST line states the purpose with its icon AND the action:
+   🌅 Today's prep (before the open) · 🔔 Approaching area · 🎯 Decide now (✅ / ❌) · 📈 Trade update · 🌙 Today + tomorrow's prep (after the close: ONE message — the Day summary and the Chart Reading Report text merged; its charts as the album) · 📊 Weekly review (Saturday) · ⚠️ Alert (only when something is wrong).
+   The action is always explicit: "Decide by HH:MM", "No action — information", or "Prepare: …".
+b. Short and sweet: bullet points, one line each, at most ~12 bullets per message; no paragraphs, no internal codes (SKIPPED_*, armed / ignored, touch-legacy, gate names), no repeated information.
+c. Concept by concept, in this fixed order, a bullet only when that concept has something to say: Trend (W / D / 1H) · Structure (BOS / CHoCH) · Area (kind, band, TF, lifecycle state) · Liquidity · Lines / channels · Patterns · Volume (FUT) · RSI divergence · Range / breakout-fakeout · Wave context · Trades (model in words, entry, state, P&L) · Plan: what the engine waits for next (area + visit → commitment → 5M CHoCH) and "cancelled if …" (structure words).
+d. Priority tiers: 🎯 and ⚠️ ring; 🌅 / 🔔 / 📈 / 🌙 / 📊 are sent silently (disable_notification). Low-priority items are batched into the next 🌙 / 🌅 instead of separate messages.
+e. One event = one message: every 📈 update of a trade is sent as a reply to its 🎯 card (one thread per trade); one PINNED "Open positions" message (symbol, model, live P&L, protection such as "SL at entry — cannot become a loss") edited in place; no duplicates.
+f. 🎯 card, fixed field order: symbol → side → area / object as a RANGE with its TF and state → model in words → evidence ✓ / ✗ → invalidation (structure words + level) → "If you approve:" strikes, lots, max loss ₹ (from the dashboard settings) → decide-by; the engine chart attached. A reminder ping 2 minutes before the decide-by time.
+g. 🔔 Approaching area (silent): when price comes near an armed area — "BANKNIFTY near supply X–Y — a card may follow". The nearness is a display setting, never a reading rule.
+h. 📈 update: one to three bullets (what happened, the P&L, the protection now).
+i. 🌅 Today's prep, in this order: account (open positions + protection; broker / data connection OK) → 🌍 global cues in one line, information only (GIFT Nifty, the US close, DXY, US 10Y, the previous day's FII / DII net, India VIX) → 📅 events (expiry and that the next weekly is used; RBI / major results / holidays) → per symbol, concept-wise, the areas in play as "if price reaches X–Y → the engine waits for …; cancelled if …" (a map, not a forecast) → the models ON today → today's loss limit from the settings.
+j. 📊 Weekly review (Saturday, silent): per-model results, a chart gallery of the week's trades, Vision vs my decision vs the outcome, 5M vs the 15M shadow.
+k. My controls: /mute 30m (then one summary of what was muted; 🎯 and ⚠️ are never muted), /today, /positions, /plan, /pause, /resume; each type on / off on the dashboard; after the close only ⚠️ rings.
+l. Remove the old level-bot section (5M Instant / Classic / MCX / SRv2 legacy counts) from Telegram — dashboard only; the comparison tracking (skipped / shadow trades) = one bullet with a link.
+m. Formatting: Indian number format (₹1.2 L), no paise, consistent icons; a snapshot test per message type (length limit, concept order, no internal codes, MR / EN) so the format never drifts.
+Send me samples of EVERY type (including 🔔, the pinned message and the weekly review) built from real data before deploying. Self-review; PAPER only; one VPS block after market close with --revert. Report to me in Marathi.
