@@ -178,15 +178,40 @@ def check_trade_data(td):
     git(td, "pull", "-q", "--ff-only", "origin", "main")
 
 
+class PushPending(RuntimeError):
+    """Committed in the trade-data clone but not on the remote (the commit is kept; a hand fix is printed)."""
+
+
+def deletions_staged(td):
+    return [x for x in git(td, "diff", "--cached", "--name-only", "--diff-filter=D").stdout.splitlines() if x.strip()]
+
+
 def push_and_verify(td, rel, msg):
-    """add --ignore-removal + commit of THAT folder; push (rejected ⇒ pull --rebase --autostash, once more); every file's remote blob
-    = the local one. ⇒ the remote commit id."""
+    """add --ignore-removal of THAT folder; commit ONLY what is staged (no pathspec: a pathspec commit would record working-tree
+    deletions too) and never when a deletion is staged (trade-data never loses a file ⇒ RuntimeError ⇒ tarball); push (rejected ⇒
+    pull --rebase --autostash — a failed rebase is aborted, the clone is never left mid-rebase — then push once more); every file's
+    remote blob = the local one. ⇒ the remote commit id. A git lock (.git/index.lock) ⇒ RuntimeError (never deleted here)."""
+    if os.path.exists(os.path.join(td, ".git", "index.lock")):
+        raise RuntimeError("trade-data .git/index.lock exists (another git process, or a stale lock) — not touched")
     git(td, "add", "--ignore-removal", "--", rel)
-    if git(td, "diff", "--cached", "--quiet", "--", rel, check=False).returncode != 0:
-        git(td, "commit", "-q", "-m", msg, "--", rel)
+    dels = deletions_staged(td)
+    if dels:
+        git(td, "reset", "-q", "--", rel, check=False)                     # unstage our folder only; nothing else touched
+        raise RuntimeError(f"a deletion is staged in trade-data ({dels[:3]}) — no commit (trade-data never loses a file)")
+    other = [x for x in git(td, "diff", "--cached", "--name-only").stdout.splitlines()
+             if x.strip() and not (x + "/").startswith(rel.rstrip("/") + "/")]
+    if other:                                                              # someone else's staged change: never committed by us
+        git(td, "reset", "-q", "--", rel, check=False)
+        raise RuntimeError(f"other staged changes in trade-data ({other[:3]}) — no commit")
+    if git(td, "diff", "--cached", "--quiet", check=False).returncode != 0:
+        git(td, "commit", "-q", "-m", msg)
     if git(td, "push", "-q", "origin", "HEAD:main", check=False).returncode != 0:
-        git(td, "pull", "-q", "--rebase", "--autostash", "origin", "main")
-        git(td, "push", "-q", "origin", "HEAD:main")
+        r = git(td, "pull", "-q", "--rebase", "--autostash", "origin", "main", check=False)
+        if r.returncode != 0:
+            git(td, "rebase", "--abort", check=False)
+            raise PushPending(f"rebase failed (aborted, clone back on its commit): {r.stderr.strip()[:160]}")
+        if git(td, "push", "-q", "origin", "HEAD:main", check=False).returncode != 0:
+            raise PushPending("the second push was rejected too")
     git(td, "fetch", "-q", "origin", "main")
     bad = []
     for base, _dirs, files in os.walk(os.path.join(td, rel)):
@@ -317,6 +342,10 @@ def main(argv=None):
             commit = push_and_verify(a.trade_data, rel, f"{rel}: today's reading gallery ({summary['line_en']})")
             where = f"trade-data {rel}/index.html (commit {commit})"
             print(f"✅ trade-data push verified: {where}")
+        except PushPending as exc:                                          # committed, not pushed: kept, hand fix printed
+            print(f"⏳ {rel} committed in {a.trade_data} but not pushed ({exc}). Hand fix: git -C {a.trade_data} pull --rebase "
+                  f"origin main && git -C {a.trade_data} push origin HEAD:main")
+            push = False
         except Exception as exc:                                            # noqa: BLE001 — tarball fallback
             print(f"⚠️ push failed ({exc}) ⇒ tarball")
             push = False

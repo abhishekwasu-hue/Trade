@@ -228,3 +228,37 @@ def test_wrapper_failed_tarball_is_not_exit_0(tmp_path):
                        timeout=120)
     assert r.returncode == 1, r.stdout + r.stderr
     assert "tarball अयशस्वी" in r.stdout
+
+
+def test_wrapper_never_commits_a_staged_deletion(tmp_path):
+    """Review (reading gallery PR): the wrapper commits only what is staged, and never when a deletion (or another staged path) is
+    staged in the trade-data clone — trade-data never loses a file."""
+    import shutil
+    import subprocess
+    if not shutil.which("bash") or not shutil.which("git"):
+        pytest.skip("bash / git")
+    root = _bot(tmp_path)
+    (root / "scripts").mkdir()
+    for f in ("export_banknifty_history.py", "export_banknifty_history_vps.sh"):
+        shutil.copy(os.path.join(X.ROOT, "scripts", f), root / "scripts" / f)
+    cfg = open(os.path.join(X.ROOT, "config.py"), encoding="utf-8").read()
+    (root / "config.py").write_text(cfg + "\n\ndef is_market_open(*a, **k):\n    return False\n", encoding="utf-8")
+    bare, data = tmp_path / "remote.git", tmp_path / "td"
+    g = lambda *a, cwd=None: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=cwd, check=True,  # noqa: E731
+                                            capture_output=True, text=True)
+    g("init", "-q", "--bare", "-b", "main", str(bare))
+    g("clone", "-q", str(bare), str(data))
+    (data / "keep.txt").write_text("x")
+    g("add", "keep.txt", cwd=data)
+    g("commit", "-q", "-m", "init", cwd=data)
+    g("push", "-q", "origin", "HEAD:main", cwd=data)
+    g("rm", "-q", "keep.txt", cwd=data)                                            # a staged deletion left in the clone
+    env = {**os.environ, "TRADE": str(root), "DATA": str(data), "TARDIR": str(tmp_path / "tars")}
+    r = subprocess.run(["bash", str(root / "scripts" / "export_banknifty_history_vps.sh")], env=env, capture_output=True, text=True,
+                       timeout=180)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "delete / इतर staged बदल" in r.stdout, r.stdout + r.stderr
+    ls = subprocess.run(["git", "--git-dir", str(bare), "ls-tree", "-r", "--name-only", "main"], capture_output=True, text=True).stdout
+    assert "keep.txt" in ls
+    log = subprocess.run(["git", "--git-dir", str(bare), "log", "--oneline", "main"], capture_output=True, text=True).stdout
+    assert len(log.strip().splitlines()) == 1

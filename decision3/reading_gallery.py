@@ -217,9 +217,14 @@ CODES = re.compile(r"\b(E[1-4][ab]?|RC\d|K\d(?:\.\d)?|H\d|TA\d|Z-1\w*|C-\d+|DECI
                    r"c0|c1|a2|vol_gap_max_frac|entry_trigger_rule|traded_inside|bear_call|bull_put)\b")
 
 
+SNAKE = re.compile(r"\b[a-z]+(?:_[a-z0-9]+)+\b")                           # setting / status names in snake_case
+
+
 def code_free(s):
-    """True when a text carries none of the internal codes (status names, rule tags, model codes, setting names)."""
-    return CODES.search(str(s or "")) is None
+    """True when a text carries none of the internal codes (status names, rule tags, model codes, snake_case setting names, a bare
+    "(a)" / "(b)" variant tag)."""
+    s = str(s or "")
+    return CODES.search(s) is None and SNAKE.search(s) is None and re.search(r"\(\s*[ab]\s*\)", s) is None
 
 
 def to_mr(text):
@@ -233,8 +238,13 @@ def to_mr(text):
         if m:
             return mr.format(*[g or "" for g in m.groups()])
     t = re.sub(r"\s*\((?:RC\d|H\d|K\d|TA\d|Z-1\w*|DECISIONS[^)]*|Abhi[^)]*|[^)]*_[a-z]+[^)]*)\)", "", t)
+    t = re.sub(r"\bE4\s*\(([ab])\)", lambda m: MODEL_MR["E4" + m.group(1)], t)          # model codes ⇒ the model in words
+    t = re.sub(r"\bE([1-4])\b", lambda m: MODEL_MR["E" + m.group(1)], t)
+    t = SNAKE.sub("", t)                                                     # setting names (snake_case) never shown
     t = CODES.sub("", t)
-    t = re.sub(r"\s{2,}", " ", t).strip(" ;,—-")
+    t = re.sub(r"\(\s*[ab]?\s*\)", "", t)                                   # a bare "(b)" / "()" left behind
+    t = re.sub(r"\s*=\s*(?=[\s;,.]|$)", " ", t)
+    t = re.sub(r"\s{2,}", " ", t).strip(" ;,—-=")
     return f"वाचक: “{t}”" if t else ""
 
 
@@ -332,16 +342,14 @@ def ctx_bar(V, dec):
 
 
 def find_line(V, lid, k):
+    """The line as listed AT the decision's closed 15M bar k only (never a later bar: a line can be redrawn later ⇒ look-ahead).
+    Not listed at k ⇒ None (the chart says "line not known at the decision")."""
     from . import trendline as TL
-    for t in (k, len(V.m15) - 1):
-        try:
-            cands = list(TL.channel_lines(V, t)) + [ch["parallel"] for ch in TL.channels(V, t)]
-        except Exception:                                                  # noqa: BLE001 — display
-            cands = []
-        ln = next((x for x in cands if str(x.get("id")) == str(lid)), None)
-        if ln is not None:
-            return ln
-    return None
+    try:
+        cands = list(TL.channel_lines(V, k)) + [ch["parallel"] for ch in TL.channels(V, k)]
+    except Exception:                                                      # noqa: BLE001 — display
+        return None
+    return next((x for x in cands if str(x.get("id")) == str(lid)), None)
 
 
 def geometry(V, c):
@@ -378,7 +386,8 @@ def geometry(V, c):
                         g["events"].append((T(bb), "reclaim", "broken back ⇒ dead"))
                 except Exception:                                          # noqa: BLE001 — display
                     pass
-        g["label"] = f"broken {ln.get('tf', '') if ln else ''} line {ln.get('family', '') if ln else ''}".replace("  ", " ")
+        g["label"] = (f"broken {ln.get('tf', '')} line {ln.get('family', '')}".replace("  ", " ") if ln else
+                      "broken line (line not known at the decision — not drawn)")
     else:
         g["kind"] = "area"
         L = None

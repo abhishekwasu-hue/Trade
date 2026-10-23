@@ -1345,7 +1345,8 @@ CHART_READING_SYMBOL_KEY = "ALL"
 CHART_READING_DEFAULTS = {"chart_reading_report": "on", "chart_reading_symbols": [], "chart_reading_language": "mr",
                           "chart_reading_detail": "short", "chart_reading_vision": "on", "chart_reading_page_url": "",
                           "visual_audit_level_message": "off",
-                          # DECISIONS 49 — today's reading gallery (scripts/reading_gallery_today.py): DISPLAY only, never a reading rule.
+                          # DECISIONS 49 — today's reading gallery (scripts/reading_gallery_today.py): DISPLAY-ONLY settings (what is
+                          # drawn / listed), never a reading rule, a gate or an entry setting.
                           "reading_gallery": "on", "reading_gallery_max_visit_charts": 40, "reading_gallery_disarmed_charts": "on"}
 CHART_READING_CHOICES = {"chart_reading_report": ("off", "on"), "chart_reading_language": ("mr", "en"),
                          "chart_reading_detail": ("short", "full"), "chart_reading_vision": ("off", "on"),
