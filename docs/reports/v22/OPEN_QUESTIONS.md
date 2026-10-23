@@ -1312,6 +1312,66 @@ STABLE layer 1 (L1-a / L1-b / L1-c). Verdicts only — nothing in the engine cha
   per bar, so the H moves to 09:30 with its own high. Assumed (no change; STABLE layer 1): a question for the next layer-1 review —
   should a turn whose extreme sits in the bar of the opposite swing keep that bar's extreme (56,575.15)?
 
+
+## Layer 6 gallery — output reading checks (BANKNIFTY, 13 groups 13 Apr – 21 Oct; origin/main 855fa7b; trade-data `review/layer6_gallery/`)
+
+Checked against CLAUDE.md (Entry framework, Trigger reading, Clusters / Z-1u), DECISIONS 37, 40, 41, 46, 49, method §5 (the verdict, the
+evidence list, the A / B label; "every price in the output must exist in the data"), L6-a, L3-c3, L3-n, BW-1 / C-18, VP3. 53 entries
+(E1 22, E4 (a) 11, E4 (b) 10, E3 9, E2 1; label A 1, no label 52 — the required set reads absent; 12 groups reading-only, FUT volume
+missing; 07–21 Oct FUT-testable). Per entry the engine's entry (E) was compared field by field with the stored payload (P), the Vision
+row tags (T), the real card text (classic = dashboard default, and summary), the real engine card image + Vision facts text (F), the
+facts dossier at the same bar (D) and the gallery chart (G). Fix: worktree branch `l6` (8ec561e + 50f3a9d) — **awaiting Abhi ✅**, not merged; the
+engine's entries are identical before / after (53 / 53). Display only: no reading rule, no decision, no number.
+
+- **L6-O1 (concept: C areas — the target is the next opposite area; engine card + Vision facts). Bug (output), fixed.** 53 / 53: the
+  card's "NEXT" / the facts' "Next area in the trade direction" came from the chart band finder (facts.validity) or said "none known",
+  never the engine's own next opposite area (the tags carried only the trade-side areas: payload level + watch list). Fix: the live
+  decision attaches to each entry its next area as the engine reads it (`engine3_live.next_area_of`: the nearest alive trade-location
+  area of the opposite role beyond the entry reference, at the decision's 15M bar) ⇒ payload entry `next_area` ⇒ tags `gate.next_area`
+  ⇒ engine_audit.reading; none ahead ⇒ "none known"; the chart band finder stays only for an older row without it.
+- **L6-O2 (L6-a label rule — Vision facts). Bug (output), fixed.** 53 / 53: facts_text printed "| label E1 — Aggressive" (the model's
+  name in the label field); the A / B label (rd.grade) was never printed (L6-53, E2 label A). Now "| label A (the required set + at
+  least one confirming piece)" / "| label B (the required set only)" / "| no A / B label (the required set reads absent)".
+- **L6-O3 (L6-a — the classic card, dashboard default). Gap, fixed.** The classic card had no A / B label line at all (summary only).
+  The evidence line now reads "📋 E2 — Confirmation evidence (label A): …" on every layout.
+- **L6-O4 (DECISIONS 37 — the card's 5M trigger text line). Gap, logged (no change).** 53 / 53 classic and summary: "Trigger 5M: …
+  traded into the refined base ✓ …" is always cut by the 1024 caption limit. Moving it ahead made the cut drop the 📋 evidence line (the
+  verdict) instead, so the order stays as on main. The trigger itself is on the card image (the 5M panel, DECISIONS 37) and in the Vision
+  facts; the 🎯 card field order of DECISIONS 48 (parked) decides the text layout.
+- **L6-O5 (L6-a / §1 MTF — card detail lines). Gap, fixed.** On engine entry models the old level-bot line "🎯 Confirmation: supply … ·
+  grade None · trend" (52; cut by 1024 here, shown when there is room) and the details "Area … (Resistance, 15M)" printing the setup TF
+  instead of the area's own 1H / Daily TF (43). The level-bot line is left out for engine entry models; the Area line prints the area's
+  TF. Every other signal: today's card byte for byte (pinned by tests/test_approval_card_summary.py).
+- **L6-O6 (K6.5 lines / DECISIONS 41 — the retested line's state). Bug (output), fixed.** 7 E4 (b) on broken lines: card / Vision facts
+  "state n/a" (the row's level for a line carries no state); now BROKEN as the engine read it.
+- **L6-O7 (L3-n visit by structure — dossier vs the 5M trigger, DECISIONS 37). Output disagreement, not fixed.** 10 E1 entries: the 5M
+  visit began inside the 15M bar in progress; the dossier reads the last CLOSED 15M bar and finds no visit in progress for the entry's
+  area (no zone study / commitment / CHoCH section for it). Where both see the visit (33) the visit start is the same (33 / 33).
+  Provisional default: the dossier stays 15M (it is not wired into the live Vision card); a 5M-trigger view for the dossier is its own PR
+  after Abhi's ✅ on this gallery.
+- **L6-O8 (L3-c3 / DECISIONS 37 — the required set in the dossier). Output disagreement, not fixed.** 1 (L6-53, E2, label A): the engine
+  reads the required set on 5M (present); the dossier reads it on 15M at the last closed bar (handover ✗, commitment ✗ "candle still in
+  the pullback direction", LTF CHoCH ✓). The other 32 visible visits agree. No disagreement from the rejected-push exclusion itself
+  (L3-c3 as written) was seen. Same provisional default as L6-O7.
+- **L6-O9 (L3-n — dossier scope). Gap, logged.** E4 (b) (10): the dossier reads visits of alive areas only; a broken area / line being
+  retested has no section.
+- **L6-O10 (BW-1 / C-18 — "⚠️ merged band — check"). Open for Abhi.** The line shows on 23 / 53 engine areas (one base each by
+  construction, Z-1u; no width limit, Z-1x) because they are wider than 150 pts. The existing display setting `approval_band_warn_rule =
+  method` already drops it for engine areas. Provisional: unchanged (Abhi's BW-1 answer).
+- **L6-O11 (VP3 / L6-a — volume pane wording). Logged.** With FUT volume missing (41 reading-only entries) the engine card's volume pane
+  says "volume: NA (grade cap B)" — "grade cap" contradicts L6-a (no label caps). Provisional: the wording change goes with VP3 (layer 6
+  display defaults) on Abhi's ✅; FUT-missing sessions never enter live anyway (Z-1c).
+- **L6-O12 (dossier liquidity). Logged.** The dossier's liquidity section builds `Levels` without the Daily frame ("0 Daily bars before
+  window ⇒ Q40 prior levels skipped"), so its pools / sweeps may differ from the engine's; not compared per entry here.
+- **L6-O13 (DECISIONS 37 — the engine card's 5M trigger panel). Display, logged.** The 5M trigger inset is drawn over the upper-left of
+  the 15M setup panel and hides its candles / the area's upper part on most cards (e.g. L6-53). Provisional: unchanged (display; the
+  card layout follows DECISIONS 48, parked).
+- **Held on every entry (no mismatch):** model, side, object (line words DECISIONS 41: 7 / 7), area band (E = P = T = F = G), area TF,
+  Z-1u no union band (53 / 53, clusters included), refined base (E = P = T = F = G), the trigger candle traded into the refined base (card
+  ✓ = engine, 43 / 43 with a base), trigger time, entry reference, invalidation price and rule, label in payload / tags / summary card,
+  required set in payload / tags / summary 📋 Reader line, the evidence list (card line + facts), trend side, dossier areas = engine areas
+  (all alive areas with state, 53 / 53), dossier trend side (43 / 43). Structural risk logged (no case seen): the summary card's 📋 Reader
+  pieces "handover (fast)", the LTF label and ① / ③ come from the ROW's best area (payload.reader), not from the entry's own read.
 ### Abhi's answers on the layer 6 gallery (23 Oct) — DECISIONS 50–54
 - L6-O1 / O2 / O3 / O5 / O6: ✅ (merged with branch l6).
 - L6-O7 / O8 / O9 / O12: answered — the dossier follows the 5M trigger (its own PR).

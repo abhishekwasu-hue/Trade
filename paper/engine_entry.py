@@ -394,6 +394,10 @@ def entry_gate_tags(r, e, direction, settings=None):
         if not any(isinstance(x, dict) and _num(x.get("lo")) == a[0] and _num(x.get("hi")) == a[1] for x in areas):
             areas.insert(0, {"id": ar.get("id"), "role": "support" if int(e["direction"]) > 0 else "resistance", "lo": a[0], "hi": a[1],
                              "tf": ar.get("tf"), "state": ar.get("state"), "confluence_label": None})
+        for x in areas:                                                   # layer 6: the entry's own object keeps the state the engine
+            if isinstance(x, dict) and _num(x.get("lo")) == a[0] and _num(x.get("hi")) == a[1] and x.get("state") is None \
+                    and ar.get("state"):                                  # read (a broken line's row in the payload carries none)
+                x["state"] = ar.get("state")
         g["areas"] = areas
     cl = e.get("cluster") if isinstance(e.get("cluster"), dict) else None
     if cl and isinstance(cl.get("members"), list) and len(cl["members"]) > 1:   # one location = the overlapping cluster: every member area
@@ -414,6 +418,8 @@ def entry_gate_tags(r, e, direction, settings=None):
     if ev_lines:                                                          # P8: the evidence line(s) the chart always shows
         g["evidence_lines"] = ev_lines
     g["grade"] = e.get("label") if e.get("label") in ("A", "B") else None   # this entry's own label (none ⇒ no label, never the row's)
+    if "next_area" in e:                                                  # layer 6: the next area (target) as the engine read it
+        g["next_area"] = e.get("next_area") if isinstance(e.get("next_area"), dict) else None
     ev = e.get("evidence")
     el = e.get("evidence_list") if isinstance(e.get("evidence_list"), dict) else ev
     if isinstance(el, dict) and ("required" in el or "confirming" in el):   # the 6a evidence list in the reader's own shape

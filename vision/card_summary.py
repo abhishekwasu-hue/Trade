@@ -360,8 +360,10 @@ def model_lines(tags):
     elif _num(inv) is not None:
         out.append(f"🧷 {html.escape(lab)} invalidation (info): {_px(_num(inv))} · trade SL / target = dashboard")
     ev = evidence_text(tags.get("entry_evidence"))
-    if ev:
-        out.append(f"📋 {html.escape(lab)} evidence: {html.escape(ev)}")
+    if ev:                                                               # layer 6 / L6-a: the entry's own A / B label on every layout
+        g = _gate(tags)
+        gl = f" (label {g['grade']})" if g.get("grade") in ("A", "B") else ""
+        out.append(f"📋 {html.escape(lab)} evidence{gl}: {html.escape(ev)}")
     return out
 
 
