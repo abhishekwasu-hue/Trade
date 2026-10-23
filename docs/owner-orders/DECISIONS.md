@@ -123,3 +123,10 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     "Open positions" message edited in place); language MR / EN (default MR), chart text English; "nearness" for 🔔 is a display
     setting, never a reading rule; the old level-bot counts leave Telegram (dashboard only). A snapshot test per type keeps the format.
     (Owner decision)
+49. READER-READY FOCUS: until the reader is declared ready, Trade work is only reader correctness — no new features (model C stays
+    OFF; the Telegram message standard and other display work wait unless they fix a reading error; urgent error fixes continue).
+    Ready = Abhi's ✅ on chart galleries for layer 5 (RSI) and layer 6 (verdict / output) + two consecutive weeks with no new reading
+    error in live PAPER + per-model PAPER results shown with charts. Daily loop: after the close a "Today's reading gallery" (every
+    entry and every armed-area visit without an entry, 1H + 15M + 5M charts, lifecycle, approach side, trigger, invalidation,
+    decision bar with later bars faded, one Marathi reason line) in trade-data; Abhi's consolidated corrections are fixed by the next
+    open with tests and before / after charts; a running reading-errors log (concept, case, fix PR, chart proof). (Owner decision)
