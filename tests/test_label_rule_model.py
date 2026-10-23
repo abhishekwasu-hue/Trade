@@ -148,7 +148,8 @@ def _ml(R, lvl, confirm, chx):
                           {})
 
 
-def test_a_or_b_from_the_five_pieces_and_a_line_is_never_its_own_confluence():
+def test_model54_a_or_b_from_the_five_pieces_and_a_line_is_never_its_own_confluence():
+    """`label_rule = model54` (the DECISIONS 54 reading of confluence / counter channel, what-if): _model_label without `tight`."""
     R = _R()
     none = {"volume_growing": None, "rsi_divergence": False, "confluence": True, "correction_line_closed_through": None}
     line = {"tf": "line", "confluence_line": True, "confluence": []}
@@ -178,3 +179,82 @@ def test_card_reader_line_names_the_models_conditions():
     tags = {"engine": True, "gate": {"mode": "engine", "reader": {"evidence_list": el}}}
     ln = CS.line_reader({"tags": tags})
     assert "✓ the E3 model's own conditions" in ln and "counter channel broken" in ln and "handover" not in ln
+
+
+# ------------------------------------------------------------------------------------------------ DECISIONS 55: the two tightened pieces
+from types import SimpleNamespace as NS  # noqa: E402
+
+from decision3 import liquidity as LQ  # noqa: E402
+from decision3 import trendline as TL  # noqa: E402
+
+
+def _chan(slope_dir, p1, broken_side, cid="ch"):
+    return {"id": cid, "tf": "1H", "slope_dir": slope_dir, "base_line": {"p1": [p1, 0.0]}, "broken_side": broken_side,
+            "state": "lower line broken" if broken_side else "inside", "broken_lines": [cid] if broken_side else []}
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put"])
+def test_counter_channel_counts_only_the_pullbacks_own_trend_degree_channel(mirror, monkeypatch):
+    R = _R()
+    d = 1 if mirror else -1
+    kind = "H" if mirror else "L"                                          # the pullback's origin: a swing low (bear call) / high
+    monkeypatch.setattr(TL, "_known_deg", lambda V, t, g: [NS(kind=kind, bar=2, price=1.0), NS(kind=kind, bar=6, price=1.0),
+                                                           NS(kind=kind, bar=9, price=1.0)])
+    against, want = ("falling", "up") if mirror else ("rising", "down")
+    degs = []
+
+    def chans(V, t, g):
+        degs.append(g)
+        return [_chan(against, 3, want, "old"),                            # drawn before the pullback's origin (bar 6): another move
+                _chan(against, 6, None, "own"),                            # the pullback's own channel, not broken
+                _chan("falling" if not mirror else "rising", 7, want, "with")]   # a channel WITH the trade
+    monkeypatch.setattr(TL, "channels", chans)
+    pc = R.pullback_channel(10, d, arm=8)                                  # arm = the visit's first bar (origin = the swing at 6)
+    assert pc["present"] is False and pc["origin"]["bar"] == 6 and pc["pullback_channels"] == ["own"]
+    assert set(degs) == {int(R.V.s.get("level_degree", 2))}               # the trend degree only (1H), never the 15M degree
+    monkeypatch.setattr(TL, "channels", lambda V, t, g: [_chan(against, 6, want, "own")])
+    assert R.pullback_channel(10, d, arm=8)["present"] is True
+    assert R.pullback_channel(10, d, arm=1)["present"] is None             # no origin known ⇒ NA
+
+
+def test_confluence_counts_only_an_overlap_or_an_object_at_the_same_place(monkeypatch):
+    R = _R()
+    monkeypatch.setattr(TL, "channel_lines", lambda V, t, g=None: [])
+    monkeypatch.setattr(LQ, "pools", lambda V, t: [])
+    area = {"id": 5, "tf": "1H", "lo": 100.0, "hi": 102.0}
+    R.V.levels.snapshot = lambda t: [{"id": 7, "tf": "D", "lo": 103.0, "hi": 105.0},   # near, not overlapping
+                                     {"id": 8, "tf": "1H", "lo": 101.0, "hi": 103.0}]  # overlapping but 1H (the same kind)
+    assert R.same_place(9, area)["present"] is False
+    assert R.same_place(9, {**area, "tl": {"id": "L", "value_t": 102.5}})["present"] is False   # a line turning near: nearness
+    assert R.same_place(9, {**area, "tl": {"id": "L", "value_t": 101.5}})["present"] is True    # the line through the area
+    R.V.levels.snapshot = lambda t: [{"id": 7, "tf": "W", "lo": 101.5, "hi": 105.0}]
+    assert R.same_place(9, area)["objects"] == ["W area 7 101.50–105.00"]
+    R.V.levels.snapshot = lambda t: [{"id": 7, "tf": "D", "lo": 101.5, "hi": 105.0}, {"id": 9, "tf": "W", "lo": 99.0, "hi": 100.5}]
+    assert R.same_place(9, {**area, "tf": "D"})["objects"] == ["W area 9 99.00–100.50"]   # a Daily area: only a higher (Weekly) one
+    R.V.levels.snapshot = lambda t: []
+    monkeypatch.setattr(LQ, "pools", lambda V, t: [{"price": 101.0, "side": "buy", "src": "equal"},
+                                                   {"price": 101.2, "side": "buy", "src": "swing"}])   # a plain swing: the area's own
+    assert R.same_place(9, area)["objects"] == ["liquidity pool (equal highs) 101.00"]
+    monkeypatch.setattr(LQ, "pools", lambda V, t: [])
+    monkeypatch.setattr(TL, "channel_lines", lambda V, t, g=None: [{"broken": False, "p1": [0, 101.0], "slope": 0.0, "tf": "1H",
+                                                                    "family": "falling line of highs"},
+                                                                   {"broken": True, "p1": [0, 100.5], "slope": 0.0, "tf": "1H",
+                                                                    "family": "rising line of lows"}])
+    assert R.same_place(9, area)["objects"] == ["1H falling line of highs 101.00"]   # an unbroken line at the place; a broken one not
+    R.V.levels.snapshot = lambda t: [{"id": 3, "tf": "1H", "lo": 99.0, "hi": 101.0}]
+    line = {"id": "line:x", "tf": "line", "lo": 100.0, "hi": 100.0}
+    assert R.same_place(9, line)["present"] is True                       # a broken line object: an area holding its value
+    assert R.same_place(9, {**line, "lo": 101.5, "hi": 101.5})["present"] is False
+
+
+def test_model_rule_uses_the_tightened_pieces_model54_the_earlier_ones(monkeypatch):
+    for rule, want in (("model", "B"), ("model54", "A")):
+        R = _R({"label_rule": rule})
+        conf = {"volume_growing": None, "rsi_divergence": False, "confluence": True, "correction_line_closed_through": None}
+        tight = {"same_place": {"present": False, "objects": []}, "pullback_channel": {"present": False, "channels": []}}
+        ev = R._model_label({"model": "E1"}, "5M", {"entry_hours": "inside", "context": {}}, conf, {"present": True},
+                            {"tf": "1H", "confluence": [{"tf": "D"}]}, {}, {}, {}, None, {}, tight if rule == "model" else None)
+        assert ev["label"] == want and ev["evidence_list"]["label_rule"] == rule
+        if rule == "model":
+            assert ev["confirming"]["confluence"] is False and ev["confirming"]["counter_channel_broken"] is False
+            assert ev["evidence_list"]["confluence_at"] == [] and "pullback_channel" in ev["evidence_list"]

@@ -1467,3 +1467,24 @@ Provisional (checked against DECISIONS 37, 46, 49, 51, 54, CLAUDE.md "Trigger re
 - L5-b: answered — count the forming push (marked "forming", bars ≤ t), "confirmed" once its swing confirms.
 - L5-c: answered — RSI divergence at a broken line / area retest like at any area (the retest = the pullback to the object).
 - C-L5-1: awaits Abhi's ✅ after the charts (layer 5 gallery ZIP).
+
+### DECISIONS 55 (owner rule) — the two confirming pieces tightened (23 Oct, branch `label54`; gallery `label54/` "after DECISIONS 55")
+- **L55-a (counter channel broken). Implemented.** `Reader.pullback_channel`: only the PULLBACK's own channel at the trend degree (1H,
+  `level_degree`): a channel against the trade whose base line's anchors are both from the pullback's origin on (the newest 1H swing of
+  the trend's side at or before the visit's first bar — a swing low for a bear call, a high for a bull put) and whose line broke in the
+  trade direction (K6.5). No origin known ⇒ NA. The 15M degree and channels drawn on earlier moves never count. Replay: present 0 /
+  53, NA 2 — no 1H pullback into these areas had its own channel yet (the corrections are one 1H leg), so the piece never fires here.
+- **L55-b (confluence). Implemented.** `Reader.same_place`: only (a) a Daily / Weekly area overlapping the traded area — of a HIGHER
+  timeframe than the traded one (method §1: "a higher-timeframe area at the same place is labelled confluence"; a Daily traded area
+  counts a Weekly overlap only), or (b) an object of a different kind AT the same place: a line whose value at the bar lies inside the
+  band (the trade-side line through the area, or an unbroken 1H line), or a liquidity pool inside it. Nearness (a reaction turning at a
+  line outside the band, Abhi 4 B) no longer counts. A broken-line object (E4 b): an alive area whose band holds the line's value.
+  Overlap by comparison only, no distance number.
+- **L55-c (liquidity pool = equal highs / lows). Provisional default.** Only an equal highs / lows pool (method §3 "equal", `liquidity.pools`
+  src "equal") counts; a plain swing high / low inside the band is the area's own reaction (every supply area holds its own swing high),
+  so it is never "an object of a different kind". Open for Abhi.
+- **L55-d (what-if).** `label_rule = model54` = the DECISIONS 54 reading of the two pieces; `legacy` unchanged (byte pins).
+- **L55-e (does it separate?). For Abhi — no card change made.** 53 entries: A 48 / B 5 (D54: A 53 / B 0). Per model: E1 20 / 2, E2
+  1 / 0, E3 9 / 0, E4a 11 / 0, E4b area 2 / 1, E4b line 5 / 2. Confluence is present on 48 — 46 of them through a Daily / Weekly
+  overlap (the Weekly areas are wide, e.g. 54,891–56,099, and cover most 1H areas of Sep / Oct). It separates only weakly; replacing A /
+  B on the card with the evidence list + its count waits for Abhi's word (DECISIONS 55).

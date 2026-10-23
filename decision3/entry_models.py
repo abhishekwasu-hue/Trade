@@ -76,7 +76,11 @@ CONF_NAME = {"volume_growing": "volume growing inside", "rsi_divergence": "RSI d
 # Weekly area overlaps it), correction line closed through (L4: the open pullback's K line broken, trendline.k_line), counter channel
 # broken (T3 / K6.5: a channel against the trade broken in the trade direction, Reader.channel_evidence).
 LABEL_PIECES = ("rsi_divergence", "volume_growing", "confluence", "correction_line_closed_through", "counter_channel_broken")
-LABEL_RULES = ("model", "legacy")
+LABEL_RULES = ("model", "model54", "legacy")
+# DECISIONS 55 (owner rule, `label_rule = model`): two pieces tightened — "counter channel broken" = only the PULLBACK's (correction's)
+# channel at the trend degree (1H; Reader.pullback_channel); "confluence" = only a Daily / Weekly area overlapping the traded area, or an
+# object of a different kind (a line, a liquidity pool) lying AT the same place (Reader.same_place) — overlap by comparison, nearness
+# never counts. `model54` = the DECISIONS 54 reading of those two pieces (what-if).
 
 
 def side_of(d):
@@ -898,37 +902,111 @@ class Reader:
         # model fired without it (E1 before any commitment, E2 before the LTF CHoCH, …) has no A / B label: the evidence list says ✗.
         label = M.method_label(confirm) if el["required"] == "present" else None
         chx = self.channel_evidence(t, d)
-        if fired is not None and self.label_rule() == "model":
-            return self._model_label(fired, trigger_tf, el, confirm, chx, lvl, cm, zr, rsi, tl, ev)
+        if fired is not None and self.label_rule() in ("model", "model54"):
+            tight = None
+            if self.label_rule() == "model":                               # DECISIONS 55: the two tightened pieces
+                tight = {"pullback_channel": self.pullback_channel(t, d, arm), "same_place": self.same_place(t, lvl)}
+            return self._model_label(fired, trigger_tf, el, confirm, chx, lvl, cm, zr, rsi, tl, ev, tight)
         marks = [["required set (handover + commitment + volume + LTF CHoCH)", MARK[el["required"]]]] + \
             [[CONF_NAME.get(k2, k2), MARK.get(v, v)] for k2, v in el["confirming"].items()] + \
             [["counter channel broken in the trade direction (handover evidence; context)", "✓" if chx["present"] else "✗"]]
         return {"label": label, "evidence_list": el, "evidence": marks, "confirming": confirm, "commit": cm, "zone_read": zr,
                 "rsi": rsi, "trendline": tl, "context": ev, "channel_evidence": chx}
 
-    def _model_label(self, fired, trigger_tf, el, confirm, chx, lvl, cm, zr, rsi, tl, ev):
-        """DECISIONS 54 (label_rule = model): the evidence list + A / B for a fired entry — see evidence()."""
+    def _model_label(self, fired, trigger_tf, el, confirm, chx, lvl, cm, zr, rsi, tl, ev, tight=None):
+        """DECISIONS 54 / 55 (label_rule = model / model54): the evidence list + A / B for a fired entry — see evidence(). `tight` (55) =
+        {"pullback_channel": Reader.pullback_channel, "same_place": Reader.same_place} replaces the confluence and counter-channel
+        pieces; None = the DECISIONS 54 reading (model54, what-if)."""
         conds = self.model_conditions(fired, trigger_tf)
         c5 = dict(confirm)
-        if str(lvl.get("tf")) == "line":                                   # E4 (b) at a broken line: the line IS the object, never its
-            c5["confluence"] = True if lvl.get("confluence") else None       # own confluence; what lies on it is not read here ⇒ NA
-        c5["counter_channel_broken"] = bool(chx.get("present"))
+        if tight is not None:
+            sp, pc = tight["same_place"], tight["pullback_channel"]
+            c5["confluence"] = sp["present"]
+            c5["counter_channel_broken"] = pc["present"]
+        else:
+            if str(lvl.get("tf")) == "line":                               # E4 (b) at a broken line: the line IS the object, never its
+                c5["confluence"] = True if lvl.get("confluence") else None   # own confluence; what lies on it is not read here ⇒ NA
+            c5["counter_channel_broken"] = bool(chx.get("present"))
         c5 = {k2: c5.get(k2) for k2 in LABEL_PIECES}
         label = M.method_label(c5)
 
         def w(v):
             return "NA" if v is None else ("present" if v else "absent")
-        el2 = {"required": "present", "required_set": f"the {fired.get('model')} model's own conditions", "label_rule": "model",
+        el2 = {"required": "present", "required_set": f"the {fired.get('model')} model's own conditions", "label_rule": self.label_rule(),
                "model_conditions": {c: "present" for c in conds}, "entry_hours": el.get("entry_hours"),
                "confirming": {k2: w(v) for k2, v in c5.items()}, "context": el.get("context"),
                "legacy_required": el.get("required"),
                "label_pieces": [CONF_NAME[k2] for k2, v in c5.items() if v is True]}
+        if tight is not None:
+            el2["confluence_at"] = tight["same_place"]["objects"]
+            el2["pullback_channel"] = tight["pullback_channel"]
         mdl = str(fired.get("model")) + (f" ({fired.get('variant')})" if fired.get("model") == "E4" else "")
         marks = ([[f"{mdl} — the model's own conditions (required set)", "✓"]] +       # compact first: the card's line is cut
                  [[CONF_NAME[k2], MARK[el2["confirming"][k2]]] for k2 in LABEL_PIECES] +   # by length; each condition by name after
                  [[f"{mdl} condition: {c}", "✓"] for c in conds])
         return {"label": label, "evidence_list": el2, "evidence": marks, "confirming": c5, "commit": cm, "zone_read": zr,
                 "rsi": rsi, "trendline": tl, "context": ev, "channel_evidence": chx}
+
+    def pullback_origin(self, t, d, arm):
+        """The trend-degree (1H) swing the pullback / correction into the area started from: the newest swing of the trend's side (a
+        swing LOW for a bear call — the correction rose from it; a swing HIGH for a bull put) at or before the visit's first bar `arm`,
+        known by bar t. None ⇒ not readable."""
+        kind = "L" if d < 0 else "H"
+        ps = [p for p in TL._known_deg(self.V, t, int(self.V.s.get("level_degree", 2))) if p.kind == kind and int(p.bar) <= int(arm)]
+        return max(ps, key=lambda p: int(p.bar)) if ps else None
+
+    def pullback_channel(self, t, d, arm):
+        """DECISIONS 55: "counter channel broken" = only the PULLBACK's (correction's) own channel at the trend degree (1H): a channel
+        running against the trade (rising for a bear call, falling for a bull put) whose base line is drawn on the correction's own
+        swings (both anchors from the pullback's origin on — `pullback_origin`) and whose line broke in the trade direction (K6.5,
+        a close beyond + a swing beyond). Comparison only. ⇒ {present (True / False / None = origin not readable), origin, channels}."""
+        org = self.pullback_origin(t, d, arm)
+        if org is None:
+            return {"present": None, "origin": None, "channels": [], "degree": "1H"}
+        want, against = ("down", "rising") if d < 0 else ("up", "falling")
+        g = int(self.V.s.get("level_degree", 2))
+        own = [c for c in TL.channels(self.V, t, g) if c["slope_dir"] == against and int(c["base_line"]["p1"][0]) >= int(org.bar)]
+        hits = [{"channel": c["id"], "tf": c["tf"], "state": c["state"], "broken_lines": c["broken_lines"]} for c in own
+                if c["broken_side"] == want]
+        return {"present": bool(hits), "origin": {"bar": int(org.bar), "ts": self.T(org.bar), "price": round(float(org.price), 2)},
+                "channels": hits, "pullback_channels": [c["id"] for c in own], "degree": TL.TF_OF_DEGREE.get(g, f"D{g}")}
+
+    def same_place(self, t, lvl):
+        """DECISIONS 55: "confluence" = only (a) a Daily / Weekly area OVERLAPPING the traded area (another alive area of a higher
+        timeframe than the traded one — method §1 — bands overlap),
+        or (b) an object of a different kind AT the same place — a line whose value at bar t lies inside the area's band (the trade-side
+        line through the area; an unbroken trend-degree line), or a liquidity pool (an equal highs / lows pool, method §3 "equal" — a
+        plain swing inside the band is the area's own reaction) whose price lies inside it. A broken-line object (E4 b): an alive area
+        whose band holds the line's value. Overlap by comparison only — nearness (a reaction turning at a line outside the band) never
+        counts. ⇒ {present, objects: [words]}."""
+        V = self.V
+        lo, hi = float(lvl["lo"]), float(lvl["hi"])
+        own = lvl.get("parent_level", lvl.get("id"))
+        objs = []
+        snap = V.levels.snapshot(t) or []
+        if str(lvl.get("tf")) == "line":                                   # the object is a line: an area (different kind) holding it
+            for x in snap:
+                if float(x["lo"]) <= lo <= float(x["hi"]):
+                    objs.append(f"{x.get('tf')} area {x.get('id')} {float(x['lo']):,.2f}–{float(x['hi']):,.2f}")
+            return {"present": bool(objs), "objects": objs}
+        rank = {"15M": 0, "1H": 1, "D": 2, "W": 3}                        # method §1: a HIGHER-timeframe area at the same place
+        r0 = rank.get(str(lvl.get("tf")), 1)                               # (a Daily traded area: a Weekly one; never same-TF areas)
+        for x in snap:
+            if (x.get("id") == own or x.get("tf") not in ("D", "W") or rank.get(str(x.get("tf")), 0) <= r0
+                    or float(x["hi"]) < lo or float(x["lo"]) > hi):
+                continue
+            objs.append(f"{x.get('tf')} area {x.get('id')} {float(x['lo']):,.2f}–{float(x['hi']):,.2f}")
+        ln = lvl.get("tl")
+        if isinstance(ln, dict) and ln.get("value_t") is not None and lo <= float(ln["value_t"]) <= hi:
+            objs.append(f"line {ln.get('id', '')} {float(ln['value_t']):,.2f}".replace("  ", " "))
+        g = int(V.s.get("level_degree", 2))
+        for c in TL.channel_lines(V, t, g):
+            if not c.get("broken") and lo <= float(TL.line_value(c, t)) <= hi:
+                objs.append(f"{c['tf']} {c['family']} {float(TL.line_value(c, t)):,.2f}")
+        for p in LQ.pools(V, t):
+            if p.get("src") == "equal" and lo <= float(p["price"]) <= hi:
+                objs.append(f"liquidity pool (equal {'highs' if p['side'] == 'buy' else 'lows'}) {float(p['price']):,.2f}")
+        return {"present": bool(objs), "objects": list(dict.fromkeys(objs))}
 
     def channel_evidence(self, t, d):
         """Abhi 21 Oct: a channel running AGAINST the trade (rising for a bear call, falling for a bull put) whose line broke in the trade
