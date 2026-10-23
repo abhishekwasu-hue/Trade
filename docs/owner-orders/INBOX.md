@@ -646,3 +646,7 @@ Merge and continue
 ---
 ## 23 Oct — merge and continue (4)
 Merge and continue
+
+---
+## 23 Oct — VPS block
+Vps block
