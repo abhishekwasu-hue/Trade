@@ -683,3 +683,15 @@ Abhi — new owner rule: the entry trigger is on 5M for every model. Record it i
 - The live loop runs on 5M closes; the Telegram / Vision card shows the 5M trigger panel.
 - The replay shows 15M vs 5M per model: entry time and price difference, distance to invalidation, next-area-first vs invalidation-first.
 Self-review, PAPER only, one VPS block for me after market close with --revert. Report to me in Marathi.
+
+---
+## 23 Oct — reading check from a live PAPER entry (BANKNIFTY E4 (b) sweep-retest bear call)
+Abhi — reading check from a live PAPER entry: BANKNIFTY, E4 (b) sweep-retest, a bear call at a broken horizontal line (I approved it; the entry was wrong by the method). Record it in owner-orders first (INBOX verbatim, DECISIONS principles without dates, a README row). Report first, then fix in one PR together with the handover's T-2, with tests and a replay before / after per model.
+1. Approach side (E4 b): a bear-call retest of a line broken DOWN requires price to come back UP to it from below and be rejected there (a close back below). Here price came DOWN from above, where it had been accepted for a long time, and the trigger candle closed through the line: that is a breakdown candle (H2, no breakout entries), never an E4 (b). Mirror for bull puts.
+2. Dead after a second break (the T-2 principle applies to LINES too): the line was broken down (a close + a swing below), then price closed back above it and formed swings above ⇒ the line is dead ⇒ no E4 (b) on it.
+3. Range state (concept L): after that, price ranged between that line and an upper edge it rejected several times; the engine's own invalidation sat exactly at that upper edge, so the entry was at the wrong end of the range. Explain why no model fired at the upper edge (were the range edges built as areas? was the range state read?) and fix it per the method: range edges are the areas — bear call at the upper edge, bull put at the lower edge; E1–E4 apply there.
+4. Evidence: the entry had "required set ✗" (no handover, no commitment, no LTF CHoCH) and grade None. Report how E4 (b) is allowed to fire with none of them and whether that matches the method's E4 (b) definition (the rejection form at the retested object).
+5. Card text: a line object is described as a line ("broken 1H line at X, retest from below"), never as "supply area X–X (0 pts)". Fix the Telegram card and the Vision prompt.
+6. Report which timeframe / degree the line came from (1H or 15M) and show it on the card. The card header shows the signal's own symbol first; the bot name ("NIFTY 15M Dynamic SR") only as a small label.
+7. List every live and replayed entry matching 1 or 2, with its result.
+Self-review, PAPER only, one VPS block for me after market close with --revert. Report to me in Marathi.

@@ -92,3 +92,13 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     FUT 5M volume (handover on 5M, volume compared on 5M slots); E3 = the 5M CHoCH; E4 (a) = sweep and failed push read on 5M; E4 (b) =
     the 5M rejection candle at the retested object from the correct side. traded_inside applies to the 5M trigger candle. The
     invalidation stays structural (refined base / area / object / sweep extreme), never the 5M candle's own extreme. (Owner rule)
+38. E4 (b) approach side: the retest of a line / area broken DOWN (bear call) needs price to come back UP to it from below and be
+    rejected there (a close back below); a candle coming down from above, where price was accepted, and closing through the object is
+    a breakdown candle (H2) — never an E4 (b). Mirror for bull puts. (Live reading check)
+39. Lines flip once too (as DECISIONS 27): a line broken (close + swing beyond), then closed back through with swings formed on the
+    original side, is dead — never an E4 (b) object again. (Live reading check)
+40. Range (concept L): the range edges are the areas — bear call at the upper edge, bull put at the lower edge; E1–E4 apply there as at
+    any area. (Live reading check)
+41. Cards and the Vision prompt describe a line object as a line with its timeframe / degree ("broken 1H line at X, retest from
+    below"), never as an area band; the card header shows the signal's own symbol first, the bot name only as a small label. (Live
+    reading check)
