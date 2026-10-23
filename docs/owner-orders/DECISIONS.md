@@ -102,3 +102,12 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
 41. Cards and the Vision prompt describe a line object as a line with its timeframe / degree ("broken 1H line at X, retest from
     below"), never as an area band; the card header shows the signal's own symbol first, the bot name only as a small label. (Live
     reading check)
+42. The 5M entry trigger stays live in PAPER (DECISIONS 37). Every live 5M signal gets a 15M "would-have" shadow — never a trade,
+    recorded only (entry time / price, invalidation, outcome next-area-first vs invalidation-first) — so 5M and 15M are measured on
+    the same live bars; reported weekly per model. (Owner decision)
+43. A 5M vs 15M result gap is diagnosed entry by entry (paired twins) as reading checks against named concepts — never answered with a
+    new rule or a number. (Owner decision)
+44. Old PRs superseded by the PA standard are closed, never merged for their own rules (SL is a dashboard setting); their branches are
+    never deleted. (Owner decision)
+45. STABLE layer 2 approved again: tag reader-layer2-stable-v2 on main; its parity fixtures re-exported to trade-data; the v1 fixtures
+    stay as they are. (Owner decision)

@@ -726,3 +726,13 @@ Vps comand dya, आतापर्यंत झालेले सर्व क�
 ---
 ## 23 Oct — status of all work
 आतापर्यंत केलेल्या कामाची माहिती द्या
+
+---
+## 23 Oct — answers: 5M shadow, replay diagnosis, old PRs, STABLE layer 2 v2
+Rules re-read first. My answers — record them in DECISIONS / owner-orders:
+1. 5M trigger: keep trigger_tf = 5M live in PAPER (my rule). Add a 15M "would-have" shadow for every live 5M signal (no trade, recorded only: entry time / price, invalidation, outcome next-area-first vs invalidation-first), so both are measured on the same live bars. Report weekly per model.
+2. The 07–21 Oct replay (15M 8 / 12 vs 5M 4 / 12): give me an entry-by-entry comparison (pair each 5M entry with its 15M twin where one exists): model, entry time and price difference, distance to invalidation, MAE, which side was hit first and WHY the 5M one failed (fired before a sweep finished? weaker 5M commitment / volume? a different refined base?). Diagnosis only — no new rule, no number; log any finding as a reading check against a named concept in OPEN_QUESTIONS for me.
+3. Old PRs: #311 close (superseded by the PA standard). #299 close (superseded; it adds an SL rule — SL is my dashboard setting). #358: merge only if the read-only live-diagnosis command needs it, otherwise close. Never delete their branches.
+4. STABLE layer 2: ✅ — tag reader-layer2-stable-v2 on the current main and re-export its parity fixtures to the private trade-data repo per docs/reader/STABLE.md (the stale v1 fixtures stay as they are; a new row in the register).
+5. I will paste the output of the read-only BANKNIFTY E4 command separately.
+Merge #379 when CI is green. Report to me in Marathi.
