@@ -16,8 +16,9 @@ Which existing reader gives each timeframe (no new swing detector):
          below its right one; mirror for a low), alternated (`daily._add`: same kind twice ⇒ keep the more extreme).
 
 State (comparison only):
-  • range = the reader's own RANGE (Daily / Weekly RANGE band); on the swing timeframes HH + LL / LH + HL or a C-13 "equal" high / low
-    (band = the higher of the last two highs, the lower of the last two lows).
+  • range = the reader's own RANGE (Daily / Weekly RANGE band); on 1H / 15M the structural range of `range_edges` (DECISIONS 16 —
+    the row's `range_state`; `_structural_range`): a swing disagreement (HH + LL / LH + HL / C-13 "equal") alone is no range there
+    ("unclear"); 5M: HH + LL / LH + HL or a C-13 "equal" high / low (band = the higher of the last two highs, the lower of the last two lows).
   • trending up = UP structure and the impulse leg is running: the last confirmed swing is the higher low, or price has closed beyond
     the last high (BOS) since it.
   • correction in progress = UP structure, the last confirmed swing is the high and no close beyond it since (the counter-move is
@@ -540,6 +541,34 @@ def _protected(ext, trend):
     return None if q is None else q.price
 
 
+def _structural_range(V, t, tf, state, side, detail):
+    """§1 market state, concept L (DECISIONS 16: a range = from structure — between two edges, the later swings fail to make a new
+    extreme on both sides; not C-13 equal). On 1H / 15M the word "range" comes from the ONE structural range reader
+    (`range_edges` — the row's `range_state`, the same swings and closes), so the two readers never disagree on the same bars:
+      • a structural range in force at t ⇒ "range" with its edges; the swings' own trend inside it (HH / HL …, a counter-move) is kept
+        in the detail ("inside it: …") — the inner swings of a range are not the timeframe's trend;
+      • the last two highs / lows disagreeing (or C-13 equal) with no structural range in force ⇒ no trend structure and no range
+        ⇒ "unclear" (the detail says why).
+    Comparison only; no new setting. A V without the area engine (a stub) ⇒ unchanged. The `daily_range_rule = c13` what-if switches
+    `range_state` to the C-13 reader while this word stays structural (DECISIONS 16), so under that what-if only they may differ."""
+    if getattr(V, "levels", None) is None:
+        return state, side, detail
+    from . import range_edges as RE
+    try:
+        cur = DD.range_at(RE._pairs(V, tf), t)
+    except Exception:                                                     # evidence only: never raised into a read
+        return state, side, detail
+    if cur is not None:
+        lo, hi = float(cur["L"].price), float(cur["H"].price)
+        inner = "" if state in (RANGE_S, UNCLEAR_S) else f"; inside it the swings read {state}" + (f" — {detail}" if detail else "")
+        return RANGE_S, 0, (f"range {lo:,.2f}–{hi:,.2f} (from structure: later swings failed to make a new extreme on both sides)"
+                            + inner)
+    if state == RANGE_S:
+        return UNCLEAR_S, 0, ("the last two highs / lows disagree (or are equal) — no trend structure, and no range from structure "
+                              "(no swing pair whose later swings failed on both sides)")
+    return state, side, detail
+
+
 def _tf_state(V, t, tf):
     """{state, trend, side, detail, protected} for one timeframe."""
     if tf in ("D", "W"):
@@ -559,8 +588,9 @@ def _tf_state(V, t, tf):
         band = _band(ext15) if trend == RANGE else None
         ev15 = [{**e, "bar": e["bar15"]} for e in ev]
         state, side, detail = swing_state(trend, ext15, A["c"], t, ev15, band)
+        state, side, detail = _structural_range(V, t, tf, state, side, detail)
         prot = _protected(ext15, trend)
-        src = f"swings2 {deg} swings, trend_of + C-13 equal, BOS / CHoCH by 15M close"
+        src = f"swings2 {deg} swings, trend_of + C-13 equal, BOS / CHoCH by 15M close; range = range_edges (structure, DECISIONS 16)"
     else:
         F = frame(V, t, tf)
         if F is None or not F["n"]:

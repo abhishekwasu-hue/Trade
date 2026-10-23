@@ -118,3 +118,37 @@ def test_reclaim_counts_the_close_back_on_the_breaks_own_confirming_bar(mirror):
     Z = _zone(lv, f)
     assert [(b, k) for b, k, _ in Z.events if k in ("broken", "reclaim", "flip", "dead")] == [(22, "broken")]
     assert Z.state_at(len(m) - 1) == FL.BROKEN
+
+
+def _chan_case(mirror, rows, swing_back=True):
+    """channels_on inputs for the ROWS line (display): the parallel is pushed far away (bar 0's extreme) so the broken line is the
+    lower (upper, mirror) line of its channel."""
+    import numpy as np
+    rows = [list(r) for r in rows]
+    rows[0][1] = 200.0                                                     # bar 0's high ⇒ the parallel far above, never broken
+    rows = [tuple(r) for r in rows]
+    ln = {"family": "rising line of lows", "kind": "L", "slope_dir": "rising", "degree": 2, "tf": "1H", "p1": [0, 95.0],
+          "p2": [1, 95.5], "slope": 0.5, "broken": True, "break_bar": 2, "break_side": "down", "state": "BROKEN", "id": "L+:0-1"}
+    known = [NS(kind="H", price=100.2, bar=6, confirm_bar=8)] if swing_back else []
+    if mirror:
+        rows = _mirror_rows(rows)
+        ln = {**ln, "family": "falling line of highs", "kind": "H", "slope_dir": "falling", "p1": [0, 2 * MID - 95.0],
+              "p2": [1, 2 * MID - 95.5], "slope": -0.5, "break_side": "up", "id": "H-:0-1"}
+        known = [NS(kind="L", price=2 * MID - p.price, bar=p.bar, confirm_bar=p.confirm_bar) for p in known]
+    A = {k: np.array([r[i] for r in rows], float) for i, k in enumerate(("open", "high", "low", "close"))}
+    return A, known, ln
+
+
+@MIRRORS
+def test_channel_label_follows_broken_back_at(mirror):
+    """Display (OPEN_QUESTIONS "Reading checks — E4a and E4b", Open (display only)): `channels()` labelled a line broken back by
+    structure "retest of the broken … line"; the label now follows `broken_back_at` (DECISIONS 39). Before the swing back is confirmed
+    (bar 7) and for a sweep of the retest (no swing back) the retest label stays."""
+    nm = "upper" if mirror else "lower"
+    A, known, ln = _chan_case(mirror, ROWS)
+    st = lambda t: TL.channels_on(A, [p for p in known if p.confirm_bar <= t], [ln], t, 2)[0]["state"]   # noqa: E731
+    assert TL.broken_back_on(A["close"], known, ln, 9) == 5
+    assert st(7) == f"retest of the broken {nm} line"                      # bar 7: the swing back is not confirmed yet (no look-ahead)
+    assert st(REJECT).startswith(f"{nm} line broken, then broken back") and "retest" not in st(REJECT)
+    A2, known2, ln2 = _chan_case(mirror, SWEEP_ROWS, swing_back=False)
+    assert TL.channels_on(A2, known2, [ln2], REJECT, 2)[0]["state"] == f"retest of the broken {nm} line"

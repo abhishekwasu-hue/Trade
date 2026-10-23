@@ -431,17 +431,30 @@ def _line_plain(a):
     return a
 
 
+CHANNEL_DISPLAY = ("state",)    # CRR reading check (#379): the channel's label words follow broken_back_at (display only)
+
+
+def _plain(k, v):
+    if k == "entries":
+        return [{a: b for a, b in e.items() if a != "pa_evidence"} for e in v]
+    if k == "armed":
+        return [_line_plain(a) for a in v]
+    if k == "channels" and isinstance(v, list):
+        return [{a: b for a, b in c.items() if a not in CHANNEL_DISPLAY} if isinstance(c, dict) else c for c in v]
+    return v
+
+
 def _digest(rows, drop=()):
-    rows = [{k: (v if k not in ("entries", "armed") else
-                 [{a: b for a, b in e.items() if a != "pa_evidence"} for e in v] if k == "entries" else [_line_plain(a) for a in v])
-             for k, v in r.items() if k not in drop and k not in DISPLAY_ONLY} for r in rows]
+    rows = [{k: _plain(k, v) for k, v in r.items() if k not in drop and k not in DISPLAY_ONLY} for r in rows]
     return hashlib.sha256(json.dumps(rows, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
 
 
-# the engine rows of the pre-change code (git bf280a8, before model C), computed on these fixtures
-PIN = {"abc": "ffca376184284461cef1a5eca17648ddc56d24349c7dd09a6f8c6320a46fd35c",
-       "oct12_bear": "a2671001dc3a16da5eb9b4b8ca0c32cdc9c9a0617c261cc18e6ac5b55412e61d",
-       "oct12_bull": "e80cb1a7f9001d3a9d416435af8f1825119579433b56f49b817bafd10f3f16fd"}
+# the engine rows of the pre-change code (git bf280a8, before model C), computed on these fixtures. Re-hashed for #379 with the channel
+# label (CHANNEL_DISPLAY) left out: abc recomputed at bf280a8 itself (the old digest there = the old pin ffca3761…); oct12 from the
+# current code, whose rows equalled the old pins a2671001… / e80cb1a7… under the old digest (only the channel label words changed).
+PIN = {"abc": "deaf117fd543d82750aa30d1e67613796f798658995c4326215f91be97e185af",
+       "oct12_bear": "c82ecb5ddac09c1079ff71e5100ecccb9bbdfee17b550a28f41bfc52aa087911",
+       "oct12_bull": "f65785d0a5ba314d943ccd7f573008f22c6f836e21a2fc136e607a79a92fa81b"}
 
 
 def _fixture_rows(name, extra):

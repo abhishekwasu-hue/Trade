@@ -965,14 +965,21 @@ by structure across sessions (next opposite area first vs a close beyond the inv
   D2:L-:1177-1279, broken down 19 Aug 09:30, closed back above 19 Aug 13:30 + the swing high 57,873.80 (24 Aug): price came onto the
   line from ABOVE, MAE 669). The other removed E4 (b) were all broken back before (or at) their trigger: 20 May 13:15, 30 Jun 14:00,
   08 Jul 09:15, 13 Jul 10:30, 20 Jul 09:15 and 14:15, 07 Sep 09:15, 24 Sep 13:45. Tests: `tests/test_entry_models_broken_back.py`
-  (both mirrors). Display only, not changed: `channels()` still labels such a line "retest of the broken … line" (chart text).
+  (both mirrors). ~~Display only, not changed: `channels()` still labels such a line "retest of the broken … line"~~ — FIXED
+  (display): `trendline.channels_on` reads the same K6.5 mirror (`broken_back_on`, the core of `broken_back_at`, any timeframe's closes
+  and swings) and labels such a line "<lower|upper> line broken, then broken back (closed back + a swing on its original side)", never
+  a retest; `broken_side` / `broken_lines` unchanged. `broken_back_at` = the same reading (refactor only; replay parity below). Test:
+  `test_channel_label_follows_broken_back_at` (both mirrors, incl. the sweep-retest case).
 - **FIXED — K4 reclaim on the break's own confirming bar (levels, layer 2 lifecycle).** Was: when the bar that makes a break KNOWN (its
   swing beyond confirmed) itself closed back on the role side, the reclaim attempt ("a close back on the role side AND a swing formed
   there", the break's mirror) began only at the next bar, so a swing formed AT that bar was lost and the area stayed BROKEN. Now that
   close starts the attempt (`Levels._step_far_swing`). Replayed: 14 May 1H support 53,492.10–53,510.45 "broken" at 09:15 (the swing low
   53,385.45 of 13 May 15:15 confirmed by the gap-up bar that closed at 53,924.40, swing high 53,968.65 there) — now reclaimed at 09:45,
   so no E4 (b) bear call from above at 10:30 (was MAE 684). Only this entry changed across all groups (E1 / E2 / E3 identical);
-  the chart band labels (`levels.band_flip_facts`, facts.validity breaks) are a separate reader — not checked for the same case.
+  the chart band labels (`levels.band_flip_facts`, facts.validity breaks) are a separate reader — ~~not checked for the same
+  case~~ CHECKED, does not depart (display): its breaks are the band check's own (known at their own bar — no later confirming bar),
+  and a break back the other way is a reclaim from the very next bar on (the far swing checked first on that bar, as the engine).
+  Nothing to mirror; pinned by `test_band_flip_facts_reclaim_on_the_bar_right_after_the_break_is_kept`.
 - **Process — STABLE layer 2 (docs/reader/STABLE.md).** The K4 reclaim fix is in the layer-2 lifecycle (`reader-layer2-stable-v1`).
   The trade-data parity snapshot (`parity/layer2/reader-layer2-stable-v1/`) was NOT re-exported (a fix = a new tag, `-v2`, only after
   Abhi's ✅). Read-only check (outputs kept in scratch, nothing written to trade-data): the layer-2 output on the four parity cases
@@ -1134,11 +1141,38 @@ merged — said as a reading check), 13 / 26 (FUT volume missing is said, never 
   exists, the pane says so. P8 on these charts: the channel price is in (the one through the latest swing), the next line above /
   below, the latest pattern's boundaries, capped at `chart_max_lines` (no entry ⇒ no evidence line).
 Reading checks seen in the sample (19 Oct close; never tuned — misread candidates against named concepts):
-- **§1 MTF vs L range.** BANKNIFTY 1H: `mtf_state` reads "correction in progress (UP)" while `range_edges.range_state` reads the 1H in
-  a range 53,786–56,624 (structure). The report shows both (different concepts). Question: which word should lead? Provisional: both.
-- **C / Z-1u overlaps.** Overlapping same-role 1H areas at the named places — BANKNIFTY demand #341 / #342 / #345 (55,283–55,419),
-  supply #324 / #346; NIFTY supply #271 / #273 / #274 (23,116–23,178). Counted once by the engine; listed as reading checks.
-- **C width (Z-1x).** NIFTY Weekly demand #247 21,281–23,290 spans most of the recent swing range — a base-width reading check.
+- ~~**§1 MTF vs L range.**~~ — FIXED (bug against §1 market state / concept L, DECISIONS 16; evidence words only). BANKNIFTY 1H at the 19 Oct
+  close: `mtf_state` read "correction in progress (UP)" while `range_edges.range_state` read a 1H range 53,786–56,624 on the same D2
+  swings (15M the same: "correction (DOWN)" vs range 55,168–56,066). Not two questions: both answer "what state is the 1H in", and
+  `mtf_state` read "range" on 1H / 15M only from the last two highs / lows (HH + LL, LH + HL or C-13 equal) — the C-13 reading
+  DECISIONS 16 retired ("range = from structure … not C-13 equal"); it never saw the OUTER pair (swing high 56,623.80 / swing low
+  53,785.70) whose later swings all failed on both sides. The swings inside it (HL 54,709 → HH 56,066, then the counter-move) are the
+  range's inner swings, not the 1H trend. Fix (`mtf_state._structural_range`): on 1H / 15M the word "range" comes from the one
+  structural reader (`range_edges` pairs, `daily.range_at`, known ≤ t) with its edges; the inner swings stay in the detail ("inside it
+  the swings read correction in progress — …"); a swing disagreement (HH + LL / C-13 equal) with no structural range in force is no
+  range ⇒ "unclear" (no trend structure). D / W already used the DState structural RANGE; 5M has no structural range reader
+  (unchanged). Evidence only (mtf_state never enters / blocks; pa_evidence + legs_compare + the report read it) — entries unchanged
+  (replay parity below). Report now: "1H: range · 15M: range". Tests: `tests/test_pa_mtf_state.py`
+  (`test_swing_tf_range_word_comes_from_the_structural_range_reader`, `test_mtf_range_word_agrees_with_range_state_on_every_bar`).
+- **C / Z-1u overlaps — not a bug (separate births).** NIFTY supply #271 / #273 / #274 (23,116–23,178): #271 = the D2 swing low
+  23,118.60 (its own 1H candle), #273 = the next D2 swing low 23,116.10 (a different 1H candle, a D2 swing high 23,281.15 between
+  them = two separate reactions, a double bottom), #274 = the BOS-origin base (birth b) the impulse left from that low (the next up 1H
+  candle's wick to body, DECISIONS 15 / C-1). Each band is its own candles; none lies wholly inside another (⇒ own level + lineage
+  "overlaps", Z-1u, `Levels._born`); their lifecycles differ (#274 broken / flipped on its own bar, #271 / #273 later). BANKNIFTY
+  #341 / #342 / #345 the same pattern (D2 swing high 55,340.70, its BOS-origin base on the next 1H candle, a later D2 swing high
+  55,419.30). No duplicate birth; counted once per model per place (DECISIONS 9), never merged. Assumed — no answer needed unless Abhi
+  objects.
+- **C width (Z-1x) — not a bug.** NIFTY Weekly demand #247 21,281.45–23,290.15 (birth a:W-prior, not a BOS origin) = the swing week's
+  own candle, wick to body: open 23,337.90, high 23,338.70, low 21,281.45, close 23,290.15 — a lower wick from the low to the body's
+  bottom (the close) of about 2,000 points. The band rule (TA4 / Z-1x: wick to body, never a numeric width) gives exactly that; a
+  width limit would be a number in a reading rule (DECISIONS 2). Weekly = context only (Z-1u). The week is inside the sealed holdout
+  period — read only as level history (Z-1t), its date not shown.
+- **Replay parity (the two fixes above + the channel label).** BANKNIFTY walk-forward, 13 groups 13 Apr – 21 Oct, base 806b74a vs this
+  branch, same outcome rule: every entry identical (56 = 56, same trigger / model / entry / invalidation / outcome / area). Per model
+  (entries, next first / invalidation first): E1 25 (8 / 17) · E2 2 (2 / 0) · E3 19 (12 / 7) · E4 a 0 · E4 b 10 (5 / 5), worst MAE
+  590.8 · all 56 (27 / 29) — before and after. The 15M decide rows of the `abc` fixture differ only in `channels[].state` and
+  `pa_evidence` text (key-by-key diff; `tests/test_trigger_5m.py` pins re-hashed with that note). STABLE layer 4 (lines):
+  `broken_back_at` behaviour unchanged (refactor into `broken_back_on`); only the channel display words changed.
 
 ## PA T3 (channels per timeframe) + T9 (evidence wiring) — provisional choices (2026-10-22; docs/knowledge/pa_standard/t3_t9_coverage.md)
 Checked against CLAUDE.md ("evidence is listed and never blocks", no number / rule / setting added, P8 display only), DECISIONS 3, 5, 6,

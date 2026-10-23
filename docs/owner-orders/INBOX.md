@@ -714,3 +714,61 @@ Merge and continue
 ---
 ## 23 Oct — speed
 Do it fast, use multiple agent
+
+---
+## 23 Oct — VPS command + see all work
+Vps comand dya, आतापर्यंत झालेले सर्व काम मला बघायचे आहे
+
+---
+## 23 Oct — VPS block now, during market
+मार्केट सुरू आहे तरी मला आत्ताच व्हीपीएस ब्लॉक द्या फोर्स फुल इराण करा
+
+---
+## 23 Oct — status of all work
+आतापर्यंत केलेल्या कामाची माहिती द्या
+
+---
+## 23 Oct — answers: 5M shadow, replay diagnosis, old PRs, STABLE layer 2 v2
+Rules re-read first. My answers — record them in DECISIONS / owner-orders:
+1. 5M trigger: keep trigger_tf = 5M live in PAPER (my rule). Add a 15M "would-have" shadow for every live 5M signal (no trade, recorded only: entry time / price, invalidation, outcome next-area-first vs invalidation-first), so both are measured on the same live bars. Report weekly per model.
+2. The 07–21 Oct replay (15M 8 / 12 vs 5M 4 / 12): give me an entry-by-entry comparison (pair each 5M entry with its 15M twin where one exists): model, entry time and price difference, distance to invalidation, MAE, which side was hit first and WHY the 5M one failed (fired before a sweep finished? weaker 5M commitment / volume? a different refined base?). Diagnosis only — no new rule, no number; log any finding as a reading check against a named concept in OPEN_QUESTIONS for me.
+3. Old PRs: #311 close (superseded by the PA standard). #299 close (superseded; it adds an SL rule — SL is my dashboard setting). #358: merge only if the read-only live-diagnosis command needs it, otherwise close. Never delete their branches.
+4. STABLE layer 2: ✅ — tag reader-layer2-stable-v2 on the current main and re-export its parity fixtures to the private trade-data repo per docs/reader/STABLE.md (the stale v1 fixtures stay as they are; a new row in the register).
+5. I will paste the output of the read-only BANKNIFTY E4 command separately.
+Merge #379 when CI is green. Report to me in Marathi.
+
+---
+## 23 Oct — Fix proof gallery (standing rule)
+I do not accept fixes on numbers alone — show me charts. Build a "Fix proof gallery" (one HTML in the private trade-data repo, the same style as the replay galleries; chart text in English, one plain Marathi line under each chart) and send it to me. Record this as a standing rule in DECISIONS: every reading fix is proven with before / after charts and is "done" only after my ✅ on the gallery.
+For every case: the 1H chart + the 15M chart + the 5M trigger panel; the object (area / line) drawn with its lifecycle events marked on the chart (born, broken = close + swing beyond, reclaimed / broken back, dead); an arrow for the side price approached from; the trigger candle highlighted; the invalidation; the next area; a vertical line at the decision bar, with the bars AFTER it faded and labelled "after the decision" (proof of no look-ahead); one line "Before: … / After: … because …".
+Sections, in this order:
+1. The live BANKNIFTY E4 (b) bear call (the broken horizontal line approached from above): before vs after #377 / #373 — show why no entry now, and show the range's upper edge as an area and whether / where a model fires there.
+2. Every E4 (b) entry removed by the broken-back / approach-side / flip-once fixes (all of them, each with before / after).
+3. The K4 reclaim fix cases.
+4. 5M vs 15M: every entry of the replay group as a pair side by side (the 5M entry and its 15M twin, or "no twin"), with entry, invalidation and what price did next.
+5. Regression check: 10 random entries and 10 random "no entry" places from the current code across the groups, each with its chart and the reader's reason.
+Never put charts in this public repo. Report to me in Marathi with the gallery path.
+
+---
+## 23 Oct — gate error 14 (urgent) + Telegram message standard
+Two items. Record both in owner-orders first (INBOX verbatim, DECISIONS principles, a README row).
+
+1. URGENT — report first: the SRv2 confirmation gate logged "error 14" today, and BANKNIFTY had "no entry because a gate error" while price was in its supply area. Show every error today: time, symbol, the exact exception and where, which path (engine or the old level-bot gate), and whether it blocked an engine entry. Fix the cause with a test; fail-closed stays (an error never enters). From now on any gate / engine error sends ONE ⚠️ Telegram alert per cause per day in plain words.
+
+2. TELEGRAM MESSAGE STANDARD for all Trade messages (based on research on alert fatigue, structured trading signals and professional pre-market routines). Language setting MR / EN, default MR; chart text stays English.
+a. Only these types; the FIRST line states the purpose with its icon AND the action:
+   🌅 Today's prep (before the open) · 🔔 Approaching area · 🎯 Decide now (✅ / ❌) · 📈 Trade update · 🌙 Today + tomorrow's prep (after the close: ONE message — the Day summary and the Chart Reading Report text merged; its charts as the album) · 📊 Weekly review (Saturday) · ⚠️ Alert (only when something is wrong).
+   The action is always explicit: "Decide by HH:MM", "No action — information", or "Prepare: …".
+b. Short and sweet: bullet points, one line each, at most ~12 bullets per message; no paragraphs, no internal codes (SKIPPED_*, armed / ignored, touch-legacy, gate names), no repeated information.
+c. Concept by concept, in this fixed order, a bullet only when that concept has something to say: Trend (W / D / 1H) · Structure (BOS / CHoCH) · Area (kind, band, TF, lifecycle state) · Liquidity · Lines / channels · Patterns · Volume (FUT) · RSI divergence · Range / breakout-fakeout · Wave context · Trades (model in words, entry, state, P&L) · Plan: what the engine waits for next (area + visit → commitment → 5M CHoCH) and "cancelled if …" (structure words).
+d. Priority tiers: 🎯 and ⚠️ ring; 🌅 / 🔔 / 📈 / 🌙 / 📊 are sent silently (disable_notification). Low-priority items are batched into the next 🌙 / 🌅 instead of separate messages.
+e. One event = one message: every 📈 update of a trade is sent as a reply to its 🎯 card (one thread per trade); one PINNED "Open positions" message (symbol, model, live P&L, protection such as "SL at entry — cannot become a loss") edited in place; no duplicates.
+f. 🎯 card, fixed field order: symbol → side → area / object as a RANGE with its TF and state → model in words → evidence ✓ / ✗ → invalidation (structure words + level) → "If you approve:" strikes, lots, max loss ₹ (from the dashboard settings) → decide-by; the engine chart attached. A reminder ping 2 minutes before the decide-by time.
+g. 🔔 Approaching area (silent): when price comes near an armed area — "BANKNIFTY near supply X–Y — a card may follow". The nearness is a display setting, never a reading rule.
+h. 📈 update: one to three bullets (what happened, the P&L, the protection now).
+i. 🌅 Today's prep, in this order: account (open positions + protection; broker / data connection OK) → 🌍 global cues in one line, information only (GIFT Nifty, the US close, DXY, US 10Y, the previous day's FII / DII net, India VIX) → 📅 events (expiry and that the next weekly is used; RBI / major results / holidays) → per symbol, concept-wise, the areas in play as "if price reaches X–Y → the engine waits for …; cancelled if …" (a map, not a forecast) → the models ON today → today's loss limit from the settings.
+j. 📊 Weekly review (Saturday, silent): per-model results, a chart gallery of the week's trades, Vision vs my decision vs the outcome, 5M vs the 15M shadow.
+k. My controls: /mute 30m (then one summary of what was muted; 🎯 and ⚠️ are never muted), /today, /positions, /plan, /pause, /resume; each type on / off on the dashboard; after the close only ⚠️ rings.
+l. Remove the old level-bot section (5M Instant / Classic / MCX / SRv2 legacy counts) from Telegram — dashboard only; the comparison tracking (skipped / shadow trades) = one bullet with a link.
+m. Formatting: Indian number format (₹1.2 L), no paise, consistent icons; a snapshot test per message type (length limit, concept order, no internal codes, MR / EN) so the format never drifts.
+Send me samples of EVERY type (including 🔔, the pinned message and the weekly review) built from real data before deploying. Self-review; PAPER only; one VPS block after market close with --revert. Report to me in Marathi.
