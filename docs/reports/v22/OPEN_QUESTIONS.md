@@ -1379,3 +1379,35 @@ engine's entries are identical before / after (53 / 53). Display only: no readin
 - L6-O10 (BW-1 / C-18): answered — no merged-band warning for engine areas (`approval_band_warn_rule = method`).
 - L6-O11 (VP3): answered — "FUT volume missing — E2 cannot be read", no grade cap.
 - L6-a label: answered — required set = the fired model's own conditions; A = + ≥ 1 confirming piece; B = the model's conditions only; never blocks.
+
+## Label rule DECISIONS 54 (owner rule) — built 23 Oct (worktree branch `label54`; trade-data `review/layer6_gallery/label54/`)
+
+Checked against CLAUDE.md (Entry framework: "evidence is listed and never blocks"; "never add a trading rule Abhi didn't state"),
+DECISIONS 46, 49, 50, 54, method §4 / §5, L6-a, Z-1u, T3 / K6.5. `label_rule = model` (default; `legacy` = the old 6a set, what-if) in
+`decision3/entry_models.py` (`Reader.model_conditions`, `Reader._model_label`), used by the 15M Reader and the 5M Reader5 alike.
+- **L54-a (the required set). Implemented.** Required = the fired model's own conditions, named as the model checked them (E1 / E2 / E3 /
+  E4 a / E4 b each; the words follow the active what-ifs — `entry_trigger_rule`, `entry_area_refine`, `e4b_approach_rule` — so a check
+  that was not made is never named). Every fired entry has it ⇒ every entry has A or B. The old 6a set is kept as the fact
+  `evidence_list.legacy_required`.
+- **L54-b (the five confirming pieces → existing facts). Implemented, no new reading.** RSI divergence = the layer 5 read
+  (`V22.rsi_divergence`, NA when not readable); volume growing inside = the zone read's trade-side volume rising
+  (`flip.zone_read` summary `vol_rising_trade_side`, NA without FUT volume); confluence = L6-a / Z-1u (a line meets the area, or a Daily
+  / Weekly area overlaps it — `method.confirming_evidence`); correction line closed through = L4 (`trendline.k_line` broken, NA when no
+  correction line is open); counter channel broken = T3 / K6.5 (`Reader.channel_evidence`). Every piece had an existing fact — none NA
+  by construction.
+- **L54-c (E4 (b) at a broken line — confluence). Provisional default: NA.** The line's synthetic level carries `confluence_line = True`
+  (the line IS the object), which would have made every E4 (b) line "confluence ✓". Provisional: for a line object confluence reads NA
+  (an area / Daily level lying on the line is not read for it today). Open for Abhi: should an area on the broken line count?
+- **L54-d (pin). Done.** `label_rule = legacy` = the code before this build, byte for byte (PIN15 / model C pins read it); `model`
+  changes only the label / evidence-list fields (label, evidence, evidence_list, confirming; row conviction / mark / missing) — entries,
+  invalidation, gates identical (tests/test_label_rule_model.py, 15M + 5M, both mirrors; the 13-group BANKNIFTY replay 53 / 53).
+- **L54-e (what the replay shows). Logged for Abhi, no change.** 53 / 53 entries read A under the new rule (old rule: 1 A, 52 none):
+  confluence 39, counter channel broken 36, RSI divergence 3, volume growing inside 3 (FUT-testable group only), correction line
+  closed through 0. The counter channel piece is read on every line degree (1H and 15M channels) and the confluence piece counts a
+  Weekly / Daily area overlap, so B is rare here. The rule is as stated (no filter added); whether the counter channel should be read only
+  on the trend degree is Abhi's call.
+- **L54-f (output words). Done.** Vision facts: "| label A (the model's own conditions + at least one confirming piece: …)" / "| label B
+  (the model's own conditions only)" / legacy only: "| no A / B label (the legacy 6a required set reads absent)". Card evidence line:
+  "✓ E1 — the model's own conditions (required set)" first, then the five pieces, then each condition by name (the card line is cut by
+  length; the full list is in the evidence list and the Vision facts). Summary card 📋 Reader line: "✓ the E1 model's own conditions".
+  The Vision system prompt (cached) is unchanged — it already lists the evidence as never deciding.

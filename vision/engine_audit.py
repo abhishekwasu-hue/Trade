@@ -296,16 +296,23 @@ def _p(x):
     return "n/a" if x is None else f"{float(x):,.2f}"
 
 
+LABEL_PIECE_NAMES = ("RSI divergence", "volume growing inside", "confluence", "correction line closed through",
+                     "counter channel broken")             # decision3/entry_models.LABEL_PIECES, as the evidence list names them
+
+
 def label_words(rd):
-    """Layer 6 / L6-a (method §5): the entry's A / B label as the engine output it — " | label A (the required set + at least one
-    confirming piece)", " | label B (the required set only)", or, for an entry model whose required set reads absent, " | no A / B label
-    (the required set reads absent)". The model's own name is never printed as the label. No entry model ⇒ ""."""
+    """Layer 6 / DECISIONS 54 (owner rule, method §5): the entry's A / B label as the engine output it — " | label A (the model's own
+    conditions + at least one confirming piece: …)" naming the confirming piece(s) present in the engine's evidence list, " | label B
+    (the model's own conditions only)", or — only under the old 6a what-if (`label_rule = legacy`) — " | no A / B label (the legacy 6a
+    required set reads absent)". The model's own name is never printed as the label. No entry model ⇒ ""."""
     g = rd.get("grade")
     if g == "A":
-        return " | label A (the required set + at least one confirming piece)"
+        ev = rd.get("evidence") if isinstance(rd.get("evidence"), list) else []
+        got = [str(x[0]) for x in ev if isinstance(x, (list, tuple)) and len(x) >= 2 and x[0] in LABEL_PIECE_NAMES and x[1] == "✓"]
+        return " | label A (the model's own conditions + at least one confirming piece" + (f": {', '.join(got)})" if got else ")")
     if g == "B":
-        return " | label B (the required set only)"
-    return " | no A / B label (the required set reads absent)" if rd.get("model") else ""
+        return " | label B (the model's own conditions only)"
+    return " | no A / B label (the legacy 6a required set reads absent)" if rd.get("model") else ""
 
 
 OBJECT_WORDS = {"area": "the visited area", "broken_area": "a broken (flipped) area being retested from the other side",

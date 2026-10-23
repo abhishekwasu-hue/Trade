@@ -12,8 +12,8 @@ Setting `approval_card_layout` (vision bot settings; decision3/settings.py OUTPU
 Every value is read from the signal row / its gate tags / the engine row's reader facts (engine3_live.reader_facts ⇒
 paper/engine_entry.engine_gate_tags "reader": the layer 6a evidence list as the engine wrote it). A missing value ⇒ that piece is left
 out (never guessed). No rule, no score, no new number: the reader line only spells out what the evidence list says — "required:
-present" is the method's required set (handover + commitment with its volume comparison + LTF CHoCH, decision3/method.evidence_list)
-and the confirming pieces are the ones it marks present. Display only: no decision, gate, order or button changes here.
+present" is the fired model's own conditions (DECISIONS 54, `label_rule = model`; the legacy 6a what-if: handover + commitment with its
+volume comparison + LTF CHoCH, decision3/method.evidence_list) and the confirming pieces are the ones it marks present. Display only: no decision, gate, order or button changes here.
 """
 import html
 import json
@@ -27,7 +27,8 @@ LAYOUTS = ("classic", "summary")
 REASON_MAX = 90                                                          # Vision's reason on the summary: one line (full text in details)
 PA_MAX = 240                                                             # display: the card's one PA evidence line (full list in the tags)
 CONFIRM_WORDS = {"volume_growing": "volume growing", "rsi_divergence": "RSI div", "confluence": "confluence",
-                 "correction_line_closed_through": "line closed through"}   # decision3/method.CONFIRMING, in its order
+                 "correction_line_closed_through": "line closed through",
+                 "counter_channel_broken": "counter channel broken"}   # decision3/method.CONFIRMING + DECISIONS 54's fifth piece
 VERDICT = {"agree": ("✅", "सहमत"), "gray": ("🟡", "संदिग्ध"), "disagree": ("❌", "असहमत"), "unavailable": ("⚪", "उपलब्ध नाही")}
 NAMES = {"entry": "entry", "sl": "SL", "target": "target"}
 TF_NAME = {"D": "Daily", "1D": "Daily", "W": "Weekly", "60M": "1H"}
@@ -203,7 +204,9 @@ def line_reader(row):
     mark = {True: "✓", False: "✗"}
     parts = [f"{mark[rd[k]]} {k}" for k in ("trend", "area") if isinstance(rd.get(k), bool)]
     ltf = f"{rd['ltf']} CHoCH" if rd.get("ltf") else "LTF CHoCH"
-    if ev.get("required") == "present":                                  # method §5: the required set, as the engine read it
+    if ev.get("label_rule") == "model" and ev.get("required") == "present":   # DECISIONS 54: the required set = the model's own
+        parts.append("✓ " + html.escape(str(ev.get("required_set") or "the model's own conditions"), quote=False))   # conditions
+    elif ev.get("required") == "present":                                # method §5 legacy 6a: the required set, as the engine read it
         fast = "(fast)" if rd.get("handover_form") == "sharp_reversal" else ""
         parts += [f"✓ handover{fast}", "✓ commitment+volume", f"✓ {html.escape(ltf)}"]
     elif ev.get("required") == "absent":

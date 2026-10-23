@@ -530,7 +530,7 @@ def evidence_marks(r):
         return "evidence list: none (legacy score rule)" if r.get("verdict_rule") == "score" else "evidence list: none"
     conf = el.get("confirming") or {}
     names = {"volume_growing": "volume growing inside", "rsi_divergence": "RSI divergence", "confluence": "confluence",
-             "correction_line_closed_through": "correction line closed through"}
+             "correction_line_closed_through": "correction line closed through", "counter_channel_broken": "counter channel broken"}
     return (f"required set {MARK.get(el.get('required'), '?')} · " + " · ".join(f"{names.get(k, k)} {MARK.get(v, v)}" for k, v in conf.items())
             + f" · entry hours {el.get('entry_hours')}")
 

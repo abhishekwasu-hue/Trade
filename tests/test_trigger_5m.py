@@ -109,9 +109,10 @@ PIN15_C = {"abc": "29e1526ca51b490a1abbd4b02add478eb1c207060b91f3b1ad4aa1648c503
 def test_15m_path_is_byte_identical_to_the_code_before_the_5m_build(name):
     """trigger_tf = 15M (what-if) = today's decide(t), byte for byte; decide(t) never reads trigger_tf (the 5M default changes only
     decide5, the live loop and the card)."""
-    for tf in ({"trigger_tf": "15M"}, {}, {"trigger_tf": "5M"}):
-        assert _digest(_rows15(name, tf)) == PIN15[name]
-    assert _digest(_rows15(name, {"trigger_tf": "15M", "model_c": "on"})) == PIN15_C[name]
+    for tf in ({"trigger_tf": "15M"}, {}, {"trigger_tf": "5M"}):                # DECISIONS 54: the pins read `label_rule = legacy`
+        assert _digest(_rows15(name, {**tf, "label_rule": "legacy"})) == PIN15[name]   # (the default `model` changes only the label /
+    assert _digest(_rows15(name, {"trigger_tf": "15M", "model_c": "on", "label_rule": "legacy"})) == PIN15_C[name]   # evidence fields:
+    # tests/test_label_rule_model.py pins that)
 
 
 # ------------------------------------------------------------------------------------------------ the trigger frame
