@@ -1344,10 +1344,14 @@ CHART_READING_STRATEGY_KEY = "__chart_reading_report__"
 CHART_READING_SYMBOL_KEY = "ALL"
 CHART_READING_DEFAULTS = {"chart_reading_report": "on", "chart_reading_symbols": [], "chart_reading_language": "mr",
                           "chart_reading_detail": "short", "chart_reading_vision": "on", "chart_reading_page_url": "",
-                          "visual_audit_level_message": "off"}
+                          "visual_audit_level_message": "off",
+                          # DECISIONS 49 — today's reading gallery (scripts/reading_gallery_today.py): DISPLAY only, never a reading rule.
+                          "reading_gallery": "on", "reading_gallery_max_visit_charts": 40, "reading_gallery_disarmed_charts": "on"}
 CHART_READING_CHOICES = {"chart_reading_report": ("off", "on"), "chart_reading_language": ("mr", "en"),
                          "chart_reading_detail": ("short", "full"), "chart_reading_vision": ("off", "on"),
-                         "visual_audit_level_message": ("off", "on")}
+                         "visual_audit_level_message": ("off", "on"), "reading_gallery": ("off", "on"),
+                         "reading_gallery_disarmed_charts": ("off", "on")}
+READING_GALLERY_MAX_VISIT_CHARTS = (0, 500)                                 # display range of the cap (charts per gallery)
 
 
 def clean_chart_reading_settings(changes):
@@ -1370,6 +1374,13 @@ def clean_chart_reading_settings(changes):
             bad = [x for x in v if x not in SIGNAL_SYMBOLS_CHOICES]
             if bad:
                 raise ValueError(f"chart_reading_symbols: {bad} — {SIGNAL_SYMBOLS_CHOICES}")
+        elif k == "reading_gallery_max_visit_charts":
+            try:
+                v = int(str(v).strip())
+            except ValueError:
+                raise ValueError(f"{k} = {v!r} — a whole number {READING_GALLERY_MAX_VISIT_CHARTS}") from None
+            if not READING_GALLERY_MAX_VISIT_CHARTS[0] <= v <= READING_GALLERY_MAX_VISIT_CHARTS[1]:
+                raise ValueError(f"{k} = {v} — {READING_GALLERY_MAX_VISIT_CHARTS}")
         elif k == "chart_reading_page_url":
             v = str(v or "").strip()
             if v and not v.startswith(("http://", "https://")):
