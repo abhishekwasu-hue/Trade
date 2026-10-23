@@ -111,7 +111,7 @@ def symbol_line(sym, ctx, gate, zones, rng, areas_na=None, warn_pts=None, warn_r
     supply 22,715–22,776 (≈150 pts above the high). Daily move: mature (context only), near target 22,183.").
     ctx = trend cache (None ⇒ नाही) · gate = LV.summarize निकाल (None ⇒ bot नोंदी वाचता आल्या नाहीत) · rng = {"high", "low"} (None ⇒ नाही).
     warn_pts = `approval_band_warn_pts` (None ⇒ default 150): पट्ट्याची रुंदी दाखवतो, त्यापेक्षा रुंद ⇒ "⚠️ merged band — check" (Abhi).
-    warn_rule = `approval_band_warn_rule` (layer 6b; None ⇒ "points" = आजचं): "method" ⇒ engine area (ENGINE_LEVEL_…) ला line नाही.
+    warn_rule = `approval_band_warn_rule` (layer 6b; None ⇒ "method" = DECISIONS 53): "method" ⇒ engine area (ENGINE_LEVEL_…) ला line नाही.
     engine_gate = LV.summarize of the rows of level bots whose OWN signal_source is engine (gate_error_23oct; None ⇒ no such bot): their
     gate is the OLD level-bot check (comparison only) — it never decides an engine entry, so its reasons are never written as "no entry
     because …" (that misread a level-bot gate error as the reason). `gate` then holds only the own-signal bots' rows."""
@@ -245,7 +245,7 @@ def default_warn_pts(sym):
 
 
 def default_warn_rule(sym):
-    """Layer 6b: 15M SRv2 settings चा `approval_band_warn_rule`; वाचता नाही ⇒ "points" (आजचं, कधीच raise नाही)."""
+    """Layer 6b: 15M SRv2 settings चा `approval_band_warn_rule`; वाचता नाही ⇒ "method" (DECISIONS 53, कधीच raise नाही)."""
     from bots_common import plain_text as PT
     try:
         import cloud_db
