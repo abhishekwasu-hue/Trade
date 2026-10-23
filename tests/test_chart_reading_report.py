@@ -178,8 +178,8 @@ def test_language_setting_changes_the_words_not_the_facts():
 def test_dashboard_settings_defaults_and_validation():
     import cloud_db
     s = cloud_db.get_chart_reading_settings(raw_fn=lambda *a: {})
-    assert s["chart_reading_report"] == "off" and s["chart_reading_language"] == "mr" and s["chart_reading_detail"] == "short"
-    assert s["chart_reading_vision"] == "off" and s["visual_audit_level_message"] == "off" and s["chart_reading_symbols"] == []
+    assert s["chart_reading_report"] == "on" and s["chart_reading_language"] == "mr" and s["chart_reading_detail"] == "short"
+    assert s["chart_reading_vision"] == "on" and s["visual_audit_level_message"] == "off" and s["chart_reading_symbols"] == []
     s2 = cloud_db.get_chart_reading_settings(raw_fn=lambda *a: {"chart_reading_language": "en", "chart_reading_detail": "bogus"})
     assert s2["chart_reading_language"] == "en" and s2["chart_reading_detail"] == "short"      # a bad stored value ⇒ that default
     assert cloud_db.clean_chart_reading_settings({"chart_reading_symbols": "nifty, BANKNIFTY"}) == {

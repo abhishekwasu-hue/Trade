@@ -4,7 +4,7 @@
 #   • close   (tag `# chart-reading-close`):   20 10 * * 1-5 UTC = 15:50 IST, after the market close — charts + reading.
 #   • preopen (tag `# chart-reading-preopen`): 35 3 * * 1-5 UTC  = 09:05 IST, before the open — the short refresh.
 #   Operational times only (the reading itself has no clock logic). The script exits at once while the dashboard setting
-#   `chart_reading_report` is off (the default until Abhi approves the sample) — the lines are harmless until then.
+#   `chart_reading_report` is off (default on since DECISIONS 36; Abhi can switch it off on the dashboard).
 #   --revert ⇒ removes the two tagged lines (nothing else changes) · --dry-run ⇒ prints the new crontab only.
 # Env: CRONTAB_FILE (tests: a file instead of the crontab), REPO_DIR (default /root/Trade).
 set -euo pipefail

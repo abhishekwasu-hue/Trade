@@ -81,3 +81,7 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     alive area VALID / SPURIOUS / SHIFT, missing zones, duplicates; an area outside the chart window is "not visible", never
     SPURIOUS); its disagreements are reading checks against a named concept in OPEN_QUESTIONS. The old bare level-count message is
     off by default. Abhi approves one sample (NIFTY + BANKNIFTY) before the deploy. (Chart Reading Report order)
+36. The Chart Reading Report is ON by default (`chart_reading_report = on`), and so is its Vision part (`chart_reading_vision = on`);
+    both can be switched off on the dashboard. Vision stays information only. The Vision budget is $5 per day (`vision_daily_budget_usd`
+    = 5.0, a dashboard setting); PROVISIONAL with it: monthly cap 100 (the setting's maximum) and visual-audit sub-cap 2.0 (its maximum)
+    so the daily budget is usable; the signals reserve stays. (Chart Reading Report switch-on + Abhi's budget)
