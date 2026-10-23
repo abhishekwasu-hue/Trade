@@ -665,7 +665,7 @@ def read5(V, j, trend, act, side_fn=None, keep=None, extra=None, prefix="", brok
             lvl = {"id": f"line:{ln['id']}", "lo": v, "hi": v, "tf": "line", "role": a["role"], "births": ["tl"], "sweeps": 0,
                    "fresh": None, "confluence_line": True, "confluence": []}
             ok5, cm5 = R.confirm5(lvl, d, start5, None)
-            mf = None
+            mf = R.line_move_from(k, ln, d, arm15)                         # DECISIONS 56 (L5-c): the move into the line's retest
             area = {"id": lvl["id"], "tf": "line", "role": a["role"], "lo": v, "hi": v, "state": "BROKEN", "line": a.get("line")}
         if mf is not None:
             cm5["move_from_bar"] = mf

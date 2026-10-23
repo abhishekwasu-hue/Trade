@@ -13,7 +13,7 @@ resolved" near the end.
 |---|---|---|---|
 | R-BN-1 … R-BN-5 | BANKNIFTY replay: does Abhi agree with "no handover" (E29 / E31), see a handover on any G3 visit (E14, E17, E20, E21, E24, E29), and is E26 / M06 only a note? R-BN-5 = data note (re-run when more history lands) | no change to the reader | trade-data `review/replay_banknifty_6m/04a8b40/ABHI_QUESTIONS_MR.md` (simple Marathi, charts side by side); last section of this file |
 | L5 / L6a ✅ | Layer 5 (RSI divergence inside the move into the zone, L5-a) and layer 6a (verdict: required set ⇒ enter; A = + ≥ 1 confirming, B = required only) — ✅ / ✏️ | as merged; not stable until ✅ | trade-data `review/layer5_6a_report/2b43f17/README.md`; `docs/reader/STABLE.md` |
-| L5-b / L5-c / C-L5-1 | Layer 5 gallery (23 Oct): count the second push still FORMING as a push (13 visits)? read the move into a broken LINE retest (7 E4 (b) entries, NA now)? ✅ the C-L5-1 fix (E4 (b) broken area on the 5M path: RSI move start) | as coded; NA; fix awaiting ✅ (branch `l5`) | trade-data `review/layer5_gallery/README.md`; last section of this file |
+| C-L5-1 | Layer 5 gallery (23 Oct): ✅ the C-L5-1 fix (E4 (b) broken area on the 5M path: RSI move start) after checking its charts (L5-b / L5-c answered: DECISIONS 56, implemented on branch `l5`) | fix on branch `l5`, awaiting ✅ | trade-data `review/layer5_gallery/README.md`; section "Layer 5 RSI gallery" of this file |
 | R0-3 | Golden Vision V4 expectations (12 Oct, 29 Sep): ✅ the drafts | drafts; every V4 result PROVISIONAL; live V4 off (R0-8) | trade-data `golden_v4/cases.json`; section "Chart Reader R0" |
 | R1a-13 | Bands on the Vision approval chart (`vision_chart_bands`) — turn on, and change the Vision legend with it? | OFF (image unchanged) | section "R1 (a)" |
 | BW-1 / C-18 | Keep the 150-pt "merged band — check" alert now that bands are never merged (Z-1u)? | 150, display only | decided with layer 6 (output) |
@@ -1322,9 +1322,23 @@ STABLE layer 1 (L1-a / L1-b / L1-c). Verdicts only — nothing in the engine cha
 | id | Concept | Finding | Default / fix | Where |
 |---|---|---|---|---|
 | C-L5-1 | RSI divergence (L5-a "the move into the zone") | READING ERROR: on the 5M path (`entry_models5.read5`) an E4 (b) entry at a BROKEN AREA passed `move_from = None`, so the RSI evidence always read NA "the move into the zone is not known" although the swing built away from the broken area exists — the 15M path (`V._confirm` on the area counted from its break) reads it. | FIXED in branch `l5` (awaiting Abhi ✅): the 5M path uses the retest visit's approach (`visit5(...)["approach_from15"] − 1`), the same move start as the 15M path. Evidence only; entries unchanged. 1 of 3 replay entries changes (11 Sep: NA → ✗ "fewer than two pushes"). Test `tests/test_trigger_5m.py::test_e4b_broken_area_rsi_reads_the_move_into_the_retest_as_the_15m_path`. | gallery §4, L5-X01 before / after |
-| L5-b | RSI divergence (L5-a "pushes") | QUESTION: the reader counts only CONFIRMED pushes. With one confirmed push inside the move and the second push still forming (rsi2 "forming"), it says "fewer than two pushes" and compares nothing — yet with two confirmed pushes it does compare a forming third push. In 13 visits (18 reads) the forming second push is a regular divergence (incl. visits with E1 / E3 entries: 13 Jul, 17 Jul, 9 Oct, 15 Oct). | as coded (not changed) until Abhi answers: count the push in progress as the second push? | gallery §4b, L5-P01 … P13 |
-| L5-c | RSI divergence (move into a line retest) | QUESTION: an E4 (b) at a broken LINE reads RSI NA on both paths — no move start is defined for a line (7 replay entries). | NA (evidence only) | gallery §1 (broken_line entries) |
+| L5-b | RSI divergence (L5-a "pushes") | ANSWERED (DECISIONS 56: count the forming push) — was: the reader counts only CONFIRMED pushes. With one confirmed push inside the move and the second push still forming (rsi2 "forming"), it says "fewer than two pushes" and compares nothing — yet with two confirmed pushes it does compare a forming third push. In 13 visits (18 reads) the forming second push is a regular divergence (incl. visits with E1 / E3 entries: 13 Jul, 17 Jul, 9 Oct, 15 Oct). | as coded (not changed) until Abhi answers: count the push in progress as the second push? | gallery §4b, L5-P01 … P13 |
+| L5-c | RSI divergence (move into a line retest) | ANSWERED (DECISIONS 56: read it like at any area) — was: an E4 (b) at a broken LINE reads RSI NA on both paths — no move start is defined for a line (7 replay entries). | NA (evidence only) | gallery §1 (broken_line entries) |
 | L5-d | RSI divergence on the 5M trigger (DECISIONS 37) | OBSERVATION: the RSI read uses closed 15M bars only, so an entry inside the 15M bar that makes the second push does not see that push (golden 12 Oct: E1 09:15 / E2 09:20 ✗; the same divergence ✓ from 09:30). Consistent with DECISIONS 37; no change. | no change | gallery §3, G01–G03 |
+
+**DECISIONS 56 implemented (branch `l5`, 23 Oct):**
+- **L5-b** (`engine.V22.rsi_divergence`, the one read behind the 15M reader, the 5M reader and the legacy decide): the push still forming at
+  bar t counts as a push — rsi2's pair in progress at t (its running extreme after the degree's last confirmed swing; status "forming", or
+  confirmed early by a commitment candle), its extreme inside the move (after `move_from`) and not yet a confirmed swing. The read adds
+  `forming_push` {degree: {time, price, push: "forming"}} (only when there is one) and every divergence's `L2.push` = "forming" /
+  "confirmed" (confirmed once its swing2 pivot is confirmed by t). `pushes` stays the CONFIRMED count. Bars ≤ t only (test: data cut at t =
+  full data at t). Tests `tests/test_rsi_l5bc.py`. Fixture pins (abc, model C off) re-hashed: one row gains `forming_push`, nothing else.
+- **L5-c** (`entry_models.Reader.line_move_from`, wired in `read` and `read5`) — **PROVISIONAL definition (lead's, Abhi may change):** the move
+  into the retest of a broken LINE begins at the last swing of the finest structure (`Levels._known0`, confirmed by bar t) built AWAY from
+  the line on the side price comes from — bear call: a swing low below the line's value at its own bar; bull put: a swing high above it —
+  formed at or after the line's break bar and before the revisit's first bar (15M reader: the revisit start; 5M reader: the 15M bar of
+  the visit's first 5M candle). This mirrors the broken area's retest (the approach of the retest visit = the candles after the last swing
+  built away from the object). No such swing ⇒ NA "move not known".
 
 ## Layer 6 gallery — output reading checks (BANKNIFTY, 13 groups 13 Apr – 21 Oct; origin/main 855fa7b; trade-data `review/layer6_gallery/`)
 

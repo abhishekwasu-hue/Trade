@@ -452,7 +452,8 @@ def _digest(rows, drop=()):
 # the engine rows of the pre-change code (git bf280a8, before model C), computed on these fixtures. Re-hashed for #379 with the channel
 # label (CHANNEL_DISPLAY) left out: abc recomputed at bf280a8 itself (the old digest there = the old pin ffca3761…); oct12 from the
 # current code, whose rows equalled the old pins a2671001… / e80cb1a7… under the old digest (only the channel label words changed).
-PIN = {"abc": "deaf117fd543d82750aa30d1e67613796f798658995c4326215f91be97e185af",
+# abc re-pinned for DECISIONS 56 (L5-b): one row's RSI summary gains `forming_push` (the push still forming); nothing else changed.
+PIN = {"abc": "2597dd7fd2420ae989883084047ec63cf25b6197126df9121c924fd955e0efed",
        "oct12_bear": "c82ecb5ddac09c1079ff71e5100ecccb9bbdfee17b550a28f41bfc52aa087911",
        "oct12_bull": "f65785d0a5ba314d943ccd7f573008f22c6f836e21a2fc136e607a79a92fa81b"}
 
