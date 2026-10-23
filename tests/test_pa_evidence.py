@@ -234,3 +234,15 @@ def test_real_banknifty_entries_identical_and_every_entry_has_pa_evidence(monkey
     monkeypatch.setattr(EM.PE, "for_entry", lambda *a, **k: [])
     _V0, _ts0, plain = R._build()
     assert json.dumps(_strip(rows), default=str, sort_keys=True) == json.dumps(_strip(plain), default=str, sort_keys=True)
+
+
+def test_fit_payload_drops_pa_evidence_before_the_reader_facts():
+    """Review of #375: the new display evidence never pushes out today's card facts (`reader`)."""
+    import json
+    import engine3_live as EL
+    payload = {"engine": "v22", "reader": {"summary": "x" * 200},
+               "entries": [{"model": "E3", "pa_evidence": [{"text": "y" * 400}]}], "armed": []}
+    full = json.dumps(payload, ensure_ascii=False)
+    lim = len(full) - 100                                                   # only the PA evidence has to go
+    out = json.loads(EL.fit_payload(payload, lim))
+    assert "reader" in out and "pa_evidence" not in out["entries"][0]

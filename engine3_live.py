@@ -1054,15 +1054,15 @@ def fit_payload(payload, limit=PAYLOAD_MAX):
     out = dump(payload)
     if len(out) <= limit:
         return out
+    if any(isinstance(e, dict) and "pa_evidence" in e for e in payload.get("entries") or ()):   # T9 PA evidence: display only, the
+        payload = {**payload, "entries": [{k: v for k, v in e.items() if k != "pa_evidence"} if isinstance(e, dict) else e
+                                          for e in payload["entries"]]}   # removed first (review), then "reader": today's payload kept
+        out = dump(payload)
+        if len(out) <= limit:
+            return out
     if "reader" in payload:                                              # display-only reader facts (approval card summary): too
         payload = {k: v for k, v in payload.items() if k != "reader"}     # long ⇒ removed SILENTLY, so the rest is exactly today's
         out = dump(payload)                                              # payload (no longer "dropped" list, no extra key pushed out)
-        if len(out) <= limit:
-            return out
-    if any(isinstance(e, dict) and "pa_evidence" in e for e in payload.get("entries") or ()):   # T9 PA evidence: display only, the
-        payload = {**payload, "entries": [{k: v for k, v in e.items() if k != "pa_evidence"} if isinstance(e, dict) else e
-                                          for e in payload["entries"]]}   # same silent removal as "reader" (today's payload)
-        out = dump(payload)
         if len(out) <= limit:
             return out
     p, dropped = dict(payload), []
