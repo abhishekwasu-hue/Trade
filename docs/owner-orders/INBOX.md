@@ -1098,3 +1098,7 @@ Z6 Width sanity: a band larger than the width setting (relative to the TF's typi
 Z7 Keep the current swing-candle and BOS-origin births only where they satisfy Z1–Z4; list every existing birth type and say which Z rule it passes or fails, with charts.
 Z8 Never merge zones; overlapping zones stay separate objects (keep the identity rules).
 Proof: before/after charts (≤20); owner fixtures pass unedited; match the answer key when supplied.
+
+---
+## 24 Oct — zone construction sequencing
+Queue this after the BREAK-2 PR is merged; do not mix it into that PR.
