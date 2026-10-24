@@ -148,7 +148,9 @@ def test_up_to_four_entries_in_one_visit_and_e3_fires_once_on_the_ltf_choch(mirr
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put"])
 def test_models_disarm_when_the_area_breaks_inside_the_visit(mirror):
-    V, lvl, d = _bare(BEAR, SWINGS, mirror=mirror, events=[(7, "broken", "close beyond + swing beyond")])
+    V0, lvl0, d0 = _bare(BEAR, SWINGS, mirror=mirror, events=[(7, "broken", "close beyond + swing beyond")])
+    assert EM.Reader(V0).area(9, lvl0, d0) == (None, [])                   # B-2 (default): the visit ended at the break (bar 7)
+    V, lvl, d = _bare(BEAR, SWINGS, mirror=mirror, events=[(7, "broken", "close beyond + swing beyond")], s={"visit_end_rule": "single_swing"})
     a, fired = EM.Reader(V).area(9, lvl, d)
     assert fired == [] and "broke inside this visit" in a["disarmed"] and all(x["status"] == "disarmed" for x in a["models"].values())
     a6, f6 = EM.Reader(V).area(6, lvl, d)                                    # before the break: still armed (E2 at 6)

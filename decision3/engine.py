@@ -32,6 +32,7 @@ M_SETUP, M_WAIT, M_NO = "s", "w", "n"
 
 STEPS = ("③", "④", "⑤", "⑥", "⑦")
 VISIT_RULES = ("structure", "close_away", "touch_window")                 # method §3 Visit (+ legacy what-ifs); settings.zone_visit_rule
+VISIT_END_RULES = ("away_not_reached", "single_swing")                    # DECISIONS 64: settings.visit_end_rule (single_swing = what-if)
 ENTRY_GATES = ("models", "legacy_k")                                      # Abhi 21 Oct: settings.entry_gate
 MODELS = ("E1", "E2", "E3", "E4")
 TRIGGER_TFS = ("5M", "15M")                                               # DECISIONS 37: settings.trigger_tf (5M = Abhi's rule)
@@ -113,6 +114,8 @@ class V22:
         if self.s.get("zone_visit_rule", "structure") != "structure" and \
                 self.s.get("commit_volume_rule", "approach_and_opposite") == "approach_and_opposite":   # never a silent half-rule
             raise ValueError("decision3 V22: a legacy zone_visit_rule knows no approach leg — pair it with commit_volume_rule = opposite")
+        if self.s.get("visit_end_rule", "away_not_reached") not in VISIT_END_RULES:   # DECISIONS 64: fail at start, never a silent rule
+            raise ValueError(f"decision3 V22: unknown visit_end_rule {self.s['visit_end_rule']!r} (allowed: {', '.join(VISIT_END_RULES)})")
         if self.s.get("entry_gate", "models") not in ENTRY_GATES:          # Abhi 21 Oct: fail at start, never a silent gate
             raise ValueError(f"decision3 V22: unknown entry_gate {self.s['entry_gate']!r} (allowed: {', '.join(ENTRY_GATES)})")
         if self.s.get("entry_trigger_rule", "traded_inside") not in EM.Reader.TRIGGER_RULES:
@@ -309,12 +312,85 @@ class V22:
             f"needs a new handover (Abhi Z-1v)" if u is not None else "no visit in progress")
         return {"start": start, "prev_end": u, "why": why}
 
+    @property
+    def visit_end_new(self):
+        """DECISIONS 64 (`visit_end_rule = away_not_reached`, default): the visit ends by structure on the finest swings — price leaves
+        and builds swings away that do not reach the area again; the move start moves forward with each new away swing. `single_swing`
+        (what-if) and entry_gate = legacy_k = the earlier reading (one away swing of Levels._known0 ends the visit), byte-identical."""
+        return self.s.get("visit_end_rule", "away_not_reached") == "away_not_reached" and not self.legacy_k
+
+    def visit_swings(self):
+        """The swings a visit is read with (DECISIONS 64: "price builds swings away"): the finest swings the engine computes — swings2's
+        lowest degree (D0, the turns the 15M chart shows; the same pivots rsi2 counts as pushes). Sorted by bar; each carries confirm_bar
+        (bars <= t only: callers keep confirm_bar <= t). `single_swing` = Levels._known0 (the finest STRUCTURE degree, D1)."""
+        if not self.visit_end_new:
+            return sorted(getattr(self.levels, "_known0", []), key=lambda p: (int(p.bar), int(p.confirm_bar)))
+        vs = self.__dict__.get("_visit_swings")
+        if vs is None:
+            res = getattr(self.levels, "res", None) or getattr(self, "res", None) or {}
+            pv = res.get("pivots") or {}
+            g = min((x for x in pv if pv.get(x)), default=None)
+            src = pv.get(g, []) if g is not None else getattr(self.levels, "_known0", [])   # (a stand-in without pivots: its swings)
+            vs = self._visit_swings = sorted(src, key=lambda p: (int(p.bar), int(p.confirm_bar)))
+        return vs
+
     def _away_swings(self, t, lo, hi, d, born=0):
-        """Swings of the finest structure (known by bar t, formed at or after `born`) built AWAY from the area on the side price comes
-        from: supply (d < 0) ⇒ swing lows below the area; demand ⇒ swing highs above it. Bars, in order."""
+        """Swings (known by bar t, formed at or after `born`) built AWAY from the area on the side price comes from: supply (d < 0) ⇒
+        swing lows below the area; demand ⇒ swing highs above it. Bars, in order. The swing set = `visit_swings()` (DECISIONS 64; the
+        `single_swing` what-if = Levels._known0)."""
         kind = "L" if d < 0 else "H"
-        return sorted({int(p.bar) for p in getattr(self.levels, "_known0", []) if p.confirm_bar <= t and p.bar >= born and p.kind == kind
+        src = list(getattr(self.levels, "_known0", []))
+        if self.visit_end_new:                                             # DECISIONS 64: the finest swings too (D1 ∪ D0)
+            src += list(self.visit_swings())
+        return sorted({int(p.bar) for p in src if p.confirm_bar <= t and p.bar >= born and p.kind == kind
                        and ((p.price < lo) if d < 0 else (p.price > hi))})
+
+    def object_broken(self, lvl, i):
+        """B-2: the area reads BROKEN / DEAD at bar i by its lifecycle's own events (known by i; whatever the lifecycle writes —
+        today's K4 and BREAK-1 when it lands): a flip or a reclaim makes it a place again, dead never. No new visit of a broken area."""
+        lid = lvl.get("parent_level", lvl.get("id"))
+        Ls = getattr(self.levels, "L", [])
+        Lo = Ls[int(lid)] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(Ls) else None
+        if Lo is None:
+            return False
+        dead = getattr(Lo, "dead_bar", None)
+        if dead is not None and int(dead) <= i:
+            return True
+        st = False
+        for b, kk, *_ in (getattr(Lo, "events", None) or []):
+            if b > i:
+                continue
+            if kk == "dead":
+                return True
+            if kk in ("flip", "reclaim"):
+                st = False
+            elif kk == "broken":
+                st = True
+        return st
+
+    def price_away(self, i, lvl, A=None):
+        """B-2 (Abhi, provisional): price is AWAY from the area at candle i — its range does not trade into the band (comparison only).
+        A = the candle arrays (default 15M; the 5M reader passes its own). Used only under the DECISIONS 64 rule."""
+        A = self.levels.A if A is None else A
+        return not (float(A["low"][int(i)]) <= float(lvl["hi"]) and float(A["high"][int(i)]) >= float(lvl["lo"]))
+
+    AWAY_NA = ("price is away from the area at this candle — the visit is still open (no confirmed turn yet) but nothing is read "
+               "while price is away (B-2)")
+
+    def away_na(self, i, lvl, A=None):
+        """B-2: the RSI read of an open visit while price is away ⇒ NA with the reason; None ⇒ read as usual (or the what-if rule)."""
+        if not self.visit_end_new or not self.price_away(i, lvl, A):
+            return None
+        return {"found": None, "na": self.AWAY_NA, "zone_degree": None}
+
+    def move_from(self, t, lo, hi, d, floor=None):
+        """DECISIONS 64 / B2: the move into the zone begins at the LAST swing built away from the area (supply: a swing low below it;
+        demand: a swing high above it) known by bar t — it moves forward with each new away swing (also one formed inside the visit:
+        price dipped away and came back). `floor` (a broken object's revisit: its break bar) ⇒ only swings formed at or after it.
+        None ⇒ no such swing known (the RSI read says NA)."""
+        sw = self._away_swings(t, lo, hi, d, int(floor) if floor is not None else 0)
+        sw = [b for b in sw if b <= int(t)]
+        return sw[-1] if sw else None
 
     def _failed_commit_outside(self, i, start, lvl, d):
         """Method §3 Visit: a commitment that closes outside — the commitment is "the dominant candle in the trade direction AFTER the
@@ -341,7 +417,9 @@ class V22:
         break / flip is the K4 lifecycle's (the handover's window restarts after a break). The approach leg = from the last swing built
         away before the visit (the candles after that swing, across any gap, session change or earlier visit — P2) up to the visit
         (`approach_from` … start − 1); no such swing known ⇒ None. Bars ≤ t only. Returns {start, prev_end, why, approach_from,
-        ended_by}."""
+        ended_by, move_from}. DECISIONS 64 (`visit_end_rule = away_not_reached`, default) ⇒ `_visit_away`."""
+        if self.visit_end_new:
+            return self._visit_away(t, lvl, d, born)
         A = self.levels.A
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
         commit_end = self.legacy_k                                         # Abhi 21 Oct: the "failed commitment closed outside" end = legacy
@@ -383,7 +461,112 @@ class V22:
                    f"no visit in progress: a commitment closed outside the area at {ts(prev_end)} without an entry (the move is gone; "
                    f"no chasing)")
         memo[key] = {"start": start, "prev_end": prev_end, "why": why, "ended_by": ended_by,
-                     "approach_from": approach_from if start is not None else None}
+                     "approach_from": approach_from if start is not None else None,
+                     "move_from": (approach_from - 1) if (start is not None and approach_from is not None) else None}
+        return memo[key]
+
+    def _visit_away(self, t, lvl, d, born):
+        """DECISIONS 64 (owner rule, B1 / B2): a visit begins at the first bar trading into the area (at or after `born`) and ends by
+        structure — price LEAVES and builds swings away that do not reach it again. After the visit began, either
+          • a swing of the structure degree (Levels._known0, as before) built away from the area on the side price came from (supply: a
+            swing low below `lo`; demand: a swing high above `hi`), or
+          • at the finest swings (`visit_swings()`): a swing built away from the area and then the next turn (the following swing of the
+            other kind) that does not reach the area again (supply: its high stays below `lo`; demand: its low stays above `hi`).
+        The same on the FAR side (price beyond the area builds a swing there and the next turn does not come back into it — it held
+        beyond: the lifecycle reads that as broken; a sweep comes back inside and the visit goes on, CLAUDE.md "Sweep / fakeout").
+        The visit is over at that swing / turn (known when it confirms; `prev_end` = its bar, `left_at` = the away swing). A finest turn
+        that reaches the area again keeps the visit going (the dip was part of the visit) and the move start moves forward to that away
+        swing. A close beyond the far side is the K4 lifecycle's business. approach_from = the candles after the last away swing before
+        the visit (the leg into the area, method §3; across gaps / earlier visits — P2); move_from = the LAST away swing known at t (B2:
+        it moves forward with each new away swing, also one inside the visit). Swings confirmed by t only (bars ≤ t)."""
+        A = self.levels.A
+        lo, hi = float(lvl["lo"]), float(lvl["hi"])
+        floor = 0                                                          # (a broken area's swing beyond made its break: no floor)
+        key = ("away", lvl.get("parent_level", lvl.get("id")), int(t), int(d), lo, hi, int(born), floor)
+        memo = self.__dict__.setdefault("_visit_memo", {})
+        if key in memo:
+            return memo[key]
+        ka, ko = ("L", "H") if d < 0 else ("H", "L")
+
+        def away(p):
+            return p.kind == ka and ((p.price < lo) if d < 0 else (p.price > hi))
+
+        def far(p):                                                        # a swing built beyond the FAR side (supply: a high above `hi`)
+            return p.kind == ko and ((p.price > hi) if d < 0 else (p.price < lo))
+
+        def reaches(p, side):                                              # the next turn trades into the band again (or through it)
+            if side == "near":
+                return (p.price >= lo) if d < 0 else (p.price <= hi)
+            return (p.price <= hi) if d < 0 else (p.price >= lo)
+        fine = [p for p in self.visit_swings() if p.confirm_bar <= t and p.bar <= t]
+        struct = {int(p.bar) for p in getattr(self.levels, "_known0", []) if p.confirm_bar <= t and p.bar <= t and away(p)}
+        pv_at = {}
+        for p in fine:
+            if p.bar >= born:
+                pv_at.setdefault(int(p.bar), []).append(p)
+        for b in struct:
+            if b >= born:
+                pv_at.setdefault(b, [])
+        aw_all = sorted({int(p.bar) for p in fine if away(p)} | struct)
+        before = [b for b in aw_all if floor <= b < born]
+        touch = (np.flatnonzero((A["low"][born:t + 1] <= hi) & (A["high"][born:t + 1] >= lo)) + born) if t >= born else []
+        tset = {int(x) for x in touch}
+        lid = lvl.get("parent_level", lvl.get("id"))
+        Ls = getattr(self.levels, "L", [])
+        Lo = Ls[int(lid)] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(Ls) else None
+        brk = {int(b) for b, kk, *_ in (getattr(Lo, "events", None) or []) if kk in ("broken", "dead") and born <= b <= t}
+        if Lo is not None and getattr(Lo, "dead_bar", None) is not None and born <= int(Lo.dead_bar) <= t:
+            brk.add(int(Lo.dead_bar))
+
+        def broken_at_i(i):
+            return self.object_broken(lvl, i)
+        start, prev_end, ended_by, left_at, approach_from = None, None, None, None, None   # dead, at the bar that became known) ends
+        last_away = before[-1] if before else None                         # the visit there
+        pending = None                                                     # the away swing inside the visit waiting for its next turn
+        for i in sorted(tset | set(pv_at) | brk):
+            if start is not None:
+                if i < start:
+                    continue
+                if i in brk:                                               # B-2: the object became BROKEN (known at i) ⇒ visit over
+                    start, prev_end, ended_by, left_at, pending = None, i, "broken", None, None
+                    continue
+                if i == start:
+                    continue
+                if i in struct:                                            # a structure-degree swing built away ⇒ the visit is over
+                    start, prev_end, ended_by, left_at, pending, last_away = None, i, "swing", i, None, i
+                    continue
+                for p in pv_at.get(i, []):
+                    if pending is not None and p.kind != pending[0].kind:  # the next turn after a swing built away
+                        if not reaches(p, pending[1]):                     # left and built swings away that do not reach it again
+                            start, prev_end, ended_by, left_at = None, i, "swing", int(pending[0].bar)
+                            break
+                        pending = None
+                    if away(p):
+                        pending, last_away = (p, "near"), i
+                    elif far(p):                                           # beyond the far side: a sweep comes back (the next turn
+                        pending = (p, "far")                               # reaches it); holding beyond = left (the lifecycle's break)
+                continue                                                   # a turn that does not reach the area never touches it
+            if i in tset and not broken_at_i(i):
+                start, pending = i, None
+                approach_from = (last_away + 1) if last_away is not None else None
+                continue
+            if (i in struct or any(away(p) for p in pv_at.get(i, []))) and i >= floor:
+                last_away = i
+        ts = lambda i: str(pd.Timestamp(self._ts[i]))[:16]                 # noqa: E731
+        why = None
+        if start is None:
+            why = ("no visit in progress" if prev_end is None else
+                   f"no visit in progress: the area became BROKEN at {ts(prev_end)} (lifecycle) — the visit ended there (B-2)"
+                   if ended_by == "broken" else
+                   f"no visit in progress: price left the area and built a swing away at {ts(left_at)}" +
+                   ("" if left_at == prev_end else f"; the next turn at {ts(prev_end)} did not reach it again") +
+                   " — the visit ended by structure (DECISIONS 64)")
+        mf = None
+        if start is not None:
+            sw = [b for b in aw_all if b >= floor]
+            mf = sw[-1] if sw else None
+        memo[key] = {"start": start, "prev_end": prev_end, "why": why, "ended_by": ended_by, "left_at": left_at,
+                     "approach_from": approach_from if start is not None else None, "move_from": mf}
         return memo[key]
 
     def entry_window(self, t):
@@ -469,7 +652,7 @@ class V22:
                 away_t = False
         cm["visit_end"] = ts_(t) if (away_t and not ok) else None         # Z-1v: closed outside, away, without a commitment ⇒ visit over
         cm["approach_from"] = ts_(vi.get("approach_from"))
-        cm["move_from_bar"] = (int(vi["approach_from"]) - 1) if vi.get("approach_from") is not None else None   # the move's own swing
+        cm["move_from_bar"] = vi.get("move_from")                         # the move's own swing (DECISIONS 64: the last away swing)
         return ok, why, cm
 
     def vol_gaps(self, arm, t):
@@ -707,7 +890,8 @@ class V22:
             ok6, why6 = False, f"entry वेळ-खिडकीबाहेर (operational schedule) · reading: {why6}"   # an operational schedule after it
         chk["⑥"] = [ok6, why6]
         arm = int(cm.get("arm_bar", t))
-        rsi = self.rsi_divergence(t, d, arm, lvl.get("tf", "1H"), cm.get("move_from_bar"))   # zone evidence (Abhi): never a gate
+        rsi = self.away_na(t, lvl) or \
+            self.rsi_divergence(t, d, arm, lvl.get("tf", "1H"), cm.get("move_from_bar"))   # zone evidence (Abhi): never a gate
         Av, vlabel = self.vol_view(arm, t)
         zr = FL.zone_read(Av, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi,
                           handover=cm.get("handover_state"))               # in-zone study facts (bars arm … t)

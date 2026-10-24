@@ -66,9 +66,14 @@ def in_progress():
 def test_trigger_tf_15m_is_the_earlier_dossier_byte_for_byte(mirror, k):
     pin = json.loads(gzip.decompress(open(PIN, "rb").read()))
     m15, fut, ltf, one = T._inputs(mirror=mirror)
-    d = T._dossier(m15, fut, ltf, one, T._asof(m15, k), cfg={"decision3": {"trigger_tf": "15M"}})
+    d = T._dossier(m15, fut, ltf, one, T._asof(m15, k), cfg={"decision3": {"trigger_tf": "15M", "visit_end_rule": "single_swing"}})
     assert set(d["sections"]) == set(D.SECTIONS) == set(D.sections_of("15M"))
-    assert json.loads(json.dumps(d, sort_keys=True)) == pin[f"{mirror}|{k}"]
+    assert json.loads(json.dumps(d, sort_keys=True)) == pin[f"{mirror}|{k}"]   # the pin's own visit rule (what-if, byte for byte)
+    n = json.loads(json.dumps(T._dossier(m15, fut, ltf, one, T._asof(m15, k), cfg={"decision3": {"trigger_tf": "15M"}}), sort_keys=True))
+    av = n["sections"]["divergence"]["at_visits"]                              # B-2: the open visit's candle is away from the area ⇒
+    assert av and all(x.get("found") is None and "away from the area" in x["na"] for x in av)   # no RSI read (NA with the reason)
+    n["sections"]["divergence"]["at_visits"] = pin[f"{mirror}|{k}"]["sections"]["divergence"]["at_visits"]
+    assert n == pin[f"{mirror}|{k}"]                                         # every other fact identical
 
 
 def test_trigger_tf_typo_fails_loudly():
