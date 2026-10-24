@@ -128,6 +128,7 @@ class V22:
         if bad or isinstance(self.s.get("entry_models_on"), str):
             raise ValueError(f"decision3 V22: entry_models_on accepts a list of {', '.join(MODELS)} (got {self.s.get('entry_models_on')!r})")
         MDC.validate(self.s)                                              # model C (DECISIONS 32): fail at start, never a silent switch
+        FL.hold_rule(self.s)                                              # BREAK-1 (DECISIONS 60): fail at start, never a silent rule
         if self.s.get("div_degree_rule", "zone") not in ("zone", "all"):   # fail at start, not on the first in-zone bar
             raise ValueError(f"decision3 V22: unknown div_degree_rule {self.s['div_degree_rule']!r} (allowed: zone, all)")
         self.sealed = sealed                                              # Q33: sealed (NIFTY holdout) तारखा output मध्ये नाहीत

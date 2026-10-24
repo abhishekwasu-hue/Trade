@@ -322,6 +322,7 @@ def _channel_case():
     return NS(levels=lv, s=S3.load()), m
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_channel_lines_build_both_sides_with_touches_and_the_k65_break():
     V, m = _channel_case()
     t = 34
@@ -340,6 +341,7 @@ def test_channel_lines_build_both_sides_with_touches_and_the_k65_break():
     assert up is not None and up["p2"][0] == 27
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_fast_break_read_equals_broken_by():
     rng = np.random.default_rng(3)
     for trial in range(40):
@@ -374,7 +376,10 @@ def test_entry_gate_settings_are_registered_and_validated():
 def oct12(request):
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=request.param)
-    s = {"level_death_side": "role", **AREA}                               # the default trigger (traded_inside)
+    s = {"level_death_side": "role", **AREA,                               # the default trigger (traded_inside)
+         "break_hold_rule": "swing_beyond"}                                # BREAK-1: this synthetic supply breaks by new lows with no
+    # pullback high held below it — under the owner rule (DECISIONS 60) that is a sweep, never flipped; its row shape is read on the
+    # earlier reading (what-if). The real 12 Oct golden day (tests/test_decision3_flip.py) is read on the default.
     V = E3.V22(m15, s=s, ltf=ltf, futures=fut)
     Vk = E3.V22(m15, s={**s, "entry_gate": "legacy_k"}, ltf=ltf, futures=fut)
     ts = V.levels.ts
@@ -383,6 +388,7 @@ def oct12(request):
     return request.param, V, Vk, bars
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_decide_row_carries_entries_armed_and_the_legacy_k_diagnostic(oct12):
     mirror, V, Vk, bars = oct12
     rows = [V.decide(t) for t in bars]
@@ -411,6 +417,7 @@ def test_decide_row_carries_entries_armed_and_the_legacy_k_diagnostic(oct12):
     assert w and all(r["why"] for r in w)                                    # a wait says what the armed models wait for
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_21_oct_like_no_bos_k_blocks_the_old_gate_the_models_still_read_the_visit(oct12, monkeypatch):
     """21 Oct (REPORT_EN §2e): ① DOWN, price at a valid resistance area, but no fresh DOWN BOS ⇒ K = None ⇒ the old ③ waits all day.
     Same bars with K forced to None: legacy_k ⇒ wait ③ "BOS नाही"; the models read the visit (E1 on the visit's first bar) and log the
@@ -432,6 +439,7 @@ def test_21_oct_like_no_bos_k_blocks_the_old_gate_the_models_still_read_the_visi
     assert "E1" in fired and fired.count("E1") == len({e["visit_id"] for r in new for e in r["entries"] if e["model"] == "E1"})
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_channels_parallel_through_the_opposite_extreme_and_the_broken_counter_channel():
     """Abhi 21 Oct: each line has its parallel through the opposite extreme of the same move; the up-channel's lower line broken (close
     below + swing below) ⇒ "lower line broken" / its retest, broken_side "down" — the bear call's handover evidence (a rising channel broken

@@ -383,7 +383,29 @@ class Reader:
             raise ValueError(f"e4b_approach_rule {r!r} — {' / '.join(self.APPROACH_RULES)}")
         return r
 
-    def approach_side(self, u, form, start, edge, d):
+    def accepted_on_original_side(self, b_end, edge, d, swings):
+        """DECISIONS 61 (BREAK-1, owner rule): was price ACCEPTED on the broken object's ORIGINAL side at the 15M bar b_end? The run of
+        consecutive 15M closes on the original side ending at b_end HOLDS there when a swing of the hold side (`flip.hold_kind`: above a
+        line / area broken down ⇒ a pullback low formed above it; mirror) formed inside that run and was CONFIRMED by b_end (bars ≤ b_end
+        only — no look-ahead). One to a few marginal closes there without such a swing = a sweep: still the approach from the break side.
+        edge(i) = the object's original-side edge at the 15M bar i; swings(b) = the structure's finest degree swings known by b (the
+        swings the K4 hold reads, `Levels._known0` — areas and lines alike). Comparison only."""
+        C = self.V.levels.A["close"]
+        if b_end < 0 or b_end >= len(C):
+            return False
+
+        def orig(i):
+            return (float(C[i]) - float(edge(i))) * d < 0
+        if not orig(b_end):
+            return False
+        r0 = int(b_end)
+        while r0 - 1 >= 0 and orig(r0 - 1):
+            r0 -= 1
+        hk = FL.hold_kind(d < 0)
+        return any(p.kind == hk and r0 <= int(p.bar) and int(p.confirm_bar) <= b_end and (float(p.price) - float(edge(int(p.bar)))) * d < 0
+                   for p in swings(int(b_end)))
+
+    def approach_side(self, u, form, start, edge, d, accepted=None):
         """DECISIONS 38 (live reading check, H2): the retest of an object broken DOWN (bear call) needs price to come back UP to it from
         BELOW and be rejected there; a candle coming DOWN from above (the object's original side, where price was accepted) and closing
         through it is a breakdown candle — never an E4 (b). Mirror for bull puts. edge(i) = the object's original-side edge at bar i (a
@@ -391,6 +413,9 @@ class Reader:
           • the revisit came from the break side — the close before the revisit's first bar is not beyond the original-side edge;
           • the rejection form's first candle opened from the break side — its open is not beyond the original-side edge (one-candle
             form: bar u; a two-candle form: its first candle).
+        DECISIONS 61 (BREAK-1): "where price was accepted" = price HELD there (accepted(i) — the caller's structure test at the closing
+        candle i, `accepted_on_original_side`); marginal closes on the original side without a swing held there are a sweep and the
+        approach still counts from the break side. accepted None (`break_hold_rule = swing_beyond`, what-if) ⇒ any close there blocks.
         None ⇒ ok, else why (a wait text). `e4b_approach_rule = any` = the earlier reading (no approach check, what-if)."""
         if self.approach_rule() == "any":
             return None
@@ -398,13 +423,16 @@ class Reader:
 
         def orig(x, i):                                                    # beyond the object on its ORIGINAL side (bear call: above)
             return (float(x) - float(edge(i))) * d < 0
+
+        def held(i):                                                       # accepted there (a hold), not a sweep (DECISIONS 61)
+            return accepted is None or (i >= 0 and bool(accepted(i)))
         word = "above" if d < 0 else "below"
         p = int(start) - 1
-        if p >= 0 and orig(C[p], p):
+        if p >= 0 and orig(C[p], p) and held(p):
             return (f"the revisit came from {word} the broken object (its original side, where price was accepted) — not a retest from "
                     f"the break side (DECISIONS 38, H2)")
         f0 = int(u) if form.get("form") in self.ONE_CANDLE_FORMS else int(u) - self.FORM_SPAN.get(form.get("form"), 1)
-        if f0 >= 0 and orig(O[f0], f0):
+        if f0 >= 0 and orig(O[f0], f0) and held(f0 - 1):
             return (f"the rejection candle came from {word} the broken object and closed through it — a breakout / breakdown candle, "
                     f"never an E4 (b) (DECISIONS 38, H2)")
         return None
@@ -730,6 +758,27 @@ class Reader:
             out.append(("line", ln, touch, away, aw_sw, int(k) + 1))
         return out
 
+    def acceptance(self, kind, obj, edge15, d, k_of=None):
+        """DECISIONS 61: accepted(i) for `approach_side` — price HELD on the object's original side at the closing candle i (k_of maps a
+        candle of another frame — 5M — to the last 15M bar closed with it). None under `break_hold_rule = swing_beyond` (what-if)."""
+        V = self.V
+        if FL.hold_rule(V.s) != "hold":
+            return None
+        k0 = getattr(V.levels, "_known0", None)                            # the structure's finest degree — areas and lines (BREAK-1)
+        if kind == "line" and k0 is None:                                  # no finest structure known (old callers) ⇒ the line's own
+            g = int(obj.get("degree") or V.s.get("level_degree", 2))       # degree
+
+            def swings(b, g=g):
+                return TL._known_deg(V, b, g)
+        else:
+            k0 = list(k0 or [])
+
+            def swings(b, k0=k0):
+                return [p for p in k0 if int(p.confirm_bar) <= b]
+        if k_of is None:
+            return lambda i: self.accepted_on_original_side(int(i), edge15, d, swings)
+        return lambda i: self.accepted_on_original_side(int(k_of[int(i)]), edge15, d, swings)
+
     def broken(self, t, d, keep=None, extra=None):
         """E4 (b) for every broken object of the trade direction ⇒ ([armed dicts], [fired at t]). keep(kind, obj) (model C: its own
         object filters C-b / C-d / C-e) ⇒ only the objects it keeps; None ⇒ all (today)."""
@@ -767,13 +816,14 @@ class Reader:
                 edge = (lambda i, e0=e0: e0)
             else:
                 edge = (lambda i, ln=obj: TL.line_value(ln, i))
+            acc = self.acceptance(kind, obj, edge, d)                      # DECISIONS 61: a sweep there is still the break-side approach
             first, appr_why = None, None
             for u in range(w0, t + 1):
                 if self.touch_visit(u, oid, born, touch, aw_sw, d) != start:
                     continue
                 r = self.rejection(u, d, lambda i: len(touch(i, i)) > 0, start, away)
                 if r is not None and self.retest_ok(u, r, touch, start, d) is None:
-                    why = self.approach_side(u, r, start, edge, d)
+                    why = self.approach_side(u, r, start, edge, d, accepted=acc)
                     if why is not None:                                    # a breakdown candle / a revisit from the original side
                         appr_why = why
                         continue

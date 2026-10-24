@@ -16,6 +16,13 @@ trade-बाजूला / पट्ट्यात; किंवा acceptance 
 (confirmed D2 pivot) close ने तुटला. जिवंत level snapshot मधून कधीच prune नाही (फक्त chart वर दूरची लपवा). `self` नियम नाही (K च्या टोकाचा level दुसऱ्या चाचणीला वैध).
 गुण: Daily confluence (+1), fresh (+1), अनेक चाचण्या (−0.5 प्रत्येक दुसऱ्या पासून), sweep ★; impulse retracement / trendline (C पायरी).
 
+BREAK-1 (Abhi, owner rule — DECISIONS 60 / 61 / 63, `break_hold_rule = hold`, default; areas AND lines alike): BROKEN = a close beyond
+  AND price HOLDS beyond — a swing of the hold side (`flip.hold_kind`: a pullback LOW above a resistance broken up, a pullback HIGH below a
+  support broken down) formed during the excursion and CONFIRMED while every close is still beyond, the confirming bar too (a bar that
+  makes the break known but has already closed back is no hold — the #373 lesson). A push beyond that turns back without holding is a
+  SWEEP ★ ("reclaimed": alive, role kept) — even when it went past the far-side swing: the flip waits for the hold. BROKEN, then broken
+  back (a close back on the role side + a hold swing there, the same test opposite) ⇒ DEAD (no "reclaim" back to the old role). Every
+  event is stamped at the bar it became KNOWN. `break_hold_rule = swing_beyond` = the earlier reading below (what-if).
 KB K4 flip rule (Abhi, final — `level_flip_rule` = "far_swing", default; decision3/flip.py). State per level, bar by bar (bars ≤ t only):
   ACTIVE / TESTED (tests ≥ 1) ──a close beyond AND a swing formed beyond (method §3)──▶ BROKEN  (old role kept; NOT a trade location —
   `active` skips it)
@@ -552,10 +559,15 @@ class Levels:
             st["start"] = t                                                # excursion सुरू (पहिला close पलीकडे)
         prev = L.facts_at(t)
         hist = {"flipped_at": prev.get("flipped_at")} if prev.get("flipped_at") is not None else {}
+        hold = self._hold()
         if st["brk"] or exc > 0 or beyond_close:                           # पलीकडे (≥ 1 close) ⇒ far swing पार? ⇒ FLIPPED
             fs = FL.far_swing(known, L.lo, L.hi, up, st["start"], C)
             src = FL.swing_source(fs, st["start"])
-            if fs is not None and FL.reached(src, fs.price, H[t] if up else Lo[t], up):   # Z-1s: post-break swing ⇒ its confirmation
+            hit = fs is not None and FL.reached(src, fs.price, H[t] if up else Lo[t], up)   # Z-1s: post-break swing ⇒ its confirmation
+            if hit and hold and not st["brk"]:                             # BREAK-1 (DECISIONS 60): reaching the far swing on a push that
+                st["reached"] = (fs, src)                                  # has not HELD beyond is no flip (a push back = a sweep) — the
+                hit = False                                                # flip waits for the hold (the break) on this excursion
+            if hit:
                 how = "past the far-side swing" if src == "before_break" else "the first swing after the break confirmed at"
                 if L.count("flip", t - 1) > 0:                             # Z-1f: flip नंतर जुनी भूमिका संपली ⇒ दुसरा flip नाही ⇒ DEAD
                     if not st["brk"]:
@@ -575,12 +587,28 @@ class Levels:
                     L.births.append("c")
                 L.flip_facts.append((t, {"broken_at": brk_at, "break_dir": 1 if up else -1, "exc_start": st["start"],
                                          "far_swing": {**self._swing_fact(fs), "source": src}, "flipped_at": t}))
-                st.update(brk=False, start=None, rc=0, back=None)
+                st.update(brk=False, start=None, rc=0, back=None, reached=None)
                 excursion[L.id] = 0
                 return
         if st["brk"]:
             back = (C[t] > L.hi) if role == SUP else (C[t] < L.lo)         # close परत भूमिकेच्या बाजूला, पट्ट्याबाहेर
             st["rc"] = st["rc"] + 1 if back else 0
+            if hold:                                                       # BREAK-1: broken back = the same test opposite ⇒ DEAD. A close
+                if not back:                                               # back on the role side (outside the band) starts the attempt;
+                    st["back"] = None                                      # it HOLDS there when a swing of the hold side (a pullback low
+                elif st.get("back") is None:                               # above a support broken down, mirror) forms from that close on
+                    st["back"] = t                                         # and is confirmed while every close is still back — the
+                sw = (self._swing_beyond(L, st["back"], not up, t, kind=FL.hold_kind(not up))   # confirming bar too; a close inside /
+                      if st.get("back") is not None else None)             # beyond again first ends it (a sweep of the retest: still BROKEN)
+                if sw is not None:
+                    L.events.append((t, "dead", f"broken back: closed back on the {role} side and held there (a swing formed there, "
+                                                f"{sw.price:,.2f}) ⇒ dead (BREAK-1: broken back ⇒ dead, no second flip)"))
+                    L.flip_facts.append((t, {**L.facts_at(t), "dead_at": t, "dead_rule": "broken_back",
+                                             "dead_swing": self._swing_fact(sw)}))
+                    L.dead_bar = t
+                    st.update(brk=False, start=None, rc=0, back=None, reached=None)
+                excursion[L.id] = 0
+                return
             if self._structural_break():                                   # method §3, the break's mirror: a close back on the role side
                 if back and st.get("back") is None:                        # (outside the band) starts the attempt; a swing formed there,
                     st["back"] = t                                         # confirmed by bar t, completes it — even when bar t itself
@@ -600,9 +628,9 @@ class Levels:
             excursion[L.id] = 0
             return
         structural = self._structural_break()
-        if structural and exc > 0 and st["start"] is not None:            # method §3: a swing formed beyond during the excursion ⇒ BROKEN
-            sw = self._swing_beyond(L, st["start"], up, t)
-            if sw is not None:
+        if structural and exc > 0 and st["start"] is not None and (beyond_close or not hold):   # method §3 / BREAK-1 ⇒ BROKEN
+            sw = self._swing_beyond(L, st["start"], up, t, kind=FL.hold_kind(up) if hold else None)   # hold: the far side's own
+            if sw is not None:                                             # swing (a pullback low above / high below), bar t still beyond
                 fs = FL.far_swing(known, L.lo, L.hi, up, st["start"], C)
                 if self._dead_on_break(L, t):                              # C lifecycle: flipped once, broken again ⇒ DEAD (no 2nd flip)
                     self._dead(L, t, f"closed beyond the band and a swing formed beyond it ({sw.price:,.2f})", fs, excursion)
@@ -616,6 +644,21 @@ class Levels:
                 # formed there from bar t on can complete it (K4 reclaim; was: the attempt only from bar t + 1, the swing at t lost)
                 st.update(brk=True, rc=0, back=t if ((C[t] > L.hi) if role == SUP else (C[t] < L.lo)) else None)
                 excursion[L.id] = 0
+                if hold and st.get("reached") is not None:                # BREAK-1: the far swing was reached on this excursion before
+                    fs, src = st["reached"]                                # it held ⇒ the flip is known now, with the hold (the break)
+                    how = "past the far-side swing" if src == "before_break" else "the first swing after the break confirmed at"
+                    if L.count("flip", t - 1) > 0:                         # far_swing what-if only (broken_again killed it above)
+                        L.events.append((t, "dead", f"flipped zone broken again, {how} {fs.price:,.2f} ({src}) ⇒ dead (no second flip)"))
+                        L.flip_facts.append((t, {**L.facts_at(t), "dead_at": t, "dead_far_swing": self._swing_fact(fs)}))
+                        L.dead_bar = t
+                        return
+                    new_role = SUP if up else RES
+                    L.events.append((t, "flip", f"{how} {fs.price:,.2f}, held beyond ⇒ {new_role}"))
+                    if "c" not in L.births:
+                        L.births.append("c")
+                    L.flip_facts.append((t, {"broken_at": t, "break_dir": 1 if up else -1, "exc_start": st["start"],
+                                             "far_swing": {**self._swing_fact(fs), "source": src}, "flipped_at": t}))
+                    st.update(brk=False, start=None, rc=0, back=None, reached=None)
                 return
         if beyond_close:
             exc += 1
@@ -634,6 +677,7 @@ class Levels:
             L.events.append((t, "sweep", "wick पलीकडे, close परत" if exc == 0 else f"{exc} close(s) पलीकडे, परत आत"))
             exc = 0
             st["start"] = None
+            st["reached"] = None                                           # BREAK-1: a sweep — the far swing reached on it is no flip
         excursion[L.id] = exc
 
     def _dead_on_break(self, L, t):
@@ -660,11 +704,18 @@ class Levels:
             raise ValueError(f"break_rule {rule!r} — structure / closes पैकी")
         return rule == "structure"
 
-    def _swing_beyond(self, L, start, up, t):
+    def _hold(self):
+        """BREAK-1 (DECISIONS 60): the hold test applies under the structural break rule (`break_hold_rule = hold`, default)."""
+        return FL.hold_rule(self.s) == "hold" and self._structural_break()
+
+    def _swing_beyond(self, L, start, up, t, kind=None):
         """A swing (the finest structure, confirmed by bar t) formed at or after `start` whose extreme lies beyond the band on the given
-        side (up ⇒ above hi, else below lo). None if no such swing yet. Bars ≤ t only."""
+        side (up ⇒ above hi, else below lo); kind ⇒ only that swing kind (BREAK-1: the hold side's own swing, `flip.hold_kind`; the
+        structure's finest degree — Abhi's approved D1, D0 = wiggles; OPEN_QUESTIONS A-L1). None if no such swing yet. Bars ≤ t only."""
         for p in reversed(getattr(self, "_known0", [])):
             if p.confirm_bar > t:
+                continue
+            if kind is not None and p.kind != kind:
                 continue
             if p.bar < start:                                              # confirm order ≠ bar order in general ⇒ check every swing
                 continue

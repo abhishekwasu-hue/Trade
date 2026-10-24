@@ -2,6 +2,7 @@
 from types import SimpleNamespace as NS
 
 import numpy as np
+import pytest
 
 from decision3 import settings as S3
 from decision3 import trendline as TL
@@ -48,6 +49,7 @@ def test_mirror_up_trend():
     assert tl["broken"] and tl["slope"] < 0
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_only_the_commitment_candle_closing_through_is_the_break():
     """Method §3 trigger form + K6.5 (line_rule = logic): the correction's own line triggers when bar t (the commitment candle) closes
     through it. Before t the line is gone only by a close beyond AND a swing formed beyond (broken_before); a close that came back is a
@@ -97,6 +99,7 @@ def test_tl_break_is_evidence_not_gate():
     assert M.conviction({**ev, "tl_break": True}, S)[1] >= a[1]
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_broken_by_names_the_close_that_began_the_excursion_the_swing_confirmed():
     """K6.5: poke beyond, back, then a close beyond that a swing beyond confirms ⇒ the break is that second close (not the earlier
     throw-over); no swing beyond ⇒ never broken. Mirror (side −1)."""

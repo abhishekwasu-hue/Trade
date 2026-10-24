@@ -545,6 +545,9 @@ class Reader5(EM.Reader):
                 edge = (lambda i, ln=obj: F.line_value(ln, i))
                 away = (lambda i, ln=obj: self.A5["close"][i] < F.line_value(ln, i)) if d < 0 else \
                     (lambda i, ln=obj: self.A5["close"][i] > F.line_value(ln, i))
+            edge15 = (lambda i, e0=float(obj["hi"]) if d < 0 else float(obj["lo"]): e0) if kind == "area" else \
+                (lambda i, ln=obj: TL.line_value(ln, i))
+            acc = self.acceptance(kind, obj, edge15, d, k_of=F.k_of)       # DECISIONS 61: held there on the 15M structure
             first, appr_why = None, None
             for u in range(w0, j + 1):
                 if self.touch_visit5(u, oid, born5, int(born), touch, aw_sw, d) != start:
@@ -554,7 +557,7 @@ class Reader5(EM.Reader):
                     r = self.rejection5(u, d, lambda i: len(touch(i, i)) > 0, start, away)
                     res = (None, None)
                     if r is not None and c5.retest_ok(u, r, touch, start, d) is None:
-                        res = (r, c5.approach_side(u, r, start, edge, d))
+                        res = (r, c5.approach_side(u, r, start, edge, d, accepted=acc))
                     self.memo[key] = res
                 r, why = self.memo[key]
                 if r is None:

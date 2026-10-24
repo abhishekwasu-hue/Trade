@@ -203,3 +203,14 @@ def _no_gate_error_telegram(monkeypatch):
     monkeypatch.setattr(_GA, "_sender", lambda: (lambda line: False))
     _GA._SEEN.clear()
     _GA._FAILED.clear()
+
+
+@pytest.fixture
+def earlier_break_reading(monkeypatch):
+    """BREAK-1 (owner-orders DECISIONS 60 / 69): the default is `break_hold_rule = hold`. Tests written for the earlier reading (any
+    swing beyond — the push's own extreme counted; a broken area broken back = reclaimed) run on the what-if `swing_beyond`, which
+    reproduces that reading exactly; the default is covered by tests/test_break_hold.py."""
+    from decision3 import flip as FL
+    from decision3 import settings as S3
+    monkeypatch.setitem(S3.DEFAULTS, "break_hold_rule", "swing_beyond")
+    monkeypatch.setattr(FL, "hold_rule", lambda s=None: "swing_beyond")   # settings dicts loaded at import time read it too

@@ -1477,3 +1477,34 @@ without holding = a SWEEP (object alive); broken back ⇒ DEAD by the same test;
 A visit also ends when its object becomes BROKEN under BREAK-1 (b) — at the bar the break became known (N07, after A1 lands). An object
 not broken, with one directional leg away and no confirmed turn yet: the visit may stay open until the next confirmed swing, but no
 model entry and no RSI read comes from that open visit while price is away from the area (proof case D11). RSI judged only after C1.
+
+<!-- moved from branch `lifecycle` at the integ51 merge (DECISIONS 70: archive, never delete) -->
+
+## Gallery review A — the area / line lifecycle under BREAK-1 (A1–A4, A8; branch `lifecycle`; report docs/reports/gallery_review_fixes.md §A)
+BREAK-1 is the owner rule (DECISIONS 60 / 69 — not open). Built as `break_hold_rule = hold` (default; `swing_beyond` = the earlier
+reading, what-if only): BROKEN = a close beyond + a swing of the HOLD side (a pullback low above / high below) confirmed while every
+close is still beyond (the confirming bar too); a push back without that = a sweep (alive, "reclaimed"); broken back ⇒ DEAD (areas as
+lines; no "reclaim" to the old role); the flip waits for the hold; the E4 (b) approach side allows a sweep (DECISIONS 61); stamps at the
+bar KNOWN (DECISIONS 63). Provisional choices, checked against DECISIONS 23 / 27 / 38 / 39 / 60 / 61 / 63 / 65 / 69, CLAUDE.md
+("Sweep / fakeout", "An area flips only once", "E4 (b)") and the method doc (Area lifecycle):
+- **A-L1 (needs Abhi — golden conflict, STOPPED for the lead):** the degree of the hold swing. Default = the structure's finest degree
+  (Abhi's approved D1, the swings the K4 break always read; method §3 "small wiggles inside a leg are not swings"), for areas AND lines
+  (a 1H line's own D2 almost never shows a pullback on the far side). On D1, Abhi's own example 2.17 ("the textbook break-side retest,
+  20 Jul 14:15") is NOT broken: the 20 Jul pullback high below the line (57,838, 10:30) is a D0 turn only. On D0 (every 15M turn) 2.17
+  is broken (20 Jul 09:15, held) and X01 / 2.3 / 2.4 stay sweeps — but the NIFTY 12 / 13 Oct golden zone 22,544–22,622 no longer
+  exists at 12 Oct (7 golden tests in tests/test_decision3_flip.py fail). On D1 two golden tests fail (below). Golden expectations not
+  edited; the lead / Abhi decide the degree.
+- **A-L2 (golden conflict, reported):** NIFTY 29 Sep (Z-1s): the 22,725–22,810 Daily supply broke to new lows and the 12:00 rally came
+  back into it with no pullback high held below ⇒ under BREAK-1 a sweep (never broken / flipped); the golden expects broken 11:00 /
+  flipped 11:30 and the 12:00 / 12:15 pullback read at the flipped zone. The synthetic replica tests/oct12_fixture.py (a support
+  broken by new lows, no hold) fails the same way. Both tests left failing, not edited.
+- **A-L3:** BROKEN, then broken back with a hold ⇒ DEAD for areas too (A1 "BROKEN BACK ⇒ DEAD … identically to areas and lines");
+  the earlier area "reclaim" (back to the old role) exists only in the what-if.
+- **A-L4:** not changed (outside the area / line objects, log only): model C's O death (`model_c`, OFF by default; DECISIONS 32 wording
+  "a close beyond O plus a swing beyond O"), the pattern boundary break (`patterns_pa`), the display band finder `levels.band_flip_facts`
+  (facts.validity breaks; not used by the decision). Each still reads the earlier "swing beyond".
+- **A-L5:** N01 (Daily 81, Apr–May "sweeps ×12" while price stayed beyond): the replay build has no swings before 13 May (swings2
+  warm-up from the 13 Apr data start), so neither reading can see a hold there — a data / warm-up limit, not a lifecycle rule. N03
+  (Daily 288, 5–7 Aug) shows no lifecycle event in either reading (price stayed inside the wide band).
+- **A-L6:** tests written for the earlier reading run on the what-if (`earlier_break_reading` fixture, tests/conftest.py), which
+  reproduces it exactly; the default is pinned by tests/test_break_hold.py (both mirrors, cut = full no-look-ahead).

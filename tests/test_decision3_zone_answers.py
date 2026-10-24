@@ -712,6 +712,7 @@ def _zone(lv, f):
 
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["resistance-up", "support-down"])
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_structural_break_needs_a_swing_formed_beyond_the_area(mirror):
     """Abhi's method §3: broken = a close beyond AND a swing formed beyond; a poke that returns inside before any swing forms beyond is
     a sweep (role kept). No count of closes. Mirror: support breaking down."""
@@ -728,6 +729,7 @@ def test_structural_break_needs_a_swing_formed_beyond_the_area(mirror):
         LV.Levels(res_of(m, [P("H", 118, 8, 10)]), s={"break_rule": "two_closes"})
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_a_d0_wiggle_beyond_the_area_is_not_a_swing_for_the_break():
     """Method §3 "small wiggles inside a leg are not swings": the swing formed beyond must be of the structure (Abhi's approved D1 / D2,
     swings2 `structure_degrees`). The same turn beyond the band only at D0 ⇒ sweep; at D1 ⇒ broken."""
@@ -741,6 +743,7 @@ def test_a_d0_wiggle_beyond_the_area_is_not_a_swing_for_the_break():
 
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["resistance", "support"])
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_structural_reclaim_mirrors_the_break(mirror):
     """The break's mirror (OPEN_QUESTIONS L2-b): a BROKEN area is reclaimed by a close back on its role side (outside the band) AND a
     swing formed there. Like the break, the swing counts when it is confirmed on a bar that itself closes back inside the band; a close

@@ -108,6 +108,7 @@ PIN15_C = {"abc": "3905ff9e46015ce67f6a6b7adc3d5889177698240a4fbc3953741390218e9
 
 
 @pytest.mark.parametrize("name", sorted(PIN15))
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_15m_path_is_byte_identical_to_the_code_before_the_5m_build(name):
     """trigger_tf = 15M (what-if) = today's decide(t), byte for byte; decide(t) never reads trigger_tf (the 5M default changes only
     decide5, the live loop and the card)."""
@@ -256,6 +257,7 @@ def test_e4a_on_5m_sweep_and_the_failed_5m_push(mirror):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_e4b_on_5m_rejection_at_the_broken_area_from_the_break_side(mirror):
     rows = [(103.0, 103.2, 101.8, 102.0, 1.0), (102.0, 102.1, 99.0, 99.2, 1.0), (99.2, 99.3, 97.0, 97.2, 1.0),
             (97.2, 98.6, 97.1, 98.5, 1.0), (98.5, 99.6, 98.4, 99.5, 1.0), (99.5, 100.6, 99.4, 100.3, 1.0),

@@ -62,6 +62,7 @@ def _line_case(mirror, monkeypatch, swing_back=True, rows=None):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_a_broken_line_broken_back_with_a_swing_is_no_e4b_object(mirror, monkeypatch):
     V, ln, d = _line_case(mirror, monkeypatch)
     assert TL.broken_back_at(V, ln, 7) is None                             # the swing back (bar 6) is not confirmed before bar 8
@@ -103,6 +104,7 @@ def test_broken_back_needs_a_broken_line():
 
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["resistance", "support"])
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_reclaim_counts_the_close_back_on_the_breaks_own_confirming_bar(mirror):
     """resistance 116.3–118 broken up (closes above, the swing 120.5 at bar 20 confirmed at bar 22). Bar 22 — the bar that makes the
     break known — itself closes back BELOW the band, and a swing low forms at bar 22 (confirmed at 24) while the closes stay below ⇒
@@ -140,15 +142,16 @@ def _chan_case(mirror, rows, swing_back=True):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_channel_label_follows_broken_back_at(mirror):
     """Display (OPEN_QUESTIONS "Reading checks — E4a and E4b", Open (display only)): `channels()` labelled a line broken back by
     structure "retest of the broken … line"; the label now follows `broken_back_at` (DECISIONS 39). Before the swing back is confirmed
     (bar 7) and for a sweep of the retest (no swing back) the retest label stays."""
     nm = "upper" if mirror else "lower"
     A, known, ln = _chan_case(mirror, ROWS)
-    st = lambda t: TL.channels_on(A, [p for p in known if p.confirm_bar <= t], [ln], t, 2)[0]["state"]   # noqa: E731
-    assert TL.broken_back_on(A["close"], known, ln, 9) == 5
+    st = lambda t: TL.channels_on(A, [p for p in known if p.confirm_bar <= t], [ln], t, 2, "swing_beyond")[0]["state"]   # noqa: E731
+    assert TL.broken_back_on(A["close"], known, ln, 9, "swing_beyond") == 5
     assert st(7) == f"retest of the broken {nm} line"                      # bar 7: the swing back is not confirmed yet (no look-ahead)
     assert st(REJECT).startswith(f"{nm} line broken, then broken back") and "retest" not in st(REJECT)
     A2, known2, ln2 = _chan_case(mirror, SWEEP_ROWS, swing_back=False)
-    assert TL.channels_on(A2, known2, [ln2], REJECT, 2)[0]["state"] == f"retest of the broken {nm} line"
+    assert TL.channels_on(A2, known2, [ln2], REJECT, 2, "swing_beyond")[0]["state"] == f"retest of the broken {nm} line"

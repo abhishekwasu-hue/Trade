@@ -48,6 +48,7 @@ def _reader(m, lv, mirror):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_flipped_area_broken_again_with_a_swing_beyond_is_dead_no_second_flip(mirror):
     m, lv, Z = _case(mirror)
     assert S3.DEFAULTS["flip_dead_rule"] == "broken_again"
@@ -61,6 +62,7 @@ def test_flipped_area_broken_again_with_a_swing_beyond_is_dead_no_second_flip(mi
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_flipped_area_swept_back_without_a_swing_beyond_stays_flipped(mirror):
     """Handover T-2: flip → a sweep back (a close beyond the flipped area, no swing formed beyond, then back) ⇒ still FLIPPED, alive."""
     f, sw = _mirror(mirror)
@@ -77,6 +79,7 @@ def test_flipped_area_swept_back_without_a_swing_beyond_stays_flipped(mirror):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_dead_area_gives_no_e4b_retest_while_the_far_swing_what_if_still_does(mirror, monkeypatch):
     """The replayed worst loss: a flipped area broken back, then retested from the other side with a rejection. Default ⇒ dead, no
     E4 (b). The earlier reading (`flip_dead_rule = far_swing`) keeps it BROKEN and fires the E4 (b) at the rejection bar."""
@@ -96,6 +99,7 @@ def test_dead_area_gives_no_e4b_retest_while_the_far_swing_what_if_still_does(mi
         assert all(a["area_id"] != Z.id for a in armed) and all(f["obj"]["area_id"] != Z.id for f in fired)
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_flip_dead_rule_is_registered_and_checked():
     assert S3.REGISTER["flip_dead_rule"][0] == S3.DEFAULTS["flip_dead_rule"] == "broken_again"
     m = m15_from(CLOSES, wick=0.3)
