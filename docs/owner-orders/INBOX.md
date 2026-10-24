@@ -1075,3 +1075,12 @@ Then: merge into the integration branch → PR → CI → C (RSI), then D + E. N
 ---
 ## 24 Oct — answer key attached
 answer_key_batch1_v3.json (8 lifecycle items L01–L08, rule "BREAK-2") — stored privately at trade-data review/answer_key/answer_key_batch1_v3.json
+
+---
+## 24 Oct — R6 trend direction and reclaimed objects
+R6 Trend direction and reclaimed objects:
+- Trades are taken only in the trend direction (the reader's existing Daily side; no new rule). Confirm that the side gate applies to EVERY entry model, including E4(a) and E4(b); list any path that bypasses it.
+- E4(b) retest of a BROKEN object only when that break was in the trend direction. The retest of a break against the trend is not traded (most counter-trend breaks fail; the with-trend trade there is the E4(a) fade of the false break).
+- If a counter-trend break turns the trend (confirmed structure break in the new direction on the trend TF, per the existing Daily-side logic), the new direction applies from that bar; no look-ahead.
+- In a range (no trend), only edge fades: bull put at the lower edge, bear call at the upper edge; no breakout-retest entries until the trend TF confirms a direction.
+- Reclaimed object: before BROKEN is confirmed, a return inside = FALSE BREAK (object alive, original role). After BROKEN, a return inside = retest of the flipped object; a break back by the R2 test ⇒ DEAD. A confirmed-broken object is never restored to its original role.

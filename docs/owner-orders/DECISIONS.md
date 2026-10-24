@@ -217,3 +217,9 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
 79. Refined base = the ORIGIN base of the area on 15M (the candle(s) inside the higher-TF base from which the departure move started),
     wick-to-body; never a later test / turn candle that merely touched the area; invalidation = its far edge. (Owner rule;
     replaces DECISIONS 63's "newest 15M turn" / A7-1)
+80. Trend direction (R6): every entry model (E1–E4 incl. E4 (a) / E4 (b)) trades only in the reader's existing Daily side; E4 (b)
+    retests only a break that was in the trend direction (a counter-trend break is not retested — its with-trend trade is the E4 (a)
+    fade of the false break); a counter-trend break that turns the trend by the existing Daily-side logic applies from that bar (no
+    look-ahead); in a range (no trend) only edge fades (bull put at the lower edge, bear call at the upper edge), no breakout-retest
+    entries until the trend TF confirms a direction. Reclaimed object: before BROKEN a return inside = FALSE BREAK (alive, original
+    role); after BROKEN a return inside = retest of the flipped object; broken back by the R2 test ⇒ DEAD; never restored. (Owner rule)
