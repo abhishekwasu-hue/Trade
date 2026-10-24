@@ -158,10 +158,92 @@ def mark_data_problems(df, symbol, tf, path=DATA_PROBLEMS, finer=None, detect=Tr
     out["data_problem"] = ""
     if detect and len(out):
         out.loc[close_print_mask(out, tf, finer), "data_problem"] = CLOSE_PRINT
-    for r in data_problems(symbol, path):
+    rows = data_problems(symbol, path) if symbol else [r for r in data_problems(None, path) if r["symbol"] == "ALL"]
+    for r in rows:                                                        # no symbol ⇒ only the rule-detected (ALL) problems
         b = (r.get("bars") or {}).get(tf)
         if b is not None:
             out.loc[ts == np.datetime64(pd.Timestamp(b)), "data_problem"] = r["id"]
+    return out
+
+
+def ensure_marked(m15, finer=(), symbol=None):
+    """DECISIONS 84 / 87 (DP-2: the flags apply in replays as in live — the same V22 path for both): `m15` with the `data_problem`
+    column — the marks it already carries (live marks the 15M from the 5M at the source, engine3_live.mark_close_prints) kept, plus
+    every 15M bar the rule detector finds from each `finer` frame of the same instrument (the 5M LTF, the 1m spot: the 15M bar that
+    holds the flat run + the print). Never changes a price, never drops a bar; unflagged data reads identical."""
+    if m15 is None or not len(m15):
+        return m15
+    fr = [f for f in (finer if isinstance(finer, (list, tuple)) else [finer]) if f is not None and len(f)]
+    had = "data_problem" in m15.columns
+    out = m15 if had else mark_data_problems(m15, symbol, "15M", finer=fr[0] if fr else None)
+    rest = fr if had else fr[1:]
+    if rest:
+        out = out.copy()
+        free = out["data_problem"].fillna("").astype(str).eq("").to_numpy()
+        for f in rest:
+            hit = close_print_mask(out, "15M", f) & free
+            out.loc[hit, "data_problem"] = CLOSE_PRINT
+            free = free & ~hit
+    return out
+
+
+AUCTION_EXTENDED = "DP-3"                # data_problems.json: a Daily bar whose closing-auction print lies beyond the traded range
+
+
+def auction_extended_bars(intraday):
+    """DECISIONS 87: bool array over `intraday` (marked: `data_problem`) — the data-problem bars whose close (the closing-auction print)
+    lies beyond the session's TRADED range (its unmarked bars + the flat value before the print). Such a close is not traded price
+    action: it never counts as a close beyond / back inside an object (a print inside the traded range is the session's real close and
+    counts). Comparison only."""
+    n = 0 if intraday is None else len(intraday)
+    m = np.zeros(n, dtype=bool)
+    dp = dp_mask(intraday)
+    if not n or len(dp) != n or not dp.any():
+        return m
+    day = _naive_ts(intraday["timestamp"]).dt.normalize().to_numpy()
+    o, h, l, c = (intraday[x].to_numpy(float) for x in ("open", "high", "low", "close"))
+    th, tl = np.where(dp, o, h), np.where(dp, o, l)
+    for i in np.flatnonzero(dp):
+        same = day == day[i]
+        m[i] = c[i] > th[same].max() or c[i] < tl[same].min()
+    return m
+
+
+def mark_auction_extended(daily, intraday):
+    """DECISIONS 87 (owner rule, DP-1 of 24 Oct): a Daily bar whose official close (the closing-auction print) lies beyond the session's
+    TRADED high / low keeps that close as its Daily close and is flagged "auction-extended" (`auction_extended` True, `data_problem`
+    AUCTION_EXTENDED); its high (print above) / low (print below) becomes the traded extreme, so the auction-only extension never
+    defines a Daily swing extreme or a zone edge (wick to body clamps to the swing price). The official values stay in `print_high` /
+    `print_low`. Traded range = the session's intraday bars (`intraday`, marked: `data_problem`) that are not data-problem bars, plus
+    the open of a marked bar (the flat value before the print). A session without intraday bars is read as given (no evidence ⇒ no
+    flag). Comparison only; nothing else changes."""
+    out = daily.copy().reset_index(drop=True)
+    out["print_high"], out["print_low"] = out["high"].astype(float), out["low"].astype(float)
+    out["auction_extended"] = False
+    if "data_problem" not in out.columns:
+        out["data_problem"] = ""
+    if intraday is None or not len(intraday) or not len(out):
+        return out
+    x = pd.DataFrame({"day": _naive_ts(intraday["timestamp"]).dt.normalize().to_numpy(),
+                      "high": intraday["high"].to_numpy(float), "low": intraday["low"].to_numpy(float),
+                      "open": intraday["open"].to_numpy(float)})
+    dp = dp_mask(intraday)
+    dp = dp if len(dp) == len(x) else np.zeros(len(x), dtype=bool)
+    x["th"] = np.where(dp, x["open"], x["high"])
+    x["tl"] = np.where(dp, x["open"], x["low"])
+    g = x.groupby("day").agg(th=("th", "max"), tl=("tl", "min"), n_dp=("th", lambda s: int(dp[s.index].sum())))
+    days = _naive_ts(out["timestamp"]).dt.normalize()
+    th = days.map(g["th"]).to_numpy(float)
+    tl = days.map(g["tl"]).to_numpy(float)
+    nd = days.map(g["n_dp"]).fillna(0).to_numpy(float)
+    c = out["close"].to_numpy(float)
+    up = np.isfinite(th) & (nd > 0) & (c > th)
+    dn = np.isfinite(tl) & (nd > 0) & (c < tl)
+    out.loc[up, "high"] = th[up]
+    out.loc[dn, "low"] = tl[dn]
+    ext = up | dn
+    out.loc[ext, "auction_extended"] = True
+    out.loc[ext & out["data_problem"].fillna("").astype(str).eq(""), "data_problem"] = AUCTION_EXTENDED
     return out
 
 

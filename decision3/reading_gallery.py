@@ -406,12 +406,18 @@ def geometry(V, c):
                 g["events"].append((T(L.base_bar), "base", f"base candle ({L.tf} {L.role0})"))
             for b, kind, _w in L.events:
                 if int(b) <= k and kind != "test":
-                    g["events"].append((T(b), kind, {"broken": "broken (close beyond + held: a swing beyond)", "flip": "flipped (role changed)",
-                                                      "reclaim": "reclaimed (break failed — alive)", "dead": "dead",
-                                                      "sweep": "sweep (reclaimed — alive)"}.get(kind, kind)))
+                    g["events"].append((T(b), kind, {"broken": "broken (follow-through: a close beyond the next external swing)",
+                                                      "flip": "flipped (role changed)",
+                                                      "beyond": "BEYOND_NOT_BROKEN (closed beyond, outcome unknown)",
+                                                      "reclaim": "FALSE BREAK (closed back inside — alive)", "dead": "dead",
+                                                      "sweep": "false break (back inside — alive)"}.get(kind, kind)))
             if L.dead_bar is not None and L.dead_bar <= k and not any(x[1] == "dead" for x in g["events"]):
                 g["events"].append((T(L.dead_bar), "dead", "dead"))
             g["tests"] = sum(1 for b, kind, _ in L.events if kind == "test" and int(b) <= k)
+            try:                                                           # DECISIONS 89: extremes made while testing the object
+                g["fbx"] = V.levels.false_break_extremes(L, k)
+            except (AttributeError, IndexError, KeyError, TypeError, ValueError):   # display only — never blocks a chart
+                g["fbx"] = []
         role = {"resistance": "supply", "support": "demand"}.get(str(g["role"]), str(g["role"]))
         g["label"] = (f"{'broken ' if obj == 'broken_area' else ''}{g['tf']} {role} area {px(g['lo'])}–{px(g['hi'])} "
                       f"({str(g['state'] or '').lower()})")
@@ -768,6 +774,15 @@ def render_case(V, sym, c, out_png, g=None):
                     continue
                 p.L.text(xe, ylim[0] + (ylim[1] - ylim[0]) * 0.04, f" {word}\n {pd.Timestamp(ts_e):%d %b %H:%M}", color=col, fontsize=7,
                          prefer=1, bbox=dict(fc="white", ec=col, alpha=0.88, lw=0.6, pad=1.2))
+            for x in g.get("fbx") or []:                                   # DECISIONS 89: "FALSE BREAK extreme", never a swing high / low
+                if x.get("ts") is None or pd.Timestamp(x["ts"]) < pd.Timestamp(p.ts[0]):
+                    continue
+                xe = p.x(x["ts"])
+                if xe >= p.nb:
+                    continue
+                p.ax.plot([xe], [x["price"]], marker="x", ms=7, mew=1.6, color=EVC.get("reclaim", "#e8590c"), zorder=12)
+                p.L.text(xe, x["price"], f" {x['label']}", color=EVC.get("reclaim", "#e8590c"), fontsize=7, weight="bold",
+                         va="bottom" if x["kind"] == "H" else "top")
             nsw = sum(1 for x in g["events"] if x[1] == "sweep")
             if nsw and tf == "1H":
                 p.L.text(0, ylim[0] + (ylim[1] - ylim[0]) * 0.16, f" sweeps of the area known at the decision: {nsw} (grey dotted)",
@@ -811,7 +826,8 @@ def render_case(V, sym, c, out_png, g=None):
     lines = [f"{sym} #{c['n']} · decision = 5M close {g['dec']:%Y-%m-%d %H:%M} (the 15M context bar closed {pd.Timestamp(V.bar_end.iloc[g['k']]):%d %b %H:%M})"
              + (f" · approached from {g['approach']['from']}" if g.get("approach") else ""),
              f"Object: {g['label']} · lifecycle known at the decision: {lc}" + (f"; sweeps {nsw}" if nsw else "")
-             + (f"; tests {g.get('tests')}" if g.get("tests") else "")]
+             + (f"; tests {g.get('tests')}" if g.get("tests") else "")
+             + (f"; {', '.join(x['label'] for x in g['fbx'][-3:])}" if g.get("fbx") else "")]
     if e:
         lines.append(f"Entry: {e.get('model')} {e.get('name')} {side} at {px(e.get('entry_ref'))} · invalidation "
                      f"{px((g.get('inv') or {}).get('price'))} ({(g.get('inv') or {}).get('rule') or ''}) · next area "

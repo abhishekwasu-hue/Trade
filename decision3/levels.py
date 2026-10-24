@@ -161,6 +161,9 @@ def place_uid(tf, kind, base_ts):
     return f"{tf}:{kind}:{t.strftime('%Y-%m-%d %H:%M') if tf == '1H' else t.strftime('%Y-%m-%d')}"
 
 
+FALSE_BREAK_EXTREME = "FALSE BREAK extreme"   # DECISIONS 89: the label of an extreme made while price tests an object (internal)
+
+
 def h1_frame(m15):
     """15M ⇒ 1H (09:15-anchored) आणि प्रत्येक 15M bar चा 1H index."""
     t = pd.to_datetime(m15["timestamp"])
@@ -221,6 +224,9 @@ class Levels:
         self.n = len(m15)
         self.A = {k: m15[k].to_numpy(float) for k in ("open", "high", "low", "close")}
         self.dp = HI.dp_mask(m15)                                          # DECISIONS 84: data-problem bars (never a base)
+        self.ax = HI.auction_extended_bars(m15) if len(self.dp) == self.n else np.zeros(self.n, dtype=bool)   # DECISIONS 87: a
+        if self.ax.any():                                                  # closing-auction print beyond the traded range never counts
+            self.A["ax"] = self.ax                                         # as a close in a lifecycle (areas here, lines: trendline)
         self.ts = pd.to_datetime(m15["timestamp"]).reset_index(drop=True)
         self.bar_end = pd.to_datetime(m15["bar_end"]).reset_index(drop=True) if "bar_end" in m15.columns else \
             self.ts + pd.Timedelta(minutes=15)
@@ -539,8 +545,9 @@ class Levels:
                         L.prov[-1] = (L.prov[-1][0], t)                    # PF-2: provisional width ends (σ_1H known)
                 prov.clear()
             # आधीचे levels: चाचणी / sweep / flip / मृत्यू (जन्म bar नंतरच)
-            for L in self.L:
-                if not L.alive(t) or L.born_bar >= t:
+            dpt = bool(self.ax[t])                                         # DECISIONS 87: an auction-extended close (the print beyond
+            for L in self.L:                                               # the traded range) never counts as a test, a close beyond
+                if not L.alive(t) or L.born_bar >= t or dpt:               # or a close back inside (no lifecycle event)
                     continue
                 role = L.role_at(t - 1)
                 inside = Lo[t] <= L.hi and H[t] >= L.lo
@@ -782,11 +789,13 @@ class Levels:
                     cb = -1 if ka < ts15[0] else int(np.searchsorted(be, ka, side="left"))
                     if cb >= self.n:
                         continue
-                    out.append(NS(kind=p.kind, price=float(p.price), bar=b15, confirm_bar=cb, close=float(dd["close"].iloc[int(p.bar)])))
+                    out.append(NS(kind=p.kind, price=float(p.price), bar=b15, confirm_bar=cb, close=float(dd["close"].iloc[int(p.bar)]),
+                                  clo=float(dd["low"].iloc[int(p.bar)]), chi=float(dd["high"].iloc[int(p.bar)]), h1=None))
         else:
             deg = getattr(self, "_fin_deg", None)
             src = self.res["pivots"].get(deg) if deg is not None else None
-            out = [NS(kind=p.kind, price=float(p.price), bar=int(p.bar), confirm_bar=int(p.confirm_bar), close=float(C[int(p.bar)]))
+            out = [NS(kind=p.kind, price=float(p.price), bar=int(p.bar), confirm_bar=int(p.confirm_bar), close=float(C[int(p.bar)]),
+                      clo=None, chi=None, h1=int(self.h1_of[int(p.bar)]))
                    for p in (src if src else self._pv_sorted)]
         memo[tf] = out = sorted(out, key=lambda p: (p.confirm_bar, p.bar))
         return out
@@ -798,7 +807,8 @@ class Levels:
         (swing, source) or (None, None) — none yet ⇒ BEYOND_NOT_BROKEN. Bars ≤ t only."""
         lo, hi = L.band_at(t)
         kind = "H" if up else "L"
-        bey = [p for p in self._own_swings(L.tf) if p.confirm_bar <= t and p.kind == kind and ((p.price > hi) if up else (p.price < lo))]
+        bey = [p for p in self._own_swings(L.tf) if p.confirm_bar <= t and p.kind == kind and ((p.price > hi) if up else (p.price < lo))
+               and not self._internal(p, lo, hi, t)]
 
         def pick(xs):                                                      # the most recent (its bar; ties: the later known)
             return max(xs, key=lambda p: (p.bar, p.confirm_bar))
@@ -807,6 +817,42 @@ class Levels:
             return pick(pre), "before_break"
         post = [p for p in bey if p.bar >= start]
         return (pick(post), "formed_after_break") if post else (None, None)
+
+    def _candle_range(self, p, t):
+        """The own-TF candle of swing p (D / W: its Daily / Weekly candle, traded extremes — DECISIONS 87; 1H: the 1H candle holding its
+        15M bar up to its confirmation, `_h1_upto` — the candle the 1H zone bands are cut from; bars ≤ t only) as (low, high)."""
+        if p.h1 is None:
+            return p.clo, p.chi
+        c4 = self._h1_upto(p.h1, min(int(p.confirm_bar), int(t)))         # the same 1H candle the zone bands are cut from
+        return (None, None) if c4 is None else (float(c4[2]), float(c4[1]))
+
+    def _internal(self, p, lo, hi, t):
+        """DECISIONS 86 (S1, owner rule): a swing whose own-TF candle traded inside the object's band [lo, hi] — made while price was
+        testing the object, its false-break extremes included — is INTERNAL: never the object's next swing (a break / broken-back reads
+        only EXTERNAL swings). Comparison only; bars ≤ t."""
+        clo, chi = self._candle_range(p, t)
+        return clo is not None and chi is not None and clo <= hi and chi >= lo
+
+    def internal_swings(self, L, t):
+        """DECISIONS 86 / 89: the own-TF swings beyond L's band (known by t) whose candle traded inside it — the extremes made while
+        price tested L (its false-break extremes). [(kind, price, bar, confirm_bar)]; display them as `false_break_extremes`."""
+        lo, hi = L.band_at(t)
+        return [(p.kind, p.price, p.bar, p.confirm_bar) for p in self._own_swings(L.tf) if p.confirm_bar <= t
+                and ((p.kind == "H" and p.price > hi) or (p.kind == "L" and p.price < lo)) and self._internal(p, lo, hi, t)]
+
+    def false_break_extremes(self, L, t, since=None):
+        """DECISIONS 89 (owner rule, display): every extreme made while price tests L through its role side (an INTERNAL swing,
+        `internal_swings`, beyond the edge a break would cross: a resistance ⇒ highs above, a support ⇒ lows below; from `since` on
+        when given) is labelled a "FALSE BREAK extreme" on charts and in reports — never a swing high / low. [{kind, price, bar, ts,
+        label}] (bars ≤ t only)."""
+        out = []
+        want = "H" if L.role_at(t) == RES else "L"                         # a false break pushes through the role side's far edge
+        for k, px, b, _c in self.internal_swings(L, t):
+            if k != want or (since is not None and b < since):
+                continue
+            out.append({"kind": k, "price": round(float(px), 2), "bar": int(b), "ts": str(self.ts.iloc[int(b)]) if b >= 0 else None,
+                        "label": f"{FALSE_BREAK_EXTREME} {float(px):,.2f}"})
+        return out
 
     def _ft_fact(self, p, src):
         if p is None:
@@ -862,7 +908,8 @@ class Levels:
             return {}
         up = L.role_at(b - 1) == RES
         fs, src = self._ft_target(L, up, b, t)
-        return {"beyond_at": b, "beyond_ts": str(self.ts.iloc[int(b)]), "beyond_dir": 1 if up else -1, "far_swing": self._ft_fact(fs, src)}
+        return {"beyond_at": b, "beyond_ts": str(self.ts.iloc[int(b)]), "beyond_dir": 1 if up else -1, "far_swing": self._ft_fact(fs, src),
+                "false_break_extremes": self.false_break_extremes(L, t)}            # DECISIONS 89: never named a swing high / low
 
     def _dead_on_break(self, L, t):
         """C lifecycle (Abhi, `flip_dead_rule = broken_again`): an area flips only once ⇒ a FLIPPED area broken again is DEAD at that

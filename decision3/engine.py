@@ -18,6 +18,7 @@ import pandas as pd
 from . import daily as DD
 from . import entry_models as EM
 from . import flip as FL
+from . import history as HI
 from . import levels as LV
 from . import liquidity as LQ
 from . import method as M
@@ -139,12 +140,15 @@ class V22:
         self.df1m = df1m                                                  # फक्त advisory (elliott count) साठी
         if res is None:
             from swings2 import engine as SE
+            m15 = HI.ensure_marked(m15, [ltf])                             # DECISIONS 84 / 87: data flags in replays as in live
+            # (the live source marks the 15M from its 5M LTF — engine3_live.mark_close_prints — so a replay marks from the same frame)
             res = SE.build(m15, df1m, s=swing_scale(self.s))
         self.res = res
         self.m15 = res["m15"]
         if daily_df is None:
             from pivots import charts as PC
             daily_df = PC.daily_from_15m(self.m15, pd.to_datetime(self.m15["bar_end"]).max())
+        daily_df = HI.mark_auction_extended(daily_df, self.m15)          # DECISIONS 87: auction-extended Daily bars (traded extremes)
         self.daily_df = daily_df.reset_index(drop=True)
         self.daily = DD.fold(self.daily_df, self.s)
         self.weekly_df = DD.weekly_from_daily(self.daily_df)

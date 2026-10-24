@@ -79,18 +79,26 @@ def test_broken_by_a_close_beyond_the_prior_own_tf_swing_a_wick_through_it_is_a_
 def test_fresh_ground_needs_a_new_swing_beyond_and_a_close_beyond_it_not_its_confirmation(mirror):
     head = [110.0, 111.0] + HEAD[2:]                                       # no prior own-TF swing above the band
     pivs = [p for p in PIVS if p[1] != 122.0]
-    m, lv, Z = _case(mirror, [119.0, 120.0, 121.0, 120.0, 120.5, 121.4], piv_extra=[("H", 121.3, 19, 21)], head=head, pivs=pivs)
-    assert Z.state_at(21) == FL.BEYOND                                     # the new swing confirmed at 21: no break yet (was Z-1s)
-    assert _ev(Z) == [(17, "beyond"), (22, "broken"), (22, "flip")]
-    assert lv.flip_view(Z, 22)["far_swing"]["source"] == "formed_after_break"
+    # DECISIONS 86 (S1): the new high 121.3 (bar 19) is made by a 1H candle that traded inside the band (bars 16–19) ⇒ INTERNAL, never
+    # the next swing; the next new high 121.7 (bar 22, its 1H candle 20–23 entirely beyond) is EXTERNAL ⇒ the close above it breaks
+    tail = [119.0, 120.0, 121.0, 120.0, 120.5, 121.4, 120.8, 121.0, 121.9]
+    m, lv, Z = _case(mirror, tail, piv_extra=[("H", 121.3, 19, 21), ("H", 121.7, 22, 24)], head=head, pivs=pivs)
+    assert Z.state_at(22) == FL.BEYOND                                     # a close above the internal 121.3: no break
+    assert Z.state_at(24) == FL.BEYOND                                     # the external swing confirmed at 24: no break yet (Z-1s)
+    assert _ev(Z) == [(17, "beyond"), (25, "broken"), (25, "flip")]
+    fs = lv.flip_view(Z, 25)["far_swing"]
+    assert fs["source"] == "formed_after_break" and fs["price"] == pytest.approx(_mirror(mirror)[0](121.7)) and fs["bar"] == 22
 
 
 @MIRRORS
 def test_a_flipped_object_broken_back_by_the_same_test_is_dead_and_never_restored(mirror):
     up = [119.0, 120.0, 121.0, 121.5, 122.6]                               # BROKEN at 21 (as above)
-    m, lv, Z = _case(mirror, up + [121.0, 119.5, 117.5, 115.0, 112.5])     # 24 closes below the band, 26 below the prior low 113
-    assert _ev(Z) == [(17, "beyond"), (21, "broken"), (21, "flip"), (24, "beyond"), (26, "broken"), (26, "dead")]
-    assert Z.state_at(25) == FL.BEYOND and Z.role_at(25) != Z.role0 and Z.state_at(26) == FL.DEAD and Z.dead_bar == 26
+    m, lv, Z = _case(mirror, up + [121.0, 119.5, 117.5, 115.0, 112.5])     # 24 closes below the band, 26 below the prior low 113 —
+    assert _ev(Z) == [(17, "beyond"), (21, "broken"), (21, "flip"), (24, "beyond")]   # but the lows 113 / 110 were made by 1H
+    assert Z.state_at(26) == FL.BEYOND and Z.dead_bar is None              # candles that traded inside the band: INTERNAL (S1)
+    m, lv, Z = _case(mirror, up + [121.0, 119.5, 117.5, 115.0, 113.0, 114.5, 115.0, 114.0, 112.5], piv_extra=[("L", 113.0, 26, 28)])
+    assert _ev(Z) == [(17, "beyond"), (21, "broken"), (21, "flip"), (24, "beyond"), (30, "broken"), (30, "dead")]   # an EXTERNAL low
+    assert Z.state_at(29) == FL.BEYOND and Z.role_at(29) != Z.role0 and Z.state_at(30) == FL.DEAD and Z.dead_bar == 30
     m, lv, Z = _case(mirror, up + [121.0, 119.5, 117.5, 119.0, 120.0])     # back above first ⇒ a false break of the flipped object
     assert _ev(Z)[-2:] == [(24, "beyond"), (25, "reclaim")] and Z.state_at(24) == FL.BEYOND
     assert Z.state_at(26) == FL.FLIPPED and Z.role_at(26) != Z.role0 and Z.dead_bar is None   # retest of the flipped object, not restored
@@ -160,8 +168,8 @@ def test_a_daily_object_reads_daily_swings_mapped_to_the_15m_bar_they_are_known_
     m, lv, Z = _case(False, [119.0, 120.0])
     day0 = pd.Timestamp(m["timestamp"].iloc[0]).normalize()
     dd = pd.DataFrame({"timestamp": [day0 - pd.Timedelta(days=3), day0 - pd.Timedelta(days=2), day0],
-                       "open": [120.0, 123.0, 116.0], "high": [125.0, 124.0, 121.0], "low": [119.0, 118.5, 110.0],
-                       "close": [124.0, 119.0, 120.0]})
+                       "open": [120.0, 123.0, 119.0], "high": [125.0, 124.0, 121.0], "low": [119.0, 118.5, 118.6],
+                       "close": [124.0, 119.0, 120.0]})                   # every Daily swing candle stays beyond the band (external)
     piv = [NS(kind="H", price=125.0, bar=0, known_at=day0 - pd.Timedelta(days=1)),          # known before the window
            NS(kind="H", price=121.0, bar=2, known_at=pd.Timestamp(m["bar_end"].iloc[18]))]  # known at 15M bar 18
     lv.daily_states, lv.daily_df = [NS(pivots=piv)], dd
@@ -209,14 +217,14 @@ def test_e4b_reads_only_the_trend_side_on_both_readers(monkeypatch, trend, calls
 @MIRRORS
 def test_the_far_swing_is_the_most_recent_own_tf_swing_beyond_and_a_1h_object_reads_d1_swings(mirror):
     """DECISIONS 82 (Q1): the next swing = the MOST RECENT confirmed own-TF swing lying beyond the object (not the nearest price), and a
-    1H object's own swing is the ordinary 1H swing D1, not the zone degree D2. Here a D1-only high 123 (bar 4) is more recent than the
+    1H object's own swing is the ordinary 1H swing D1, not the zone degree D2. Here a D1-only high 123 (bar 3) is more recent than the
     D2 high 122 (bar 2): a close above 122 is no break; the close above 123 is."""
     f, sw = _mirror(mirror)
-    head = [119.0, 121.0, 122.0, 120.0, 123.0, 114.0, 111.0, 110.0, 112.0, 114.0, 116.0, 118.0, 116.0, 114.0, 113.0, 114.0, 116.0]
-    tail = [119.0, 120.0, 122.5, 122.8, 123.4]
+    head = [119.0, 121.0, 122.0, 123.0, 117.0, 114.0, 111.0, 110.0, 112.0, 114.0, 116.0, 118.0, 116.0, 114.0, 113.0, 114.0, 116.0]
+    tail = [119.0, 120.0, 122.5, 122.8, 123.4]                             # (the 1H candle of bars 0–3 stays above the band: external)
     m = m15_from([f(c) for c in head + tail], wick=0.3)
     d2 = [P(sw(k), f(px), b, c) for k, px, b, c in PIVS]
-    d1 = d2 + [P(sw("H"), f(123.0), 4, 6)]
+    d1 = d2 + [P(sw("H"), f(123.0), 3, 6)]
     lv = LV.Levels(res_of(m, d2, d1))
     Z = [L for L in lv.L if abs(L.anchor - f(118.0)) < 1e-6][0]
     assert Z.state_at(19) == FL.BEYOND and Z.state_at(20) == FL.BEYOND    # closes above 122 (the D2 high, nearer in price): no break

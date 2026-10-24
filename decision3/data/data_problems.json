@@ -5,7 +5,11 @@
       "id": "DP-1",
       "symbol": "BANKNIFTY",
       "kind": "close_print_in_no_tick_bar",
-      "bars": {"15M": "2026-08-31 15:15", "5M": "2026-08-31 15:25", "1m": "2026-08-31 15:29"},
+      "bars": {
+        "15M": "2026-08-31 15:15",
+        "5M": "2026-08-31 15:25",
+        "1m": "2026-08-31 15:29"
+      },
       "summary": "One 628-pt 15M candle (O 57,397.35 H 58,024.95 L 57,397.35 C 58,024.95): the 15:15-15:28 1m bars carry no ticks (O=H=L=C=57,397.35) and the 15:29 1m bar jumps to the close print 58,024.95. No traded path between the two prices exists in the data; the true 15:15-15:30 range cannot be recovered from trade-data.",
       "evidence": [
         "trade-data banknifty/BANKNIFTY_15M.csv.gz 2026-08-31 15:15: O 57397.35 H 58024.95 L 57397.35 C 58024.95",
@@ -34,6 +38,20 @@
         "per-day evidence (flat run, flat price, close before, print, jump, 15M range): trade-data review/gallery_fixes/DP/close_print_days.csv"
       ],
       "status": "marked, not patched"
+    },
+    {
+      "id": "DP-3",
+      "symbol": "ALL",
+      "kind": "auction_extended_daily",
+      "detector": "decision3.history.mark_auction_extended / auction_extended_bars (on the DP-2 marks)",
+      "bars": {},
+      "summary": "DECISIONS 87 (owner, DP-1 of 24 Oct): a Daily bar whose official close (the closing-auction print) lies beyond the session's traded high / low keeps that close as its Daily close and is flagged auction-extended; its high (print above) / low (print below) is the traded extreme, so the auction-only extension never defines a Daily swing extreme or a zone edge. The 15M bar holding such a print never counts as a close beyond / back inside an object. The official values stay in print_high / print_low.",
+      "evidence": [
+        "cause: NSE cash Closing Auction Session from 2026-08-03 (see DP-2): the index stops trading at the end of continuous trading; the close is set by the auction, not by traded price action",
+        "sessions with the print beyond the traded range (trade-data review/gallery_fixes/DP/close_print_days.csv, print_beyond_traded_range): BANKNIFTY 2026-08-03, 08-12, 08-27, 08-31, 09-03, 09-09, 09-15; NIFTY 2026-08-03, 08-18, 08-25, 08-26, 08-27, 09-02, 09-03, 09-09, 09-15, 10-06, 10-13; SENSEX 2026-09-15, 09-18, 10-06",
+        "detected where the session's intraday bars are marked (live: the 15M marked from the 5M at the source; replays: the same via history.ensure_marked); a session without marked intraday bars is read as given"
+      ],
+      "status": "marked, not patched (prices kept; print_high / print_low hold the official values)"
     }
   ]
 }
