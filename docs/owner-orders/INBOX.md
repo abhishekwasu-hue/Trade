@@ -1102,3 +1102,14 @@ Proof: before/after charts (≤20); owner fixtures pass unedited; match the answ
 ---
 ## 24 Oct — zone construction sequencing
 Queue this after the BREAK-2 PR is merged; do not mix it into that PR.
+
+---
+## 24 Oct — answers Q1–Q3, R5-1…R5-3 (+ answer_key_batch1_v3_1.json, stored in trade-data review/answer_key/)
+Answers (research-based). Report ≤25 lines by ID.
+Q1 Next swing = the MOST RECENT confirmed swing of the object's own TF that lies beyond the object (structure-break practice uses the most recent swing). For a 1H object use the ordinary 1H swing (D1), not the zone-degree swing (D2 can leave an object "unbroken" while price runs far beyond — that is not structure). Daily → Daily swing, Weekly → Weekly, line → the swings it is drawn from.
+Q2 A false break is known at the first reading-TF candle that CLOSES back inside (a wick or intrabar trade inside means nothing until the bar closes). The attached answer_key_batch1_v3_1.json is corrected to this.
+Q3 The one owner-fixture state assertion: keep it unedited until the owner confirms; the owner is reviewing. Fixture verdicts (zone, trade / no-trade) stay as they are.
+R5-1 No lower-TF data for an old higher-TF area ⇒ the whole area band is the refined base (refinement is optional fine-tuning).
+R5-2 Flipped area: location = the original base; invalidation = the band's far edge on the side opposite the new trade direction.
+R5-3 The flat 15:16–15:28 bars + single last print are systemic (every day since the start date found). Now, in the data layer: flag every affected bar as a data problem with evidence; a data-problem bar never defines a base, zone or swing extreme; find the feed cause and fix it going forward. Report the affected-day count and the fix.
+Then: merge originbase into integ51 → one BREAK-2 PR → CI; answer-key match table (expect 8/8) + the E4(b) increase explained with charts (≤10). Then C, then D + E, then Z. No deploy before my ✅.

@@ -230,3 +230,10 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     base, room to the next opposing zone, higher-TF context) is reported on the chart label, never a hidden filter. A band wider than
     the width setting (relative to the TF's typical zone width) is flagged and refined on the lower TF; a data-fault candle never makes a
     zone. Existing birth types stay only where they satisfy these rules. Zones are never merged (identity rules kept). (Owner rule)
+82. BREAK-2 next swing = the MOST RECENT confirmed swing of the object's own TF lying beyond it (1H object → the ordinary 1H swing D1,
+    not the zone degree; Daily → Daily, Weekly → Weekly, line → its own swings). A false break is known at the first reading-TF candle
+    that CLOSES back inside. (Owner rule)
+83. Refined base: no lower-TF data for an old higher-TF area ⇒ the whole band is the refined base. Flipped area: location = the
+    original base; invalidation = the band's far edge opposite the new trade direction. (Owner rule)
+84. Data problems: every flat 15:16–15:28 + single-last-print bar is flagged as a data problem with evidence; a data-problem bar never
+    defines a base, zone or swing extreme; the feed cause is fixed going forward. (Owner rule)
