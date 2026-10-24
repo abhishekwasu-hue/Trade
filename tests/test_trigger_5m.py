@@ -116,13 +116,14 @@ def test_15m_path_is_byte_identical_to_the_code_before_the_5m_build(name):
     """trigger_tf = 15M (what-if) = today's decide(t), byte for byte; decide(t) never reads trigger_tf (the 5M default changes only
     decide5, the live loop and the card)."""
     # The pins hold the visit rule they were taken with (`visit_end_rule = single_swing`, the what-if = the earlier reading byte for
-    # byte). Under the default (DECISIONS 64 + B-2) these fixtures differ only in visit facts (a break ends a visit, a BROKEN area is
-    # not visited until it flips, `armed[].away`), never in an entry or a decision — asserted below (key-by-key diff in the B report).
-    old = {"visit_end_rule": "single_swing"}
+    # byte) and the label rule (DECISIONS 54: `label_rule = legacy`; the default `model` changes only the label / evidence fields:
+    # tests/test_label_rule_model.py pins that). Under the default (DECISIONS 64 + B-2) these fixtures differ only in visit facts (a
+    # break ends a visit, a BROKEN area is not visited until it flips, `armed[].away`), never in an entry or a decision.
+    old = {"visit_end_rule": "single_swing", "label_rule": "legacy"}
     for tf in ({"trigger_tf": "15M"}, {}, {"trigger_tf": "5M"}):
         assert _digest(_rows15(name, {**tf, **old})) == PIN15[name]
     assert _digest(_rows15(name, {"trigger_tf": "15M", "model_c": "on", **old})) == PIN15_C[name]
-    a, b = _rows15(name, old), _rows15(name, {})
+    a, b = _rows15(name, old), _rows15(name, {"label_rule": "legacy"})
     assert [(r.get("decision"), json.dumps(r.get("entries"), sort_keys=True, default=str)) for r in a] == \
         [(r.get("decision"), json.dumps(r.get("entries"), sort_keys=True, default=str)) for r in b]
     assert _rows15(name, {}) == _rows15(name, {"trigger_tf": "5M"})            # decide(t) never reads trigger_tf

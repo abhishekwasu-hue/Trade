@@ -1553,3 +1553,77 @@ Built on branch `visitmove` (report docs/reports/gallery_review_fixes_B.md §7):
 (today's K4; BREAK-1 through the same events when A1 lands); an open visit whose candle is away from the band reads nothing (15M / 5M
 readers, row RSI, dossier, hidden frame). Charts: trade-data `review/gallery_fixes/B/L5-D11_B2_away_broken.png`, `L5-N07_B2_away_broken.png`
 (N07 to be re-proved after A1).
+
+<!-- moved from branch `label54` at the integ51 merge (DECISIONS 70: archive, never delete) -->
+
+## Label rule DECISIONS 54 (owner rule) — built 23 Oct (worktree branch `label54`; trade-data `review/layer6_gallery/label54/`)
+
+Checked against CLAUDE.md (Entry framework: "evidence is listed and never blocks"; "never add a trading rule Abhi didn't state"),
+DECISIONS 46, 49, 50, 54, method §4 / §5, L6-a, Z-1u, T3 / K6.5. `label_rule = model` (default; `legacy` = the old 6a set, what-if) in
+`decision3/entry_models.py` (`Reader.model_conditions`, `Reader._model_label`), used by the 15M Reader and the 5M Reader5 alike.
+- **L54-a (the required set). Implemented.** Required = the fired model's own conditions, named as the model checked them (E1 / E2 / E3 /
+  E4 a / E4 b each; the words follow the active what-ifs — `entry_trigger_rule`, `entry_area_refine`, `e4b_approach_rule` — so a check
+  that was not made is never named). Every fired entry has it ⇒ every entry has A or B. The old 6a set is kept as the fact
+  `evidence_list.legacy_required`.
+- **L54-b (the five confirming pieces → existing facts). Implemented, no new reading.** RSI divergence = the layer 5 read
+  (`V22.rsi_divergence`, NA when not readable); volume growing inside = the zone read's trade-side volume rising
+  (`flip.zone_read` summary `vol_rising_trade_side`, NA without FUT volume); confluence = L6-a / Z-1u (a line meets the area, or a Daily
+  / Weekly area overlaps it — `method.confirming_evidence`); correction line closed through = L4 (`trendline.k_line` broken, NA when no
+  correction line is open); counter channel broken = T3 / K6.5 (`Reader.channel_evidence`). Every piece had an existing fact — none NA
+  by construction.
+- **L54-c (E4 (b) at a broken line — confluence). Provisional default: NA.** The line's synthetic level carries `confluence_line = True`
+  (the line IS the object), which would have made every E4 (b) line "confluence ✓". Provisional: for a line object confluence reads NA
+  (an area / Daily level lying on the line is not read for it today). Open for Abhi: should an area on the broken line count?
+- **L54-d (pin). Done.** `label_rule = legacy` = the code before this build, byte for byte (PIN15 / model C pins read it); `model`
+  changes only the label / evidence-list fields (label, evidence, evidence_list, confirming; row conviction / mark / missing) — entries,
+  invalidation, gates identical (tests/test_label_rule_model.py, 15M + 5M, both mirrors; the 13-group BANKNIFTY replay 53 / 53).
+- **L54-e (what the replay shows). Logged for Abhi, no change.** 53 / 53 entries read A under the new rule (old rule: 1 A, 52 none):
+  confluence 39, counter channel broken 36, RSI divergence 3, volume growing inside 3 (FUT-testable group only), correction line
+  closed through 0. The counter channel piece is read on every line degree (1H and 15M channels) and the confluence piece counts a
+  Weekly / Daily area overlap, so B is rare here. The rule is as stated (no filter added); whether the counter channel should be read only
+  on the trend degree is Abhi's call.
+- **L54-f (output words). Done.** Vision facts: "| label A (the model's own conditions + at least one confirming piece: …)" / "| label B
+  (the model's own conditions only)" / legacy only: "| no A / B label (the legacy 6a required set reads absent)". Card evidence line:
+  "✓ E1 — the model's own conditions (required set)" first, then the five pieces, then each condition by name (the card line is cut by
+  length; the full list is in the evidence list and the Vision facts). Summary card 📋 Reader line: "✓ the E1 model's own conditions".
+  The Vision system prompt (cached) is unchanged — it already lists the evidence as never deciding.
+
+
+### DECISIONS 55 (owner rule) — the two confirming pieces tightened (23 Oct, branch `label54`; gallery `label54/` "after DECISIONS 55")
+- **L55-a (counter channel broken). Implemented.** `Reader.pullback_channel`: only the PULLBACK's own channel at the trend degree (1H,
+  `level_degree`): a channel against the trade whose base line's anchors are both from the pullback's origin on (the newest 1H swing of
+  the trend's side at or before the visit's first bar — a swing low for a bear call, a high for a bull put) and whose line broke in the
+  trade direction (K6.5). No origin known ⇒ NA. The 15M degree and channels drawn on earlier moves never count. Replay: present 0 /
+  53, NA 2 — no 1H pullback into these areas had its own channel yet (the corrections are one 1H leg), so the piece never fires here.
+- **L55-b (confluence). Implemented.** `Reader.same_place`: only (a) a Daily / Weekly area overlapping the traded area — of a HIGHER
+  timeframe than the traded one (method §1: "a higher-timeframe area at the same place is labelled confluence"; a Daily traded area
+  counts a Weekly overlap only), or (b) an object of a different kind AT the same place: a line whose value at the bar lies inside the
+  band (the trade-side line through the area, or an unbroken 1H line), or a liquidity pool inside it. Nearness (a reaction turning at a
+  line outside the band, Abhi 4 B) no longer counts. A broken-line object (E4 b): an alive area whose band holds the line's value.
+  Overlap by comparison only, no distance number.
+- **L55-c (liquidity pool = equal highs / lows). Provisional default.** Only an equal highs / lows pool (method §3 "equal", `liquidity.pools`
+  src "equal") counts; a plain swing high / low inside the band is the area's own reaction (every supply area holds its own swing high),
+  so it is never "an object of a different kind". Open for Abhi.
+- **L55-d (what-if).** `label_rule = model54` = the DECISIONS 54 reading of the two pieces; `legacy` unchanged (byte pins).
+- **L55-e (does it separate?). For Abhi — no card change made.** 53 entries: A 48 / B 5 (D54: A 53 / B 0). Per model: E1 20 / 2, E2
+  1 / 0, E3 9 / 0, E4a 11 / 0, E4b area 2 / 1, E4b line 5 / 2. Confluence is present on 48 — 46 of them through a Daily / Weekly
+  overlap (the Weekly areas are wide, e.g. 54,891–56,099, and cover most 1H areas of Sep / Oct). It separates only weakly; replacing A /
+  B on the card with the evidence list + its count waits for Abhi's word (DECISIONS 55).
+
+### DECISIONS 58 (owner rule) — no A / B label; the evidence list + its count (24 Oct, branch `label54`; gallery `label54/` "after DECISIONS 58")
+- **L58-a (no label). Implemented.** `label_rule = evidence_count` (default): the entry's `label` is None; the evidence list carries
+  `evidence_count` / `evidence_of` (5) / `evidence_present` / `evidence_na`. Information only — no threshold, never blocks. The first
+  evidence mark reads "E1 — the model's own conditions (all held)". What-ifs: `model55` (alias `model`) / `model54` (the A / B labels of
+  DECISIONS 55 / 54), `legacy` (the old 6a set; byte pins unchanged). Entries / invalidation / gates identical (53 / 53 in the replay).
+- **L58-b (outputs).** Engine card (`vision/worker.engine_caption`): no "label A / B" in the head; the evidence bullet reads "Evidence:
+  N of 5 — <present> · NA: <not readable>". Classic card detail line "📋 E1 — Aggressive evidence (N of 5): …"; Vision facts "| evidence:
+  N of 5 — … (information only)"; setup chart "Evidence N of 5 (present: …; information only)". A signal whose list carries no count
+  (legacy / non-engine) keeps today's words byte for byte. The facts dossier prints no label (unchanged).
+- **L58-c (confluence without the Weekly).** A Weekly overlap never counts. A 1H traded area counts an overlapping Daily area. Provisional
+  default for a DAILY traded area: another overlapping Daily area does NOT count (same timeframe — areas are never merged, Z-1u; method
+  §1 names a HIGHER-timeframe area as confluence); only a line / equal pool at the place counts there. A broken-line object counts a 1H /
+  Daily area holding the line's value (never a Weekly). Open for Abhi.
+- **L58-d (replay, 53 entries).** Evidence count 0: 17, 1: 31, 2: 4, 3: 1. Per model (0 / 1 / 2 / 3): E1 6 / 15 / 1 / 0, E2 0 / 0 /
+  1 / 0, E3 2 / 7 / 0 / 0, E4a 2 / 6 / 2 / 1, E4b area 2 / 1 / 0 / 0, E4b line 5 / 2 / 0 / 0. Pieces present: confluence 36, RSI
+  divergence 3, volume growing inside 3, correction line closed through 0, counter channel broken 0 (NA: volume 50, correction line 41,
+  RSI 11, counter channel 2).

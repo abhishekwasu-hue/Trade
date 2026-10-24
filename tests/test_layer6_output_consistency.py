@@ -99,13 +99,13 @@ def test_next_area_is_the_engines_own_opposite_area_not_the_chart_band_finder():
 def test_vision_facts_print_the_a_b_label_never_the_model_name():
     sig, _ = sig_of(stored_row())
     txt = EA.facts_text(sig)
-    assert "label E1 — Aggressive" not in txt and "| no A / B label (the required set reads absent)" in txt
+    assert "label E1 — Aggressive" not in txt and "| no A / B label (the legacy 6a required set reads absent)" in txt
     ea = {**E5, "label": "A", "evidence_list": {"required": "present", "confirming": {"confluence": "present"}}}
     sa, _ = sig_of(stored_row(entry=ea), ea)
-    assert "Entry model: E1 Aggressive | label A (the required set + at least one confirming piece)." in EA.facts_text(sa)
+    assert "Entry model: E1 Aggressive | label A (the model's own conditions + at least one confirming piece" in EA.facts_text(sa)
     eb = {**ea, "label": "B"}
     sb, _ = sig_of(stored_row(entry=eb), eb)
-    assert "| label B (the required set only)." in EA.facts_text(sb)
+    assert "| label B (the model's own conditions only)." in EA.facts_text(sb)
     assert EA.label_words({"model": None}) == ""
 
 

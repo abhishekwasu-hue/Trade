@@ -476,7 +476,7 @@ def test_h1_rows_reach_the_live_path_with_the_contract_fields(h1_rows, es):
         assert tags["gate"]["grade"] == tags["engine_grade"] == (e["label"] if e["label"] in ("A", "B") else None)
         lines = CS.model_lines(tags)
         assert any("invalidation (info): " in ln and e["invalidation"]["rule"][:20] in ln for ln in lines)
-        assert any("required set" in ln for ln in lines)                                  # the 6a required set ✓ / ✗ on the card
+        assert any("own conditions" in ln for ln in lines)          # DECISIONS 54 / 58: the model's own conditions on the card
 
 
 def test_h1_keys_are_stable_across_a_cron_rerun(h1_rows):

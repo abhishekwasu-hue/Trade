@@ -277,7 +277,7 @@ def reading(sig, fallback_areas=None):
               "b_nature": (c.get("b_nature") or {}).get("verdict"), "window": c.get("window"),
               "invalidated_if": c.get("invalidated_if")}
     return {"direction": d, "side": "bull put" if d > 0 else "bear call", "model": model, "name": name, "label": t.get("entry_label"),
-            "grade": g.get("grade"), "object": obj, "trend": g.get("trend"), "htf": htf or None,
+            "grade": g.get("grade"), "evidence_words": _ev_words(g), "object": obj, "trend": g.get("trend"), "htf": htf or None,
             "area": None if area is None else {"lo": area[0], "hi": area[1], "tf": me.get("tf") or g.get("tf"), "state": me.get("state"),
                                                "id": me.get("id"), "role": "support" if d > 0 else "resistance"},
             "refined": _band(rb.get("lo"), rb.get("hi")), "trigger_ts": t.get("entry_trigger_ts"), "entry_ref": ref,
@@ -296,16 +296,33 @@ def _p(x):
     return "n/a" if x is None else f"{float(x):,.2f}"
 
 
+LABEL_PIECE_NAMES = ("RSI divergence", "volume growing inside", "confluence", "correction line closed through",
+                     "counter channel broken")             # decision3/entry_models.LABEL_PIECES, as the evidence list names them
+
+
+def _ev_words(g):
+    from . import card_summary as CS
+    rd = g.get("reader") if isinstance(g.get("reader"), dict) else {}
+    return CS.evidence_count_words(rd.get("evidence_list")) or None
+
+
 def label_words(rd):
-    """Layer 6 / L6-a (method §5): the entry's A / B label as the engine output it — " | label A (the required set + at least one
-    confirming piece)", " | label B (the required set only)", or, for an entry model whose required set reads absent, " | no A / B label
-    (the required set reads absent)". The model's own name is never printed as the label. No entry model ⇒ ""."""
+    """Layer 6 / DECISIONS 54 (owner rule, method §5): the entry's A / B label as the engine output it — " | label A (the model's own
+    conditions + at least one confirming piece: …)" naming the confirming piece(s) present in the engine's evidence list, " | label B
+    (the model's own conditions only)", or — only under the old 6a what-if (`label_rule = legacy`) — " | no A / B label (the legacy 6a
+    required set reads absent)". The model's own name is never printed as the label. No entry model ⇒ "". DECISIONS 58 (default): no A / B
+    label — " | evidence: 2 of 5 — confluence, RSI divergence · NA: … (information only)"."""
+    cw = rd.get("evidence_words")
+    if cw:                                                               # DECISIONS 58: no A / B label — the evidence count (info only)
+        return f" | {cw} (information only)"
     g = rd.get("grade")
     if g == "A":
-        return " | label A (the required set + at least one confirming piece)"
+        ev = rd.get("evidence") if isinstance(rd.get("evidence"), list) else []
+        got = [str(x[0]) for x in ev if isinstance(x, (list, tuple)) and len(x) >= 2 and x[0] in LABEL_PIECE_NAMES and x[1] == "✓"]
+        return " | label A (the model's own conditions + at least one confirming piece" + (f": {', '.join(got)})" if got else ")")
     if g == "B":
-        return " | label B (the required set only)"
-    return " | no A / B label (the required set reads absent)" if rd.get("model") else ""
+        return " | label B (the model's own conditions only)"
+    return " | no A / B label (the legacy 6a required set reads absent)" if rd.get("model") else ""
 
 
 OBJECT_WORDS = {"area": "the visited area", "broken_area": "a broken (flipped) area being retested from the other side",

@@ -401,11 +401,10 @@ def test_decide_row_carries_entries_armed_and_the_legacy_k_diagnostic(oct12):
                       "invalidation", "invalidation_rule", "evidence", "evidence_list", "label", "confirming", "facts"}
     assert e["side"] == ("bull_put" if mirror else "bear_call") and e["label"] in ("A", "B", None)
     assert st[0]["conviction"] == e["label"] and st[0]["mark"] == {"A": "✅", "B": "🟡", None: "⚪"}[e["label"]]
-    for x in (x for r in rows for x in r["entries"]):                       # 6a: A / B only with the required set present
-        req = x["evidence_list"]["required"]
-        assert (x["label"] is None) == (req != "present"), (x["model"], req, x["label"])
-        if req == "present":
-            assert x["label"] == ("A" if any(v is True for v in x["confirming"].values()) else "B")
+    for x in (x for r in rows for x in r["entries"]):                       # DECISIONS 58: no A / B label — the evidence count
+        el = x["evidence_list"]
+        assert x["label"] is None and el["required"] == "present", (x["model"], x["label"])
+        assert el["evidence_count"] == sum(1 for v in x["confirming"].values() if v is True)
     assert e["evidence"][0][1] in ("✓", "✗") and {k for k in e["area"]} >= {"id", "tf", "lo", "hi", "state"}
     keys = [x["key"] for r in rows for x in r["entries"]]
     assert len(keys) == len(set(keys))                                       # one fire per (area, visit, model)

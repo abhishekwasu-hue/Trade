@@ -115,6 +115,15 @@ DEFAULTS = {
                                              # True = जुनं (form खिडकी + entry खिडकी commitment मध्ये) — what-if
     "verdict_rule": "method",               # method §4 / §5: required set ⇒ enter; label A = + ≥ 1 confirming piece, B = required only;
                                              # evidence listed, never scored; "score" = जुनं (evidence_weights / conv_* / ④ / §5.3) what-if
+    "label_rule": "evidence_count",          # DECISIONS 58: no A / B label — the evidence list + its count (info only; Weekly
+                                             # overlap never confluence). What-ifs: model55 / model54 = the A / B labels below.
+                                             # DECISIONS 54 (owner rule): an entry model's A / B label — required = the fired model's own
+                                             # conditions (every fired entry has it); A = + ≥ 1 confirming piece (RSI divergence, volume
+                                             # growing inside, confluence, correction line closed through, counter channel broken), B =
+                                             # the model's conditions only; never blocks. "legacy" = the old 6a set (handover + c0 +
+                                             # volume + c1; absent ⇒ no label) — what-if. DECISIONS 55: counter channel = the
+                                             # pullback's own 1H channel; confluence = D / W overlap or a line / pool at the same
+                                             # place. "model54" = the 54 reading of those two pieces (what-if)
     "line_rule": "logic",                    # method §3 Lines: touch = wick reaches the line, body on its side; two reactions = a line;
                                              # confluence = the line passes through the area, or a reaction out of it turns at the line
                                              # (Abhi 4 B) ⇒ labelled "confluence: line", never a new band; "sigma" = जुनं
@@ -322,6 +331,18 @@ REGISTER = {
     "volume_baseline": ("raw", "raw / slot (legacy)", "Abhi नियम", "method §3 Volume: raw bars, no time-slot baselines"),
     "candle_rule": ("compare", "compare / ratio (legacy)", "Abhi नियम", "method §3: body and wicks compared, never ratios; big = vs the visit"),
     "session_windows": (False, "False / True (legacy)", "Abhi नियम", "method P2: no session / day split in reading; entry hours = operational"),
+    "label_rule": ("evidence_count", "evidence_count / model55 / model54 / legacy (what-ifs)", "Abhi नियम", "DECISIONS 58 (owner "
+                   "rule, evidence_count): no A / B label — the card and every output show the evidence list + its count (information "
+                   "only, no threshold, never blocks); confluence = a Daily area overlapping the traded area or a line / liquidity pool "
+                   "at the same place, a Weekly overlap never counts. model55 / model54 = the A / B labels of DECISIONS 55 / 54. DECISIONS 54 (owner rule): the entry model's A / B label — the "
+                   "required set = the fired model's own conditions (E1 / E2 / E3 / E4 a / E4 b each, listed by name; every fired entry "
+                   "has it); A = the model's conditions + at least one confirming piece (RSI divergence, volume growing inside, "
+                   "confluence, correction line closed through, counter channel broken); B = the model's conditions only. The label "
+                   "never blocks and never changes an entry. DECISIONS 55 (model): counter channel broken = only the pullback's own "
+                   "channel at the trend degree (1H); confluence = only a Daily / Weekly area overlapping the traded area or an object "
+                   "of a different kind (a line, a liquidity pool) at the same place (overlap, never nearness). model54 = the "
+                   "DECISIONS 54 reading of those two pieces (what-if). legacy = the old 6a required set (handover + commitment + "
+                   "volume + LTF CHoCH; absent ⇒ no label)"),
     "verdict_rule": ("method", "method / score (legacy)", "Abhi नियम", "method §4 / §5: enter on the required set; A / B by confirming evidence; no scores"),
     "line_rule": ("logic", "logic / sigma (legacy)", "Abhi नियम", "method §3 Lines: comparisons with the candle, no σ tolerance or touch count"),
     "sharp_reversal_handover": (True, "—", "Abhi नियम", "Abhi Z-1z: zone मध्ये push नाकारला आणि dominant उलट candle ने लगेच गिळला = handover"),

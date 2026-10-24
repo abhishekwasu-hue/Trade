@@ -699,7 +699,7 @@ def read5(V, j, trend, act, side_fn=None, keep=None, extra=None, prefix="", brok
             area = {"id": lvl["id"], "tf": "line", "role": a["role"], "lo": v, "hi": v, "state": "BROKEN", "line": a.get("line")}
         if mf is not None:
             cm5["move_from_bar"] = mf
-        ev = EM.Reader.evidence(R, k, d, lvl, arm15, cm=cm5, read_ok=ok5, move_from=mf)   # confirming pieces / zone read at 15M (k)
+        ev = EM.Reader.evidence(R, k, d, lvl, arm15, cm=cm5, read_ok=ok5, move_from=mf, fired=f, trigger_tf="5M")   # confirming pieces / zone read at 15M (k)
         ev["evidence_list"] = {**ev["evidence_list"], "entry_hours": "inside" if R.entry_window5(j) else "outside (operational)"}
         pa_ev = PE.for_entry(V, k, d, {**area, "object": a["object"]}, lvl=lvl, arm=arm15, move_from=mf)
         m = f["model"]

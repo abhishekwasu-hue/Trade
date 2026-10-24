@@ -47,7 +47,8 @@ band's lower half, resistance in its upper half) — is read the same way: bull 
 E4 b is read for an UP / DOWN trend only); DECISIONS 40: the current Daily / 1H range edges from structure
 (`range_edges.trade_edges`) are armed as areas too (trade side, `range_edge_areas`). E4 (b) approach side (DECISIONS 38,
 `e4b_approach_rule`): a retest only from the break side. Lines (trendline.channel_lines / channels): both sides, both directions, on the trend
-degree (1H) and D1 (15M), whatever the trend; a broken counter channel is listed as evidence (never a gate, not in the A / B label);
+degree (1H) and D1 (15M), whatever the trend; a broken counter channel is listed as evidence (never a gate; a confirming piece of the A / B label under
+`label_rule = model`, DECISIONS 54);
 E4 (b) reads the main swings' broken lines + broken channel parallels, and `PATTERN_HOOK` (a broken pattern boundary — patterns track).
 Bars ≤ t only; LTF bars ≤ the bar's close; swings confirmed by the bar being read. No order, no broker, no AI call.
 """
@@ -68,7 +69,22 @@ PATTERN_HOOK = None
 NAME = {"E1": "Aggressive", "E2": "Confirmation", "E3": "Structure", "E4": "Sweep-retest"}
 MARK = {"present": "✓", "absent": "✗", "NA": "NA"}
 CONF_NAME = {"volume_growing": "volume growing inside", "rsi_divergence": "RSI divergence", "confluence": "confluence",
-             "correction_line_closed_through": "correction line closed through"}
+             "correction_line_closed_through": "correction line closed through", "counter_channel_broken": "counter channel broken"}
+# DECISIONS 54 (owner rule, `label_rule = model`): the five confirming pieces of the A / B label, in this order — each mapped to the fact
+# the engine already reads (never a new reading): RSI divergence (layer 5, V22.rsi_divergence), volume growing inside (the zone read's
+# trade-side volume rising, flip.zone_read summary vol_rising_trade_side), confluence (L6-a / Z-1u: a line meets the area or a Daily /
+# Weekly area overlaps it), correction line closed through (L4: the open pullback's K line broken, trendline.k_line), counter channel
+# broken (T3 / K6.5: a channel against the trade broken in the trade direction, Reader.channel_evidence).
+LABEL_PIECES = ("rsi_divergence", "volume_growing", "confluence", "correction_line_closed_through", "counter_channel_broken")
+LABEL_RULES = ("evidence_count", "model55", "model54", "legacy")
+# DECISIONS 58 (owner rule, `label_rule = evidence_count`, default): NO A / B label — every output shows the evidence list + its count
+# (information only, no threshold, never blocks); confluence = a DAILY area overlapping the traded area (a Weekly overlap never counts —
+# Weekly stays context) or an object of a different kind (a line, a liquidity pool) at the same place. `model55` / `model54` = the A / B
+# labels of DECISIONS 55 / 54 (what-ifs); `legacy` = the old 6a set.
+# DECISIONS 55 (owner rule, `label_rule = model`): two pieces tightened — "counter channel broken" = only the PULLBACK's (correction's)
+# channel at the trend degree (1H; Reader.pullback_channel); "confluence" = only a Daily / Weekly area overlapping the traded area, or an
+# object of a different kind (a line, a liquidity pool) lying AT the same place (Reader.same_place) — overlap by comparison, nearness
+# never counts. `model54` = the DECISIONS 54 reading of those two pieces (what-if).
 
 
 def revisit_start(touch_bars, swings, struct=()):
@@ -961,10 +977,62 @@ class Reader:
         return max(sw) if sw else None
 
     # ------------------------------------------------------------------------------------------ evidence (layer 6a builders)
-    def evidence(self, t, d, lvl, arm, appr=None, move_from=None, cm=None, read_ok=None):
+    def label_rule(self):
+        r = str(self.V.s.get("label_rule", "evidence_count"))
+        r = "model55" if r == "model" else r                               # the DECISIONS 55 name before 58 (what-if alias)
+        if r not in LABEL_RULES:
+            raise ValueError(f"label_rule {r!r} — {' / '.join(LABEL_RULES)}")
+        return r
+
+    def model_conditions(self, fired, trigger_tf="15M"):
+        """DECISIONS 54: the fired model's OWN conditions by name, exactly the checks the model made at its trigger (Reader.area /
+        Reader.broken and the Reader5 mirrors) — all held, or the model would not have fired. The wording follows the active what-if
+        switches (entry_trigger_rule, entry_area_refine, e4b_approach_rule) so it never names a check that was not made."""
+        m, var = fired.get("model"), fired.get("variant")
+        rule, rb = self.trigger_rule(), fired.get("refined")
+        if m == "E4" and var == "b":
+            kind = fired.get("kind") or str((fired.get("facts") or {}).get("object", "")).replace("broken_", "")
+            form = (fired.get("facts") or {}).get("form")
+            out = ["trend side (the trade side)", f"a broken {kind} in the trade direction (not broken back / dead), revisited"]
+            if self.approach_rule() == "break_side":
+                out.append("the revisit came from the break side (DECISIONS 38)")
+            out.append(f"a {trigger_tf} rejection form{f' ({form})' if form else ''} at the object, closing on its trade side")
+            if self.inside_on():
+                out.append("no close beyond the retest extreme")
+            return out
+        out = ["trend side (the trade side)", "a pullback visit to an alive trade-side area (not from the trade side, not broken)"]
+        if rule == "legacy":
+            pass
+        elif rb is not None:
+            out.append(f"the {trigger_tf} trigger candle traded into the refined 15M base" if rule == "traded_inside" else
+                       f"the {trigger_tf} trigger candle at the area (close inside), the refined 15M base reached in the visit")
+        else:
+            out.append(f"the {trigger_tf} trigger candle traded inside the area" if rule == "traded_inside" else
+                       f"the {trigger_tf} trigger candle closed inside the area")
+        if m == "E1":
+            out.append(f"the visit's first {trigger_tf} candle at the " + ("refined base (not closed through in the visit)" if rb is not None
+                                                                         else "area"))
+        elif m == "E2":
+            out += [f"a {trigger_tf} commitment candle inside the visit with its FUT volume comparison", "no absorption without a handover"]
+        elif m == "E3":
+            out += ["an LTF CHoCH by close inside the visit", "no absorption without a handover"]
+        elif m == "E4":
+            sw = (fired.get("facts") or {}).get("swept")
+            out += [f"a sweep beyond {sw or 'the far edge / the visit extreme'}, closed back inside",
+                    "the next push failed inside the sweep extreme"]
+        if rule != "legacy":
+            out.append("no close beyond the invalidation")
+        return out
+
+    def evidence(self, t, d, lvl, arm, appr=None, move_from=None, cm=None, read_ok=None, fired=None, trigger_tf="15M"):
         """The 6a evidence list + label A / B for an entry at bar t (method.confirming_evidence / method_label / evidence_list — the
-        same builders _level_eval uses): required set as read (handover + c0 + volume + c1), confirming pieces, context facts. The label
-        is None when the required set reads absent (6a: A and B both need it)."""
+        same builders _level_eval uses): required set, confirming pieces, context facts. Never blocks, never changes the entry.
+          label_rule = model (default, DECISIONS 54, owner rule; `fired` = the fired model's dict): the required set = the fired
+            model's own conditions (model_conditions — every fired entry has it); A = + ≥ 1 of the five confirming pieces
+            (LABEL_PIECES), B = the model's conditions only. The old 6a set (handover + c0 + volume + c1) stays as a fact
+            (`legacy_required`).
+          label_rule = legacy (what-if, or no `fired`): the required set as read (handover + c0 + volume + c1); the label is None when
+            it reads absent (6a: A and B both need it)."""
         V = self.V
         A = self.A
         if cm is None:                                                     # a broken line: the same shared confirmation, window = revisit
@@ -998,15 +1066,126 @@ class Reader:
         # model fired without it (E1 before any commitment, E2 before the LTF CHoCH, …) has no A / B label: the evidence list says ✗.
         label = M.method_label(confirm) if el["required"] == "present" else None
         chx = self.channel_evidence(t, d)
+        if fired is not None and self.label_rule() != "legacy":
+            tight = None
+            if self.label_rule() in ("evidence_count", "model55"):         # DECISIONS 55 / 58: the two tightened pieces
+                tight = {"pullback_channel": self.pullback_channel(t, d, arm),
+                         "same_place": self.same_place(t, lvl, weekly=self.label_rule() == "model55")}
+            return self._model_label(fired, trigger_tf, el, confirm, chx, lvl, cm, zr, rsi, tl, ev, tight)
         marks = [["required set (handover + commitment + volume + LTF CHoCH)", MARK[el["required"]]]] + \
             [[CONF_NAME.get(k2, k2), MARK.get(v, v)] for k2, v in el["confirming"].items()] + \
             [["counter channel broken in the trade direction (handover evidence; context)", "✓" if chx["present"] else "✗"]]
         return {"label": label, "evidence_list": el, "evidence": marks, "confirming": confirm, "commit": cm, "zone_read": zr,
                 "rsi": rsi, "trendline": tl, "context": ev, "channel_evidence": chx}
 
+    def _model_label(self, fired, trigger_tf, el, confirm, chx, lvl, cm, zr, rsi, tl, ev, tight=None):
+        """DECISIONS 54 / 55 (label_rule = model / model54): the evidence list + A / B for a fired entry — see evidence(). `tight` (55) =
+        {"pullback_channel": Reader.pullback_channel, "same_place": Reader.same_place} replaces the confluence and counter-channel
+        pieces; None = the DECISIONS 54 reading (model54, what-if)."""
+        conds = self.model_conditions(fired, trigger_tf)
+        c5 = dict(confirm)
+        if tight is not None:
+            sp, pc = tight["same_place"], tight["pullback_channel"]
+            c5["confluence"] = sp["present"]
+            c5["counter_channel_broken"] = pc["present"]
+        else:
+            if str(lvl.get("tf")) == "line":                               # E4 (b) at a broken line: the line IS the object, never its
+                c5["confluence"] = True if lvl.get("confluence") else None   # own confluence; what lies on it is not read here ⇒ NA
+            c5["counter_channel_broken"] = bool(chx.get("present"))
+        c5 = {k2: c5.get(k2) for k2 in LABEL_PIECES}
+        count = self.label_rule() == "evidence_count"                     # DECISIONS 58: no A / B label, the count instead
+        label = None if count else M.method_label(c5)
+
+        def w(v):
+            return "NA" if v is None else ("present" if v else "absent")
+        el2 = {"required": "present", "required_set": f"the {fired.get('model')} model's own conditions", "label_rule": self.label_rule(),
+               "model_conditions": {c: "present" for c in conds}, "entry_hours": el.get("entry_hours"),
+               "confirming": {k2: w(v) for k2, v in c5.items()}, "context": el.get("context"),
+               "legacy_required": el.get("required"),
+               "label_pieces": [CONF_NAME[k2] for k2, v in c5.items() if v is True]}
+        if count:
+            el2.pop("label_pieces")
+            el2.update(evidence_count=sum(1 for v in c5.values() if v is True), evidence_of=len(LABEL_PIECES),
+                       evidence_present=[CONF_NAME[k2] for k2, v in c5.items() if v is True],
+                       evidence_na=[CONF_NAME[k2] for k2, v in c5.items() if v is None])
+        if tight is not None:
+            el2["confluence_at"] = tight["same_place"]["objects"]
+            el2["pullback_channel"] = tight["pullback_channel"]
+        mdl = str(fired.get("model")) + (f" ({fired.get('variant')})" if fired.get("model") == "E4" else "")
+        marks = ([[f"{mdl} — the model's own conditions (" + ("all held" if count else "required set") + ")", "✓"]] +       # compact first: the card's line is cut
+                 [[CONF_NAME[k2], MARK[el2["confirming"][k2]]] for k2 in LABEL_PIECES] +   # by length; each condition by name after
+                 [[f"{mdl} condition: {c}", "✓"] for c in conds])
+        return {"label": label, "evidence_list": el2, "evidence": marks, "confirming": c5, "commit": cm, "zone_read": zr,
+                "rsi": rsi, "trendline": tl, "context": ev, "channel_evidence": chx}
+
+    def pullback_origin(self, t, d, arm):
+        """The trend-degree (1H) swing the pullback / correction into the area started from: the newest swing of the trend's side (a
+        swing LOW for a bear call — the correction rose from it; a swing HIGH for a bull put) at or before the visit's first bar `arm`,
+        known by bar t. None ⇒ not readable."""
+        kind = "L" if d < 0 else "H"
+        ps = [p for p in TL._known_deg(self.V, t, int(self.V.s.get("level_degree", 2))) if p.kind == kind and int(p.bar) <= int(arm)]
+        return max(ps, key=lambda p: int(p.bar)) if ps else None
+
+    def pullback_channel(self, t, d, arm):
+        """DECISIONS 55: "counter channel broken" = only the PULLBACK's (correction's) own channel at the trend degree (1H): a channel
+        running against the trade (rising for a bear call, falling for a bull put) whose base line is drawn on the correction's own
+        swings (both anchors from the pullback's origin on — `pullback_origin`) and whose line broke in the trade direction (K6.5,
+        a close beyond + a swing beyond). Comparison only. ⇒ {present (True / False / None = origin not readable), origin, channels}."""
+        org = self.pullback_origin(t, d, arm)
+        if org is None:
+            return {"present": None, "origin": None, "channels": [], "degree": "1H"}
+        want, against = ("down", "rising") if d < 0 else ("up", "falling")
+        g = int(self.V.s.get("level_degree", 2))
+        own = [c for c in TL.channels(self.V, t, g) if c["slope_dir"] == against and int(c["base_line"]["p1"][0]) >= int(org.bar)]
+        hits = [{"channel": c["id"], "tf": c["tf"], "state": c["state"], "broken_lines": c["broken_lines"]} for c in own
+                if c["broken_side"] == want]
+        return {"present": bool(hits), "origin": {"bar": int(org.bar), "ts": self.T(org.bar), "price": round(float(org.price), 2)},
+                "channels": hits, "pullback_channels": [c["id"] for c in own], "degree": TL.TF_OF_DEGREE.get(g, f"D{g}")}
+
+    def same_place(self, t, lvl, weekly=False):
+        """DECISIONS 55: "confluence" = only (a) a Daily / Weekly area OVERLAPPING the traded area (another alive area of a higher
+        timeframe than the traded one — method §1 — bands overlap),
+        or (b) an object of a different kind AT the same place — a line whose value at bar t lies inside the area's band (the trade-side
+        line through the area; an unbroken trend-degree line), or a liquidity pool (an equal highs / lows pool, method §3 "equal" — a
+        plain swing inside the band is the area's own reaction) whose price lies inside it. A broken-line object (E4 b): an alive area
+        whose band holds the line's value. Overlap by comparison only — nearness (a reaction turning at a line outside the band) never
+        counts. DECISIONS 58 (`weekly = False`, default): a Weekly area never counts (Weekly stays context) — a 1H traded area counts an
+        overlapping Daily area; a Daily traded area counts no other area (another Daily = the same timeframe, never merged — Z-1u; only
+        a line / pool there); a broken-line object counts a 1H / Daily area holding it. `weekly = True` = the DECISIONS 55 reading.
+        ⇒ {present, objects: [words]}."""
+        V = self.V
+        lo, hi = float(lvl["lo"]), float(lvl["hi"])
+        own = lvl.get("parent_level", lvl.get("id"))
+        objs = []
+        snap = V.levels.snapshot(t) or []
+        if str(lvl.get("tf")) == "line":                                   # the object is a line: an area (different kind) holding it
+            for x in snap:
+                if (weekly or x.get("tf") != "W") and float(x["lo"]) <= lo <= float(x["hi"]):
+                    objs.append(f"{x.get('tf')} area {x.get('id')} {float(x['lo']):,.2f}–{float(x['hi']):,.2f}")
+            return {"present": bool(objs), "objects": objs}
+        rank = {"15M": 0, "1H": 1, "D": 2, "W": 3}                        # method §1: a HIGHER-timeframe area at the same place
+        r0 = rank.get(str(lvl.get("tf")), 1)                               # (a Daily traded area: a Weekly one; never same-TF areas)
+        for x in snap:
+            if (x.get("id") == own or x.get("tf") not in (("D", "W") if weekly else ("D",)) or rank.get(str(x.get("tf")), 0) <= r0
+                    or float(x["hi"]) < lo or float(x["lo"]) > hi):
+                continue
+            objs.append(f"{x.get('tf')} area {x.get('id')} {float(x['lo']):,.2f}–{float(x['hi']):,.2f}")
+        ln = lvl.get("tl")
+        if isinstance(ln, dict) and ln.get("value_t") is not None and lo <= float(ln["value_t"]) <= hi:
+            objs.append(f"line {ln.get('id', '')} {float(ln['value_t']):,.2f}".replace("  ", " "))
+        g = int(V.s.get("level_degree", 2))
+        for c in TL.channel_lines(V, t, g):
+            if not c.get("broken") and lo <= float(TL.line_value(c, t)) <= hi:
+                objs.append(f"{c['tf']} {c['family']} {float(TL.line_value(c, t)):,.2f}")
+        for p in LQ.pools(V, t):
+            if p.get("src") == "equal" and lo <= float(p["price"]) <= hi:
+                objs.append(f"liquidity pool (equal {'highs' if p['side'] == 'buy' else 'lows'}) {float(p['price']):,.2f}")
+        return {"present": bool(objs), "objects": list(dict.fromkeys(objs))}
+
     def channel_evidence(self, t, d):
         """Abhi 21 Oct: a channel running AGAINST the trade (rising for a bear call, falling for a bull put) whose line broke in the trade
-        direction (K6.5) = handover evidence — listed with the channel / line ids; never a gate, never in the A / B label."""
+        direction (K6.5) = handover evidence — listed with the channel / line ids; never a gate. DECISIONS 54 (`label_rule = model`): one of
+        the five confirming pieces of the A / B label ("counter channel broken"); `legacy`: context only, not in the label."""
         V = self.V
         want, against = ("down", "rising") if d < 0 else ("up", "falling")
         hits = []
@@ -1057,7 +1236,7 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             vi = V.visit(t, lvl, d)
             cm6 = V._confirm(t, d, lvl, {})
             ok6, why6, cm = cm6
-            ev = R.evidence(t, d, lvl, int(vi["start"]), cm=cm, read_ok=ok6, move_from=cm.get("move_from_bar"))
+            ev = R.evidence(t, d, lvl, int(vi["start"]), cm=cm, read_ok=ok6, move_from=cm.get("move_from_bar"), fired=f)
             area = {k: lvl.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
             area["uid"] = a.get("area_uid")
             if lvl.get("range_edge"):                                      # DECISIONS 40: a range edge (card / audit wording)
@@ -1069,7 +1248,7 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             cm6 = V._confirm(t, d, lvl2, {})
             if getattr(V, "visit_end_new", False):                         # DECISIONS 64: the last swing built away known at t (the
                 cm6[2]["move_from_bar"] = V.move_from(t, float(x["lo"]), float(x["hi"]), d)   # break's own swing beyond or later)
-            ev = R.evidence(t, d, lvl2, f["start"], cm=cm6[2], read_ok=cm6[0], move_from=cm6[2].get("move_from_bar"))
+            ev = R.evidence(t, d, lvl2, f["start"], cm=cm6[2], read_ok=cm6[0], move_from=cm6[2].get("move_from_bar"), fired=f)
             area = {k: x.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
             area["uid"] = a.get("area_uid")
             lvl = lvl2
@@ -1080,7 +1259,7 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             lvl = {"id": f"line:{ln['id']}", "lo": v, "hi": v, "tf": "line", "role": a["role"], "births": ["tl"], "sweeps": 0,
                    "fresh": None, "confluence_line": True, "confluence": []}
             mf0 = R.line_move_from(t, ln, d, f["start"])                    # DECISIONS 56 (L5-c): the move into the line's retest
-            ev = R.evidence(t, d, lvl, f["start"], move_from=mf0)
+            ev = R.evidence(t, d, lvl, f["start"], move_from=mf0, fired=f)
             area = {"id": lvl["id"], "tf": "line", "role": a["role"], "lo": v, "hi": v, "state": "BROKEN", "line": a.get("line")}
             arm0 = int(f["start"])
         # T9 (PA evidence wiring, CLAUDE.md "evidence is listed and never blocks"): every PA track's facts for this entry — read after

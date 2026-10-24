@@ -479,7 +479,8 @@ def test_switch_off_engine_rows_are_byte_identical_to_the_pre_change_code(name):
     the same rows plus the `model_c` key only (no CHoCH-up cycle in these fixtures ⇒ no C entry, the Daily side untouched)."""
     # the pins were taken before the live E4 (b) check (DECISIONS 38 / 40): read those two rules as the earlier reading, so this test
     # keeps checking only "model C OFF = the code before model C" (the approach-side change is pinned in test_entry_models_live_e4b)
-    old = {"e4b_approach_rule": "any", "range_edge_areas": "off"}
+    # DECISIONS 54: the label rule too (`label_rule = model` changes only the label / evidence fields — tests/test_label_rule_model.py)
+    old = {"e4b_approach_rule": "any", "range_edge_areas": "off", "label_rule": "legacy"}
     assert _digest(_fixture_rows(name, dict(old))) == PIN[name]
     assert _digest(_fixture_rows(name, {**old, "model_c": "off"})) == PIN[name]
     on = _fixture_rows(name, {**old, "model_c": "on"})
