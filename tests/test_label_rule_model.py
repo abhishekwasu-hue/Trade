@@ -1,4 +1,6 @@
-"""DECISIONS 54 (owner rule) — the entry model's A / B label, `label_rule = model` (default; `legacy` = the old 6a set, what-if):
+"""DECISIONS 54 / 55 / 58 (owner rules) — the entry model's evidence list. DECISIONS 58 (`label_rule = evidence_count`, default): NO A / B
+label — the evidence list + its count (information only, no threshold); a Weekly overlap is never confluence. `model55` / `model54` = the
+A / B labels of DECISIONS 55 / 54 (what-ifs), `legacy` = the old 6a set:
 
   • the required set = the fired model's OWN conditions (E1 / E2 / E3 / E4 a / E4 b, listed by name) ⇒ every fired entry has a label;
   • A = the model's conditions + ≥ 1 of the five confirming pieces (RSI divergence, volume growing inside, confluence, correction line
@@ -37,15 +39,22 @@ def dump(x):
     return json.dumps(x, sort_keys=True, default=str, ensure_ascii=False)
 
 
-def check_entry(e):
+def check_entry(e, rule="evidence_count"):
     el = e["evidence_list"]
-    assert el["label_rule"] == "model" and el["required"] == "present" and el["model_conditions"]
+    assert el["label_rule"] == rule and el["required"] == "present" and el["model_conditions"]
     assert all(v == "present" for v in el["model_conditions"].values())
     assert list(el["confirming"]) == list(EM.LABEL_PIECES)
     got = [k for k, v in e["confirming"].items() if v is True]
-    assert e["label"] == ("A" if got else "B")                              # A = + ≥ 1 confirming piece, B = the model's conditions only
-    assert el["label_pieces"] == [EM.CONF_NAME[k] for k in got]
-    assert e["evidence"][0][0].endswith("the model's own conditions (required set)") and e["evidence"][0][1] == "✓"
+    if rule == "evidence_count":                                            # DECISIONS 58: no A / B label — the count (info only)
+        assert e["label"] is None and "label_pieces" not in el
+        assert el["evidence_count"] == len(got) and el["evidence_of"] == 5
+        assert el["evidence_present"] == [EM.CONF_NAME[k] for k in got]
+        assert el["evidence_na"] == [EM.CONF_NAME[k] for k, v in e["confirming"].items() if v is None]
+        assert e["evidence"][0][0].endswith("the model's own conditions (all held)") and e["evidence"][0][1] == "✓"
+    else:
+        assert e["label"] == ("A" if got else "B")                          # A = + ≥ 1 confirming piece, B = the model's conditions only
+        assert el["label_pieces"] == [EM.CONF_NAME[k] for k in got]
+        assert e["evidence"][0][0].endswith("the model's own conditions (required set)") and e["evidence"][0][1] == "✓"
     names = [n for n, _m in e["evidence"]]
     assert all(EM.CONF_NAME[k] in names for k in EM.LABEL_PIECES)
     assert sum(1 for n in names if " condition: " in n) == len(el["model_conditions"])
@@ -54,13 +63,15 @@ def check_entry(e):
 
 # ------------------------------------------------------------------------------------------------ setting
 def test_label_rule_setting_registered_and_validated():
-    assert S3.DEFAULTS["label_rule"] == "model" and S3.REGISTER["label_rule"][0] == "model"
+    assert S3.DEFAULTS["label_rule"] == "evidence_count" and S3.REGISTER["label_rule"][0] == "evidence_count"
     V, _lvl, _d = _bare(BEAR, SWINGS, s={"label_rule": "nope"})
     with pytest.raises(ValueError):
         EM.Reader(V).label_rule()
     for r in EM.LABEL_RULES:
         V, _lvl, _d = _bare(BEAR, SWINGS, s={"label_rule": r})
         assert EM.Reader(V).label_rule() == r
+    V, _lvl, _d = _bare(BEAR, SWINGS, s={"label_rule": "model"})
+    assert EM.Reader(V).label_rule() == "model55"                         # the DECISIONS 55 name before 58
 
 
 # ------------------------------------------------------------------------------------------------ never blocks: the pin
@@ -68,11 +79,12 @@ def test_label_rule_setting_registered_and_validated():
 def test_15m_legacy_is_byte_identical_and_model_changes_only_the_label_fields(name):
     leg = _rows15(name, {"label_rule": "legacy"})
     assert _digest(leg) == PIN15[name]                                      # legacy = the code before this build, byte for byte
-    mod = _rows15(name, {})
-    assert dump(strip(mod)) == dump(strip(leg))                             # entries / invalidation / gates identical
-    for r in mod:
-        for e in r.get("entries") or []:
-            check_entry(e)
+    for rule in ("evidence_count", "model55"):
+        mod = _rows15(name, {} if rule == "evidence_count" else {"label_rule": rule})
+        assert dump(strip(mod)) == dump(strip(leg))                         # entries / invalidation / gates identical
+        for r in mod:
+            for e in r.get("entries") or []:
+                check_entry(e, rule)
 
 
 @pytest.fixture(scope="module", params=[False, True], ids=["bear_call", "bull_put_mirror"])
@@ -80,7 +92,7 @@ def oct12_area(request):
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=request.param)
     out = {}
-    for rule in ("model", "legacy"):
+    for rule in ("evidence_count", "model55", "legacy"):
         V = E3.V22(m15, s={"level_death_side": "role", "label_rule": rule, **AREA}, ltf=ltf, futures=fut)
         ts = V.levels.ts
         last = ts.dt.normalize().iloc[-1]
@@ -89,11 +101,14 @@ def oct12_area(request):
 
 
 def test_15m_every_fired_entry_has_a_label_both_mirrors(oct12_area):
-    mod, leg = oct12_area["model"], oct12_area["legacy"]
-    ents = [e for r in mod for e in r["entries"]]
-    assert ents and dump(strip(mod)) == dump(strip(leg))
-    for e in ents:
-        check_entry(e)
+    leg = oct12_area["legacy"]
+    for rule in ("evidence_count", "model55"):
+        mod = oct12_area[rule]
+        ents = [e for r in mod for e in r["entries"]]
+        assert ents and dump(strip(mod)) == dump(strip(leg))
+        for e in ents:
+            check_entry(e, rule)
+    assert all(r.get("conviction") is None for r in oct12_area["evidence_count"])   # no A / B anywhere on the row
     old = [e for r in leg for e in r["entries"]]
     assert all((e["label"] is None) == (e["evidence_list"]["required"] != "present") for e in old)   # legacy: the old 6a rule
 
@@ -101,15 +116,15 @@ def test_15m_every_fired_entry_has_a_label_both_mirrors(oct12_area):
 @pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put"])
 def test_5m_read5_label_both_mirrors_and_the_entry_unchanged(mirror):
     out = {}
-    for rule in ("model", "legacy"):
+    for rule in ("evidence_count", "legacy"):
         V, lvl, d = _v5(REF, REF_SW, (100.0, 104.0), mirror, s={**REFINE, "label_rule": rule})
         V.step2 = None
         V.rsi_divergence = lambda *a, **k: {"found": None, "na": "test"}
         V.range_structure = lambda t: None
         out[rule] = [{k: v for k, v in e.items() if not k.startswith("_")} for j in range(18, 30)
                      for e in EM5.read5(V, j, "UP" if mirror else "DOWN", [lvl])["entries"]]
-    assert out["model"] and dump(strip(out["model"])) == dump(strip(out["legacy"]))
-    for e in out["model"]:
+    assert out["evidence_count"] and dump(strip(out["evidence_count"])) == dump(strip(out["legacy"]))
+    for e in out["evidence_count"]:
         check_entry(e)
         assert any("5M" in n for n in e["evidence_list"]["model_conditions"])   # the 5M trigger is named
 
@@ -150,7 +165,7 @@ def _ml(R, lvl, confirm, chx):
 
 def test_model54_a_or_b_from_the_five_pieces_and_a_line_is_never_its_own_confluence():
     """`label_rule = model54` (the DECISIONS 54 reading of confluence / counter channel, what-if): _model_label without `tight`."""
-    R = _R()
+    R = _R({"label_rule": "model54"})
     none = {"volume_growing": None, "rsi_divergence": False, "confluence": True, "correction_line_closed_through": None}
     line = {"tf": "line", "confluence_line": True, "confluence": []}
     ev = _ml(R, line, none, {"present": False})
@@ -228,9 +243,13 @@ def test_confluence_counts_only_an_overlap_or_an_object_at_the_same_place(monkey
     assert R.same_place(9, {**area, "tl": {"id": "L", "value_t": 102.5}})["present"] is False   # a line turning near: nearness
     assert R.same_place(9, {**area, "tl": {"id": "L", "value_t": 101.5}})["present"] is True    # the line through the area
     R.V.levels.snapshot = lambda t: [{"id": 7, "tf": "W", "lo": 101.5, "hi": 105.0}]
-    assert R.same_place(9, area)["objects"] == ["W area 7 101.50–105.00"]
+    assert R.same_place(9, area)["present"] is False                      # DECISIONS 58: a Weekly overlap never counts
+    assert R.same_place(9, area, weekly=True)["objects"] == ["W area 7 101.50–105.00"]   # (the DECISIONS 55 reading, model55)
+    R.V.levels.snapshot = lambda t: [{"id": 7, "tf": "D", "lo": 101.5, "hi": 105.0}]
+    assert R.same_place(9, area)["objects"] == ["D area 7 101.50–105.00"]   # a 1H area: an overlapping Daily area counts
     R.V.levels.snapshot = lambda t: [{"id": 7, "tf": "D", "lo": 101.5, "hi": 105.0}, {"id": 9, "tf": "W", "lo": 99.0, "hi": 100.5}]
-    assert R.same_place(9, {**area, "tf": "D"})["objects"] == ["W area 9 99.00–100.50"]   # a Daily area: only a higher (Weekly) one
+    assert R.same_place(9, {**area, "tf": "D"})["present"] is False       # a Daily area: another Daily (same TF) / a Weekly never
+    assert R.same_place(9, {**area, "tf": "D"}, weekly=True)["objects"] == ["W area 9 99.00–100.50"]
     R.V.levels.snapshot = lambda t: []
     monkeypatch.setattr(LQ, "pools", lambda V, t: [{"price": 101.0, "side": "buy", "src": "equal"},
                                                    {"price": 101.2, "side": "buy", "src": "swing"}])   # a plain swing: the area's own
@@ -245,16 +264,52 @@ def test_confluence_counts_only_an_overlap_or_an_object_at_the_same_place(monkey
     line = {"id": "line:x", "tf": "line", "lo": 100.0, "hi": 100.0}
     assert R.same_place(9, line)["present"] is True                       # a broken line object: an area holding its value
     assert R.same_place(9, {**line, "lo": 101.5, "hi": 101.5})["present"] is False
+    R.V.levels.snapshot = lambda t: [{"id": 4, "tf": "W", "lo": 99.0, "hi": 101.0}]
+    assert R.same_place(9, line)["present"] is False and R.same_place(9, line, weekly=True)["present"] is True
 
 
 def test_model_rule_uses_the_tightened_pieces_model54_the_earlier_ones(monkeypatch):
-    for rule, want in (("model", "B"), ("model54", "A")):
+    for rule, want in (("evidence_count", None), ("model55", "B"), ("model54", "A")):
         R = _R({"label_rule": rule})
         conf = {"volume_growing": None, "rsi_divergence": False, "confluence": True, "correction_line_closed_through": None}
         tight = {"same_place": {"present": False, "objects": []}, "pullback_channel": {"present": False, "channels": []}}
         ev = R._model_label({"model": "E1"}, "5M", {"entry_hours": "inside", "context": {}}, conf, {"present": True},
-                            {"tf": "1H", "confluence": [{"tf": "D"}]}, {}, {}, {}, None, {}, tight if rule == "model" else None)
+                            {"tf": "1H", "confluence": [{"tf": "D"}]}, {}, {}, {}, None, {}, tight if rule != "model54" else None)
         assert ev["label"] == want and ev["evidence_list"]["label_rule"] == rule
-        if rule == "model":
+        if rule == "evidence_count":
+            assert ev["evidence_list"]["evidence_count"] == 0 and ev["evidence_list"]["evidence_na"] == [
+                "volume growing inside", "correction line closed through"]
+        if rule != "model54":
             assert ev["confirming"]["confluence"] is False and ev["confirming"]["counter_channel_broken"] is False
             assert ev["evidence_list"]["confluence_at"] == [] and "pullback_channel" in ev["evidence_list"]
+
+
+# ------------------------------------------------------------------------------------------------ DECISIONS 58: the words on every output
+EL58 = {"label_rule": "evidence_count", "required": "present", "evidence_count": 2, "evidence_of": 5,
+        "evidence_present": ["RSI divergence", "confluence"], "evidence_na": ["volume growing inside"],
+        "confirming": {"rsi_divergence": "present", "confluence": "present", "volume_growing": "NA"}}
+
+
+def _tags58(el=EL58):
+    return {"engine": True, "entry_model": "E2", "gate": {"mode": "engine", "grade": None, "reader": {"evidence_list": el}},
+            "entry_evidence": [["E2 — the model's own conditions (all held)", "✓"], ["RSI divergence", "✓"], ["confluence", "✓"],
+                               ["volume growing inside", "NA"]]}
+
+
+def test_the_count_replaces_a_b_on_the_card_facts_and_chart_words():
+    w = "evidence: 2 of 5 — RSI divergence, confluence · NA: volume growing inside"
+    assert CS.evidence_count_words(EL58) == w
+    assert CS.bullet_evidence(_tags58()) == "E" + w[1:]
+    ln = [x for x in CS.model_lines(_tags58()) if " evidence" in x]
+    assert ln and " evidence (2 of 5): " in ln[0] and "label" not in ln[0]
+    assert EA.label_words({"model": "E2", "grade": None, "evidence_words": w}) == f" | {w} (information only)"
+    from decision3 import setup_chart as SC
+    assert SC.label_text({"evidence_list": EL58, "conviction": None}).startswith("Evidence 2 of 5 (present: RSI divergence, confluence")
+
+
+def test_without_a_count_the_old_words_stay_byte_identical():
+    t = _tags58(el={"required": "present", "confirming": {}})
+    t["gate"]["grade"] = "A"
+    assert CS.bullet_evidence(t).startswith("Evidence ✓: ")                 # a legacy / what-if signal: today's words
+    assert " evidence (label A): " in [x for x in CS.model_lines(t) if " evidence" in x][0]
+    assert CS.evidence_count_words({}) == "" and CS.evidence_count_words(None) == ""

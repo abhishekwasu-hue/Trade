@@ -76,7 +76,11 @@ CONF_NAME = {"volume_growing": "volume growing inside", "rsi_divergence": "RSI d
 # Weekly area overlaps it), correction line closed through (L4: the open pullback's K line broken, trendline.k_line), counter channel
 # broken (T3 / K6.5: a channel against the trade broken in the trade direction, Reader.channel_evidence).
 LABEL_PIECES = ("rsi_divergence", "volume_growing", "confluence", "correction_line_closed_through", "counter_channel_broken")
-LABEL_RULES = ("model", "model54", "legacy")
+LABEL_RULES = ("evidence_count", "model55", "model54", "legacy")
+# DECISIONS 58 (owner rule, `label_rule = evidence_count`, default): NO A / B label — every output shows the evidence list + its count
+# (information only, no threshold, never blocks); confluence = a DAILY area overlapping the traded area (a Weekly overlap never counts —
+# Weekly stays context) or an object of a different kind (a line, a liquidity pool) at the same place. `model55` / `model54` = the A / B
+# labels of DECISIONS 55 / 54 (what-ifs); `legacy` = the old 6a set.
 # DECISIONS 55 (owner rule, `label_rule = model`): two pieces tightened — "counter channel broken" = only the PULLBACK's (correction's)
 # channel at the trend degree (1H; Reader.pullback_channel); "confluence" = only a Daily / Weekly area overlapping the traded area, or an
 # object of a different kind (a line, a liquidity pool) lying AT the same place (Reader.same_place) — overlap by comparison, nearness
@@ -815,7 +819,8 @@ class Reader:
 
     # ------------------------------------------------------------------------------------------ evidence (layer 6a builders)
     def label_rule(self):
-        r = str(self.V.s.get("label_rule", "model"))
+        r = str(self.V.s.get("label_rule", "evidence_count"))
+        r = "model55" if r == "model" else r                               # the DECISIONS 55 name before 58 (what-if alias)
         if r not in LABEL_RULES:
             raise ValueError(f"label_rule {r!r} — {' / '.join(LABEL_RULES)}")
         return r
@@ -902,10 +907,11 @@ class Reader:
         # model fired without it (E1 before any commitment, E2 before the LTF CHoCH, …) has no A / B label: the evidence list says ✗.
         label = M.method_label(confirm) if el["required"] == "present" else None
         chx = self.channel_evidence(t, d)
-        if fired is not None and self.label_rule() in ("model", "model54"):
+        if fired is not None and self.label_rule() != "legacy":
             tight = None
-            if self.label_rule() == "model":                               # DECISIONS 55: the two tightened pieces
-                tight = {"pullback_channel": self.pullback_channel(t, d, arm), "same_place": self.same_place(t, lvl)}
+            if self.label_rule() in ("evidence_count", "model55"):         # DECISIONS 55 / 58: the two tightened pieces
+                tight = {"pullback_channel": self.pullback_channel(t, d, arm),
+                         "same_place": self.same_place(t, lvl, weekly=self.label_rule() == "model55")}
             return self._model_label(fired, trigger_tf, el, confirm, chx, lvl, cm, zr, rsi, tl, ev, tight)
         marks = [["required set (handover + commitment + volume + LTF CHoCH)", MARK[el["required"]]]] + \
             [[CONF_NAME.get(k2, k2), MARK.get(v, v)] for k2, v in el["confirming"].items()] + \
@@ -928,7 +934,8 @@ class Reader:
                 c5["confluence"] = True if lvl.get("confluence") else None   # own confluence; what lies on it is not read here ⇒ NA
             c5["counter_channel_broken"] = bool(chx.get("present"))
         c5 = {k2: c5.get(k2) for k2 in LABEL_PIECES}
-        label = M.method_label(c5)
+        count = self.label_rule() == "evidence_count"                     # DECISIONS 58: no A / B label, the count instead
+        label = None if count else M.method_label(c5)
 
         def w(v):
             return "NA" if v is None else ("present" if v else "absent")
@@ -937,11 +944,16 @@ class Reader:
                "confirming": {k2: w(v) for k2, v in c5.items()}, "context": el.get("context"),
                "legacy_required": el.get("required"),
                "label_pieces": [CONF_NAME[k2] for k2, v in c5.items() if v is True]}
+        if count:
+            el2.pop("label_pieces")
+            el2.update(evidence_count=sum(1 for v in c5.values() if v is True), evidence_of=len(LABEL_PIECES),
+                       evidence_present=[CONF_NAME[k2] for k2, v in c5.items() if v is True],
+                       evidence_na=[CONF_NAME[k2] for k2, v in c5.items() if v is None])
         if tight is not None:
             el2["confluence_at"] = tight["same_place"]["objects"]
             el2["pullback_channel"] = tight["pullback_channel"]
         mdl = str(fired.get("model")) + (f" ({fired.get('variant')})" if fired.get("model") == "E4" else "")
-        marks = ([[f"{mdl} — the model's own conditions (required set)", "✓"]] +       # compact first: the card's line is cut
+        marks = ([[f"{mdl} — the model's own conditions (" + ("all held" if count else "required set") + ")", "✓"]] +       # compact first: the card's line is cut
                  [[CONF_NAME[k2], MARK[el2["confirming"][k2]]] for k2 in LABEL_PIECES] +   # by length; each condition by name after
                  [[f"{mdl} condition: {c}", "✓"] for c in conds])
         return {"label": label, "evidence_list": el2, "evidence": marks, "confirming": c5, "commit": cm, "zone_read": zr,
@@ -971,14 +983,17 @@ class Reader:
         return {"present": bool(hits), "origin": {"bar": int(org.bar), "ts": self.T(org.bar), "price": round(float(org.price), 2)},
                 "channels": hits, "pullback_channels": [c["id"] for c in own], "degree": TL.TF_OF_DEGREE.get(g, f"D{g}")}
 
-    def same_place(self, t, lvl):
+    def same_place(self, t, lvl, weekly=False):
         """DECISIONS 55: "confluence" = only (a) a Daily / Weekly area OVERLAPPING the traded area (another alive area of a higher
         timeframe than the traded one — method §1 — bands overlap),
         or (b) an object of a different kind AT the same place — a line whose value at bar t lies inside the area's band (the trade-side
         line through the area; an unbroken trend-degree line), or a liquidity pool (an equal highs / lows pool, method §3 "equal" — a
         plain swing inside the band is the area's own reaction) whose price lies inside it. A broken-line object (E4 b): an alive area
         whose band holds the line's value. Overlap by comparison only — nearness (a reaction turning at a line outside the band) never
-        counts. ⇒ {present, objects: [words]}."""
+        counts. DECISIONS 58 (`weekly = False`, default): a Weekly area never counts (Weekly stays context) — a 1H traded area counts an
+        overlapping Daily area; a Daily traded area counts no other area (another Daily = the same timeframe, never merged — Z-1u; only
+        a line / pool there); a broken-line object counts a 1H / Daily area holding it. `weekly = True` = the DECISIONS 55 reading.
+        ⇒ {present, objects: [words]}."""
         V = self.V
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
         own = lvl.get("parent_level", lvl.get("id"))
@@ -986,13 +1001,13 @@ class Reader:
         snap = V.levels.snapshot(t) or []
         if str(lvl.get("tf")) == "line":                                   # the object is a line: an area (different kind) holding it
             for x in snap:
-                if float(x["lo"]) <= lo <= float(x["hi"]):
+                if (weekly or x.get("tf") != "W") and float(x["lo"]) <= lo <= float(x["hi"]):
                     objs.append(f"{x.get('tf')} area {x.get('id')} {float(x['lo']):,.2f}–{float(x['hi']):,.2f}")
             return {"present": bool(objs), "objects": objs}
         rank = {"15M": 0, "1H": 1, "D": 2, "W": 3}                        # method §1: a HIGHER-timeframe area at the same place
         r0 = rank.get(str(lvl.get("tf")), 1)                               # (a Daily traded area: a Weekly one; never same-TF areas)
         for x in snap:
-            if (x.get("id") == own or x.get("tf") not in ("D", "W") or rank.get(str(x.get("tf")), 0) <= r0
+            if (x.get("id") == own or x.get("tf") not in (("D", "W") if weekly else ("D",)) or rank.get(str(x.get("tf")), 0) <= r0
                     or float(x["hi"]) < lo or float(x["lo"]) > hi):
                 continue
             objs.append(f"{x.get('tf')} area {x.get('id')} {float(x['lo']):,.2f}–{float(x['hi']):,.2f}")

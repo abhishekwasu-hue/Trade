@@ -587,6 +587,10 @@ def label_text(r):
     """Method §5 (default): "Label A (confirming: …)" — never a score; legacy `verdict_rule = score`: the old "Conviction X (score s)"."""
     if r.get("verdict_rule", "method") == "score":
         return f"Conviction {r['conviction']} (score {r.get('conv_score')})"
+    el = r.get("evidence_list") or {}
+    if isinstance(el.get("evidence_count"), int):                         # DECISIONS 58: no A / B label — the count (info only)
+        return (f"Evidence {el['evidence_count']} of {el.get('evidence_of', 5)} (present: "
+                f"{', '.join(el.get('evidence_present') or []) or 'none'}; information only)")
     got = [k for k, v in (r.get("confirming") or {}).items() if v is True]
     return f"Label {r['conviction'] or 'none'} (confirming: {', '.join(got) or 'none'})"
 

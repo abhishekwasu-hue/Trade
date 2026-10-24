@@ -78,7 +78,7 @@ def test_every_entry_lists_each_tracks_facts(day):
         assert any(x["track"] == "T2" and x["concept"] == "area base / departure" for x in rows_)   # the entry area's own base
         json.dumps(rows_)                                                  # JSON-safe (payload / store)
     e1 = next(e for e in ents if e["model"] == "E1")
-    assert "required set" in e1["evidence"][0][0]                          # the evidence list keeps the required set first (DECISIONS 54)
+    assert "the model's own conditions" in e1["evidence"][0][0]            # the model's own conditions first (DECISIONS 54 / 58)
 
 
 def test_volume_rows_say_fut_volume_missing_never_spot():

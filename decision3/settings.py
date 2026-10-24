@@ -105,7 +105,9 @@ DEFAULTS = {
                                              # True = जुनं (form खिडकी + entry खिडकी commitment मध्ये) — what-if
     "verdict_rule": "method",               # method §4 / §5: required set ⇒ enter; label A = + ≥ 1 confirming piece, B = required only;
                                              # evidence listed, never scored; "score" = जुनं (evidence_weights / conv_* / ④ / §5.3) what-if
-    "label_rule": "model",                   # DECISIONS 54 (owner rule): an entry model's A / B label — required = the fired model's own
+    "label_rule": "evidence_count",          # DECISIONS 58: no A / B label — the evidence list + its count (info only; Weekly
+                                             # overlap never confluence). What-ifs: model55 / model54 = the A / B labels below.
+                                             # DECISIONS 54 (owner rule): an entry model's A / B label — required = the fired model's own
                                              # conditions (every fired entry has it); A = + ≥ 1 confirming piece (RSI divergence, volume
                                              # growing inside, confluence, correction line closed through, counter channel broken), B =
                                              # the model's conditions only; never blocks. "legacy" = the old 6a set (handover + c0 +
@@ -309,7 +311,10 @@ REGISTER = {
     "volume_baseline": ("raw", "raw / slot (legacy)", "Abhi नियम", "method §3 Volume: raw bars, no time-slot baselines"),
     "candle_rule": ("compare", "compare / ratio (legacy)", "Abhi नियम", "method §3: body and wicks compared, never ratios; big = vs the visit"),
     "session_windows": (False, "False / True (legacy)", "Abhi नियम", "method P2: no session / day split in reading; entry hours = operational"),
-    "label_rule": ("model", "model / model54 / legacy (what-if)", "Abhi नियम", "DECISIONS 54 (owner rule): the entry model's A / B label — the "
+    "label_rule": ("evidence_count", "evidence_count / model55 / model54 / legacy (what-ifs)", "Abhi नियम", "DECISIONS 58 (owner "
+                   "rule, evidence_count): no A / B label — the card and every output show the evidence list + its count (information "
+                   "only, no threshold, never blocks); confluence = a Daily area overlapping the traded area or a line / liquidity pool "
+                   "at the same place, a Weekly overlap never counts. model55 / model54 = the A / B labels of DECISIONS 55 / 54. DECISIONS 54 (owner rule): the entry model's A / B label — the "
                    "required set = the fired model's own conditions (E1 / E2 / E3 / E4 a / E4 b each, listed by name; every fired entry "
                    "has it); A = the model's conditions + at least one confirming piece (RSI divergence, volume growing inside, "
                    "confluence, correction line closed through, counter channel broken); B = the model's conditions only. The label "

@@ -372,6 +372,9 @@ def model_lines(tags, full=False):
     if ev:                                                               # layer 6 / L6-a: the entry's own A / B label on every layout
         g = _gate(tags)
         gl = f" (label {g['grade']})" if g.get("grade") in ("A", "B") else ""
+        el = entry_evidence_list(tags)
+        if isinstance(el.get("evidence_count"), int):                    # DECISIONS 58: the count, never a label
+            gl = f" ({el['evidence_count']} of {el.get('evidence_of', 5)})"
         out.append(f"📋 {html.escape(lab)} evidence{gl}: {html.escape(ev)}")
     return out
 
@@ -476,9 +479,31 @@ def bullet_next(tags):
     return f"Next area: {word} {_pt(lo)}–{_pt(hi)}" + (f" ({tf})" if tf else "")
 
 
+def evidence_count_words(el):
+    """DECISIONS 58 (no A / B label): the engine evidence list's count as plain words — "evidence: 2 of 5 — confluence, RSI divergence
+    · NA: volume growing inside" (information only, no threshold). "" when the list carries no count (legacy / non-engine)."""
+    el = el if isinstance(el, dict) else {}
+    if not isinstance(el.get("evidence_count"), int):
+        return ""
+    got, na = list(el.get("evidence_present") or []), list(el.get("evidence_na") or [])
+    return (f"evidence: {el['evidence_count']} of {el.get('evidence_of', 5)}" + (f" — {', '.join(got)}" if got else "")
+            + (f" · NA: {', '.join(na)}" if na else ""))
+
+
+def entry_evidence_list(tags):
+    """The entry's own engine evidence list as the tags carry it (gate.reader.evidence_list, paper.engine_entry.entry_gate_tags)."""
+    rd = _gate(tags).get("reader")
+    return rd.get("evidence_list") if isinstance(rd, dict) and isinstance(rd.get("evidence_list"), dict) else {}
+
+
 def bullet_evidence(tags, limit=200):
     """"Evidence ✓: required set · volume growing inside · confluence" — the entry's own evidence pieces marked present (the bracketed
-    detail left out; the full ✓ / ✗ / NA list is in the details reply); "Evidence ✓: none" when none; "" without an evidence list."""
+    detail left out; the full ✓ / ✗ / NA list is in the details reply); "Evidence ✓: none" when none; "" without an evidence list.
+    DECISIONS 58: an engine entry whose list carries the count ⇒ "Evidence: 2 of 5 — … · NA: …" (information only)."""
+    cw = evidence_count_words(entry_evidence_list(tags))
+    if cw:
+        cw = "E" + cw[1:]
+        return cw if len(cw) <= limit else cw[:limit - 1].rstrip() + "…"
     parts = evidence_parts(tags.get("entry_evidence"))
     if not parts:
         return ""

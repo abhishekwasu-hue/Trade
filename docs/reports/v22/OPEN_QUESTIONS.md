@@ -1488,3 +1488,21 @@ Provisional (checked against DECISIONS 37, 46, 49, 51, 54, CLAUDE.md "Trigger re
   1 / 0, E3 9 / 0, E4a 11 / 0, E4b area 2 / 1, E4b line 5 / 2. Confluence is present on 48 — 46 of them through a Daily / Weekly
   overlap (the Weekly areas are wide, e.g. 54,891–56,099, and cover most 1H areas of Sep / Oct). It separates only weakly; replacing A /
   B on the card with the evidence list + its count waits for Abhi's word (DECISIONS 55).
+
+### DECISIONS 58 (owner rule) — no A / B label; the evidence list + its count (24 Oct, branch `label54`; gallery `label54/` "after DECISIONS 58")
+- **L58-a (no label). Implemented.** `label_rule = evidence_count` (default): the entry's `label` is None; the evidence list carries
+  `evidence_count` / `evidence_of` (5) / `evidence_present` / `evidence_na`. Information only — no threshold, never blocks. The first
+  evidence mark reads "E1 — the model's own conditions (all held)". What-ifs: `model55` (alias `model`) / `model54` (the A / B labels of
+  DECISIONS 55 / 54), `legacy` (the old 6a set; byte pins unchanged). Entries / invalidation / gates identical (53 / 53 in the replay).
+- **L58-b (outputs).** Engine card (`vision/worker.engine_caption`): no "label A / B" in the head; the evidence bullet reads "Evidence:
+  N of 5 — <present> · NA: <not readable>". Classic card detail line "📋 E1 — Aggressive evidence (N of 5): …"; Vision facts "| evidence:
+  N of 5 — … (information only)"; setup chart "Evidence N of 5 (present: …; information only)". A signal whose list carries no count
+  (legacy / non-engine) keeps today's words byte for byte. The facts dossier prints no label (unchanged).
+- **L58-c (confluence without the Weekly).** A Weekly overlap never counts. A 1H traded area counts an overlapping Daily area. Provisional
+  default for a DAILY traded area: another overlapping Daily area does NOT count (same timeframe — areas are never merged, Z-1u; method
+  §1 names a HIGHER-timeframe area as confluence); only a line / equal pool at the place counts there. A broken-line object counts a 1H /
+  Daily area holding the line's value (never a Weekly). Open for Abhi.
+- **L58-d (replay, 53 entries).** Evidence count 0: 17, 1: 31, 2: 4, 3: 1. Per model (0 / 1 / 2 / 3): E1 6 / 15 / 1 / 0, E2 0 / 0 /
+  1 / 0, E3 2 / 7 / 0 / 0, E4a 2 / 6 / 2 / 1, E4b area 2 / 1 / 0 / 0, E4b line 5 / 2 / 0 / 0. Pieces present: confluence 36, RSI
+  divergence 3, volume growing inside 3, correction line closed through 0, counter channel broken 0 (NA: volume 50, correction line 41,
+  RSI 11, counter channel 2).
