@@ -439,12 +439,10 @@ class V22:
         that reaches the area again keeps the visit going (the dip was part of the visit) and the move start moves forward to that away
         swing. A close beyond the far side is the K4 lifecycle's business. approach_from = the candles after the last away swing before
         the visit (the leg into the area, method §3; across gaps / earlier visits — P2); move_from = the LAST away swing known at t (B2:
-        it moves forward with each new away swing, also one inside the visit). A broken object's revisit (`visit_from` + `broken_at`):
-        away swings count only from the break. Swings confirmed by t only (bars ≤ t)."""
+        it moves forward with each new away swing, also one inside the visit). Swings confirmed by t only (bars ≤ t)."""
         A = self.levels.A
         lo, hi = float(lvl["lo"]), float(lvl["hi"])
-        floor = lvl.get("broken_at") if lvl.get("visit_from") is not None else None
-        floor = int(floor) if floor is not None else 0
+        floor = 0                                                          # (a broken area's swing beyond made its break: no floor)
         key = ("away", lvl.get("parent_level", lvl.get("id")), int(t), int(d), lo, hi, int(born), floor)
         memo = self.__dict__.setdefault("_visit_memo", {})
         if key in memo:

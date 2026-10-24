@@ -963,8 +963,8 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             x = f["raw"]
             lvl2 = {**x, "visit_from": f["start"]}
             cm6 = V._confirm(t, d, lvl2, {})
-            if getattr(V, "visit_end_new", False):                         # DECISIONS 64: the last away swing after the break known at t
-                cm6[2]["move_from_bar"] = V.move_from(t, float(x["lo"]), float(x["hi"]), d, floor=x.get("broken_at"))
+            if getattr(V, "visit_end_new", False):                         # DECISIONS 64: the last swing built away known at t (the
+                cm6[2]["move_from_bar"] = V.move_from(t, float(x["lo"]), float(x["hi"]), d)   # break's own swing beyond or later)
             ev = R.evidence(t, d, lvl2, f["start"], cm=cm6[2], read_ok=cm6[0], move_from=cm6[2].get("move_from_bar"))
             area = {k: x.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
             lvl = lvl2

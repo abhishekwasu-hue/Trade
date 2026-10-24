@@ -116,9 +116,6 @@ class Reader5(EM.Reader):
                     if tch:
                         lo, hi = float(lvl["lo"]), float(lvl["hi"])
                         sw = self.V._away_swings(ku, lo, hi, d)
-                        if getattr(self.V, "visit_end_new", False) and lvl.get("visit_from") is not None and \
-                                lvl.get("broken_at") is not None:          # a broken object's revisit: away swings from the break
-                            sw = [b for b in sw if b >= int(lvl["broken_at"])]
                         out.update(start5=int(tch[0]), s15=ku + 1, vid=F.bin_T(tch[0]), why=None,
                                    approach_from15=(sw[-1] + 1) if sw else None, move_from15=sw[-1] if sw else None)
         self.memo[key] = out
@@ -675,9 +672,9 @@ def read5(V, j, trend, act, side_fn=None, keep=None, extra=None, prefix="", brok
             # Without it the RSI read said "the move into the zone is not known" although that swing exists (layer 5 gallery, C-L5-1).
             vb = R.visit5(j, lvl, d)
             mf = vb.get("move_from15")
-            if getattr(V, "visit_end_new", False):                         # DECISIONS 64: the last away swing after the break known
-                mf = V.move_from(k, float(x["lo"]), float(x["hi"]), d, floor=x.get("broken_at"))   # at k (the revisit's own end
-                # rule is E4 (b)'s — the area's visit is not asked here, so the two never disagree)
+            if getattr(V, "visit_end_new", False):                         # DECISIONS 64: the last swing built away known at k — the
+                mf = V.move_from(k, float(x["lo"]), float(x["hi"]), d)    # break's own swing beyond or a later one (BREAK-1: a broken
+                # area always has its swing beyond, so this is never one from before the break); the revisit's end rule is E4 (b)'s
             area = {kk: x.get(kk) for kk in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
         else:
             ln = f["raw"]
