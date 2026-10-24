@@ -59,11 +59,26 @@ def _naive_ts(x):
     return ts
 
 
+def _session_closed(df, ts, a, last):
+    """The frame's LAST session (rows a..last) is finished: its last bar ends at the exchange session close
+    (opportunity_engine.sessions.SESSION_CLOSE, the session end engine3_live.closed_session_bars uses). Bar end = the `bar_end` column,
+    else the bar start + the frame's bar step. An earlier session in the frame is always finished (a later session's bar exists).
+    Live partial frames (mid-session) ⇒ False: the close-print tail is read only once the session is over (no look-ahead / repaint)."""
+    from opportunity_engine.sessions import SESSION_CLOSE, _step_minutes
+    if "bar_end" in df.columns:
+        end = _naive_ts(df["bar_end"]).iloc[last]
+    else:
+        end = ts.iloc[last] + pd.Timedelta(minutes=_step_minutes(ts.iloc[a:last + 1] if last > a else ts))
+    return end >= ts.iloc[last].normalize() + pd.Timedelta(hours=SESSION_CLOSE.hour, minutes=SESSION_CLOSE.minute)
+
+
 def close_print_runs(df, min_run=None):
     """DECISIONS 84 detector (comparison, no clock): per session, the session-ending run of FLAT bars (open = high = low = close, every
     one the same price) followed by ONE last print — the bar that opens at that flat price and prints elsewhere, or a lone flat bar at another price — and then, if the print
     came before the last bar, flat bars at the printed price up to the session end; or a flat run that reaches the session end itself
-    (a frozen tail, no print). A run shorter than `min_run` (settings `dp_flat_run_min_bars`, a data-quality setting) is ordinary data.
+    (a frozen tail, no print). Only a FINISHED session is read (_session_closed): the tail of an in-progress live session is never
+    flagged — the cycle after the close, or the next session's frame, marks it (live = replay). A run shorter than `min_run`
+    (settings `dp_flat_run_min_bars`, a data-quality setting) is ordinary data.
     One row per affected session: the flat bars, the flat price, the close before the run, the print and its jump; `bars` = the row
     positions (in `df`) of every affected bar (the run, the print, the flat bars after it)."""
     from . import settings as S3
@@ -89,6 +104,8 @@ def close_print_runs(df, min_run=None):
     starts = np.r_[0, np.flatnonzero(day[1:] != day[:-1]) + 1]
     for a, e in zip(starts, np.r_[starts[1:], len(df)]):
         last = e - 1
+        if e == len(df) and not _session_closed(df, ts, a, last):      # an in-progress session: its last bar is not the session end
+            continue
         p0 = run_back(last, a)                                            # trailing flat bars (after a print, or the frozen run)
         hit = None
         for ip in ((p0 - 1, p0) if p0 <= last else (last,)):              # the print: the bar before them, or the first of them

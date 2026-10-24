@@ -31,10 +31,13 @@ from swings2 import engine as SE                                                
 MIRRORS = pytest.mark.parametrize("mirror", [False, True], ids=["print_up", "print_down"])
 
 
-def _session_1m(day, n_traded, flat_n, jump, after=0, start=50000.0, gap_print=False):
+def _session_1m(day, n_traded, flat_n, jump, after=0, start=50000.0, gap_print=False, at_open=False):
     """A synthetic 1m session: `n_traded` traded bars, `flat_n` identical flat bars, one print (`jump` from the flat price), `after` flat
-    bars at the printed price."""
-    ts = pd.date_range(f"{day} 09:15", periods=n_traded + flat_n + 1 + after, freq="1min")
+    bars at the printed price. The bars end at the session close (a finished session, the only one the detector reads); `at_open` ⇒
+    they start at the session open instead (a live, in-progress session when it is the frame's last)."""
+    n = n_traded + flat_n + 1 + after
+    ts = (pd.date_range(f"{day} 09:15", periods=n, freq="1min") if at_open else
+          pd.date_range(end=f"{day} 15:29", periods=n, freq="1min"))
     rows, p = [], start
     for i in range(n_traded):
         o, c = p, p + (3.0 if i % 2 else -2.0)
@@ -71,8 +74,8 @@ def test_detector_finds_the_flat_run_and_the_single_last_print_with_evidence(mir
 def test_detector_ignores_a_short_flat_run_and_a_flat_run_inside_the_session():
     d = _session_1m("2030-01-08", 20, 1, 50.0)                                      # one flat bar < dp_flat_run_min_bars
     assert S3.DEFAULTS["dp_flat_run_min_bars"] == 2 and HI.close_print_runs(d).empty
-    mid = pd.concat([_session_1m("2030-01-08", 10, 5, 0.5), _session_1m("2030-01-08", 10, 0, 1.0, start=50010.0).assign(
-        timestamp=lambda x: x["timestamp"] + pd.Timedelta(minutes=16))], ignore_index=True)
+    mid = pd.concat([_session_1m("2030-01-08", 10, 5, 0.5, at_open=True), _session_1m("2030-01-08", 10, 0, 1.0, start=50010.0)],
+                    ignore_index=True)
     assert HI.close_print_runs(mid).empty                                           # traded bars after the run ⇒ not the session end
     assert HI.close_print_runs(_session_1m("2030-01-08", 20, 1, 50.0), min_run=1)["n_flat"].tolist() == [1]
 
@@ -92,8 +95,47 @@ def test_the_15m_bar_holding_the_run_is_marked_from_the_finer_bars(mirror):
     assert HI.close_print_mask(m15, "15M").sum() == 0                                # the 15M alone cannot show it
     out = HI.mark_data_problems(m15, "TESTSYM", "15M", finer=m1)
     flagged = out.loc[out["data_problem"] != "", "timestamp"].dt.strftime("%Y-%m-%d %H:%M").tolist()
-    assert flagged == ["2030-01-08 10:00"] and set(out["data_problem"]) == {"", HI.CLOSE_PRINT}
+    assert flagged == ["2030-01-08 15:15"] and set(out["data_problem"]) == {"", HI.CLOSE_PRINT}
     pd.testing.assert_frame_equal(out.drop(columns="data_problem"), m15)            # marked, never patched
+
+
+# -- live partial frames (PR #385 review): only a FINISHED session's tail is read — no repaint, live = replay
+def _m5(day, closes, flat_from, at_open=True):
+    """A 5M session (from the open, or ending at the close): traded bars, then identical flat bars from `flat_from` on."""
+    ts = (pd.date_range(f"{day} 09:15", periods=len(closes), freq="5min") if at_open else
+          pd.date_range(end=f"{day} 15:25", periods=len(closes), freq="5min"))
+    rows = [(p, p, p, p) if i >= flat_from else (p - 0.5, p + 1.0, p - 1.0, p) for i, p in enumerate(closes)]
+    return pd.DataFrame([(t, *r) for t, r in zip(ts, rows)], columns=["timestamp", "open", "high", "low", "close"])
+
+
+def test_a_mid_session_stall_at_the_live_frame_end_is_not_marked_and_the_breakout_never_flagged():
+    px = [100.0 + i for i in range(9)] + [108.0] * 3
+    df = _m5("2030-01-08", px, 9)                                                   # the live frame ends 10:10, mid-session
+    assert HI.mark_data_problems(df, "NIFTY", "5M")["data_problem"].eq("").all()
+    for nxt in ([(108.0, 110.0, 107.0, 109.0)], [(108.0, 113.0, 108.0, 112.0)], [(108.0, 110.0, 107.0, 109.0), (109.0, 111.0, 108.0, 110.0)]):
+        t = df["timestamp"].iloc[-1] + pd.to_timedelta([5 * (i + 1) for i in range(len(nxt))], unit="min")
+        d2 = pd.concat([df, pd.DataFrame([(a, *r) for a, r in zip(t, nxt)], columns=df.columns)], ignore_index=True)
+        mk = HI.mark_data_problems(d2, "NIFTY", "5M")
+        assert mk["data_problem"].eq("").all() and not HI.auction_extended_bars(mk).any()    # the real breakout close counts
+
+
+def test_the_same_stall_is_marked_at_the_true_close_print_once_the_session_is_complete():
+    px = [100.0 + i for i in range(9)] + [108.0] * 3 + [112.0]
+    d = _m5("2030-01-08", px, 9, at_open=False)                                      # the session's final bar (15:25) is in
+    live = d.iloc[:-1]                                                               # 15:25 not yet closed: the frame ends 15:20
+    assert HI.mark_data_problems(live, "NIFTY", "5M")["data_problem"].eq("").all()
+    d.loc[len(d) - 1, ["open", "high", "low"]] = [108.0, 112.0, 108.0]               # the last print: opens at the flat price
+    mk = HI.mark_data_problems(d, "NIFTY", "5M")
+    assert mk["data_problem"].tolist() == [""] * 9 + ["DP-2"] * 4
+    nxt = _m5("2030-01-09", [120.0, 121.0], 9)                                      # a later session's bars: replay sees the same
+    rep = HI.mark_data_problems(pd.concat([d, nxt], ignore_index=True), "NIFTY", "5M")
+    assert rep["data_problem"].tolist()[:len(d)] == mk["data_problem"].tolist()
+
+
+def test_an_earlier_session_is_complete_without_the_close_bar():
+    a = _m5("2030-01-08", [100.0 + i for i in range(9)] + [108.0] * 3, 9)          # data stopped early, then the next session came
+    b = _m5("2030-01-09", [120.0, 121.0], 9)
+    assert HI.mark_data_problems(pd.concat([a, b], ignore_index=True), "NIFTY", "5M")["data_problem"].tolist()[9:12] == ["DP-2"] * 3
 
 
 def test_the_close_print_rule_is_listed_with_its_evidence_and_a_listed_bar_wins():
