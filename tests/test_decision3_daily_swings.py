@@ -169,3 +169,49 @@ def test_no_dates_or_prices_hardcoded_in_module():
 
 def VS_PATH():
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "v22_daily_swings_view.py")
+
+
+def _sw(spec):
+    from types import SimpleNamespace as N
+    return [N(kind=k, price=float(px), bar=j * 3, confirm_bar=j * 3 + 2) for j, (k, px) in enumerate(spec)]
+
+
+def _mirror(spec):
+    return [("L" if k == "H" else "H", -px) for k, px in spec]
+
+
+MIRROR_TAG = {"H": "L", "L": "H", "HH": "LL", "LL": "HH", "LH": "HL", "HL": "LH", "EQH": "EQL", "EQL": "EQH"}
+
+
+def test_structure_tags_compare_with_the_same_degree_reference_not_an_inner_swing():
+    """Abhi gallery review F1: a structural higher low is never "LL" because an inner low sat above it, and a pullback high inside a
+    down leg is never "HH" while it stays below the leg's own high. Both mirrors."""
+    up = [("L", 50), ("H", 70), ("L", 60), ("H", 65), ("L", 55), ("H", 75), ("L", 58), ("H", 72), ("L", 52)]
+    tags = DS.tag_pivots(_sw(up))
+    # 55 vs the reference low 50 (60 was an inner low) ⇒ HL; 75 > 70 ⇒ HH and the reference low moves to the low the break started
+    # from (55); 58 ⇒ HL; 72 < 75 ⇒ LH; 52 < 55 ⇒ LL
+    assert tags == ["L", "H", "HL", "LH", "HL", "HH", "HL", "LH", "LL"]
+    dn = [("H", 100), ("L", 80), ("H", 95), ("L", 85), ("H", 97), ("L", 78), ("H", 96), ("L", 82), ("H", 98)]
+    tags = DS.tag_pivots(_sw(dn))
+    # 97 above the inner high 95 but below the reference high 100 ⇒ LH (the old label said HH); 78 < 80 ⇒ LL and the reference high
+    # becomes the highest high between 80 and 78 (97); 96 < 97 ⇒ LH; 82 ⇒ HL; 98 > 97 ⇒ HH
+    assert tags == ["H", "L", "LH", "HL", "LH", "LL", "LH", "HL", "HH"]
+    for spec in (up, dn):
+        assert DS.tag_pivots(_sw(_mirror(spec))) == [MIRROR_TAG[t] for t in DS.tag_pivots(_sw(spec))]
+
+
+def test_structure_tags_equal_by_c13_area_only_with_opens_and_closes():
+    """C-13 (L1-b): a later high that reaches the reference high candle's area (body top to high) without going beyond ⇒ EQH; one that
+    stays short of the area ⇒ LH. Without opens / closes no EQ label. Mirror: EQL."""
+    import numpy as np
+    spec = [("H", 100), ("L", 80), ("H", 99), ("L", 85), ("H", 95)]
+    piv = _sw(spec)
+    n = piv[-1].bar + 3
+    O, C = np.full(n, 90.0), np.full(n, 90.0)
+    O[piv[0].bar], C[piv[0].bar] = 97.0, 92.0                              # the reference high's candle: area 97 – 100
+    O[piv[1].bar], C[piv[1].bar] = 82.0, 82.0                              # the reference low's candle: area 80 – 82
+    assert DS.tag_pivots(piv, O, C) == ["H", "L", "EQH", "HL", "LH"]
+    assert DS.tag_pivots(piv) == ["H", "L", "LH", "HL", "LH"]
+    mp = _sw(_mirror(spec))
+    Om, Cm = -O, -C
+    assert DS.tag_pivots(mp, Om, Cm) == ["L", "H", "EQL", "LH", "HL"]

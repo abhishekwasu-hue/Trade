@@ -1627,3 +1627,29 @@ DECISIONS 46, 49, 50, 54, method §4 / §5, L6-a, Z-1u, T3 / K6.5. `label_rule =
   1 / 0, E3 2 / 7 / 0 / 0, E4a 2 / 6 / 2 / 1, E4b area 2 / 1 / 0 / 0, E4b line 5 / 2 / 0 / 0. Pieces present: confluence 36, RSI
   divergence 3, volume growing inside 3, correction line closed through 0, counter channel broken 0 (NA: volume 50, correction line 41,
   RSI 11, counter channel 2).
+
+<!-- moved from branch `dailyF` at the integ51 merge (DECISIONS 70: archive, never delete) -->
+
+## Gallery review F — Daily trend side (BANKNIFTY; report `docs/reports/gallery_review_fixes_F.md`, charts trade-data `review/gallery_fixes/F/`)
+
+Checked against CLAUDE.md, DECISIONS 1–3, 17, 68, method §2 b) / §3 Structure (Swing, Degree, Equal), STABLE layer 1 (L1-a / b / c).
+
+- **F1-LBL (concept: Degree — "every comparison uses swings of the same degree"; display, layer 1 `daily_swings.tag_pivots`). Bug,
+  fixed.** The Daily chart labels compared each swing with the previous same-kind swing of any degree ("LL 52,783" vs the inner low
+  54,222 while the reading's HL compares with 49,955; "HH 58,597" vs the inner high 58,252 while below 58,706). Now: compared with the
+  structure's reference swing of the same kind (moved only by a break beyond it), C-13 equal ⇒ EQH / EQL. Reading unchanged.
+- **F1-RULE (concept: Daily trend, A1 / ABC_FIX 1 / 3, trend first) — verdict: correct by the method** (same as D-SIDE-1): Apr–Jun is an
+  A1 correction (counter-move corrective by compare, parent 61,765 held) ⇒ DOWN; 17 – 29 Jun NEUTRAL by trend first.
+- **F2-CONF (concept: Swing — a turn is a swing once confirmed; layer 1 `fold_impulse` A1-end branch). Bug, fix HELD.** On 29 Jun the
+  protected origin 58,706 was the counter-move's running top, one bar before its N = 2 confirmation (30 Jun close). No future data
+  read (cut = full). The fix (top must be a confirmed Daily swing; why text names the sharp-zone edge — D-SIDE-3) changes the golden
+  `test_decision3_flip::test_real_29_sep…` (NIFTY prior-Daily level not born) ⇒ stopped, not committed; waiting for Abhi / the lead.
+  Provisional: the engine keeps the current reading. BANKNIFTY effect of the fix: 29 Jun close DOWN → NEUTRAL (session 30 Jun).
+- **F3-N (concept: Swing degree, L1-c `daily_pivot_n`) — fragility, information.** N = 3 reads UP through the 61,765 → 49,955 fall and
+  the whole replay window; N = 1 NEUTRAL from March. N stays 2 (Abhi's provisional setting).
+
+<!-- answered 24 Oct (DECISIONS 71–73), moved from the short file at the integ51 merge -->
+| A-L1 | BREAK-1 hold swing degree: D1 (2.17 never broken; 2 goldens fail) or D0 (matches 2.17 / X01 / 2.3; 9 goldens fail)? And what to do with the failing goldens / 28 pinned tests | D1, not merged | branch lifecycle, docs/reports/gallery_review_fixes.md §A | — ANSWERED (A-L1 = D0, DECISIONS 71; L58-c = no, DECISIONS 73)
+| L58-c | Daily traded area: does an overlapping other Daily area count as confluence? | no (line / pool only) | branch label54 | — ANSWERED (A-L1 = D0, DECISIONS 71; L58-c = no, DECISIONS 73)
+| F2-CONF | Daily protected origin only after the top is a confirmed swing (29 Jun 58,706 confirmed 30 Jun); fix fails NIFTY 29 Sep golden — apply or hold? | held | branch dailyF, docs/reports/gallery_review_fixes_F.md |
+| B-2 | Visit ends when its object becomes BROKEN; open visit away from the area reads nothing (D11, N07) — confirm after charts | provisional default | branch visitmove |

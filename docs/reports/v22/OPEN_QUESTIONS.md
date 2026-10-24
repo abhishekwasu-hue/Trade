@@ -6,11 +6,9 @@ When an item is answered, move its line to the archive (append) — never delete
 ## Waiting for Abhi now (24 Oct)
 | id | Question (one line) | Current default | Where |
 |---|---|---|---|
-| A-L1 | BREAK-1 hold swing degree: D1 (2.17 never broken; 2 goldens fail) or D0 (matches 2.17 / X01 / 2.3; 9 goldens fail)? And what to do with the failing goldens / 28 pinned tests | D1, not merged | branch lifecycle, docs/reports/gallery_review_fixes.md §A |
-| F2-CONF | Daily protected origin only after the top is a confirmed swing (29 Jun 58,706 confirmed 30 Jun); fix fails NIFTY 29 Sep golden — apply or hold? | held | branch dailyF, docs/reports/gallery_review_fixes_F.md |
-| B-2 | Visit ends when its object becomes BROKEN; open visit away from the area reads nothing (D11, N07) — confirm after charts | provisional default | branch visitmove |
+| F2-CONF | F2 fix approved (DECISIONS 72); the NIFTY 29 Sep golden waits for the before / after chart (another agent) | applying | branch dailyF + F2 agent |
+| B-2 | Rule approved (DECISIONS 73); final ✅ after Abhi reviews the B charts | as built | integ51 |
 | B-1 / B-3 / B-4 | Visit uses D0 ∪ D1 swings; line move start follows DECISIONS 64; D04/D05 area born on its touching bar | as built | branch visitmove |
-| L58-c | Daily traded area: does an overlapping other Daily area count as confluence? | no (line / pool only) | branch label54 |
 | L55-c | Liquidity pool for confluence = equal highs / lows only (a plain swing in the band is the area's own reaction) | as built | branch label54 |
 | D5M-1 | 15M what-if dossier keeps the old liquidity (no Daily frame) | kept | facts/dossier.py |
 | L5 gallery | Layer 5 rebuilt gallery ✅ (after the C PR: pushes C1–C8) | not approved | trade-data review/layer5_gallery |
