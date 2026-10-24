@@ -78,6 +78,7 @@ def test_e4a_fires_when_the_next_push_fails_inside_the_sweep_extreme(mirror):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e2_e3_after_the_sweep_trade_into_the_base_and_include_the_sweep_extreme(mirror, monkeypatch):
     monkeypatch.setattr(EM.Reader, "c1", lambda self, u, l, dd, st: {"done": u >= 14, "line": "LTF CHoCH (test)"})
     V, lvl, d = _v(SWEEP, mirror)
@@ -100,6 +101,7 @@ def test_e2_e3_after_the_sweep_trade_into_the_base_and_include_the_sweep_extreme
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e1_does_not_come_back_after_a_sweep(mirror):
     V, lvl, d = _v(SWEEP, mirror)
     st = _run(V, lvl, d, range(8, len(SWEEP)))
@@ -116,6 +118,7 @@ def test_e1_does_not_come_back_after_a_sweep(mirror):
 
 # ------------------------------------------------------------------------------------------------ base_broken ends only E1
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_a_close_beyond_the_refined_base_only_ends_e1(mirror, monkeypatch):
     """Bar 6 enters the area ABOVE the refined base and closes beyond its far edge (103.9 > 103.5, still inside the context 100–104):
     base_broken ⇒ E1 never fires in this visit. The area is NOT broken (no K4 event, models armed) and E2 / E3 / E4 (a) still fire."""

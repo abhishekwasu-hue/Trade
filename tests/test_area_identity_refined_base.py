@@ -152,6 +152,7 @@ D1 = [_P("H", 0, 110.0, 1)]                                                # the
 
 
 @pytest.mark.parametrize("mirror", [False, True])
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_refined_base_is_the_newest_15m_turn_inside_the_band_as_its_wick_to_body(mirror):
     R = _reader(BARS, D0, D1, mirror)
     lvl, d = (LVL_M, 1) if mirror else (LVL, -1)
@@ -168,6 +169,7 @@ def test_refined_base_is_the_newest_15m_turn_inside_the_band_as_its_wick_to_body
 
 
 @pytest.mark.parametrize("mirror", [False, True])
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_refined_base_reads_every_15m_turn_not_only_the_structure_list(mirror):
     R = _reader(BARS, D0, D1, mirror)
     lvl, d = (LVL_M, 1) if mirror else (LVL, -1)
@@ -190,6 +192,7 @@ def test_refined_base_never_reads_a_turn_from_before_the_area_birth_turn(mirror)
 
 
 @pytest.mark.parametrize("mirror", [False, True])
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_refined_base_never_takes_a_turn_from_before_the_area_base_candle_as_its_birth_turn(mirror):
     """L5-N08: a support flipped to resistance — the newest swing HIGH inside its band known at its birth was weeks older than the area
     itself; that old turn is never the area's birth turn (the models wait for a turn of their own)."""

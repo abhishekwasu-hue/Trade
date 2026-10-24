@@ -154,6 +154,9 @@ DEFAULTS = {
     "entry_area_refine": "setup_tf",         # Abhi 21 Oct RC2 (RESEARCH DEFAULT, review after replay): 1H / Daily area = context; the
                                              # refined 15M base inside it (TA4) = trigger location (the trigger candle trades into it), E1 and invalidation. "area" = the context
                                              # area itself (the da7cbbc reading, what-if)
+    "entry_area_refine_base": "origin",      # Abhi DECISIONS 79 (owner rule): the refined base = the area's ORIGIN base on 15M (the
+                                             # candle(s) inside the higher-TF base candle the departure started from), wick to body;
+                                             # "newest_turn" = the A7 / DECISIONS 63 newest 15M turn reading (what-if)
     "sharp_reversal_handover": True,         # Abhi Z-1z: zone मध्ये push नाकारला + dominant उलट candle ने गिळला = handover (तुलना, आकडा नाही)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
     "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.
@@ -290,9 +293,13 @@ REGISTER = {
                          "range from structure, trade side only — P4). off = edges as evidence only (the earlier reading)"),
     "entry_area_refine": ("setup_tf", "setup_tf / area", "Abhi नियम", "Abhi 21 Oct RC2 — RESEARCH DEFAULT, review after the replay: "
                           "the 1H / Daily area (levels' TA4 band) is the context (where); inside it the refined base on the setup TF "
-                          "(the newest 15M turn of the area's side inside the band, wick to body by the same TA4 rule) gives the trigger "
+                          "(entry_area_refine_base: the area's origin base on 15M, DECISIONS 79) gives the trigger "
                           "location (the trigger candle trades into it), the E1 entry and the invalidation; no refined base yet ⇒ the models wait. area = the context area "
                           "itself (what-if / the da7cbbc reading)"),
+    "entry_area_refine_base": ("origin", "origin / newest_turn (what-if)", "Abhi नियम", "DECISIONS 79: the refined base = the "
+                               "ORIGIN base of the area on 15M — the 15M candle(s) inside the higher-TF base candle holding its "
+                               "extreme (where the departure move started), wick to body, inside the band; never a later test / turn "
+                               "candle; invalidation = its far edge. newest_turn = the replaced A7 reading (DECISIONS 63)"),
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
     "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),
     "break_hold_rule": ("hold", "hold / swing_beyond (what-if)", "Abhi नियम", "BREAK-1 (DECISIONS 60 / 61, owner rule): broken = a "

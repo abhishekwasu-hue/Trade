@@ -281,8 +281,103 @@ class Reader:
             self.memo[key] = sorted(src, key=lambda p: (int(p.confirm_bar), int(p.bar)))
         return self.memo[key]
 
+    def refine_base_rule(self):
+        """Which 15M candle the refined base is (DECISIONS 79): "origin" (owner rule, default) = the area's ORIGIN base on 15M;
+        "newest_turn" = the A7 / DECISIONS 63 reading (the newest 15M turn inside the band), what-if only."""
+        from . import settings as S3
+        r = str((getattr(self.V, "s", None) or {}).get("entry_area_refine_base", S3.DEFAULTS.get("entry_area_refine_base", "origin")))
+        if r not in ("origin", "newest_turn"):
+            raise ValueError(f"entry_area_refine_base {r!r} — origin / newest_turn")
+        return r
+
     def refined(self, u, lvl, d):
-        """RC2 (Abhi 21 Oct, research default `entry_area_refine = setup_tf`, review after replay): the 1H / Daily area (levels'
+        """The refined 15M base of an area at bar u — DECISIONS 79 (owner rule) by default (`refined_origin`); the A7 newest-turn
+        reading (`refined_turn`) only as the what-if `entry_area_refine_base = newest_turn`."""
+        if self.refine_base_rule() == "newest_turn":
+            return self.refined_turn(u, lvl, d)
+        return self.refined_origin(u, lvl, d)
+
+    def hour_start(self):
+        """The start of the 1H candle (09:15-anchored, as levels.h1_frame) holding each 15M bar (memoised per V)."""
+        if ("h1start",) not in self.memo:
+            from . import levels as LVM
+            ts = pd.Series(pd.to_datetime(pd.Series(self.ts)).to_numpy())
+            g, of = LVM.h1_frame(pd.DataFrame({"timestamp": ts, "open": 0.0, "high": 0.0, "low": 0.0, "close": 0.0}))
+            self.memo[("h1start",)] = np.asarray(pd.to_datetime(g["timestamp"]).to_numpy()[of], "datetime64[ns]")
+        return self.memo[("h1start",)]
+
+    def base_candle_bars(self, tf, start):
+        """The 15M bars inside the higher-TF base candle that starts at `start` (1H: its hour; D: its day; W: its week; memoised)."""
+        t = pd.Timestamp(start)
+        mk = ("basebars", str(tf), t)
+        if mk in self.memo:
+            return self.memo[mk]
+        ts = pd.to_datetime(pd.Series(self.ts))
+        if str(tf) == "1H":
+            m = self.hour_start() == np.datetime64(self.hour_start_of(t))
+        elif str(tf) == "W":
+            iso, ref = ts.dt.isocalendar(), t.isocalendar()
+            m = ((iso["year"] == ref[0]) & (iso["week"] == ref[1])).to_numpy()
+        else:
+            m = (ts.dt.normalize() == t.normalize()).to_numpy()
+        self.memo[mk] = np.flatnonzero(m)
+        return self.memo[mk]
+
+    def hour_start_of(self, t):
+        """The 1H candle start holding time t (a 15M bar start inside the data ⇒ its hour; else t itself)."""
+        i = int(np.searchsorted(self.ts64(), np.datetime64(t), side="right")) - 1
+        return pd.Timestamp(self.hour_start()[i]) if i >= 0 and self.ts64()[i] == np.datetime64(t) else t
+
+    def refined_origin(self, u, lvl, d):
+        """DECISIONS 79 (owner rule, replaces DECISIONS 63 / A7-1): the refined base = the ORIGIN base of the area on 15M — the 15M
+        candle(s) inside the area's higher-TF base candle (1H hour / Daily day / Weekly week, `Level.base_ts`; a range edge: its anchor
+        swing candle) from which the departure move started, i.e. the 15M candle(s) holding that base candle's extreme on the base's
+        side (a supply / H base: its high; a demand / L base: its low), as their wick to body (levels._band_swing: no wick ⇒ the body),
+        kept inside the area band. Never a later test / turn candle that merely touched the area. The origin candles are known at the
+        area's birth (only bars ≤ its birth bar and ≤ u are read — no look-ahead). The invalidation = its far edge (`rb_far`). The base
+        candle has no 15M bars in the data (a prior Daily / Weekly area from before the 15M window) or its origin lies outside the
+        visited band ⇒ the area's own band (the higher-TF wick to body itself, `origin` = False). Comparison only."""
+        lid = lvl.get("parent_level", lvl.get("id"))
+        key = ("rbo", str(lid), float(lvl["lo"]), float(lvl["hi"]), int(u), int(d))
+        if key in self.memo:
+            return self.memo[key]
+        from . import levels as LVM
+        lo, hi = float(lvl["lo"]), float(lvl["hi"])
+        Ls = self.V.levels.L
+        L = Ls[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(Ls) else None
+        if L is not None:
+            tf, start, born = getattr(L, "tf", None) or lvl.get("tf"), getattr(L, "base_ts", None), int(getattr(L, "born_bar", 0) or 0)
+            uid = str(getattr(L, "uid", "") or "").split(":")
+            side = uid[1] if len(uid) > 2 and uid[1] in ("H", "L") else ("H" if getattr(L, "role0", None) == LVM.RES else "L")
+        else:                                                              # a range edge: its anchor swing candle
+            tf, start, born = lvl.get("tf"), lvl.get("anchor_ts"), int(lvl.get("born_bar") or 0)
+            edge = lvl.get("range_edge")
+            side = ("H" if edge == "upper" else "L") if edge else ("H" if d < 0 else "L")
+        A = self.A
+        out = None
+        bars = [] if start is None else [int(b) for b in self.base_candle_bars(tf, start) if int(b) <= min(born, int(u))]
+        if bars:
+            ext = (max if side == "H" else min)(float(A["high" if side == "H" else "low"][b]) for b in bars)
+            org = [b for b in bars if float(A["high" if side == "H" else "low"][b]) == ext]
+            bands = [LVM._band_swing(side, A["open"][b], A["high"][b], A["low"][b], A["close"][b], ext, 0) for b in org]
+            blo, bhi = max(min(x[0] for x in bands), lo), min(max(x[1] for x in bands), hi)
+            if blo <= bhi:
+                b = org[-1]
+                out = {"lo": round(blo, 2), "hi": round(bhi, 2), "bar": b, "bars": org, "ts": self.T(b), "price": round(ext, 2),
+                       "kind": side, "tf": "15M", "origin": True, "context_id": lid,
+                       "context_uid": self.uid_of(lvl) if L is not None else None,
+                       "what": f"15M origin base {self.T(org[0])[:16]}{' …' if len(org) > 1 else ''} (the {'high' if side == 'H' else 'low'} "
+                               f"of the {lvl.get('tf')} base candle {str(pd.Timestamp(start))[:16]}) of area {self.uid_of(lvl)}"}
+        if out is None and (L is not None or start is not None):           # no 15M origin in the data ⇒ the area's own band
+            out = {"lo": round(lo, 2), "hi": round(hi, 2), "bar": born, "bars": [], "ts": self.T(born) if born < len(self.ts) else None,
+                   "price": round(hi if side == "H" else lo, 2), "kind": side, "tf": lvl.get("tf"), "origin": False, "context_id": lid,
+                   "context_uid": self.uid_of(lvl) if L is not None else None,
+                   "what": f"the {lvl.get('tf')} area's own band (its base candle has no 15M origin inside the band in the data)"}
+        self.memo[key] = out
+        return out
+
+    def refined_turn(self, u, lvl, d):
+        """WHAT-IF (`entry_area_refine_base = newest_turn`; the A7 reading, replaced by DECISIONS 79). RC2 (Abhi 21 Oct, research default `entry_area_refine = setup_tf`, review after replay): the 1H / Daily area (levels'
         TA4 band) is the CONTEXT — where. Inside it, the REFINED BASE on the setup timeframe (15M) by the same TA4 rule — Abhi A7
         (DECISIONS 63): the NEWEST 15M turn of the area's side inside the band, as its wick to body. A turn = a 15M swing (`turns15`: a
         swing high for a supply / bear call, a swing low for a demand / bull put) confirmed by bar u, from the area's own birth turn on

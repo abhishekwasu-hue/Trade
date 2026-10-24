@@ -238,3 +238,13 @@ def earlier_break_reading_ctx():
         finally:
             mp.undo()
     return ctx
+
+
+@pytest.fixture
+def turn_base_reading(monkeypatch):
+    """DECISIONS 79 (owner rule): the default refined base is the area's ORIGIN base on 15M (`entry_area_refine_base = origin`). Tests
+    written for the replaced A7 reading (DECISIONS 63: the newest 15M turn inside the band — their synthetic bars place a later 15M
+    turn as the base) run on the what-if `newest_turn`, which reproduces that reading exactly; the default is covered by
+    tests/test_refined_origin_base.py."""
+    from decision3 import settings as S3
+    monkeypatch.setitem(S3.DEFAULTS, "entry_area_refine_base", "newest_turn")
