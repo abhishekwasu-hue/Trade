@@ -993,3 +993,18 @@ RSI ✓ going 5 → 0 is expected until C1 (push counting) is fixed — judge RS
 ---
 ## 24 Oct — send ZIP
 Zip send kra
+
+---
+## 24 Oct — TOKEN BUDGET RULES (binding)
+From Abhi — TOKEN BUDGET RULES (binding; record in INBOX verbatim + DECISIONS + CLAUDE.md §1/§6; apply today).
+Measured: OPEN_QUESTIONS.md (ATP) is 598 KB, owner-orders README 39 KB (read at every start and after every compaction), Trade INBOX 59 KB. That is where most tokens go.
+1. Start-of-task reading ≤ 15 KB: CLAUDE.md (trim to ≤ 5 KB; move details to docs/WORKING_RULES.md) + docs/ROADMAP.md status (ATP) or the current order's status section (Trade). The owner-orders README becomes a short index (≤ 8 KB: one line per item + its roadmap ID / status); move its long history to docs/owner-orders/README_HISTORY.md (move, never delete). Update the CLAUDE.md "read at start / after compaction" rule to this short set.
+2. OPEN_QUESTIONS.md holds only OPEN items (≤ 30 KB). Move answered / closed ones to docs/archive/OPEN_QUESTIONS_CLOSED.md (move, never delete). INBOX.md and DECISIONS.md are append-only and never read whole: grep by ID or date.
+3. Code reading: grep + line ranges; never cat a whole large file; never re-read a file you just edited.
+4. Agents: at most 2 running at a time. Define .claude/agents/ helpers with model: sonnet for mechanical work (running tests, regenerating screenshots / charts, docs and status updates, copying files); keep the main model for design, review, trading / reader logic and anything on order paths. Each agent writes only to its own folder.
+5. Tests: run only the tests touching the change locally; the full pytest / e2e suite runs in GitHub CI (no tokens). Send long output to a file and show only the failure summary (tail / grep). Never re-run a whole suite just to re-check a flake: re-run the single failing test.
+6. No polling: start long runs in the background and wait for the completion notice; no "still waiting" checks.
+7. Images: view at most 10 images per PR yourself; galleries ≤ 20 named charts per fix (Trade: the answer-key match score replaces eyeballing the rest); one screenshot comparison page per milestone (ATP), not per PR.
+8. Reports ≤ 25 lines, in the 3-part shape (changed items by ID / max 3 owner decisions with defaults / deploy line + migration yes-no). No narration, no test-count lists, no repeated background.
+9. Context: at each milestone write a ≤ 1 KB handover note (docs/HANDOVER_NOW.md: what is in flight, next step, open PRs) and continue from a fresh session instead of a long compacted one.
+Report once (≤ 10 lines) with the before / after sizes of CLAUDE.md, README, OPEN_QUESTIONS and INBOX.

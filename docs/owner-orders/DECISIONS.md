@@ -184,3 +184,10 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     labels, distinct trades counted once. Layer 5 and the Fix proof gallery are NOT approved until rebuilt; no deploy before Abhi's ✅.
     (Owner decision)
 69. BREAK-1 = (b) is CONFIRMED by Abhi (not a provisional default): DECISIONS 60 is the owner rule for areas and lines. (Owner decision)
+70. Token budget (binding): start-of-task reading ≤ 15 KB (CLAUDE.md ≤ 5 KB + the current order's status); owner-orders README = a short
+    index ≤ 8 KB (history in README_HISTORY.md); OPEN_QUESTIONS holds only open items ≤ 30 KB (closed ones moved to
+    docs/archive/OPEN_QUESTIONS_CLOSED.md); INBOX / DECISIONS append-only, read by grep only; code read by grep + line ranges; at
+    most 2 agents at a time, mechanical work on sonnet helpers (.claude/agents/), each agent writes only to its own folder; local tests
+    = only those touching the change, the full suite runs in CI; no polling; ≤ 10 images viewed per PR, ≤ 20 named charts per
+    gallery fix; reports ≤ 25 lines in the 3-part shape; a ≤ 1 KB docs/HANDOVER_NOW.md at each milestone. Move, never delete.
+    (Owner decision)
