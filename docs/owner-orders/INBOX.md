@@ -1113,3 +1113,7 @@ R5-1 No lower-TF data for an old higher-TF area ⇒ the whole area band is the r
 R5-2 Flipped area: location = the original base; invalidation = the band's far edge on the side opposite the new trade direction.
 R5-3 The flat 15:16–15:28 bars + single last print are systemic (every day since the start date found). Now, in the data layer: flag every affected bar as a data problem with evidence; a data-problem bar never defines a base, zone or swing extreme; find the feed cause and fix it going forward. Report the affected-day count and the fix.
 Then: merge originbase into integ51 → one BREAK-2 PR → CI; answer-key match table (expect 8/8) + the E4(b) increase explained with charts (≤10). Then C, then D + E, then Z. No deploy before my ✅.
+
+---
+## 24 Oct — Q3 owner-approved
+Q3 = owner approved: change ONLY that one owner-fixture state assertion to BEYOND_NOT_BROKEN; every other assertion and all verdicts stay unedited. Note it in DECISIONS with the chart.

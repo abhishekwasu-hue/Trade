@@ -237,3 +237,7 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     original base; invalidation = the band's far edge opposite the new trade direction. (Owner rule)
 84. Data problems: every flat 15:16–15:28 + single-last-print bar is flagged as a data problem with evidence; a data-problem bar never
     defines a base, zone or swing extreme; the feed cause is fixed going forward. (Owner rule)
+85. Owner-approved fixture edit (the only one): the 13 Oct zone state assertion in tests/test_decision3_flip.py
+    (test_real_13_oct_zone_stays_resistance…) becomes BEYOND_NOT_BROKEN (still resistance, not flipped) after the 13 Oct 14:30 close
+    above the band; every other assertion and all verdicts stay unedited. Chart: trade-data
+    review/gallery_fixes/R/OWNER_13oct_zone_beyond_not_broken.png. (Owner decision)
