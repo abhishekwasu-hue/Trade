@@ -850,11 +850,11 @@ class Levels:
         b, b0 = int(getattr(p, "xbar", -1)), self._obj_start(L)
         if b < 0 or b > t or b < b0 or L.role_at(b) != (RES if p.kind == "H" else SUP):
             return False                                                   # (extreme before the 15M window / before the object: no test of it)
-        key = (p.kind, float(lo), float(hi), int(t))
-        memo = self.__dict__.setdefault("_back_memo", {})
-        if key not in memo:                                                # a close not beyond (bars ≤ t), shared by the swings of one read
-            if len(memo) > 64:
-                memo.clear()
+        key = (p.kind, float(lo), float(hi))
+        memo = self.__dict__.get("_back_memo")
+        if memo is None or memo["t"] != int(t):                            # a close not beyond (bars ≤ t), shared by the swings of one
+            memo = self.__dict__["_back_memo"] = {"t": int(t)}             # read; only the current bar's masks are kept
+        if key not in memo:
             C = self.A["close"][:int(t) + 1]
             memo[key] = ((C <= hi) if p.kind == "H" else (C >= lo)) & ~self.ax[:int(t) + 1]
         return bool(memo[key][b:].any())                                   # (2) closed back by t; still running ⇒ external
