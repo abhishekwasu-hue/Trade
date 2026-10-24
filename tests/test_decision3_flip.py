@@ -476,7 +476,9 @@ def test_band_flip_facts_broken_vs_flipped():
 
 
 # ------------------------------------------------------------------------------------------------ synthetic 12-Oct fixture (oct12_fixture)
-def test_oct12_synthetic_fixture_supply_flips_when_the_first_swing_after_the_break_is_confirmed():
+def test_oct12_synthetic_fixture_supply_flips_when_the_first_swing_after_the_break_is_confirmed(earlier_break_reading):
+    # synthetic, code-generated expectation (not an owner fixture): written for the Z-1s reading; under BREAK-2 (DECISIONS 76 / 86)
+    # it runs on that reading's what-if — chart trade-data review/gallery_fixes/integ/B03_oct12_synthetic_bear_whatif.png
     """tests/oct12_fixture.py (synthetic bear call): its 1H supply is a support broken by acceptance with nothing below it (new lows).
     Under Abhi Z-1s (the corrected Z-1a wording) the far-side swing is the first swing low formed after the break and the zone FLIPS when
     that swing is CONFIRMED — it is not traded through. The zone is then a seller location; on the last day the in-zone study decides
