@@ -18,7 +18,7 @@ trade-बाजूला / पट्ट्यात; किंवा acceptance 
 
 LIFECYCLE (owner rule — DECISIONS 76 / 77, `break_hold_rule = follow_through`, default; areas AND lines, every TF, both directions;
   `_step_follow`): ALIVE ──a close beyond──▶ BEYOND_NOT_BROKEN (FL.BEYOND: not flipped, never a location, no entry) ──a 15M close beyond
-  the nearest prior confirmed swing of the object's OWN TF on the far side (`_own_swings` / `_ft_target`: 1H ⇒ the 1H areas' swings,
+  the most recent prior confirmed swing of the object's OWN TF on the far side (`_own_swings` / `_ft_target`: 1H ⇒ the 1H areas' swings,
   Daily ⇒ Daily, Weekly ⇒ Weekly; fresh ground ⇒ a new own-TF swing formed beyond, then a close beyond it)──▶ BROKEN (code FLIPPED,
   role reversed; known at that closing bar). Back inside first = FALSE BREAK (sweep ★, alive in its role); a wick through the far
   swing that closes back = a sweep of that swing. A flipped object broken back by the same test ⇒ DEAD (no second flip, never
@@ -500,6 +500,7 @@ class Levels:
         low = min((self.res.get("settings") or S2.DEFAULTS).get("structure_degrees", S2.DEFAULTS["structure_degrees"]))   # structure
         # degree as the swings were built (Abhi's approved D1 / D2); D0 = wiggles
         fin = next((d for d in sorted(self.res["pivots"]) if d >= low and self.res["pivots"].get(d)), None)   # inside a leg, not swings
+        self._fin_deg = fin                                                # DECISIONS 82: a 1H object's own swing = this (D1) degree
         pv0 = sorted(self.res["pivots"].get(fin, []) if fin is not None else [], key=lambda p: p.confirm_bar)
         k0 = 0
         self._known0 = []
@@ -743,10 +744,11 @@ class Levels:
 
     # ------------------------------------------------------------------------------------------ DECISIONS 76: follow-through lifecycle
     def _own_swings(self, tf):
-        """The object's OWN-timeframe swings (DECISIONS 76): 1H ⇒ the 1H levels' own swings (swings2 D`level_degree`, the source of the
-        1H areas); D ⇒ the Daily fold's swings; W ⇒ the Weekly fold's swings (detection unchanged). Each: kind, price, bar (the 15M bar
-        of its candle; −1 = before the 15M window), confirm_bar (the 15M bar it is KNOWN at; −1 = known before the window) and close
-        (its own candle's close — a sweep wick of the band is never the far swing, Z-1y). Built once."""
+        """The object's OWN-timeframe swings (DECISIONS 76 / 82): 1H ⇒ the ordinary 1H swing = the structure's finest degree (D1, the
+        approved structure degree — not the zone degree D2, which can leave an object "unbroken" while price runs far beyond); D ⇒ the
+        Daily fold's swings; W ⇒ the Weekly fold's swings (detection unchanged). Each: kind, price, bar (the 15M bar of its candle; −1 =
+        before the 15M window), confirm_bar (the 15M bar it is KNOWN at; −1 = known before the window), close (its own candle's close).
+        Built once."""
         memo = self.__dict__.setdefault("_own_memo", {})
         if tf in memo:
             return memo[tf]
@@ -775,21 +777,24 @@ class Levels:
                         continue
                     out.append(NS(kind=p.kind, price=float(p.price), bar=b15, confirm_bar=cb, close=float(dd["close"].iloc[int(p.bar)])))
         else:
+            deg = getattr(self, "_fin_deg", None)
+            src = self.res["pivots"].get(deg) if deg is not None else None
             out = [NS(kind=p.kind, price=float(p.price), bar=int(p.bar), confirm_bar=int(p.confirm_bar), close=float(C[int(p.bar)]))
-                   for p in self._pv_sorted]
+                   for p in (src if src else self._pv_sorted)]
         memo[tf] = out = sorted(out, key=lambda p: (p.confirm_bar, p.bar))
         return out
 
     def _ft_target(self, L, up, start, t):
-        """DECISIONS 76: the swing a follow-through close must pass for a break of L that began with the close at `start` (up ⇒ beyond
-        hi): the nearest PRIOR confirmed own-TF swing on the far side (formed before `start`, known by t, its extreme and its candle's
-        close beyond the band); none (fresh ground) ⇒ the nearest own-TF swing FORMED beyond from `start` on, confirmed by t. Returns
+        """DECISIONS 76 / 82: the swing a follow-through close must pass for a break of L that began with the close at `start` (up ⇒
+        beyond hi): the MOST RECENT confirmed own-TF swing lying beyond the object (its extreme beyond the band) that formed before
+        `start` (known by t); none (fresh ground) ⇒ the most recent own-TF swing FORMED beyond from `start` on, confirmed by t. Returns
         (swing, source) or (None, None) — none yet ⇒ BEYOND_NOT_BROKEN. Bars ≤ t only."""
         lo, hi = L.band_at(t)
         kind = "H" if up else "L"
-        bey = [p for p in self._own_swings(L.tf) if p.confirm_bar <= t and p.kind == kind
-               and ((p.price > hi and p.close > hi) if up else (p.price < lo and p.close < lo))]
-        pick = (lambda xs: min(xs, key=lambda p: p.price)) if up else (lambda xs: max(xs, key=lambda p: p.price))
+        bey = [p for p in self._own_swings(L.tf) if p.confirm_bar <= t and p.kind == kind and ((p.price > hi) if up else (p.price < lo))]
+
+        def pick(xs):                                                      # the most recent (its bar; ties: the later known)
+            return max(xs, key=lambda p: (p.bar, p.confirm_bar))
         pre = [p for p in bey if p.bar < start]
         if pre:
             return pick(pre), "before_break"

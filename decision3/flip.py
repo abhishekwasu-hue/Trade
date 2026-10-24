@@ -44,7 +44,7 @@ HOLD_RULES = ("follow_through", "hold", "swing_beyond")
 
 def hold_rule(s):
     """DECISIONS 76 (owner rule, default "follow_through"; areas AND lines, every TF, both directions): BROKEN = after the close beyond,
-    a reading-TF candle CLOSES beyond the nearest prior confirmed swing of the object's own TF on the far side (fresh ground ⇒ a new
+    a reading-TF candle CLOSES beyond the most recent prior confirmed swing of the object's own TF on the far side (DECISIONS 82) (fresh ground ⇒ a new
     own-TF swing forms beyond and a candle closes beyond it); back inside before that = FALSE BREAK (alive); in between =
     BEYOND_NOT_BROKEN; a flipped object broken back by the same test ⇒ DEAD. What-ifs: "hold" = BREAK-1 (DECISIONS 60 / 71, the
     pullback-swing hold, `break_hold_degree`):

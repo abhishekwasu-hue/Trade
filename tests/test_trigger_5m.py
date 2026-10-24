@@ -311,6 +311,7 @@ def test_e4b_on_5m_rejection_at_the_broken_area_from_the_break_side(mirror):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if (E4 (b) object = its state)
 def test_e4b_broken_area_rsi_reads_the_move_into_the_retest_as_the_15m_path(mirror):
     """Layer 5 gallery (C-L5-1, awaiting Abhi ✅): an E4 (b) entry at a BROKEN AREA on the 5M path passes the move into the retest (the
     last swing built away from the area, counted from its break) to the RSI read — the same move start the 15M path reads

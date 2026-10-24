@@ -255,6 +255,8 @@ class Reader:
 
     @staticmethod
     def rb_far(rb, d):
+        if rb.get("inv_far") is not None:                                  # DECISIONS 83 (R5-2): a flipped area's invalidation = the
+            return float(rb["inv_far"])                                    # band's far edge (opposite the new trade direction)
         return float(rb["hi"]) if d < 0 else float(rb["lo"])
 
     @staticmethod
@@ -373,6 +375,10 @@ class Reader:
                    "price": round(hi if side == "H" else lo, 2), "kind": side, "tf": lvl.get("tf"), "origin": False, "context_id": lid,
                    "context_uid": self.uid_of(lvl) if L is not None else None,
                    "what": f"the {lvl.get('tf')} area's own band (its base candle has no 15M origin inside the band in the data)"}
+        flipped = L is not None and any(k == "flip" and int(b) <= int(u) for b, k, *_ in (getattr(L, "events", None) or []))
+        if out is not None and flipped:                                    # DECISIONS 83 (R5-2): a FLIPPED area — the location
+            out = {**out, "inv_far": round(hi if d < 0 else lo, 2), "flipped": True,   # stays the original base; the invalidation =
+                   "what": out["what"] + " — flipped area: invalidation = the band's far edge"}   # the band's far edge opposite the trade
         self.memo[key] = out
         return out
 

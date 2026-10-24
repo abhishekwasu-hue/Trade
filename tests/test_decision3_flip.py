@@ -762,7 +762,8 @@ def test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731(real):
     assert L.role_at(t) == LV.RES and L.state_at(t) not in (FL.FLIPPED, FL.DEAD) and L.count("flip", t) == 0
     # method §3 (layer 2): broken = a close beyond AND a swing formed beyond — on 13 Oct no swing formed above the area, so it is not
     # BROKEN (the old 3-close rule called it BROKEN); Abhi's expectation (resistance while price stays below the far swing) is unchanged
-    assert L.state_at(t) in (FL.ACTIVE, FL.TESTED) and not [b for b, k, _ in L.events if k == "broken" and b <= t and b >= ix[0]]
+    # owner-approved (DECISIONS 85); chart review/gallery_fixes/R/OWNER_13oct_zone_beyond_not_broken.png
+    assert L.state_at(t) == FL.BEYOND and not [b for b, k, _ in L.events if k == "broken" and b <= t and b >= ix[0]]
     known = [p for p in V.levels._pv_sorted if p.confirm_bar <= t]          # the far-side swing an upward break would have to pass
     far = FL.far_swing(known, L.lo, L.hi, True, ix[0], V.levels.A["close"])
     assert far is not None and far.price == pytest.approx(FAR_UP, abs=0.1)

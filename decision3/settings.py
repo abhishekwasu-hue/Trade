@@ -62,7 +62,7 @@ DEFAULTS = {
                                              # beyond. "closes" = जुनं (accept_closes सलग closes) — फक्त जुने tests / what-if
     "accept_closes": 3,                      # फक्त break_rule = "closes" (legacy what-if): पलीकडे सलग इतके closes ⇒ acceptance
     "break_hold_rule": "follow_through",     # DECISIONS 76 (owner rule; areas AND lines, every TF): BROKEN = after the close beyond, a 15M
-                                             # candle CLOSES beyond the nearest prior confirmed swing of the object's own TF on the far side
+                                             # candle CLOSES beyond the most recent prior confirmed swing of the object's own TF on the far side (DECISIONS 82)
                                              # (fresh ground ⇒ a new own-TF swing forms beyond, then a close beyond it); back inside first =
                                              # FALSE BREAK (alive); in between = BEYOND_NOT_BROKEN (no entry); flipped then broken back by
                                              # the same test ⇒ DEAD. What-ifs: "hold" = Abhi BREAK-1 (DECISIONS 60 / 71, replaced by 76):
@@ -307,7 +307,7 @@ REGISTER = {
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
     "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),
     "break_hold_rule": ("follow_through", "follow_through / hold (what-if) / swing_beyond (what-if)", "Abhi नियम", "DECISIONS 76 "
-                        "(owner rule): broken = after the close beyond, a 15M close beyond the nearest prior own-TF swing on the far side "
+                        "(owner rule): broken = after the close beyond, a 15M close beyond the most recent prior own-TF swing on the far side (1H = D1, DECISIONS 82) "
                         "(fresh ground: a new own-TF swing beyond, then a close beyond it); back inside first = false break (alive); in "
                         "between = BEYOND_NOT_BROKEN; flipped then broken back by the same test ⇒ DEAD. hold = the replaced BREAK-1: "
                         "broken = a "

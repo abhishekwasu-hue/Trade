@@ -136,3 +136,21 @@ def test_5m_e1_is_the_first_5m_candle_trading_into_the_origin_base(mirror):
     A5 = F.A
     assert float(A5["low"][j]) <= rb["hi"] and float(A5["high"][j]) >= rb["lo"]
     assert not any(float(A5["low"][i]) <= rb["hi"] and float(A5["high"][i]) >= rb["lo"] for i in range(30, j))
+
+
+@MIRRORS
+def test_a_flipped_area_keeps_its_original_base_as_location_and_the_band_far_edge_as_invalidation(mirror):
+    """DECISIONS 83 (R5-2): a FLIPPED area — the location stays the original (origin) base; the invalidation = the band's far edge on
+    the side opposite the new trade direction (supply flipped to demand ⇒ bull put ⇒ the band's low; mirror: the band's high). Before
+    the flip (and in an unflipped area) the invalidation is the origin base's own far edge (DECISIONS 79)."""
+    V, lvl, d = _org(mirror)
+    R = EM.Reader(V)
+    rb0 = R.refined(12, lvl, d)
+    assert rb0["origin"] and R.rb_far(rb0, d) == pytest.approx(_p(103.5, mirror))
+    V.levels.L[0].events.append((8, "flip", "test: flipped"))
+    nd = -d                                                                # the flipped area's trade direction
+    R = EM.Reader(V)
+    rb = R.refined(12, lvl, nd)
+    assert rb["origin"] and _band(rb, mirror) == _band(R.refined(12, lvl, d), mirror) == _band(rb0, mirror)   # same original base
+    assert rb["flipped"] and R.rb_far(rb, nd) == pytest.approx(_p(BAND[0], mirror))   # the band's far edge opposite the trade
+    assert R.refined(7, lvl, nd).get("inv_far") is None                   # before the flip: no change (bars ≤ u only)

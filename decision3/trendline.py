@@ -381,7 +381,7 @@ def _broken_at(C, pivs, kind, line, side, start, end, hold=False):
 
 def follow_through_break(C, known, line, side, start, end):
     """DECISIONS 76 (owner rule; lines as areas, every TF): a line is BROKEN when, after a close beyond it (`side` +1 = above), a candle
-    of the line's chart CLOSES beyond the nearest prior confirmed swing of the line's own TF on the far side (`known` = the swings the
+    of the line's chart CLOSES beyond the most recent prior confirmed swing of the line's own TF on the far side (DECISIONS 82) (`known` = the swings the
     line is drawn on: a swing high above the line for a break up, a swing low below it for a break down — formed before the
     excursion's first close, its extreme beyond the line at the judged bar, confirmed by that bar); fresh ground (none) ⇒ a new own-TF
     swing forms beyond from the excursion on, is confirmed, and a candle closes beyond it. A close back on the line's side first = a
@@ -410,7 +410,8 @@ def follow_through_break(C, known, line, side, start, end):
         pool = pre if pre.any() else (ok & (pb >= ex))
         if not pool.any():
             continue
-        tgt = float(pp[pool].min() if side > 0 else pp[pool].max())
+        ix = np.flatnonzero(pool)                                          # DECISIONS 82: the MOST RECENT swing beyond (its bar)
+        tgt = float(pp[ix[np.lexsort((pc[ix], pb[ix]))[-1]]])
         if (float(C[u]) - tgt) * side > 0:
             return ex, u, None
     return None, None, ex

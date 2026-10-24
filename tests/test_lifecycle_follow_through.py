@@ -3,7 +3,7 @@ real readers (decision3/levels.py, decision3/trendline.py, decision3/entry_model
 
   • ALIVE ──a close beyond──▶ BEYOND_NOT_BROKEN (not flipped, no entry of any model);
   • back inside before the follow-through ⇒ FALSE BREAK (a sweep ★; alive in the original role) — a wick beyond too;
-  • BROKEN (code FLIPPED, role reversed) = after the close beyond, a 15M close beyond the nearest prior confirmed own-TF swing on the
+  • BROKEN (code FLIPPED, role reversed) = after the close beyond, a 15M close beyond the most recent prior confirmed own-TF swing (DECISIONS 82; 1H = D1) on the
     far side; a wick through that swing that closes back is a sweep of the swing (still BEYOND_NOT_BROKEN); fresh ground ⇒ a new
     own-TF swing forms beyond (confirmed) and a close beyond it — its confirmation alone is no break;
   • a flipped object broken back by the same test ⇒ DEAD (no second flip, never restored);
@@ -204,3 +204,21 @@ def test_e4b_reads_only_the_trend_side_on_both_readers(monkeypatch, trend, calls
     monkeypatch.setattr(EM5, "Reader5", lambda V, j, *a: fake5)
     EM5.read5(NS(s={"entry_cluster_rule": "area"}), 7, trend, [])
     assert seen == calls
+
+
+@MIRRORS
+def test_the_far_swing_is_the_most_recent_own_tf_swing_beyond_and_a_1h_object_reads_d1_swings(mirror):
+    """DECISIONS 82 (Q1): the next swing = the MOST RECENT confirmed own-TF swing lying beyond the object (not the nearest price), and a
+    1H object's own swing is the ordinary 1H swing D1, not the zone degree D2. Here a D1-only high 123 (bar 4) is more recent than the
+    D2 high 122 (bar 2): a close above 122 is no break; the close above 123 is."""
+    f, sw = _mirror(mirror)
+    head = [119.0, 121.0, 122.0, 120.0, 123.0, 114.0, 111.0, 110.0, 112.0, 114.0, 116.0, 118.0, 116.0, 114.0, 113.0, 114.0, 116.0]
+    tail = [119.0, 120.0, 122.5, 122.8, 123.4]
+    m = m15_from([f(c) for c in head + tail], wick=0.3)
+    d2 = [P(sw(k), f(px), b, c) for k, px, b, c in PIVS]
+    d1 = d2 + [P(sw("H"), f(123.0), 4, 6)]
+    lv = LV.Levels(res_of(m, d2, d1))
+    Z = [L for L in lv.L if abs(L.anchor - f(118.0)) < 1e-6][0]
+    assert Z.state_at(19) == FL.BEYOND and Z.state_at(20) == FL.BEYOND    # closes above 122 (the D2 high, nearer in price): no break
+    assert _ev(Z)[-2:] == [(21, "broken"), (21, "flip")]                   # the close above the most recent D1 high 123
+    assert lv.flip_view(Z, 21)["far_swing"]["price"] == pytest.approx(f(123.0))
