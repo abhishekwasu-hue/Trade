@@ -241,3 +241,13 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     (test_real_13_oct_zone_stays_resistance…) becomes BEYOND_NOT_BROKEN (still resistance, not flipped) after the 13 Oct 14:30 close
     above the band; every other assertion and all verdicts stay unedited. Chart: trade-data
     review/gallery_fixes/R/OWNER_13oct_zone_beyond_not_broken.png. (Owner decision)
+86. S1 (amends 82): BREAK-2's next swing = the most recent EXTERNAL swing of the object's own TF lying beyond it. A swing whose candle
+    traded inside the object's band (made while price was testing it, incl. its false-break extremes) is INTERNAL and never counts.
+    Lower-TF swings never change higher-TF structure; an internal break against the trend is a pullback (timing only). The 13 Oct
+    owner-fixture line stays BEYOND_NOT_BROKEN (85). (Owner rule)
+87. Daily bars whose closing-auction print lies beyond the traded high / low keep the official close but are flagged
+    "auction-extended": the auction-only extension never defines a Daily swing extreme or a zone edge. Data flags apply in replays
+    too. (Owner rule)
+88. Vision cross-check: a second opinion, never the source of truth — clean charts at the decision bar (Weekly, Daily, 1H, 15M; no
+    marks, no later data), fixed questions, a reader vs vision vs answer-key table; a budget cap per run in settings; the cost is
+    reported (paid calls approved within that cap). (Owner decision)

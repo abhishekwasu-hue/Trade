@@ -1117,3 +1117,13 @@ Then: merge originbase into integ51 → one BREAK-2 PR → CI; answer-key match 
 ---
 ## 24 Oct — Q3 owner-approved
 Q3 = owner approved: change ONLY that one owner-fixture state assertion to BEYOND_NOT_BROKEN; every other assertion and all verdicts stay unedited. Note it in DECISIONS with the chart.
+
+---
+## 24 Oct — answers S1 / S2 / DP-1 / DP-2 / V1
+Answers (research-based: internal vs external structure, higher-TF direction). Report ≤25 lines by ID.
+S1 Next swing = the most recent EXTERNAL swing of the object's own TF lying beyond the object. A swing whose candle traded inside the object's band — a swing made while price was testing this object, including its false-break extremes — is INTERNAL and never counts. Lower-TF swings never change higher-TF structure; an internal break against the trend is a pullback (timing only), not a break.
+S2 Consequences: the owner-fixture state line stays BEYOND_NOT_BROKEN as approved (DECISIONS 85); 82 is amended by S1; re-score the attached answer key v4 (L06 now: false break, supply alive; L07 next external swing changes, verdict same). Expect 8/8; mismatches → chart.
+DP-1 Daily bars whose closing-auction print lies beyond the traded high/low: keep the official close as the Daily close and flag the bar "auction-extended" so the auction-only extension never defines a Daily swing extreme or a zone edge (since the closing auction began, the index stops trading at the end of continuous trading; the close is set by auction, not by traded price action).
+DP-2 Flags apply in replays too, inside the BREAK-2 PR.
+V1 Vision cross-check (second opinion, never the source of truth): reuse the existing vision test tool. For every answer-key item and every new replay entry, render clean charts at the decision bar (Weekly, Daily, 1H, 15M; no marks, no data after the decision) and ask the vision model fixed questions: higher-TF trend, zones near price, object state (alive / false break / beyond-not-broken / broken / dead), entry yes/no and side. Output a table reader vs vision vs answer key; list disagreements with charts. Budget cap per run in settings; report the cost.
+Then: integ51 + dpfeed → one BREAK-2 PR → CI → my review. Next C, then D + E, then Z.
