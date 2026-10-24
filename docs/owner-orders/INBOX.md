@@ -979,3 +979,7 @@ Each PR: self-review, tests (no look-ahead, both mirrors), before / after charts
 
 
 BREAK-1: (b) confirmed by me — broken = a close beyond AND price holds beyond (a swing forms on the far side and stays beyond); a push beyond that turns back inside without holding is a sweep and the object stays alive. Same rule for areas and lines, and for broken back ⇒ dead. Example that proves it: L5-X01 (11 Sep, Daily area 274) — price gapped below, made its low and came straight back inside: a sweep, so the E4 (b) bear call there must not exist. Record it in DECISIONS.
+
+---
+## 24 Oct — BREAK-1 confirmed
+From Abhi — change to TRADE_SESSION_GALLERY_REVIEW_FIXES.md, item A1 only: BREAK-1 = (b) is now CONFIRMED by me, no longer a provisional default. Record it in DECISIONS, close BREAK-1 in OPEN_QUESTIONS, and continue the file with no wait on this point. Everything else in the file is unchanged.

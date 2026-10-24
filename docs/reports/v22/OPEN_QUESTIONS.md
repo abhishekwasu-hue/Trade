@@ -1464,3 +1464,7 @@ Provisional (checked against DECISIONS 37, 46, 49, 51, 54, CLAUDE.md "Trigger re
 - L5-b: answered — count the forming push (marked "forming", bars ≤ t), "confirmed" once its swing confirms.
 - L5-c: answered — RSI divergence at a broken line / area retest like at any area (the retest = the pullback to the object).
 - C-L5-1: awaits Abhi's ✅ after the charts (layer 5 gallery ZIP).
+
+### BREAK-1 — CLOSED (Abhi confirmed, DECISIONS 60 / 69)
+BROKEN = a close beyond AND price holds beyond (a swing forms on the far side and stays beyond); a push beyond that turns back inside
+without holding = a SWEEP (object alive); broken back ⇒ DEAD by the same test; areas and lines alike. Proof case L5-X01 (Daily 274).
