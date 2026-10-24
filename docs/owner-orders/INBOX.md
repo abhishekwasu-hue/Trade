@@ -1157,3 +1157,13 @@ EN2 Invalidation = the zone's distal edge, or the false-break extreme when that 
 EN3 Overlapping objects at one location form a cluster: one entry per cluster per visit (objects stay separate; no merging).
 EN4 Lines: anchors are external swings; a line break follows BREAK-2; a line break alone is a pace change, never an entry or reversal by itself.
 EN5 Proof: replay before/after (entries, watch alerts, stop-outs, next-area reached) + ≤20 charts; owner fixtures unedited.
+
+---
+## 24 Oct — #385 review answers
+#385 review answers. Report ≤25 lines.
+1 S1 stays (research + data check: the Daily case's swing is that object's own false-break extreme, so the object correctly stays BEYOND_NOT_BROKEN and the two flip-retest entries are correctly removed). Make the INTERNAL test precise instead of "candle traded inside the band": a swing is internal for an object when its extreme was made during a visit inside the object or during an excursion beyond it that ended with a reading-TF close back inside (a false-break extreme). Re-run the 8 S1 charts and the answer key; report any change.
+2 Auction flags from 5M (same as live) = accepted. Changes to the stable swings layer only with a bug-fix tag and before/after charts.
+3 29 Sep test change = ✅ (not an owner fixture; the old pass depended on an unconfirmed swing).
+4 Early-close days: add the exchange's special-session/early-close calendar to the data-problem flagging (backlog item, not blocking).
+5 L03: say in one line why the earlier own-TF swing beyond (11 Jun) was not used (lookback limit or classification); the break bar matches.
+Merge #385 when CI is green on the latest commit. Then the V1 VPS run (dry-run first, $1 cap), then SW.

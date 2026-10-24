@@ -266,3 +266,8 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     the zone's distal edge, or the false-break extreme beyond it; never an internal level. Overlapping objects at one place = a cluster:
     one entry per cluster per visit (no merging). Line anchors are external swings; a line break follows BREAK-2 and alone is a pace
     change, never an entry or reversal. (Owner rule)
+94. INTERNAL swing (precise, replaces "candle traded inside the band"): a swing is internal for an object when its extreme was made
+    during a visit inside the object or during an excursion beyond it that ended with a reading-TF close back inside (a false-break
+    extreme). Auction flags are computed from 5M (as live). The stable swings layer changes only with a bug-fix tag and before / after
+    charts. The 29 Sep non-owner test change is approved. Early-close / special-session calendar → data-problem flagging (backlog).
+    (Owner decisions)
