@@ -357,7 +357,9 @@ class Reader:
             side = ("H" if edge == "upper" else "L") if edge else ("H" if d < 0 else "L")
         A = self.A
         out = None
-        bars = [] if start is None else [int(b) for b in self.base_candle_bars(tf, start) if int(b) <= min(born, int(u))]
+        dp = getattr(self.V.levels, "dp", None)                            # DECISIONS 84: a data-problem bar is never the origin
+        bars = [] if start is None else [int(b) for b in self.base_candle_bars(tf, start) if int(b) <= min(born, int(u))
+                                         and not (dp is not None and len(dp) > int(b) and dp[int(b)])]
         if bars:
             ext = (max if side == "H" else min)(float(A["high" if side == "H" else "low"][b]) for b in bars)
             org = [b for b in bars if float(A["high" if side == "H" else "low"][b]) == ext]

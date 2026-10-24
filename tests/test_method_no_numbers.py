@@ -65,6 +65,7 @@ OPERATIONAL = {                  # display / chart / ticket formatting, never a 
 }
 DATA_QUALITY = {                 # is there enough / complete data (method §1 P1 allows data-quality checks)
     "weekly_min_bars", "daily_min_sessions", "daily_sigma_sessions", "vol_gap_max_frac", "flip_vol_min_coverage",
+    "dp_flat_run_min_bars",
 }
 CALIBRATION = {                  # Abhi (layer 1 ✅): a swing's significance is judged against the market's own normal movement (σ) at
                                  # the scale he chose from his own charts — his visual calibration, not a fixed point value; and the values

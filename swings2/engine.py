@@ -103,6 +103,9 @@ class Upper:
             return None
         p, j0 = c[0], c[1]
         for j in range(max(j0, self.last_cross + 1), b + 1):
+            if A.get("dp") is not None and A["dp"][j]:                              # DECISIONS 84: never an extreme / a crossing
+                c[1] = j + 1
+                continue
             th = theta[j]
             if kind == "H":
                 if A["h"][j] > p.price:
@@ -167,6 +170,8 @@ def build(m15, df1m=None, s=None, m1_status_map=None):
          "c": m15["close"].to_numpy(float)}
     n = len(m15)
     A["split"] = np.zeros(n, dtype=bool)
+    A["dp"] = (m15["data_problem"].fillna("").astype(str).ne("").to_numpy() if "data_problem" in m15.columns   # DECISIONS 84
+               else np.zeros(n, dtype=bool))
     first = np.r_[True, day.to_numpy()[1:] != day.to_numpy()[:-1]]
     sigma = np.array([sig.get(pd.Timestamp(d), np.nan) for d in day], float)
     k = {d: float(s["k"][d]) for d in DEGREES}
@@ -228,8 +233,8 @@ def build(m15, df1m=None, s=None, m1_status_map=None):
         else:
             d0.order_fn = (lambda rows, hi, lo, dr, rc=rec: rc.setdefault(str(dr), DC._order_1m(rows, hi, lo, dr)))
         stream.append({"ts": str(ts_of(b)), "m1_status": st, "order": rec if saved is None else saved})
-        if not np.isfinite(sigma[b]):
-            continue
+        if not np.isfinite(sigma[b]) or A["dp"][b]:                                # DECISIONS 84: a data-problem bar (the flat
+            continue                                                                 # run + close print) is never a pivot / crossing
         started.setdefault(cur_seg, sess_idx[dd])
         p = d0.step(b, A["h"][b], A["l"][b], theta[0][b], sigma[b], known_of(b), None, ts_of, r1 if st == "complete" else None)
         A["split"][b] = bool((p is not None and p.bar == b) or d0.cons == b          # same-bar: candle चा भाग D0 ला दिसला नाही

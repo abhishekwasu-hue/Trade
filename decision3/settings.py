@@ -96,6 +96,8 @@ DEFAULTS = {
     "c0_volume_required": True,              # Abhi Z-1c: commitment (c0) ला FUT volume हवाच — NA ⇒ "data problem", entry नाही (volume शिवाय
                                              # grade-B trade नाही). False = जुनी प्रथा (NA ⇒ कमाल B) — फक्त volume नसलेले जुने synthetic tests
     "vol_slot_min_sessions": 10,             # slot history इतक्यापेक्षा कमी ⇒ NA (कारणासह); 10–19 ⇒ उपलब्ध sessions चा median (OPEN_QUESTIONS)
+    "dp_flat_run_min_bars": 2,               # DECISIONS 84 data quality: a session-ending run of this many identical flat bars (O=H=L=C) +
+                                             # the single last print ⇒ data problem (decision3.history.close_print_runs)
     "vol_gap_max_frac": 0.5,                 # Abhi RF-2 (b): in-zone window (arm … commitment) च्या इतक्यापेक्षा जास्त bars ला FUT volume नाही
                                              # ⇒ data problem: entry नाही + Telegram "data problem: FUT volume gaps" (NIFTY / BANKNIFTY, दिवसातून
                                              # एकदा); कमी ⇒ volume असलेल्या bars ची सरासरी + "gaps n/m" नोंद
@@ -336,6 +338,9 @@ REGISTER = {
     "vol_slot_sessions": (20, "—", "Abhi नियम", "Abhi (Z-1 volume): bar volume ÷ त्याच time-of-day slot चा मागच्या 20 sessions चा median"),
     "c0_volume_required": (True, "True / False", "Abhi नियम", "Abhi Z-1c: FUT volume नाही = data error ⇒ entry नाही; False फक्त जुने volume-नसलेले tests"),
     "vol_slot_min_sessions": (10, "5 / 10 / 20", "अंदाज", "slot history किमान (legs2 rvol_min_sessions सारखं); कमी ⇒ NA — OPEN_QUESTIONS Z-1h"),
+    "dp_flat_run_min_bars": (2, "≥ 2 (bars in the flat run)", "व्याख्या", "DECISIONS 84 (R5-3): the data layer's close-print "
+                             "detector — identical flat bars ending the session before one last print are not traded bars; a data-quality "
+                             "check (method P1), never a reading threshold"),
     "vol_gap_max_frac": (0.5, "0–1 (share of the window's bars)", "Abhi नियम", "Abhi RF-2 (b): FUT volume gaps > इतका भाग ⇒ data problem, "
                          "entry नाही (default 50% — Abhi चा आकडा); commitment bar चाच volume नाही ⇒ Z-1c (entry नाही)"),
     "liq_marks_per_side": (3, "2/3/5", "अंदाज (फक्त chart)", "spec §7.6 pools लहान खुणा — गर्दी टाळायला; क्रम PWH/PWL > PDH/PDL > equal > swing (liquidity.pool_marks prio, फक्त display)"),

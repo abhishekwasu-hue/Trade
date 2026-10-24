@@ -57,6 +57,7 @@ import numpy as np
 import pandas as pd
 
 from . import flip as FL
+from . import history as HI
 from . import settings as S3
 
 SUP, RES = "support", "resistance"
@@ -219,6 +220,7 @@ class Levels:
         self.m15 = m15
         self.n = len(m15)
         self.A = {k: m15[k].to_numpy(float) for k in ("open", "high", "low", "close")}
+        self.dp = HI.dp_mask(m15)                                          # DECISIONS 84: data-problem bars (never a base)
         self.ts = pd.to_datetime(m15["timestamp"]).reset_index(drop=True)
         self.bar_end = pd.to_datetime(m15["bar_end"]).reset_index(drop=True) if "bar_end" in m15.columns else \
             self.ts + pd.Timedelta(minutes=15)
@@ -246,6 +248,11 @@ class Levels:
         if not len(ix):
             return None
         return (float(self.A["open"][ix[0]]), float(self.A["high"][ix].max()), float(self.A["low"][ix].min()), float(self.A["close"][ix[-1]]))
+
+    def _dp_in(self, j, t):
+        """DECISIONS 84: 1H candle j (its 15M bars ≤ t) holds a data-problem bar (the flat run + close print) ⇒ never a base."""
+        dp = getattr(self, "dp", None)
+        return dp is not None and len(dp) == self.n and bool(dp[(self.h1_of == j) & (np.arange(self.n) <= t)].any())
 
     def _w(self, t):
         t = min(t, self.n - 1)
@@ -475,8 +482,8 @@ class Levels:
         j0, j1 = h1_of[origin.bar], h1_of[t]
         for j in range(j0 + 1, j1):                                       # the BOS bar's own hour is the breakout ⇒ never the base
             c4 = self._h1_upto(j, t - 1)
-            if c4 is not None and (c4[3] - c4[0]) * d > 0:
-                return j, c4
+            if c4 is not None and (c4[3] - c4[0]) * d > 0 and not self._dp_in(j, t - 1):
+                return j, c4                                              # DECISIONS 84: a data-problem candle is never the base
         c4 = self._h1_upto(j0, t - 1) if t > 0 else None                  # the base the impulse left: the origin's own candle
         return (j0, c4) if c4 is not None else None
 
