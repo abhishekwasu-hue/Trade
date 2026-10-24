@@ -71,6 +71,40 @@ CONF_NAME = {"volume_growing": "volume growing inside", "rsi_divergence": "RSI d
              "correction_line_closed_through": "correction line closed through"}
 
 
+def revisit_start(touch_bars, swings, struct=()):
+    """DECISIONS 64 (a revisit of a broken object ends by structure, CLAUDE.md "the revisit ends when price leaves it by structure"):
+    touch_bars = the bars touching the object; swings = [(bar, does_not_reach)] — the finest swings known (confirmed) at the decision;
+    struct = the bars of the structure-degree swings built away that do not reach it (the RC4 end, as before). The revisit starts at
+    the first touch and ends when price leaves and builds swings away that do not reach the object again: a structure swing that does
+    not reach it, or two consecutive finest swings formed after the start (a swing away and the next turn) that both do not reach it.
+    A finest swing that reaches it keeps the revisit going. ⇒ the start bar of the revisit in progress, or None."""
+    ev = {}
+    for b in touch_bars:
+        ev.setdefault(int(b), [False, [], False])[0] = True
+    for b, nr in swings:
+        ev.setdefault(int(b), [False, [], False])[1].append(bool(nr))
+    for b in struct:
+        ev.setdefault(int(b), [False, [], False])[2] = True
+    start, last_nr = None, False
+    for i in sorted(ev):
+        tch, sws, st = ev[i]
+        if start is not None:
+            if i <= start:
+                continue
+            if st:
+                start = None
+                continue
+            for nr in sws:
+                if nr and last_nr:
+                    start = None
+                    break
+                last_nr = nr
+            continue
+        if tch:
+            start, last_nr = i, False
+    return start
+
+
 def side_of(d):
     return "bear_call" if d < 0 else "bull_put"
 
@@ -670,6 +704,13 @@ class Reader:
         if key in self.memo:
             return self.memo[key]
         kind = "L" if d < 0 else "H"
+        if getattr(self.V, "visit_end_new", False):                        # DECISIONS 64: swings away that do not reach it again
+            tb = {int(i) for i in touches(born, t)}
+            piv = [p for p in self.V.visit_swings() if p.confirm_bar <= t and born <= p.bar <= t]
+            st = {int(p.bar) for p in getattr(self.V.levels, "_known0", []) if p.confirm_bar <= t and born <= p.bar <= t and
+                  p.kind == kind and away_fn_swing(p)}
+            self.memo[key] = revisit_start(tb, [(int(p.bar), bool(away_fn_swing(p))) for p in piv], st)
+            return self.memo[key]
         piv = {int(p.bar) for p in getattr(self.V.levels, "_known0", []) if p.confirm_bar <= t and born <= p.bar <= t and
                p.kind == kind and away_fn_swing(p)}
         tb = {int(i) for i in touches(born, t)}
@@ -809,7 +850,10 @@ class Reader:
         kind = "L" if d < 0 else "H"
         bb = ln.get("break_bar")
         bb = int(bb) if bb is not None else int(ln["p1"][0])
-        sw = [int(p.bar) for p in getattr(self.V.levels, "_known0", []) if p.kind == kind and p.confirm_bar <= t and bb <= p.bar < int(start)
+        new = getattr(self.V, "visit_end_new", False)                      # DECISIONS 64 (B2): the LAST away swing known at t — it moves
+        src = list(getattr(self.V.levels, "_known0", [])) + (list(self.V.visit_swings()) if new else [])   # forward inside the revisit
+        end = int(t) + 1 if new else int(start)
+        sw = [int(p.bar) for p in src if p.kind == kind and p.confirm_bar <= t and bb <= p.bar < end
               and ((float(p.price) < TL.line_value(ln, int(p.bar))) if d < 0 else (float(p.price) > TL.line_value(ln, int(p.bar))))]
         return max(sw) if sw else None
 

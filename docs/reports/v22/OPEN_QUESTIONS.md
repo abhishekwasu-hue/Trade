@@ -1464,3 +1464,23 @@ Provisional (checked against DECISIONS 37, 46, 49, 51, 54, CLAUDE.md "Trigger re
 - L5-b: answered — count the forming push (marked "forming", bars ≤ t), "confirmed" once its swing confirms.
 - L5-c: answered — RSI divergence at a broken line / area retest like at any area (the retest = the pullback to the object).
 - C-L5-1: awaits Abhi's ✅ after the charts (layer 5 gallery ZIP).
+
+## Gallery review B — the visit end and the move start (DECISIONS 64; report docs/reports/gallery_review_fixes_B.md; branch `visitmove`)
+Provisional defaults (checked against DECISIONS 37 / 56 / 59 / 60 / 61 / 64, CLAUDE.md "Sweep / fakeout" and "E4 (b)", method §3 Visit):
+- **B-1 (the swings of a visit)** "Swings built away" = the finest swings the engine computes (swings2 D0, the 15M turns the gallery draws
+  and rsi2 counts as pushes) together with the D1 structure swings. Today only D1 counted, and a long one-way fall (D04 / D05, ~1,900 pts)
+  has no D1 turn for days. Default: D0 ∪ D1. If C (push detection) settles on another "finest structure", the visit follows it
+  (`V22.visit_swings()` is the one place).
+- **B-2 ("do not reach it again")** A visit ends at (a) a D1 swing built away (as before) or (b) a finest swing away followed by a turn
+  that does not reach the area again; a turn that reaches it keeps the visit (the dip was part of it). Consequence: at a decision bar
+  inside a one-way move that has not turned yet (N07 09-15 15:15; D11 08-27 15:15, whose 13:15 turn came back 26 pts into the band)
+  the visit is still open — it ends at the next confirmed turn. Default: structure only (no distance, no time). Abhi to confirm on the
+  N07 / D11 charts.
+- **B-3 (L5-c line move start)** DECISIONS 59 said "formed … before the revisit"; DECISIONS 64 says the start moves forward with each
+  new away swing. Default: the last away swing beyond the line known at t (also one inside the revisit). `single_swing` = the 59 reading.
+- **B-4 (area born on its touching bar; not mine — area builder)** D04 / D05: area 293 / 295 is born on the 07-22 09:15 breakdown
+  candle, which itself trades in the band ⇒ a "visit" begins on the birth bar (price leaving the base, not returning to it). Logged for
+  the area-builder owner; the visit rule now ends it by structure the same day.
+- Far side: a swing beyond the far edge + the next turn not back inside ends the VISIT (held beyond); the area's broken / dead state
+  stays the lifecycle's (BREAK-1). A sweep (the next turn back inside) keeps the visit.
+- `visit_end_rule = single_swing` (dashboard `engine3_visit_end_rule`) = the earlier reading byte-for-byte (what-if / revert).

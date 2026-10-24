@@ -554,6 +554,9 @@ METHOD_SWITCHES = {
     "engine3_range_state_rule": ("range_state_rule", ("structure", "overlap"), "row range state (context)"),
     # Abhi (DECISIONS 37, owner rule): the entry trigger on 5M for every model; 15m = the earlier behaviour (what-if, byte-identical).
     "engine3_trigger_tf": ("trigger_tf", ("5m", "15m"), "entry trigger timeframe (5M closes; DECISIONS 37)"),
+    # Abhi (DECISIONS 64, owner rule): the visit ends by structure (swings away that do not reach the area again), the move start moves
+    # forward; single_swing = the earlier visit end (what-if, byte-identical).
+    "engine3_visit_end_rule": ("visit_end_rule", ("away_not_reached", "single_swing"), "layer 3 visit end / move start (DECISIONS 64)"),
 }
 
 

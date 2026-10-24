@@ -594,7 +594,7 @@ def _visits5(V, t, d5, areas, armed, trend):
             appr = R.appr5(vi)
             ok5, cm5 = R.confirm5(x, d, start, appr)
             arm15 = min(int(F.b_of[start]), t)
-            mf = (int(vi["approach_from15"]) - 1) if vi.get("approach_from15") is not None else None
+            mf = vi.get("move_from15")                                     # the engine's own move start (DECISIONS 64)
             v.update(arm=arm15, commit=cm5, required_ok=bool(ok5), c0=R.c0(j, x, d, start, appr), absorbing=R.absorbing(j, x, d, start),
                      refined=R.refined(t, x, d) if R.refine_on() else None, appr=appr, move_from=mf,
                      rsi=V.rsi_divergence(t, d, arm15, x.get("tf", "1H") if x.get("tf") in ("1H", "D") else "1H", mf))

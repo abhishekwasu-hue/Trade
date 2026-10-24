@@ -53,6 +53,9 @@ DEFAULTS = {
     "zone_visit_rule": "structure",          # method §3 Visit: संपते फक्त रचनेने — area पासून दूर swing (Abhi 21 Oct: एका candle चा बाहेर close /
                                              # "अपयशी commitment बाहेर" visit संपवत नाही — तो जुना शेवट फक्त entry_gate = legacy_k मध्ये).
                                              # "close_away" (Z-1v: बाहेर एक close) / "touch_window" = जुनं — फक्त जुने tests / what-if
+    "visit_end_rule": "away_not_reached",    # DECISIONS 64 (owner rule): a visit ends by structure — price leaves and builds swings away (the
+                                             # finest swings) that do not reach the area again; the move start = the LAST away swing (moves
+                                             # forward). "single_swing" = the earlier reading (one D1 away swing ends it) — what-if only
     "trade_band_max_sigma": None,            # Abhi Z-1x (final): zone रुंदीला आकड्याची मर्यादा नाही — रुंद दिसणारा zone = दोन bases एकत्र ⇒ रचना
                                              # दुरुस्त (Z-1u). फक्त what-if (× σ_1H) — dashboard वर नाही
     "break_rule": "structure",               # Abhi's method §3: broken = close beyond AND a swing formed beyond; sweep = back before any swing
@@ -227,6 +230,11 @@ REGISTER = {
     "zone_visit_rule": ("structure", "structure / close_away / touch_window (legacy)", "Abhi नियम", "Abhi's method §3 Visit: ends only by "
                         "structure — a swing built away from the area; time never ends it. Abhi 21 Oct: one candle (a commitment) "
                         "closing outside never ends it (that old end stays only under entry_gate = legacy_k, logged as a note otherwise)"),
+    "visit_end_rule": ("away_not_reached", "away_not_reached / single_swing (what-if)", "Abhi नियम", "DECISIONS 64 (B1 / B2): a visit "
+                       "ends by structure — after it began, a swing built away from the area and the next turn that does not reach it again "
+                       "(the finest swings); no model or RSI read belongs to an ended visit; the move into the zone starts at the LAST swing "
+                       "built away from the area and moves forward with each new away swing. single_swing = the earlier reading (one D1 "
+                       "away swing ends the visit; the move start fixed at the visit's start)"),
     "entry_gate": ("models", "models / legacy_k", "Abhi नियम", "Abhi 21 Oct: the four entry models E1–E4 (built only from layers "
                    "1–5 outputs: trend side, areas + K4, visits, commitment c0 with volume, LTF CHoCH c1, lines, RSI) decide; the old ③ "
                    "(BOS impulse + K pullback) is logged as legacy_k_gate, never decides. legacy_k = the old ③ gate + old visit end "
