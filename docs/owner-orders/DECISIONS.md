@@ -223,3 +223,10 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     look-ahead); in a range (no trend) only edge fades (bull put at the lower edge, bear call at the upper edge), no breakout-retest
     entries until the trend TF confirms a direction. Reclaimed object: before BROKEN a return inside = FALSE BREAK (alive, original
     role); after BROKEN a return inside = retest of the flipped object; broken back by the R2 test ⇒ DEAD; never restored. (Owner rule)
+81. Zone construction (areas): a zone = the compact BASE (one to a few overlapping candles; max count = setting) immediately before an
+    IMPULSIVE departure; band = wick extreme (distal) to bodies (proximal). RBD / DBR / RBR / DBD all valid. Departure test by settings
+    (wide-range, one-directional candles leaving quickly; ideally a swing break or a gap); a slow overlapping drift is no departure ⇒
+    no zone. Birth only when the departure bar has closed. Quality (freshness with each test recorded, departure strength, time at
+    base, room to the next opposing zone, higher-TF context) is reported on the chart label, never a hidden filter. A band wider than
+    the width setting (relative to the TF's typical zone width) is flagged and refined on the lower TF; a data-fault candle never makes a
+    zone. Existing birth types stay only where they satisfy these rules. Zones are never merged (identity rules kept). (Owner rule)

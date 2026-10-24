@@ -1084,3 +1084,17 @@ R6 Trend direction and reclaimed objects:
 - If a counter-trend break turns the trend (confirmed structure break in the new direction on the trend TF, per the existing Daily-side logic), the new direction applies from that bar; no look-ahead.
 - In a range (no trend), only edge fades: bull put at the lower edge, bear call at the upper edge; no breakout-retest entries until the trend TF confirms a direction.
 - Reclaimed object: before BROKEN is confirmed, a return inside = FALSE BREAK (object alive, original role). After BROKEN, a return inside = retest of the flipped object; a break back by the R2 test ⇒ DEAD. A confirmed-broken object is never restored to its original role.
+
+---
+## 24 Oct — OWNER ORDER: ZONE CONSTRUCTION (areas)
+OWNER ORDER — Trade: ZONE CONSTRUCTION (areas). Research-based; implement exactly; numbers only in settings. Report ≤25 lines by ID.
+
+Z1 Definition: a zone is the compact BASE (one to a few overlapping candles, max count = setting) immediately before an IMPULSIVE departure (leg-out). Band: distal = the base's wick extreme, proximal = the base's candle bodies (wick-to-body, as now).
+Z2 Four forms are all valid: rally-base-drop and drop-base-rally (reversal), rally-base-rally and drop-base-drop (continuation, i.e. a base inside a leg).
+Z3 Departure test (settings, no fixed number in logic): the leg-out is impulsive — wide-range, one-directional candles that leave the base quickly; ideally it breaks a prior swing or leaves a gap. A slow overlapping drift away is not a departure ⇒ no zone.
+Z4 Birth only when the departure is known (the leg-out bar that satisfies Z3 has closed); no look-ahead.
+Z5 Quality (reported, not a hidden filter): freshness (untested > tested; each test recorded), departure strength, time at base, room to the next opposing zone, higher-TF context. Show them on the chart label.
+Z6 Width sanity: a band larger than the width setting (relative to the TF's typical zone width) is flagged and refined on the lower TF inside it; a single data-fault candle never makes a zone (use the data-problem flag).
+Z7 Keep the current swing-candle and BOS-origin births only where they satisfy Z1–Z4; list every existing birth type and say which Z rule it passes or fails, with charts.
+Z8 Never merge zones; overlapping zones stay separate objects (keep the identity rules).
+Proof: before/after charts (≤20); owner fixtures pass unedited; match the answer key when supplied.
