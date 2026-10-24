@@ -254,3 +254,4 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
 89. S1 addition: an extreme made while price tests an object is labelled a FALSE BREAK extreme on charts and in reports, never a swing
     high / low. While price is still beyond with the outcome unknown the state is BEYOND_NOT_BROKEN; once a candle closes back inside it
     becomes FALSE BREAK. (Owner rule)
+90. V1 vision cross-check budget cap = $1 per run (a setting). Answer key v4 replaces v3.1. (Owner decision)

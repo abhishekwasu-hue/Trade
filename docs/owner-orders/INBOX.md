@@ -1135,3 +1135,7 @@ S1 addition: label every such test-made extreme on charts and in reports as a FA
 ---
 ## 24 Oct — answer key v4 attached
 answer_key_batch1_v4.json (L06 false break / supply alive; L07 next external swing 56,743.0) — stored at trade-data review/answer_key/answer_key_batch1_v4.json
+
+---
+## 24 Oct — v4 + V1 cap
+Attached: answer_key_batch1_v4.json (use it instead of v3.1). V1 budget cap = $1 per run (setting), as your default.
