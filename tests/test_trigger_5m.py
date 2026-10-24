@@ -114,6 +114,7 @@ PIN15_C = {"abc": "04f8c3a0780a19c25987043f309dfe2c9fa8072df6253569798d354b1f4ee
 
 @pytest.mark.parametrize("name", sorted(PIN15))
 @pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_15m_path_is_byte_identical_to_the_code_before_the_5m_build(name):
     """trigger_tf = 15M (what-if) = today's decide(t), byte for byte; decide(t) never reads trigger_tf (the 5M default changes only
     decide5, the live loop and the card)."""
@@ -187,6 +188,7 @@ def test_handover5_resumable_equals_method_handover_episode_on_every_prefix():
 
 # ------------------------------------------------------------------------------------------------ the models on 5M
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e1_is_the_first_5m_candle_trading_into_the_refined_base(mirror):
     """REF: the 15M bar 8 reaches the refined base 103.0–103.5; on 5M its FIRST child stays below the base and the second one trades into
     it ⇒ E1 at that 5M candle (the 15M E1 read at bar 8's close); invalidation = the base's far edge; once per visit."""
@@ -232,6 +234,7 @@ def test_every_5m_trigger_traded_into_the_base_and_never_beyond_its_invalidation
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e3_trigger_is_the_5m_choch_candle_and_it_must_trade_into_the_base(mirror, monkeypatch):
     V, lvl, d = _v5(REF + [(102.1, 103.4, 101.0, 101.2, 1.0), (101.2, 101.4, 100.9, 101.0, 1.0)], REF_SW, (100.0, 104.0), mirror,
                     s=REFINE)
@@ -428,6 +431,7 @@ def test_5m_entry_payload_fields_and_live_row(oct12_5m, monkeypatch):
     assert "trigger_tf" not in L.compact_entries([{**e, "trigger_tf": None}])[0]   # a 15M entry: the payload as before
 
 
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_read5_entries_carry_trigger_tf_ohlc_context_and_entry_ref_the_5m_close():
     V, lvl, d = _v5(REF, REF_SW, (100.0, 104.0), False, s=REFINE)
     V.step2 = None

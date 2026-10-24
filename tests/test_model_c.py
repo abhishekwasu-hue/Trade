@@ -481,6 +481,7 @@ def _fixture_rows(name, extra):
 
 @pytest.mark.parametrize("name", sorted(PIN))
 @pytest.mark.usefixtures("earlier_break_reading")   # integ51: BREAK-1 what-if (A-L6); the default is pinned by tests/test_break_hold.py
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: the pins were taken on the replaced A7 reading (what-if)
 def test_switch_off_engine_rows_are_byte_identical_to_the_pre_change_code(name):
     """model_c = off (default, and set explicitly) ⇒ every engine row byte-identical to the code before model C (pinned digests); ON ⇒
     the same rows plus the `model_c` key only (no CHoCH-up cycle in these fixtures ⇒ no C entry, the Daily side untouched)."""

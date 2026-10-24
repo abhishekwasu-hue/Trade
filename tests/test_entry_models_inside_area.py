@@ -262,6 +262,7 @@ def _ref(mirror, s=None):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_refined_base_is_the_15m_turn_inside_the_context_area(mirror):
     V, lvl, d = _ref(mirror)
     rb = EM.Reader(V).refined(8, lvl, d)
@@ -271,6 +272,7 @@ def test_refined_base_is_the_15m_turn_inside_the_context_area(mirror):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e1_fires_at_the_refined_base_not_at_the_context_edge_with_the_bases_invalidation(mirror):
     V, lvl, d = _ref(mirror)
     fired = _fired(V, lvl, d, range(6, len(REF)))
@@ -286,6 +288,7 @@ def test_e1_fires_at_the_refined_base_not_at_the_context_edge_with_the_bases_inv
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_no_refined_base_yet_the_models_wait(mirror):
     V, lvl, d = _bare(REF, [("L", 97.0, 4, 5)], band=(100.0, 104.0), mirror=mirror, s={"entry_area_refine": "setup_tf"})
     for t in range(6, len(REF)):
@@ -339,6 +342,7 @@ def test_no_union_field_reaches_an_entry_the_payload_or_the_card(mirror):
 
 # ------------------------------------------------------------------------------------------------ review #364: E1 on a broken base
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e1_never_fires_on_a_refined_base_already_closed_through_in_the_visit(mirror):
     """Bar 6 gaps into the top of the context area ABOVE the refined base and closes beyond its far edge (103.9 > 103.5); bar 7 comes
     back into the base. E1 must not fire there: its invalidation (the base's far edge) would sit inside price already traded — the
@@ -356,6 +360,7 @@ def test_e1_never_fires_on_a_refined_base_already_closed_through_in_the_visit(mi
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e1_at_the_refined_base_traded_inside_reading(mirror):
     """traded_inside (default) with the refined base: the visit's first candle at the base that closes below the area (the trade side)
     fires E1; one that closes beyond the base's far edge (the invalidation side) never does; a candle that never reached the base never
@@ -393,6 +398,7 @@ FULL = REF[:9] + [(103.1, 103.3, 100.4, 100.6, 5.0),   # 9  dominant red on volu
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_default_settings_every_model_fires_end_to_end(mirror):
     """entry_area_refine = setup_tf + entry_trigger_rule = traded_inside (the defaults): E1 at the refined base, E2 on the commitment, E3
     on the LTF CHoCH, E4 (a) after the sweep — each once, each trigger candle trading inside the area and closing not beyond its
@@ -416,6 +422,7 @@ def test_default_settings_every_model_fires_end_to_end(mirror):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_default_settings_e2_commitment_closing_below_the_area_fires(mirror):
     """The default path with the refined base: the commitment candle trades into the area (after price reached the base) and closes
     BELOW it — the confirmation (Abhi 22 Oct) ⇒ E2 with the invalidation beyond the base's far edge / the visit's extreme; #364 did not."""
@@ -487,6 +494,7 @@ def _models(V, lvl, d, bars):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e1_candle_trading_only_into_the_context_area_not_the_base_never_fires(mirror):
     only_area = REF[:8] + [(102.0, 102.9, 99.4, 99.6, 1.0)]                # trades into the context, not into the base; closes below
     V, lvl, d = _ref_rows(only_area, mirror)
@@ -498,6 +506,7 @@ def test_e1_candle_trading_only_into_the_context_area_not_the_base_never_fires(m
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e2_commitment_trading_only_into_the_context_area_not_the_base_never_fires(mirror):
     only_area = FULL[:9] + [(102.8, 102.9, 99.4, 99.6, 5.0)] + FULL[10:]  # base reached at bar 8; bar 9 trades into the context only
     V, lvl, d = _ref_rows(only_area, mirror, ltf=True)
@@ -518,6 +527,7 @@ def test_e2_commitment_trading_only_into_the_context_area_not_the_base_never_fir
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e3_choch_candle_trading_only_into_the_context_area_not_the_base_never_fires(mirror, monkeypatch):
     monkeypatch.setattr(EM.Reader, "c1", lambda self, u, l, dd, st: {"done": u >= 9, "line": "LTF CHoCH (test)"})
     monkeypatch.setattr(EM.Reader, "c0", lambda self, *a: (False, "no commitment", {}))
@@ -534,6 +544,7 @@ def test_e3_choch_candle_trading_only_into_the_context_area_not_the_base_never_f
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e4a_confirmation_candle_trading_only_into_the_context_area_not_the_base_never_fires(mirror):
     only_area = FULL[:14] + [(102.95, 102.98, 101.0, 101.1, 1.0), (101.1, 101.2, 100.5, 100.6, 1.0)]
     V, lvl, d = _ref_rows(only_area, mirror, ltf=True)
