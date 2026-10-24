@@ -191,3 +191,14 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     = only those touching the change, the full suite runs in CI; no polling; ≤ 10 images viewed per PR, ≤ 20 named charts per
     gallery fix; reports ≤ 25 lines in the 3-part shape; a ≤ 1 KB docs/HANDOVER_NOW.md at each milestone. Move, never delete.
     (Owner decision)
+71. A-L1: the held far-side swing of BREAK-1 is a D0 swing (the degree stays a setting). Broken = close beyond AND a pullback swing
+    confirmed on the far side while price stays beyond; the far-side extreme alone = a sweep; same test for broken back ⇒ dead; no
+    second flip. Golden tests: owner fixtures (fixtures/golden_cases.md) are never edited — a changed verdict goes to Abhi as a chart;
+    code-generated expectations are updated only with a before / after chart each. (Owner rule)
+72. F2: the Daily protected origin comes only from a top confirmed at the decision bar (no look-ahead, binding). (Owner rule)
+73. A7-1: the refined base's "15M turn" = a D0 turn. L58-c: two same-TF overlapping areas are not confluence (never merge areas);
+    confluence = a different TF, or area + line. B-2 rule approved: a visit ends at the bar its object's break is KNOWN; nothing is
+    read while price is away (final ✅ after the charts). (Owner decisions)
+74. Bad data is never hidden or patched silently: it is marked as a data problem in the data layer with its evidence. (Owner rule)
+75. An owner answer key (hand-marked cases with charts) will become the main proof: the per-concept match score against it replaces
+    golden-test comparison. (Owner decision)

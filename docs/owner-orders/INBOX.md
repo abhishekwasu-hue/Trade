@@ -1008,3 +1008,29 @@ Measured: OPEN_QUESTIONS.md (ATP) is 598 KB, owner-orders README 39 KB (read at 
 8. Reports ≤ 25 lines, in the 3-part shape (changed items by ID / max 3 owner decisions with defaults / deploy line + migration yes-no). No narration, no test-count lists, no repeated background.
 9. Context: at each milestone write a ≤ 1 KB handover note (docs/HANDOVER_NOW.md: what is in flight, next step, open PRs) and continue from a fresh session instead of a long compacted one.
 Report once (≤ 10 lines) with the before / after sizes of CLAUDE.md, README, OPEN_QUESTIONS and INBOX.
+
+---
+## 24 Oct — owner answers A-L1 / F2 / A7-1 / L58-c / B-2 + named-case flags
+OWNER ANSWERS — Trade (A-L1 / F2 / A7-1 / L58-c / B-2) + named-case flags from the B review. One message; report ≤25 lines by ID.
+
+A-L1 = D0. The "held swing on the far side" is a D0 swing (the swing degree stays a setting, no fixed number in logic). Rule: broken = close beyond AND a pullback swing (swing high below for a support / swing low above for a resistance) confirmed on the far side while price stays beyond; the far-side extreme alone is a sweep (proof X01). Same test for broken-back ⇒ dead; no second flip.
+- Before changing any golden test: list the 9 failing tests in two groups — (a) OWNER fixtures (fixtures/golden_cases.md: NIFTY 12 Oct supply/confluence, 7 Oct line, 13 Oct no-trade) and (b) code-generated expectations. Group (b): update with a before/after chart each. Group (a): if ANY owner fixture changes its verdict, stop and send me that chart; do not edit it.
+
+F2 = apply the fix (Daily protected origin only from a top confirmed at the decision bar; no look-ahead is binding). Send the NIFTY 29 Sep chart before/after (which top was used, the bar it was confirmed) before you edit that golden test.
+
+A7-1 = ✅ (15M turn = D0).
+L58-c = No. Two same-TF areas overlapping are not confluence; never merge areas. Confluence = different TF, or area + line.
+B-2 = rule ✅ (visit ends at the bar the break is KNOWN; no reading while price is away). Final ✅ after I review the charts.
+
+A6-1: 31 Aug 15:15 (one 628-pt candle, close = day high 58,025) looks like a bad last print. Compare it with the 1m spot file and FUT 5M for that bar and report what the true 15:15–15:30 range was. Do not hide or patch the bar silently; if it is bad data, mark it as a data problem in the data layer with the evidence.
+
+A7 concern: after the new refined base, "invalidation first" rose (15M 33→40, 5M 38→42). Send the 5 new/changed invalidation-first entries as charts (refined base band + invalidation level visible) so I can check whether the base is too narrow. Numbers alone are not proof.
+
+Named-case flags from the B review (fix or explain each, with a chart):
+1. E53: move start 10-15 15:00 is the bar right before the decision (15:15). Prove that pivot was CONFIRMED at the decision bar; if not, it is look-ahead.
+2. D12: an unmarked D0 low on 09-21 around 12:15 below the area (~56,400) — swing under-detection (same root as C1).
+3. N07, E27 and the E26 entry (08-26 09:15 gap candle closing above the supply 57,611.7–57,799.2): with A-L1 = D0 this supply is BROKEN at 08-26 10:45 (pullback low 57,824 held above) and DEAD at 08-28 11:15 (pullback high 57,596 held below). These visits/entries must disappear after A1. N07 also has price coming DOWN into the supply from above = wrong approach side.
+4. Duplicate ids 288/289 (56,474–56,570) and 290/292 (57,771–57,886): confirm A5 now gives each one id.
+5. Display: N07 x-axis 3/4 empty (old visit marker at 07-23); header "visit at the decision: start X, ended Y" with Y before X → label it "previous visit ended".
+
+Then: A + B + label in one PR. An answer key (hand-marked cases with charts) is coming from me; after it lands, the per-concept match score against it replaces golden-test comparison as the main proof.
