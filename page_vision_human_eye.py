@@ -132,13 +132,16 @@ def render_settings():
                                   key="v_day_budget")
         mon_cap = d2.number_input("Vision मासिक budget ($/महिना)", value=float(g["vision_monthly_budget_usd"]), step=1.0,
                                   key="v_month_budget")
-        b1, b2, b3 = st.columns([3, 3, 2])
+        b1, b2, b4, b3 = st.columns([3, 3, 3, 2])
         cap = b1.number_input("Visual audit दैनिक cap ($)", value=float(g["visual_audit_daily_cap"]), step=0.01, key="v_va_cap")
         res = b2.number_input("Signals राखीव ($/दिवस)", value=float(g["signals_daily_reserve_usd"]), step=0.01, key="v_sig_res")
+        vc_cap = b4.number_input("Vision cross-check: एका run ची cap ($)", value=float(g["vision_check_run_cap_usd"]), step=0.1,
+                                 key="v_vc_cap")                           # V1 (DECISIONS 88)
         if b3.button("Budget Save", key="v_budget_save"):
             try:
                 VC.save("_global", {"vision_daily_budget_usd": day_cap, "vision_monthly_budget_usd": mon_cap,
-                                    "visual_audit_daily_cap": cap, "signals_daily_reserve_usd": res}, "dashboard")
+                                    "visual_audit_daily_cap": cap, "signals_daily_reserve_usd": res,
+                                    "vision_check_run_cap_usd": vc_cap}, "dashboard")
                 st.success("Vision दैनिक / मासिक budget, visual audit cap, signals राखीव साठवले")
             except ValueError as exc:
                 st.error(str(exc))
