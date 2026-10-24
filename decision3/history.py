@@ -36,6 +36,32 @@ def _read(path):
     return pd.read_parquet(path) if str(path).endswith(".parquet") else pd.read_csv(path)
 
 
+DATA_PROBLEMS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "data_problems.json")
+
+
+def data_problems(symbol=None, path=DATA_PROBLEMS):
+    """DECISIONS 74: the marked data problems (decision3/data/data_problems.json), each with its evidence; `symbol` filters."""
+    import json
+    with open(path, encoding="utf-8") as fh:
+        rows = json.load(fh)["problems"]
+    return [r for r in rows if symbol is None or r["symbol"] == symbol]
+
+
+def mark_data_problems(df, symbol, tf, path=DATA_PROBLEMS):
+    """DECISIONS 74: a copy of `df` with a `data_problem` column (the problem id, "" elsewhere) for the marked `tf` bars of `symbol`.
+    Never changes a price and never drops a bar (bad data is marked, not patched or hidden)."""
+    out = df.copy()
+    ts = pd.to_datetime(out["timestamp"])
+    if getattr(ts.dt, "tz", None) is not None:
+        ts = ts.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+    out["data_problem"] = ""
+    for r in data_problems(symbol, path):
+        b = r["bars"].get(tf)
+        if b is not None:
+            out.loc[(ts == pd.Timestamp(b)).to_numpy(), "data_problem"] = r["id"]
+    return out
+
+
 def load_daily(paths, prepare=None):
     paths = [paths] if isinstance(paths, str) else list(paths)
     frames = []

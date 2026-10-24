@@ -1,0 +1,21 @@
+{
+  "_doc": "DECISIONS 74 (Abhi): bad data is never hidden or patched silently; it is marked here, in the data layer, with its evidence. Prices stay exactly as the source gave them; decision3.history.mark_data_problems only adds a data_problem column. Owner decides what the reading does with a marked bar.",
+  "problems": [
+    {
+      "id": "DP-1",
+      "symbol": "BANKNIFTY",
+      "kind": "close_print_in_no_tick_bar",
+      "bars": {"15M": "2026-08-31 15:15", "5M": "2026-08-31 15:25", "1m": "2026-08-31 15:29"},
+      "summary": "One 628-pt 15M candle (O 57,397.35 H 58,024.95 L 57,397.35 C 58,024.95): the 15:15-15:28 1m bars carry no ticks (O=H=L=C=57,397.35) and the 15:29 1m bar jumps to the close print 58,024.95. No traded path between the two prices exists in the data; the true 15:15-15:30 range cannot be recovered from trade-data.",
+      "evidence": [
+        "trade-data banknifty/BANKNIFTY_15M.csv.gz 2026-08-31 15:15: O 57397.35 H 58024.95 L 57397.35 C 58024.95",
+        "trade-data banknifty/vps_spot_history/2026-10-21_2337/BANKNIFTY_1m.csv.gz and vps_history/2026-10-21_2337/BANKNIFTY_1M.csv.gz (engine3_cache Nifty_Bank 1minute): 15:15..15:28 all O=H=L=C 57397.35; 15:29 O 57397.35 H 58024.95 L 57397.35 C 58024.95",
+        "last traded bars 15:00..15:14: low 57374.20, high 57443.05, 15:14 close 57402.45",
+        "since 2026-08-03 every session's 15:16..15:28 1m bars are flat (BANKNIFTY and NIFTY): a closing-session print, not traded bars; the 15:29 print vs the 15:15 close is +1.09% on 31 Aug, the largest of the 54 sessions (next: +0.98% 3 Aug, +0.72% 4 Aug); NIFTY the same day +0.13%",
+        "trade-data banknifty/BANKNIFTY_D.csv.gz 2026-08-31: H = C = 58024.95; 2026-09-01 open 57560.30 (gap -464.65)",
+        "FUT 5M: no BANKNIFTY futures bars in trade-data before 2026-09-30 => no cross-check possible"
+      ],
+      "status": "marked, not patched"
+    }
+  ]
+}

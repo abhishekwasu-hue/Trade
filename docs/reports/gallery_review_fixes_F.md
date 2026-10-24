@@ -134,3 +134,11 @@ L1-c, his provisional setting; changed only by him on the dashboard).
   9 xfailed. Golden `test_decision3_flip`: 68 / 68 on the base (the label fix does not touch the reading). The full suite did not
   finish inside 50 minutes on the shared machine — CI runs it.
 - F2 fix (held): layer-1 suites green except the golden above.
+
+## F2 applied (DECISIONS 72) — golden left failing, not edited
+- Fix committed: the correction's top/bottom becomes the Daily protected origin only when it is a confirmed Daily swing at the decision bar.
+- `tests/test_decision3_flip.py::test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmup` fails (not edited): root =
+  a Daily LOW 23,350.00 (sealed holdout period, price only) taken as protected origin at the close of the next Daily bar — never a
+  confirmed swing. Without it the Daily path differs for ~165 Daily bars and the low 22,725.45 is no longer a leg end ⇒ the a:D-prior
+  22,725.45–22,809.90 is not born; 29 Sep decisions use D 22,766.35–22,794.70 instead (wait all day in both runs).
+- Chart: trade-data `review/gallery_fixes/misc/F2_nifty_29sep_before_after.png`. Daily test files green.
