@@ -801,6 +801,18 @@ class Reader:
             armed.append(base)
         return armed, fired
 
+    def line_move_from(self, t, ln, d, start):
+        """DECISIONS 56 (L5-c, RSI evidence only): the move into the retest of a broken LINE begins — as for a broken area's retest — at the
+        last swing built away from the object on the side price comes from: the finest structure's swings (Levels._known0) confirmed by
+        bar t, formed at or after the line's break and before the revisit's first bar `start`, beyond the line's value at their own bar
+        (bear call: a swing low below the line; bull put: a swing high above it). None ⇒ no such swing known (the RSI read says NA)."""
+        kind = "L" if d < 0 else "H"
+        bb = ln.get("break_bar")
+        bb = int(bb) if bb is not None else int(ln["p1"][0])
+        sw = [int(p.bar) for p in getattr(self.V.levels, "_known0", []) if p.kind == kind and p.confirm_bar <= t and bb <= p.bar < int(start)
+              and ((float(p.price) < TL.line_value(ln, int(p.bar))) if d < 0 else (float(p.price) > TL.line_value(ln, int(p.bar))))]
+        return max(sw) if sw else None
+
     # ------------------------------------------------------------------------------------------ evidence (layer 6a builders)
     def evidence(self, t, d, lvl, arm, appr=None, move_from=None, cm=None, read_ok=None):
         """The 6a evidence list + label A / B for an entry at bar t (method.confirming_evidence / method_label / evidence_list — the
@@ -916,9 +928,10 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             v = round(TL.line_value(ln, t), 2)
             lvl = {"id": f"line:{ln['id']}", "lo": v, "hi": v, "tf": "line", "role": a["role"], "births": ["tl"], "sweeps": 0,
                    "fresh": None, "confluence_line": True, "confluence": []}
-            ev = R.evidence(t, d, lvl, f["start"])
+            mf0 = R.line_move_from(t, ln, d, f["start"])                    # DECISIONS 56 (L5-c): the move into the line's retest
+            ev = R.evidence(t, d, lvl, f["start"], move_from=mf0)
             area = {"id": lvl["id"], "tf": "line", "role": a["role"], "lo": v, "hi": v, "state": "BROKEN", "line": a.get("line")}
-            arm0, mf0 = int(f["start"]), None
+            arm0 = int(f["start"])
         # T9 (PA evidence wiring, CLAUDE.md "evidence is listed and never blocks"): every PA track's facts for this entry — read after
         # the decision, never fed back into it (the entry's fields above are unchanged; tests/test_pa_evidence.py pins it).
         pa_ev = PE.for_entry(V, t, d, {**area, "object": a["object"]}, lvl=lvl, arm=arm0, move_from=mf0)

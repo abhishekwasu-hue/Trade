@@ -632,16 +632,34 @@ class V22:
         if move_from is None:
             return {"found": None, "na": "the move into the zone is not known (no swing built away from the area yet)", "zone_degree": own}
         mf = int(move_from)
-        count = {g: sum(1 for p in self._rsi.piv[g] if p.kind == kind and mf < p.bar <= t and p.confirm_bar <= t) for g in have}
-        two = [g for g in have if count[g] >= 2]
+        conf = {g: sorted(int(p.bar) for p in self._rsi.piv[g] if p.kind == kind and mf < p.bar <= t and p.confirm_bar <= t) for g in have}
+        count = {g: len(conf[g]) for g in have}
+        # DECISIONS 56 (L5-b): the push still forming at bar t counts as a push — rsi2's pair in progress at t (bars <= t only: its
+        # running extreme after the degree's last confirmed swing), its extreme inside the move and not yet a confirmed swing. Marked
+        # "forming"; once its swing confirms it is one of the confirmed pushes above (and its pair reads "confirmed").
+        forming = {}
+        for g in have:
+            x = (self._rsi.latest.get(int(t)) or {}).get((g, side))
+            if x is None or x.get("status") != "forming" and x.get("status_by") != "commitment_candle":
+                continue
+            b = int(x["L2"]["bar"])
+            if b <= mf or b in conf[g] or (conf[g] and b <= conf[g][-1]):
+                continue
+            forming[g] = {"time": x["L2"]["time"], "price": x["L2"]["price"], "push": "forming"}
+        total = {g: count[g] + (1 if g in forming else 0) for g in have}
+        two = [g for g in have if total[g] >= 2]
         if not two:
             return {"found": False, "divergences": [], "zone_degree": own, "degree": None, "pushes": count,
+                    **({"forming_push": forming} if forming else {}),
                     "statements": [f"no {side} divergence: the move into the zone shows fewer than two pushes at any degree "
                                    f"(from {str(pd.Timestamp(self._ts[mf]))[:16]})"]}
         g = max(two)                                                       # the highest degree with at least two pushes inside the move
         out = [brief(x) for x in divs if int(x["degree"]) == g and int(x["L1"]["bar"]) > mf]   # never a swing from before the move
+        for x, y in zip(out, [x for x in divs if int(x["degree"]) == g and int(x["L1"]["bar"]) > mf]):
+            x["L2"]["push"] = "confirmed" if int(y["L2"]["bar"]) in conf[g] else "forming"   # display: forming until its swing confirms
         st = [y["statement"] for y in r["latest"] if y["side"] == side and int(y.get("degree", g)) in (g, zd)]
-        return {"found": bool(out), "divergences": out, "zone_degree": own, "degree": g, "pushes": count, "statements": st}
+        return {"found": bool(out), "divergences": out, "zone_degree": own, "degree": g, "pushes": count,
+                **({"forming_push": forming} if forming else {}), "statements": st}
 
     def _legs_A(self):
         if getattr(self, "_legs_arr", None) is None:
