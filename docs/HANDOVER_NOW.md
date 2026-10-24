@@ -1,7 +1,6 @@
 # HANDOVER_NOW (≤ 1 KB) — 24 Oct
-Built, local branches, NOT merged (waiting Abhi): lifecycle (A1–A4/A8 BREAK-1; A-L1 D1/D0 + goldens), identity (A5–A7; A7-1 D0),
-visitmove (B1–B2 + B-2; B-2 ✅ after charts), dailyF (F1 labels; F2 held: golden), label54 (DECISIONS 58; L58-c).
-Working branch claude/hopeful-gates-hf186c = main + owner-orders + l5 (C-L5-1, L5-b/c) + token-budget docs.
-Next after answers: merge A + B + label into one PR (resolve OPEN_QUESTIONS conflicts into the short file / archive) → C (RSI C1–C8)
-→ D + E (5M trigger, scoring) → rebuild galleries (≤ 20 charts per fix, small ZIPs). No deploy before ✅. Open PRs: none.
-No agents running.
+BLOCKED on Abhi: A-L1 D0 flips the OWNER fixture NIFTY 12 Oct zone 22,544–22,622 (broken 07 Oct 10:45 by a D0 low 1.45 pt above the
+band, dead 08 Oct) ⇒ 7 golden tests fail (chart A01). F2 golden (NIFTY 29 Sep) held. Not edited.
+Built locally: integ51 (lifecycle+identity+visitmove+label54+dailyF F1, A-L1 D0 b64beff, group (b) b527ed4); f2 (F2 fix, DP-1 data
+marker, E53 test). Replay 5M: 53 → 79 (D0) / 98 (D1). Next after the answer: merge f2 into integ51, PR, CI, then C (RSI), D+E.
+No agents running. Open PRs: none. No deploy before ✅.
