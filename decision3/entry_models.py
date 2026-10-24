@@ -212,6 +212,12 @@ class Reader:
         """The price farther on the invalidation side (bear call: the higher; bull put: the lower)."""
         return max(float(a), float(b)) if d < 0 else min(float(a), float(b))
 
+    def ts64(self):
+        """The 15M bar starts as datetime64 (memoised per V)."""
+        if ("ts64",) not in self.memo:
+            self.memo[("ts64",)] = np.asarray(pd.to_datetime(pd.Series(self.ts)), "datetime64[ns]")
+        return self.memo[("ts64",)]
+
     def turns15(self):
         """A7 (Abhi, DECISIONS 63): the 15M turns the refined base reads — every turn the swing engine confirms on the setup timeframe
         (its finest degree, D0: the 15M chart's own swing highs / lows), in confirmation order. The levels' structure list
@@ -230,9 +236,9 @@ class Reader:
         TA4 band) is the CONTEXT — where. Inside it, the REFINED BASE on the setup timeframe (15M) by the same TA4 rule — Abhi A7
         (DECISIONS 63): the NEWEST 15M turn of the area's side inside the band, as its wick to body. A turn = a 15M swing (`turns15`: a
         swing high for a supply / bear call, a swing low for a demand / bull put) confirmed by bar u, from the area's own birth turn on
-        (the newest such turn known when the area was born; none ⇒ the area's birth bar); it is inside the band when its swing candle's
-        wick to body (levels._band_swing: no wick ⇒ the body) trades into the band — a turn whose extreme pokes just beyond the band
-        (a sweep) is still the turn at the area. Its band is that wick to body, kept inside the context band (never beyond the
+        (the newest such turn known when the area was born, at or after its own base candle; none ⇒ the area's birth bar); it is inside
+        the band when its swing candle's wick to body (levels._band_swing: no wick ⇒ the body) trades into the band — a turn whose
+        extreme pokes just beyond the band (a sweep) is still the turn at the area. Its band is that wick to body, kept inside the context band (never beyond the
         area, Z-1u). None ⇒ no refined base yet (the models wait). Comparison only, bars ≤ u."""
         lid = lvl.get("parent_level", lvl.get("id"))
         key = ("rb", str(lid), float(lvl["lo"]), float(lvl["hi"]), int(u), int(d))
@@ -244,6 +250,9 @@ class Reader:
         L = self.V.levels.L[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(self.V.levels.L) else None
         born = int(getattr(L, "born_bar", 0) or 0) if L is not None else int(lvl.get("born_bar") or 0)   # a range edge: its own birth
         A = self.A
+        bts = getattr(L, "base_ts", None) if L is not None else None       # the area's own base candle: a turn from before it (another
+        base0 = int(np.searchsorted(self.ts64(), np.datetime64(pd.Timestamp(bts)))) if bts is not None else 0   # era, e.g. a flipped
+                                                                           # area's old side) is never its birth turn
 
         def band(p):
             b = int(p.bar)
@@ -258,7 +267,7 @@ class Reader:
             blo, bhi = band(p)
             if blo <= hi and bhi >= lo:                                    # its wick to body trades into the band
                 sw.append((p, blo, bhi))
-        birth = [p for p, _, _ in sw if p.confirm_bar <= born]
+        birth = [p for p, _, _ in sw if p.confirm_bar <= born and int(p.bar) >= base0]
         floor = max(int(p.bar) for p in birth) if birth else born
         cands = [x for x in sw if int(x[0].bar) >= floor]
         out = None

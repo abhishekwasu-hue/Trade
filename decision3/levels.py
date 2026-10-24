@@ -80,6 +80,8 @@ class Level:
                                                     # start>" (the band's own timeframe, the side of the base, the candle it was built
                                                     # from). `id` = this build's list index (lookups only; it shifts when the data window
                                                     # moves); `uid` is the same in every build that holds the place (`place_uid`)
+    base_ts: object = None                          # A5 / A7: the start of the base candle (1H hour / Daily or Weekly day) — the
+                                                    # refined base reads turns from the area's own base on (entry_models.Reader.refined)
 
     def provisional(self, t):
         """PF-2: the band's min width at t is the provisional one (born / merged while σ_1H was missing, σ_1H not known yet)."""
@@ -262,7 +264,8 @@ class Levels:
                         o.inside_bases.append((int(t), int(base_bar), role))
                     return o
         L = Level(len(self.L), role, float(lo), float(hi), int(t), [birth], anchor, tf=tf,
-                  base_bar=None if base_bar is None else int(base_bar), uid=self._uid(tf, key, t))
+                  base_bar=None if base_bar is None else int(base_bar), uid=self._uid(tf, key, t),
+                  base_ts=None if not key else pd.Timestamp(key[1]))
         for o in self.L:
             if o.tf == tf and o.alive(t):
                 olo, ohi = o.band_at(t)

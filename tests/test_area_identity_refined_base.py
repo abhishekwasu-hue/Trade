@@ -124,7 +124,7 @@ def _reader(bars, piv0, piv1, mirror):
         piv0, piv1 = flip(piv0), flip(piv1)
     A = {"open": a[:, 0], "high": a[:, 1], "low": a[:, 2], "close": a[:, 3]}
     ts = pd.date_range("2030-01-07 09:15", periods=len(a), freq="15min")
-    L = NS(born_bar=1, uid="1H:H:2030-01-07 09:15" if not mirror else "1H:L:2030-01-07 09:15")
+    L = NS(born_bar=1, uid="1H:H:2030-01-07 09:15" if not mirror else "1H:L:2030-01-07 09:15", base_ts=ts[0])
     levels = NS(A=A, L=[L], _known0=piv1)
     V = NS(levels=levels, _ts=ts, s={}, res={"pivots": {0: piv0, 1: piv1}})
     return EM.Reader(V)
@@ -183,8 +183,25 @@ def test_refined_base_never_reads_a_turn_from_before_the_area_birth_turn(mirror)
     shift = [_P(p.kind, p.bar + 1, p.price, p.confirm_bar + 1) for p in D0]
     R = _reader(bars, [_P("H", 0, 105.0, 1)] + shift, [_P("H", 1, 110.0, 2)], mirror)
     R.V.levels.L[0].born_bar = 2
+    R.V.levels.L[0].base_ts = R.V._ts[1]                                   # the area's base candle = bar 1
     lvl, d = (LVL_M, 1) if mirror else (LVL, -1)
     assert R.refined(3, lvl, d)["bar"] == 1                                # the birth turn, never the older bar-0 turn
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_refined_base_never_takes_a_turn_from_before_the_area_base_candle_as_its_birth_turn(mirror):
+    """L5-N08: a support flipped to resistance — the newest swing HIGH inside its band known at its birth was weeks older than the area
+    itself; that old turn is never the area's birth turn (the models wait for a turn of their own)."""
+    bars = [(104.0, 108.0, 103.0, 105.0)] + [(90.0, 91.0, 89.0, 90.0)] * 2 + BARS
+    shift = [_P(p.kind, p.bar + 3, p.price, p.confirm_bar + 3) for p in D0]
+    R = _reader(bars, [_P("H", 0, 108.0, 1)] + shift, [], mirror)
+    R.V.levels.L[0].born_bar = 4
+    R.V.levels.L[0].base_ts = R.V._ts[3]
+    lvl, d = (LVL_M, 1) if mirror else (LVL, -1)
+    assert R.refined(4, lvl, d)["bar"] == 3                                # its own base turn, not the bar-0 high from before
+    R.V.levels.L[0].base_ts = R.V._ts[3] + pd.Timedelta(minutes=1)         # no turn of its own at birth ⇒ from the birth bar on
+    R.memo.clear()
+    assert R.refined(4, lvl, d) is None and R.refined(8, lvl, d)["bar"] == 7
 
 
 # ------------------------------------------------------------------------------------------------ A6: the band rule
