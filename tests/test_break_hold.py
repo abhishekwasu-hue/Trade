@@ -273,10 +273,11 @@ def test_e4b_fires_at_an_area_broken_with_a_hold_and_not_at_a_sweep(mirror, monk
 
 
 @MIRRORS
-def test_the_hold_is_read_on_the_structures_finest_degree(mirror):
-    """BREAK-1 hold degree (OPEN_QUESTIONS A-L1, provisional default): the pullback that proves the hold is a swing of the structure's
-    finest degree (Abhi's approved D1 — the swings the K4 break always read; D0 = wiggles inside a leg). A pullback low above the band
-    that only D0 shows is no hold (not broken); the same turn at D1 is (BROKEN at its confirmation, 23)."""
+def test_the_hold_is_read_on_a_d0_swing(mirror):
+    """BREAK-1 hold degree — A-L1 = D0 (DECISIONS 71, owner rule; the degree stays a setting, `break_hold_degree`): the pullback that
+    proves the hold is a D0 swing (every 15M swing high / low). A pullback low above the band that only D0 shows IS a hold (BROKEN at
+    its confirmation, 23); the setting None = the structure's finest degree (D1, the earlier lifecycle-branch reading, what-if) reads
+    the same tape as not broken; a turn at D1 that D0 does not list is no hold under the default."""
     f, sw = _mirror(mirror)
     m = m15_from([f(c) for c in BASE + HOLD_TAIL], wick=0.3)
     piv1 = [P(sw("H"), f(118), 8, 10), P(sw("L"), f(112), 14, 16), P(sw("H"), f(120.5), 19, 21)]
@@ -284,7 +285,10 @@ def test_the_hold_is_read_on_the_structures_finest_degree(mirror):
     res = res_of(m, [P(sw("H"), f(118), 8, 10)], piv1)
     res["pivots"][0] = piv1 + [hold]
     Z = [L for L in LV.Levels(res).L if abs(L.anchor - f(118)) < 1e-6][0]
-    assert _ev(Z) == []
+    assert _ev(Z) == [(23, "broken")]                                     # the default: D0
+    Z = [L for L in LV.Levels(res, s={"break_hold_degree": None}).L if abs(L.anchor - f(118)) < 1e-6][0]
+    assert _ev(Z) == []                                                    # what-if: the finest structure (D1) shows no pullback
+    res["pivots"][0] = list(piv1)
     res["pivots"][1] = piv1 + [hold]
     Z = [L for L in LV.Levels(res).L if abs(L.anchor - f(118)) < 1e-6][0]
-    assert _ev(Z) == [(23, "broken")]
+    assert _ev(Z) == []                                                    # the default reads D0 only

@@ -398,12 +398,12 @@ def _known_deg(V, t, g):
 
 
 def _known_fine(V, t):
-    """BREAK-1 (DECISIONS 60, areas AND lines alike): the swings that prove a HOLD beyond a line are the structure's finest degree
-    (Abhi's approved D1 — the 15M structure; D0 = wiggles; OPEN_QUESTIONS A-L1), exactly the swings the K4 area hold reads
-    (`Levels._known0`), confirmed by bar t, in bar order. A 1H line's own degree (D2) would almost never show a pullback swing on the
+    """BREAK-1 (DECISIONS 60, areas AND lines alike): the swings that prove a HOLD beyond a line are the hold degree (A-L1, DECISIONS
+    71: a D0 swing, `break_hold_degree`; the degree stays a setting), exactly the swings the K4 area hold reads
+    (`Levels._known_hold`), confirmed by bar t, in bar order. A 1H line's own degree (D2) would almost never show a pullback swing on the
     far side before price leaves again."""
     lv = V.levels
-    k0 = getattr(lv, "_known0", None)
+    k0 = getattr(lv, "_known_hold", getattr(lv, "_known0", None))     # A-L1 (DECISIONS 71): the hold degree (D0 default)
     if k0 is None:
         return None
     return sorted((p for p in k0 if int(p.confirm_bar) <= t and int(p.bar) <= t), key=lambda p: p.bar)
@@ -697,8 +697,8 @@ def break_known_at(V, ln):
         list(((getattr(V.levels, "res", None) or {}).get("pivots") or {}).get(g, []))
     if FL.hold_rule(V.s) == "hold":
         want = FL.hold_kind(side > 0)
-        k0 = getattr(V.levels, "_known0", None)
-        pv = pv if k0 is None else k0                                      # BREAK-1: the structure's finest degree (as the area hold)
+        k0 = getattr(V.levels, "_known_hold", getattr(V.levels, "_known0", None))
+        pv = pv if k0 is None else k0                                      # BREAK-1: the hold degree (A-L1: D0; as the area hold)
         cands = [_cb(p) for p in pv if p.kind == want and bb <= int(p.bar) and _cb(p) < run_end
                  and (float(p.price) - line_value(ln, p.bar)) * side > 0]
     else:

@@ -6,6 +6,7 @@ When an item is answered, move its line to the archive (append) — never delete
 ## Waiting for Abhi now (24 Oct)
 | id | Question (one line) | Current default | Where |
 |---|---|---|---|
+| A-L1-G | A-L1 = D0 built (DECISIONS 71) and it changes the OWNER 12 Oct golden verdict: zone 22,543.75–22,621.80 broken 07 Oct 10:45 (D0 pullback low 22,623.25, 1.45 pt above the band) and dead 08 Oct 14:15 ⇒ no seller area on 12 Oct; 7 golden tests in test_decision3_flip fail, NOT edited — Abhi to decide | D0, goldens failing | trade-data gallery_fixes/integ/A01 |
 | F2-CONF | F2 fix approved (DECISIONS 72); the NIFTY 29 Sep golden waits for the before / after chart (another agent) | applying | branch dailyF + F2 agent |
 | B-2 | Rule approved (DECISIONS 73); final ✅ after Abhi reviews the B charts | as built | integ51 |
 | B-1 / B-3 / B-4 | Visit uses D0 ∪ D1 swings; line move start follows DECISIONS 64; D04/D05 area born on its touching bar | as built | branch visitmove |

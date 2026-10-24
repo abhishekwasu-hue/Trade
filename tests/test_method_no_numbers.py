@@ -72,6 +72,7 @@ CALIBRATION = {                  # Abhi (layer 1 ✅): a swing's significance is
     "level_degree": "the zone's structure = the approved D2 (1H trend degree)",
     "tl_degree": "one degree below the zone's structure = the approved D1 (the pullback's legs)",
     "flip_pullback_inner_degree": "one degree below the zone's structure = the approved D1",
+    "break_hold_degree": "A-L1 (DECISIONS 71, owner rule): the held far-side swing of BREAK-1 = a D0 swing (a degree, not a threshold)",
     # provisional (Abhi L1-c): the Daily pivot size keeps N = 2 as his recorded provisional value (REGISTER class "Abhi नियम", same
     # note); he may change it later from the dashboard (the live-switches track adds that setting)
     "daily_pivot_n": "Abhi L1-c: provisional N = 2; dashboard setting via the live-switches track",

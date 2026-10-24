@@ -68,6 +68,10 @@ DEFAULTS = {
                                              # = a sweep, the object stays alive ("reclaimed"). Broken back ⇒ DEAD by the same test opposite.
                                              # The E4 (b) approach side allows a sweep (DECISIONS 61). "swing_beyond" = the earlier reading (any
                                              # swing beyond — the push's own extreme counted; a broken area broken back = reclaimed) — what-if
+    "break_hold_degree": 0,                  # Abhi A-L1 (DECISIONS 71, owner rule): the held far-side swing of BREAK-1 (the hold, the
+                                             # broken-back ⇒ dead test, the E4 (b) approach-side acceptance; areas AND lines) is a swing
+                                             # of THIS degree — D0 = every 15M swing high / low (default). The degree stays a setting:
+                                             # None = the structure's finest degree (D1, the earlier lifecycle-branch reading, what-if)
     "level_death_side": "role",              # Q2 / TL1 (✅ Abhi मंजूर): मृत्यू-swing चालू भूमिकेच्या बाजूचा (flipped support = supply ⇒ वरचा D2 H);
                                              # "role0" = जुना Q2 default (मूळ भूमिकेची बाजू, flip नंतरही) — revert साठी
     "level_flip_rule": "far_swing",          # KB K4 (Abhi, final): flip = पट्ट्यापलीकडे + पलीकडचा swing पार (trade ने) ⇒ FLIPPED; acceptance
@@ -296,6 +300,9 @@ REGISTER = {
                         "while the closes are still beyond); a push beyond that turns back without holding is a sweep (alive, "
                         "\"reclaimed\"); broken back ⇒ DEAD by the same test opposite; areas AND lines alike; the E4 (b) approach side "
                         "allows a sweep. swing_beyond = the earlier reading (any swing beyond, the push's own extreme counted)"),
+    "break_hold_degree": (0, "0 (D0) / 1 (D1) / None = the finest structure (what-if)", "Abhi नियम", "A-L1 (DECISIONS 71, owner "
+                          "rule): the held far-side swing of BREAK-1 is a D0 swing; the degree stays a setting. Same swings for broken "
+                          "back ⇒ dead (no second flip) and the E4 (b) approach-side acceptance; areas and lines alike"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
     "a2_handover_required": (True, "True / False", "Abhi नियम", "Abhi Z-1m: handover (a2) अनिवार्य, क्रम a2 → c1 → c0; False फक्त जुने tests"),

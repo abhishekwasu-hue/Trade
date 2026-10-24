@@ -492,6 +492,11 @@ class Levels:
         pv0 = sorted(self.res["pivots"].get(fin, []) if fin is not None else [], key=lambda p: p.confirm_bar)
         k0 = 0
         self._known0 = []
+        hd = self.s.get("break_hold_degree", 0)                            # A-L1 (DECISIONS 71): the BREAK-1 hold swing's degree (D0
+        hdeg = fin if hd is None or not self.res["pivots"].get(int(hd)) else int(hd)   # default; None / not built ⇒ the finest structure)
+        pvh = pv0 if hdeg == fin else sorted(self.res["pivots"].get(hdeg, []), key=lambda p: p.confirm_bar)
+        kh = 0
+        self._known_hold = self._known0 if pvh is pv0 else []
         prov = set()                            # σ_1H नसताना जन्मलेले levels (तात्पुरती किमान रुंदी)
         for t in range(self.n):
             # t च्या close पर्यंत माहीत pivots
@@ -501,6 +506,9 @@ class Levels:
             while k0 < len(pv0) and pv0[k0].confirm_bar <= t:
                 self._known0.append(pv0[k0])
                 k0 += 1
+            while pvh is not pv0 and kh < len(pvh) and pvh[kh].confirm_bar <= t:
+                self._known_hold.append(pvh[kh])
+                kh += 1
             if prov and np.isfinite(self.sig1h[t]):                        # σ_1H आता माहीत ⇒ त्यांना खरी किमान रुंदी (TA4; टोकापासून आत)
                 w = self._w(t)
                 for L in self.L:
@@ -749,8 +757,10 @@ class Levels:
     def _swing_beyond(self, L, start, up, t, kind=None):
         """A swing (the finest structure, confirmed by bar t) formed at or after `start` whose extreme lies beyond the band on the given
         side (up ⇒ above hi, else below lo); kind ⇒ only that swing kind (BREAK-1: the hold side's own swing, `flip.hold_kind`; the
-        structure's finest degree — Abhi's approved D1, D0 = wiggles; OPEN_QUESTIONS A-L1). None if no such swing yet. Bars ≤ t only."""
-        for p in reversed(getattr(self, "_known0", [])):
+        hold swing's degree, `break_hold_degree` — D0 by default, A-L1 / DECISIONS 71; kind None = the structure's finest degree,
+        `_known0`). None if no such swing yet. Bars ≤ t only."""
+        src = getattr(self, "_known_hold", None) if kind is not None else None
+        for p in reversed(src if src is not None else getattr(self, "_known0", [])):
             if p.confirm_bar > t:
                 continue
             if kind is not None and p.kind != kind:

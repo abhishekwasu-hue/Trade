@@ -873,7 +873,7 @@ class Reader:
         V = self.V
         if FL.hold_rule(V.s) != "hold":
             return None
-        k0 = getattr(V.levels, "_known0", None)                            # the structure's finest degree — areas and lines (BREAK-1)
+        k0 = getattr(V.levels, "_known_hold", getattr(V.levels, "_known0", None))   # the hold degree (A-L1: D0) — areas and lines
         if kind == "line" and k0 is None:                                  # no finest structure known (old callers) ⇒ the line's own
             g = int(obj.get("degree") or V.s.get("level_degree", 2))       # degree
 
