@@ -174,13 +174,9 @@ def daily_png(V, sym, f, weekly=None, bars=BARS["Daily"]):
         ax.axvspan(i - start - 0.5, i - start + 0.5, color=CH.TREND_COLOR.get(V.daily[i].trend, "#fff"), lw=0, alpha=0.6)
     CH._candles(ax, w)
     last = V.daily[n - 1]
-    hs, ls = [], []
-    for p in last.pivots:                                                  # charts.daily_png सारखे HH / HL / LH / LL
-        seq = hs if p.kind == "H" else ls
-        lab = p.kind
-        if seq:
-            lab = ("HH" if p.price > seq[-1] else "LH") if p.kind == "H" else ("HL" if p.price > seq[-1] else "LL")
-        seq.append(p.price)
+    from . import daily_swings as DS
+    tags = DS.tag_pivots(last.pivots, d["open"].to_numpy(float), d["close"].to_numpy(float))   # charts.daily_png सारखे (F1)
+    for p, lab in zip(last.pivots, tags):
         if p.bar >= start:
             ax.annotate(lab, (p.bar - start, p.price), textcoords="offset points", xytext=(0, 8 if p.kind == "H" else -12), ha="center",
                         fontsize=7, color="#1c7ed6" if p.kind == "H" else "#e8590c")
