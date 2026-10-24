@@ -675,6 +675,9 @@ def read5(V, j, trend, act, side_fn=None, keep=None, extra=None, prefix="", brok
             # Without it the RSI read said "the move into the zone is not known" although that swing exists (layer 5 gallery, C-L5-1).
             vb = R.visit5(j, lvl, d)
             mf = vb.get("move_from15")
+            if getattr(V, "visit_end_new", False):                         # DECISIONS 64: the last away swing after the break known
+                mf = V.move_from(k, float(x["lo"]), float(x["hi"]), d, floor=x.get("broken_at"))   # at k (the revisit's own end
+                # rule is E4 (b)'s — the area's visit is not asked here, so the two never disagree)
             area = {kk: x.get(kk) for kk in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
         else:
             ln = f["raw"]

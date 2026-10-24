@@ -228,3 +228,33 @@ def test_b1_holding_beyond_the_far_side_ends_the_visit_a_sweep_does_not(mirror):
     rows = FAR[:5] + [(103.5, 103.5, 101.0, 101.2, 1.0), (101.2, 101.6, 100.8, 101.4, 1.0)]
     V2, lvl2, d2 = _case(mirror, rows=rows, fine=sweep)
     assert V2.visit(6, lvl2, d2)["start"] == 2
+
+
+@MIRRORS
+def test_broken_area_retest_move_start_is_the_last_away_swing_after_the_break_on_both_readers(mirror):
+    """C-L5-1 + B2: the RSI read of an E4 (b) entry at a broken area gets the last swing built away from it AFTER its break known at the
+    decision (moves forward with a new away swing) — the 15M and the 5M reader alike."""
+    from decision3 import levels as LV
+    rows = [(103.0, 103.2, 101.8, 102.0, 1.0), (102.0, 102.1, 99.0, 99.2, 1.0), (99.2, 99.3, 97.0, 97.2, 1.0),
+            (97.2, 98.6, 97.1, 98.5, 1.0), (98.5, 99.0, 97.6, 97.8, 1.0), (97.8, 99.6, 97.7, 99.5, 1.0),
+            (99.5, 100.6, 99.4, 100.3, 1.0), (100.3, 100.4, 98.9, 99.0, 1.0), (99.0, 99.1, 98.0, 98.1, 1.0)]
+    br = {"id": 1, "lo": 100.0, "hi": 102.0, "role": LV.SUP, "state": "BROKEN", "break_dir": -1, "broken_at": 2,
+          "trade_location": True, "tf": "1H", "sweeps": 0, "births": ["a:D2"], "fresh": False, "confluence": []}
+    if mirror:
+        br = {**br, "lo": 2 * MID - 102.0, "hi": 2 * MID - 100.0, "role": LV.RES, "break_dir": 1}
+    L1 = NS(id=1, born_bar=0, state_at=lambda u: "BROKEN", events=[], dead_bar=None)
+    rr = _mirror_rows(rows) if mirror else rows
+    V, _lvl, d = _bare(rows, [("L", 97.0, 2, 3)], mirror=mirror, snapshot=lambda t: [br], extra_L=[L1], ltf=_ltf_from(rr))
+    _with_fine(V, [("L", 97.0, 2, 3), ("H", 98.6, 3, 4), ("L", 97.6, 4, 5)], mirror)
+    seen = []
+    V.rsi_divergence = lambda t, dd, arm, ztf="1H", move_from=None: seen.append((t, move_from)) or {"found": False}
+    V.range_structure = lambda t: None
+    trend = "UP" if mirror else "DOWN"
+    got15 = [(t, seen[-1][1]) for t in range(6, len(rows)) if [e for e in EM.read(V, t, trend, [])["entries"]
+                                                             if e["object"] == "broken_area"]]
+    assert got15 and all(mf == 4 for _t, mf in got15)                       # the dip at 4 (after the break, below) — not bar 2
+    F = TF.of(V)
+    V._em5_memo = {}
+    got5 = [(j, seen[-1][1]) for j in range(F.n) if [e for e in EM5.read5(V, j, trend, [])["entries"] if e["object"] == "broken_area"]]
+    assert got5 and all(mf == 4 for _j, mf in got5)
+    assert V.move_from(5, br["lo"], br["hi"], d, floor=3) == 4 and V.move_from(5, br["lo"], br["hi"], d, floor=5) is None
