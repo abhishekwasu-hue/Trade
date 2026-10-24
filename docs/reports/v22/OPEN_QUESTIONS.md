@@ -1493,3 +1493,7 @@ without holding = a SWEEP (object alive); broken back ⇒ DEAD by the same test;
 A visit also ends when its object becomes BROKEN under BREAK-1 (b) — at the bar the break became known (N07, after A1 lands). An object
 not broken, with one directional leg away and no confirmed turn yet: the visit may stay open until the next confirmed swing, but no
 model entry and no RSI read comes from that open visit while price is away from the area (proof case D11). RSI judged only after C1.
+Built on branch `visitmove` (report docs/reports/gallery_review_fixes_B.md §7): the visit ends at the lifecycle's broken / dead event
+(today's K4; BREAK-1 through the same events when A1 lands); an open visit whose candle is away from the band reads nothing (15M / 5M
+readers, row RSI, dossier, hidden frame). Charts: trade-data `review/gallery_fixes/B/L5-D11_B2_away_broken.png`, `L5-N07_B2_away_broken.png`
+(N07 to be re-proved after A1).

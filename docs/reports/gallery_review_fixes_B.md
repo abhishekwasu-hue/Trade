@@ -146,3 +146,29 @@ layer 5 gallery). BEFORE = base 0e48a7c (reproduces the layer 5 census exactly),
   visit), "E4 (b): the revisit ends when price leaves it by structure", "E1 does NOT come back after a sweep" (unchanged: a sweep never
   ends the visit), "no fixed numbers", "never edit golden expectations" (none edited; golden tests pass).
 - B-1 … B-4 logged in `docs/reports/v22/OPEN_QUESTIONS.md`.
+
+## 7. B-2 (Abhi's provisional answer, OPEN_QUESTIONS "B-2 — Abhi's provisional default") — built
+- **Visit ends when the area becomes BROKEN:** `V22._visit_away` reads the area's own lifecycle events (`broken` / `dead` / `dead_bar`
+  — the bar the lifecycle writes them = the bar they became known) and ends the open visit there (`ended_by = "broken"`); while the
+  area reads BROKEN / DEAD no new visit of it starts (a flip or a reclaim makes it a place again; `V22.object_broken`). Nothing in the
+  lifecycle is edited: today's K4 events drive it now, and BREAK-1 (branch `lifecycle`, A1) will drive it through the same events.
+- **Nothing read while price is away from an open visit:** `V22.price_away(i, lvl)` = the candle's range does not trade into the band
+  (comparison only). Then: the 15M reader (`Reader.area`) and the 5M reader (`Reader5.area5`, on the 5M candle) mark the visit
+  `away` and fire nothing; the row's zone RSI (`_level_eval`), the dossier's per-visit RSI (15M and 5M) and the hidden-RSI frame give
+  NA "price is away from the area … nothing is read while price is away (B-2)". Entries were already impossible there (traded_inside);
+  the guard holds under the default trigger rule (the `inside` / `legacy` what-ifs keep their own reading).
+- **Charts:** `review/gallery_fixes/B/L5-D11_B2_away_broken.png` — D11's open visit (290, 26–28 Aug): 54 bars open, 29 of them away
+  from the band; BEFORE every one was read (× marks), AFTER only the 25 bars in the band. `L5-N07_B2_away_broken.png` — with today's
+  lifecycle area 266 is broken 10 Sep 09:30 and flipped 11 Sep 11:00: BEFORE one "visit" ran 934 bars (875 away, all read); AFTER
+  132 open bars, 58 read, the visit in progress ends at the break; at the gallery decision (15 Sep 15:15) the visit since 11 Sep
+  14:00 is open but price is away ⇒ nothing read. N07 is re-proved once A1 (BREAK-1) lands — same events, same code path.
+- **Replay (13 groups, 5M; scratch runs `b6` / `a6`):** entries identical to section 4 (53 → 56, same 3 added, same RSI marks: E1 22
+  → 23, E2 1 → 1, E3 9 → 10, E4 21 → 22; RSI ✓ 5 → 0). RSI reads at armed visits: BEFORE 2,338, of which **1,572 taken while the
+  5M candle was away from the band**; AFTER 974, **0 while away** (3,544 away candles skipped). Distinct visits 114 → 118.
+- **Tests:** `tests/test_visit_end_move_start.py` +3 (both mirrors: an open visit away reads nothing on 15M / 5M / hidden frame, back
+  in the band reads; the break ends the visit, no new visit while BROKEN, a reclaim re-opens; full = cut with the events). Byte pins
+  (`test_trigger_5m` PIN15, `test_facts_dossier_5m` dossier pin) are now checked under their own visit rule (`single_swing`, values
+  unchanged) and the default is asserted to differ only in visit facts (entries and decisions identical; dossier = the away NA).
+  `test_entry_models_sweep_fakeout` / `test_decision3_entry_models` (break inside the visit) and `test_facts_dossier` (divergence at
+  the visit) assert the new reading + the what-if. 971 passed, 1 skipped, 1 xfailed (33 files incl. both golden tests); no golden
+  expectation changed.
