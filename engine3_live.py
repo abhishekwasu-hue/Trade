@@ -440,10 +440,20 @@ def build_inputs(feed, symbol, now, s=None, levels_only=False):
     if len(daily) < 30:
         raise EngineDataError(f"{symbol}: Daily candles अपुरे ({len(daily)})")
     if levels_only:
+        try:                                                             # DECISIONS 84: the 5M shows the close print the 15M hides
+            ltf = closed_session_bars(feed.index(symbol, "5minute", s["engine3_ltf_days"]), 5, now)
+            ltf = DP.filter_allowed(ltf, "annotation") if HI.is_nifty(symbol) else ltf
+        except TokenRejected:
+            raise
+        except Exception as exc:                                         # noqa: BLE001 — areas still build; the miss is logged
+            print(f"⚠️ {str(symbol).upper()} engine3: 5M नाही ⇒ close-print marks फक्त 15M वरून ({type(exc).__name__})")
+            ltf = None
+        m15, _ = mark_close_prints(symbol, m15, ltf)
         return m15, daily, None, None, None
     ltf = closed_session_bars(feed.index(symbol, "5minute", s["engine3_ltf_days"]), 5, now)
     if HI.is_nifty(symbol):
         ltf = DP.filter_allowed(ltf, "annotation")
+    m15, ltf = mark_close_prints(symbol, m15, ltf)
     if not len(ltf) or ltf["timestamp"].iloc[-1].normalize() != m15["timestamp"].iloc[-1].normalize():
         raise EngineDataError(f"{symbol}: 5M spot (LTF) data नाही ⇒ c1 CHoCH तपासता येत नाही")
     tf5 = trigger_tf_of(s) == "5M"
@@ -471,6 +481,19 @@ def build_inputs(feed, symbol, now, s=None, levels_only=False):
             raise FutVolumeMissing(f"{DATA_PROBLEM_FUT} ({note})")
         note += " ⇒ volume NA ⇒ c0 data problem (volume शिवाय entry नाही)"
     return m15, daily, ltf, fut, note
+
+
+def mark_close_prints(symbol, m15, ltf=None):
+    """DECISIONS 84 (R5-3) at the source: Upstox's NSE_INDEX candles since NSE's cash closing auction (CAS, opportunity_engine/cas.py) end each session with
+    identical flat bars (the 15:15 value) and one auction-close print — not traded bars. Both frames get the `data_problem` column
+    (decision3.history.mark_data_problems: the 5M by its own bars, the 15M from the 5M under it); prices are never changed. The
+    reader never takes a base, zone or swing extreme from a marked bar (swings2 / levels / refined origin)."""
+    from decision3 import history as HI
+    name = str(symbol).upper()
+    m15 = HI.mark_data_problems(m15, name, "15M", finer=ltf)
+    if ltf is not None and len(ltf):
+        ltf = HI.mark_data_problems(ltf, name, "5M")
+    return m15, ltf
 
 
 def use_1m(s=None):
