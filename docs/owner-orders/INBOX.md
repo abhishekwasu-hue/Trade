@@ -802,3 +802,11 @@ My answers (record in DECISIONS / OPEN_QUESTIONS):
 2. L5-b: yes — count the push still forming at the decision bar, marked "forming", read only from bars ≤ t (no look-ahead), shown as "confirmed" once the swing confirms. L5-c: yes — read RSI divergence at the retest of a broken line / area like at any area (the retest is the pullback to the object).
 3. C-L5-1 and the galleries: I give ✅ only after the charts are checked — send the Fix proof gallery (sections 1–6) and the layer-5 gallery as ZIPs.
 I am running the VPS block now and will paste its output. Report to me in Marathi.
+
+---
+## 24 Oct — drop A / B, Weekly not confluence, branch check, resend ZIPs
+1. Label: drop A / B. Show the evidence list + its count on the card and in the outputs (information only, no threshold). Weekly overlap does NOT count as confluence (Weekly bands are too wide; Weekly stays context); confluence = a Daily area overlap or an object of a different kind (line, liquidity pool) at the same place. Record in DECISIONS and rebuild the label column.
+2. L5-c provisional definition: accepted for now; final after I check the charts (especially L5-E17).
+3. Branch claude/layer5-rsi-questions shows 35 files / ~2,000 lines incl. vision/worker.py, card_summary.py, engine_card.py — confirm it holds ONLY the layer-5 changes, or that it is stacked on another branch; list exactly which commits are layer 5.
+4. Send the layer-5 gallery ZIP and the Fix proof gallery ZIP again — they have not reached me; no ✅ without the charts.
+VPS block output follows separately. Report to me in Marathi.
