@@ -583,8 +583,7 @@ def _visits5(V, t, d5, areas, armed, trend):
         vi = R.visit5(j, x, d)
         if vi["start5"] is None and vi.get("data") is None:
             continue
-        lid = x.get("parent_level", x.get("id"))
-        vid = f"{lid}@{vi['vid']}"
+        vid = f"{R.uid_of(x)}@{vi['vid']}"                                  # A5: the engine's visit id (the place's stable id)
         eng = next((a for a in row.get("armed") or [] if a.get("object") == "area" and a.get("visit_id") == vid), None)
         ents = [_entry_facts(e) for e in row.get("entries") or [] if e.get("area_visit_id") == vid]
         v = {"area": x, "d": d, "visit5": vi, "visit_id": vid, "armed": x.get("id") in arm_ids, "engine": eng, "entries": ents,

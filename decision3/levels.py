@@ -279,9 +279,11 @@ class Levels:
         """A5: the new level's stable id (`place_uid`); key = (H | L, base candle start). The same base candle reborn as a new life
         (its earlier level dead, or of the other role) ⇒ "<uid>~<birth bar start>" (deterministic, window-free); no key ⇒ the birth
         bar (a fallback, never expected)."""
-        u = place_uid(tf, key[0], key[1]) if key else f"{tf}:?:{self.ts.iloc[int(t)].strftime('%Y-%m-%d %H:%M')}"
+        ts = getattr(self, "ts", None)
+        at = ts.iloc[int(t)].strftime('%Y-%m-%d %H:%M') if ts is not None and 0 <= int(t) < len(ts) else str(int(t))
+        u = place_uid(tf, key[0], key[1]) if key else f"{tf}:?:{at}"
         if any(o.uid == u for o in self.L):
-            u = f"{u}~{self.ts.iloc[int(t)].strftime('%Y-%m-%d %H:%M')}"
+            u = f"{u}~{at}"
         return u
 
     def by_uid(self, uid):
