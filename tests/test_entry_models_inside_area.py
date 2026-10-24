@@ -445,6 +445,7 @@ def test_default_settings_e4b_fires_end_to_end(mirror, monkeypatch):
 
 
 # ------------------------------------------------------------------------------------------------ the 12 Oct fixture (Abhi's described shape)
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: written on the 12 Oct synthetic fixture (A-L6, conftest)
 @MIRRORS
 def test_oct12_fixture_spike_trading_through_and_closing_away_fires_under_traded_inside(mirror):
     """OPEN_QUESTIONS (RC3 conflict): the synthetic 12 Oct bear-call fixture's trigger candle trades up through the area and closes back

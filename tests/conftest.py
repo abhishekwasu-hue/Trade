@@ -214,3 +214,27 @@ def earlier_break_reading(monkeypatch):
     from decision3 import settings as S3
     monkeypatch.setitem(S3.DEFAULTS, "break_hold_rule", "swing_beyond")
     monkeypatch.setattr(FL, "hold_rule", lambda s=None: "swing_beyond")   # settings dicts loaded at import time read it too
+
+
+
+@pytest.fixture(scope="module")
+def earlier_break_reading_ctx():
+    """`earlier_break_reading` for module-scoped fixtures (built before any function-scoped monkeypatch): a context manager the fixture
+    builds its rows in, undone right after, so the rest of the module keeps the default. The integ51 merge put tests written on the
+    12 Oct synthetic fixture (tests/oct12_fixture.py: a support broken by new lows WITHOUT a hold ⇒ a sweep under BREAK-1, OPEN_QUESTIONS
+    A-L2) by the other branches on the what-if, as the lifecycle branch did (A-L6); their tests take `earlier_break_reading` too. The
+    default reading is pinned by tests/test_break_hold.py; before / after charts: trade-data review/gallery_fixes/integ/."""
+    import contextlib
+
+    @contextlib.contextmanager
+    def ctx():
+        from decision3 import flip as FL
+        from decision3 import settings as S3
+        mp = pytest.MonkeyPatch()
+        mp.setitem(S3.DEFAULTS, "break_hold_rule", "swing_beyond")
+        mp.setattr(FL, "hold_rule", lambda s=None: "swing_beyond")
+        try:
+            yield
+        finally:
+            mp.undo()
+    return ctx

@@ -76,11 +76,13 @@ def test_label_rule_setting_registered_and_validated():
 
 # ------------------------------------------------------------------------------------------------ never blocks: the pin
 @pytest.mark.parametrize("name", sorted(PIN15))
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: PIN15 reads the earlier break + visit rules (tests/test_trigger_5m.py)
 def test_15m_legacy_is_byte_identical_and_model_changes_only_the_label_fields(name):
-    leg = _rows15(name, {"label_rule": "legacy"})
+    old = {"visit_end_rule": "single_swing"}
+    leg = _rows15(name, {"label_rule": "legacy", **old})
     assert _digest(leg) == PIN15[name]                                      # legacy = the code before this build, byte for byte
     for rule in ("evidence_count", "model55"):
-        mod = _rows15(name, {} if rule == "evidence_count" else {"label_rule": rule})
+        mod = _rows15(name, dict(old) if rule == "evidence_count" else {"label_rule": rule, **old})
         assert dump(strip(mod)) == dump(strip(leg))                         # entries / invalidation / gates identical
         for r in mod:
             for e in r.get("entries") or []:
@@ -88,18 +90,20 @@ def test_15m_legacy_is_byte_identical_and_model_changes_only_the_label_fields(na
 
 
 @pytest.fixture(scope="module", params=[False, True], ids=["bear_call", "bull_put_mirror"])
-def oct12_area(request):
-    from tests import oct12_fixture as F
-    m15, fut, ltf = F.build(mirror=request.param)
-    out = {}
-    for rule in ("evidence_count", "model55", "legacy"):
-        V = E3.V22(m15, s={"level_death_side": "role", "label_rule": rule, **AREA}, ltf=ltf, futures=fut)
-        ts = V.levels.ts
-        last = ts.dt.normalize().iloc[-1]
-        out[rule] = [V.decide(t) for t in range(len(ts)) if ts.dt.normalize().iloc[t] == last]
-    return out
+def oct12_area(request, earlier_break_reading_ctx):
+    with earlier_break_reading_ctx():                             # integ51: the earlier break reading (A-L6, conftest)
+        from tests import oct12_fixture as F
+        m15, fut, ltf = F.build(mirror=request.param)
+        out = {}
+        for rule in ("evidence_count", "model55", "legacy"):
+            V = E3.V22(m15, s={"level_death_side": "role", "label_rule": rule, **AREA}, ltf=ltf, futures=fut)
+            ts = V.levels.ts
+            last = ts.dt.normalize().iloc[-1]
+            out[rule] = [V.decide(t) for t in range(len(ts)) if ts.dt.normalize().iloc[t] == last]
+        return out
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 def test_15m_every_fired_entry_has_a_label_both_mirrors(oct12_area):
     leg = oct12_area["legacy"]
     for rule in ("evidence_count", "model55"):

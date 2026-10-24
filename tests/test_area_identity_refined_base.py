@@ -70,6 +70,7 @@ def test_place_uid_is_built_from_the_base_candle_only():
     assert LV.place_uid("W", "H", pd.Timestamp("2026-06-01")) == "W:H:2026-06-01"
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: written on the 12 Oct synthetic fixture (A-L6, conftest)
 @pytest.mark.parametrize("mirror", [False, True])
 def test_visit_ids_carry_the_place_uid_and_match_across_windows(mirror):
     full, moved = _build(mirror, entry_area_refine="area"), _build(mirror, drop_days=2, entry_area_refine="area")

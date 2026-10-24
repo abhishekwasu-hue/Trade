@@ -118,7 +118,7 @@ def test_both_readers_pass_the_line_retest_move_to_the_rsi_read(mirror, monkeypa
     V, ln, d = _line_case(mirror, monkeypatch)
     seen = []
 
-    def ev(self, t, dd, lvl, arm, appr=None, move_from=None, cm=None, read_ok=None):
+    def ev(self, t, dd, lvl, arm, appr=None, move_from=None, cm=None, read_ok=None, **kw):
         seen.append((str(lvl.get("id")), move_from))
         return {"label": None, "evidence": [], "evidence_list": {"required": "absent"}, "confirming": {}, "channel_evidence": {},
                 "rsi": {}}

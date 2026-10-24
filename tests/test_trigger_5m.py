@@ -102,10 +102,12 @@ def _rows15(name, extra):
 # Re-pinned for the gallery review A5 / A7 fix (branch `identity`, DECISIONS 62 / 63): every row now carries the place's stable id
 # (`uid`, visit ids `<uid>@<start>`) and the refined base reads every 15M turn (D0) whose wick to body trades into the band. The 15M
 # path is still independent of `trigger_tf` (the three settings below give one digest).
-PIN15 = {"abc": "5cd0314f4d72f0c2338c28aa73e9acfd12855c7b62cfc9ef99aa1a8f525e9737",
+# integ51: abc re-pinned — the lifecycle branch (A2) words a line broken back as "⇒ dead (closed back and held …)" (51 rows of
+# `channels[].state`, nothing else; the identity pin and this one differ only there). Chart: trade-data gallery_fixes/integ/B01.
+PIN15 = {"abc": "cdd6181289e9aaff82080dc89003882b838a923b4f1dd4f45ec39b866ca932f3",
          "oct12_bear": "7cb8e2648fe482cb4dabf21cc9ae3d18a603c44fb20618c24b193d9cdda28905",
          "oct12_bull": "99a02a9fb3fef2b2192c44b2f490ca813eb8ea6a27e2d37165cca974ebb26bfd"}
-PIN15_C = {"abc": "ca9ac81744a345c5cd621ab354b3f4eb0a0e2faf569b03c19b053bbb76ba8d18",
+PIN15_C = {"abc": "04f8c3a0780a19c25987043f309dfe2c9fa8072df6253569798d354b1f4eefca",
            "oct12_bear": "949a617fe665ca232343cb5661c7f2e22d35bd43fe1d50f557ab13a6bd5f08c4",
            "oct12_bull": "6a50b092f2e28dc6e1d4be79f03107603c1cf04e952f1698a4c0ca3c1e570d76"}
 
