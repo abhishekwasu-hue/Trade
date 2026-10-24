@@ -1131,3 +1131,7 @@ Then: integ51 + dpfeed → one BREAK-2 PR → CI → my review. Next C, then D +
 ---
 ## 24 Oct — S1 addition
 S1 addition: label every such test-made extreme on charts and in reports as a FALSE BREAK extreme, never as a swing high/low. While price is still beyond and the outcome is unknown the state is BEYOND_NOT_BROKEN; once price closes back inside it becomes FALSE BREAK.
+
+---
+## 24 Oct — answer key v4 attached
+answer_key_batch1_v4.json (L06 false break / supply alive; L07 next external swing 56,743.0) — stored at trade-data review/answer_key/answer_key_batch1_v4.json
