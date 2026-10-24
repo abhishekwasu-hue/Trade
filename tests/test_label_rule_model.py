@@ -77,6 +77,7 @@ def test_label_rule_setting_registered_and_validated():
 # ------------------------------------------------------------------------------------------------ never blocks: the pin
 @pytest.mark.parametrize("name", sorted(PIN15))
 @pytest.mark.usefixtures("earlier_break_reading")   # integ51: PIN15 reads the earlier break + visit rules (tests/test_trigger_5m.py)
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: the pins were taken on the replaced A7 reading (what-if)
 def test_15m_legacy_is_byte_identical_and_model_changes_only_the_label_fields(name):
     old = {"visit_end_rule": "single_swing"}
     leg = _rows15(name, {"label_rule": "legacy", **old})
