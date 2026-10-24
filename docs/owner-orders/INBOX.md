@@ -1167,3 +1167,7 @@ EN5 Proof: replay before/after (entries, watch alerts, stop-outs, next-area reac
 4 Early-close days: add the exchange's special-session/early-close calendar to the data-problem flagging (backlog item, not blocking).
 5 L03: say in one line why the earlier own-TF swing beyond (11 Jun) was not used (lookback limit or classification); the break bar matches.
 Merge #385 when CI is green on the latest commit. Then the V1 VPS run (dry-run first, $1 cap), then SW.
+
+---
+## 24 Oct — after the S1-precise report (#386 open: P1 owner decision, V1 cap, L03 lookback)
+Merge all

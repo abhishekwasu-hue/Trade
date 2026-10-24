@@ -169,13 +169,14 @@ def test_a_daily_object_reads_daily_swings_mapped_to_the_15m_bar_they_are_known_
     day0 = pd.Timestamp(m["timestamp"].iloc[0]).normalize()
     dd = pd.DataFrame({"timestamp": [day0 - pd.Timedelta(days=3), day0 - pd.Timedelta(days=2), day0],
                        "open": [120.0, 123.0, 119.0], "high": [125.0, 124.0, 121.0], "low": [119.0, 118.5, 118.6],
-                       "close": [124.0, 119.0, 120.0]})                   # every Daily swing candle stays beyond the band (external)
+                       "close": [124.0, 119.0, 120.0]})                   # every Daily swing candle stays beyond the band
     piv = [NS(kind="H", price=125.0, bar=0, known_at=day0 - pd.Timedelta(days=1)),          # known before the window
            NS(kind="H", price=121.0, bar=2, known_at=pd.Timestamp(m["bar_end"].iloc[18]))]  # known at 15M bar 18
     lv.daily_states, lv.daily_df = [NS(pivots=piv)], dd
     own = lv._own_swings("D")
     assert [(p.price, p.bar, p.confirm_bar) for p in own] == [(125.0, -1, -1), (121.0, 0, 18)]
-    D = LV.Level(id=99, role0=LV.RES, lo=118.0, hi=118.3, born_bar=0, tf="D")
+    D = LV.Level(id=99, role0=LV.RES, lo=100.0, hi=100.3, born_bar=0, tf="D")   # below every 15M close: no excursion closes back
+    #                                                                   (DECISIONS 94), so both Daily swings stay external
     assert lv._ft_target(D, True, 17, 17)[0].price == 125.0                # only the pre-window Daily swing is known at 17
     assert lv._ft_target(D, True, 17, 18)[0].price == 121.0                # the nearer one from its known bar (formed before 17)
     assert lv._ft_target(Z, True, 17, 18)[0].price == 122.0                # the 1H object reads its own (D2) swings
