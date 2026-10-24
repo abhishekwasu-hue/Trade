@@ -570,6 +570,11 @@ class Reader:
             rb = (info or {}).get("refined") if m == "E4" else info
             fired.append({"model": m, "variant": "a" if m == "E4" else None, "invalidation": inv, "invalidation_rule": rule,
                           "facts": facts, "refined": rb})
+        if getattr(V, "visit_end_new", False) and self.trigger_rule() == "traded_inside" and V.price_away(t, lvl, None):   # B-2: an open visit while price is away from the
+            base["away"] = V.AWAY_NA                                       # area — no entry and no RSI read come from it
+            for f in fired:
+                models[f["model"]] = {"status": "waiting", "waiting": V.AWAY_NA}
+            fired = []
         base["models"] = models
         return base, fired
 

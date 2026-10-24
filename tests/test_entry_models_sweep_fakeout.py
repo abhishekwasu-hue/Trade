@@ -145,6 +145,10 @@ def test_a_close_beyond_the_refined_base_only_ends_e1(mirror, monkeypatch):
 def test_close_beyond_plus_swing_beyond_disarms_the_area_models(mirror):
     V, lvl, d = _v(SWEEP, mirror, events=[(12, "broken", "close beyond + swing beyond (K4)")])
     a, f = EM.Reader(V).area(14, lvl, d)
+    assert f == [] and a is None and V.visit(14, lvl, d)["ended_by"] == "broken"   # B-2: the visit ended where the break became known
+    V, lvl, d = _v(SWEEP, mirror, s={**REFINE, "visit_end_rule": "single_swing"},
+                   events=[(12, "broken", "close beyond + swing beyond (K4)")])   # the earlier reading: visit open, models disarmed
+    a, f = EM.Reader(V).area(14, lvl, d)
     assert f == [] and "broke inside this visit" in a["disarmed"]
     assert all(x["status"] == "disarmed" for x in a["models"].values())
 
@@ -207,6 +211,8 @@ def test_real_k4_sweep_keeps_the_area_armed_and_the_visit_while_broken_disarms_i
     assert brk == [22]                                                     # e: close beyond + swing beyond = broken
     lvl = {"id": Z.id, "lo": Z.band_at(21)[0], "hi": Z.band_at(21)[1], "role": Z.role_at(21), "tf": "1H"}
     assert not EM.Reader(V).area(21, lvl, d)[0].get("disarmed")
+    assert EM.Reader(V).area(22, lvl, d)[0] is None                         # B-2: the visit ends at the bar the break is known
+    V.s = {**V.s, "visit_end_rule": "single_swing"}                       # the earlier reading: open, disarmed
     a = EM.Reader(V).area(22, lvl, d)[0]
     assert "broke inside this visit" in a["disarmed"] and all(x["status"] == "disarmed" for x in a["models"].values())
 

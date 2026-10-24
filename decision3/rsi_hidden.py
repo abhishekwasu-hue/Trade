@@ -87,6 +87,8 @@ def frame_of(V, t, d, move_from=None, arm=None, lvl=None, row=None):
         vi = V.visit(t, lvl, d, k0)
         mf = vi.get("move_from") if "move_from" in vi else (
             (int(vi["approach_from"]) - 1) if vi.get("approach_from") is not None else None)   # DECISIONS 64: the last away swing
+        if vi.get("start") is not None and hasattr(V, "away_na") and V.away_na(t, lvl) is not None:
+            return {"kind": "zone_move", "move_from": None, "arm": None, "why": V.AWAY_NA}
         if vi.get("start") is None or mf is None:
             return {"kind": "zone_move", "move_from": None, "arm": None,
                     "why": "the move into the area is not known (" + (vi.get("why") or "no swing built away from the area yet") + ")"}

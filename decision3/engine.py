@@ -344,6 +344,44 @@ class V22:
         return sorted({int(p.bar) for p in src if p.confirm_bar <= t and p.bar >= born and p.kind == kind
                        and ((p.price < lo) if d < 0 else (p.price > hi))})
 
+    def object_broken(self, lvl, i):
+        """B-2: the area reads BROKEN / DEAD at bar i by its lifecycle's own events (known by i; whatever the lifecycle writes —
+        today's K4 and BREAK-1 when it lands): a flip or a reclaim makes it a place again, dead never. No new visit of a broken area."""
+        lid = lvl.get("parent_level", lvl.get("id"))
+        Ls = getattr(self.levels, "L", [])
+        Lo = Ls[int(lid)] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(Ls) else None
+        if Lo is None:
+            return False
+        dead = getattr(Lo, "dead_bar", None)
+        if dead is not None and int(dead) <= i:
+            return True
+        st = False
+        for b, kk, *_ in (getattr(Lo, "events", None) or []):
+            if b > i:
+                continue
+            if kk == "dead":
+                return True
+            if kk in ("flip", "reclaim"):
+                st = False
+            elif kk == "broken":
+                st = True
+        return st
+
+    def price_away(self, i, lvl, A=None):
+        """B-2 (Abhi, provisional): price is AWAY from the area at candle i — its range does not trade into the band (comparison only).
+        A = the candle arrays (default 15M; the 5M reader passes its own). Used only under the DECISIONS 64 rule."""
+        A = self.levels.A if A is None else A
+        return not (float(A["low"][int(i)]) <= float(lvl["hi"]) and float(A["high"][int(i)]) >= float(lvl["lo"]))
+
+    AWAY_NA = ("price is away from the area at this candle — the visit is still open (no confirmed turn yet) but nothing is read "
+               "while price is away (B-2)")
+
+    def away_na(self, i, lvl, A=None):
+        """B-2: the RSI read of an open visit while price is away ⇒ NA with the reason; None ⇒ read as usual (or the what-if rule)."""
+        if not self.visit_end_new or not self.price_away(i, lvl, A):
+            return None
+        return {"found": None, "na": self.AWAY_NA, "zone_degree": None}
+
     def move_from(self, t, lo, hi, d, floor=None):
         """DECISIONS 64 / B2: the move into the zone begins at the LAST swing built away from the area (supply: a swing low below it;
         demand: a swing high above it) known by bar t — it moves forward with each new away swing (also one formed inside the visit:
@@ -472,12 +510,26 @@ class V22:
         before = [b for b in aw_all if floor <= b < born]
         touch = (np.flatnonzero((A["low"][born:t + 1] <= hi) & (A["high"][born:t + 1] >= lo)) + born) if t >= born else []
         tset = {int(x) for x in touch}
-        start, prev_end, ended_by, left_at, approach_from = None, None, None, None, None
-        last_away = before[-1] if before else None
+        lid = lvl.get("parent_level", lvl.get("id"))
+        Ls = getattr(self.levels, "L", [])
+        Lo = Ls[int(lid)] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(Ls) else None
+        brk = {int(b) for b, kk, *_ in (getattr(Lo, "events", None) or []) if kk in ("broken", "dead") and born <= b <= t}
+        if Lo is not None and getattr(Lo, "dead_bar", None) is not None and born <= int(Lo.dead_bar) <= t:
+            brk.add(int(Lo.dead_bar))
+
+        def broken_at_i(i):
+            return self.object_broken(lvl, i)
+        start, prev_end, ended_by, left_at, approach_from = None, None, None, None, None   # dead, at the bar that became known) ends
+        last_away = before[-1] if before else None                         # the visit there
         pending = None                                                     # the away swing inside the visit waiting for its next turn
-        for i in sorted(tset | set(pv_at)):
+        for i in sorted(tset | set(pv_at) | brk):
             if start is not None:
-                if i <= start:
+                if i < start:
+                    continue
+                if i in brk:                                               # B-2: the object became BROKEN (known at i) ⇒ visit over
+                    start, prev_end, ended_by, left_at, pending = None, i, "broken", None, None
+                    continue
+                if i == start:
                     continue
                 if i in struct:                                            # a structure-degree swing built away ⇒ the visit is over
                     start, prev_end, ended_by, left_at, pending, last_away = None, i, "swing", i, None, i
@@ -493,7 +545,7 @@ class V22:
                     elif far(p):                                           # beyond the far side: a sweep comes back (the next turn
                         pending = (p, "far")                               # reaches it); holding beyond = left (the lifecycle's break)
                 continue                                                   # a turn that does not reach the area never touches it
-            if i in tset:
+            if i in tset and not broken_at_i(i):
                 start, pending = i, None
                 approach_from = (last_away + 1) if last_away is not None else None
                 continue
@@ -503,6 +555,8 @@ class V22:
         why = None
         if start is None:
             why = ("no visit in progress" if prev_end is None else
+                   f"no visit in progress: the area became BROKEN at {ts(prev_end)} (lifecycle) — the visit ended there (B-2)"
+                   if ended_by == "broken" else
                    f"no visit in progress: price left the area and built a swing away at {ts(left_at)}" +
                    ("" if left_at == prev_end else f"; the next turn at {ts(prev_end)} did not reach it again") +
                    " — the visit ended by structure (DECISIONS 64)")
@@ -835,7 +889,8 @@ class V22:
             ok6, why6 = False, f"entry वेळ-खिडकीबाहेर (operational schedule) · reading: {why6}"   # an operational schedule after it
         chk["⑥"] = [ok6, why6]
         arm = int(cm.get("arm_bar", t))
-        rsi = self.rsi_divergence(t, d, arm, lvl.get("tf", "1H"), cm.get("move_from_bar"))   # zone evidence (Abhi): never a gate
+        rsi = self.away_na(t, lvl) or \
+            self.rsi_divergence(t, d, arm, lvl.get("tf", "1H"), cm.get("move_from_bar"))   # zone evidence (Abhi): never a gate
         Av, vlabel = self.vol_view(arm, t)
         zr = FL.zone_read(Av, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi,
                           handover=cm.get("handover_state"))               # in-zone study facts (bars arm … t)

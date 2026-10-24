@@ -401,7 +401,13 @@ def test_divergence_is_the_method_read_at_the_visit(visit_world):
     dv = d["sections"]["divergence"]
     assert dv["status"] == D.OK and len(dv["at_visits"]) == 1
     v = dv["at_visits"][0]
-    assert v["zone_side"] == "bear" and "pushes" in v and "zone_degree" in v and v["found"] in (True, False)
+    assert v["zone_side"] == "bear" and "zone_degree" in v
+    # B-2 (Abhi, provisional): at this candle price is away from the area while the visit is still open ⇒ no RSI read (NA + reason);
+    # the earlier reading (visit_end_rule = single_swing, what-if) reads the pushes there.
+    assert v["found"] is None and "away from the area" in v["na"]
+    m15, fut, ltf, one, as_of, _ = visit_world[False]
+    w = _dossier(m15, fut, ltf, one, as_of, cfg={"decision3": {"visit_end_rule": "single_swing"}})["sections"]["divergence"]["at_visits"][0]
+    assert "pushes" in w and w["found"] in (True, False)
     assert dv["latest"] and all(isinstance(x, str) for x in dv["latest"])
 
 

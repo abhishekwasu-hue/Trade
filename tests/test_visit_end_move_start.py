@@ -258,3 +258,60 @@ def test_broken_area_retest_move_start_is_the_last_away_swing_after_the_break_on
     got5 = [(j, seen[-1][1]) for j in range(F.n) if [e for e in EM5.read5(V, j, trend, [])["entries"] if e["object"] == "broken_area"]]
     assert got5 and all(mf == 4 for _j, mf in got5)
     assert V.move_from(5, br["lo"], br["hi"], d, floor=3) == 4 and V.move_from(5, br["lo"], br["hi"], d, floor=5) is None
+
+
+# ------------------------------------------------------------------------------------------------ B-2 (Abhi, provisional)
+@MIRRORS
+def test_b2_open_visit_while_price_is_away_reads_nothing(mirror):
+    """D11-like: the visit is open (the leg away has no confirmed turn yet: bars 9–11 before the turn at 11 confirms at 12) — no entry
+    and no RSI read come from it while the candle does not trade into the band; back in the band ⇒ read as usual."""
+    V, lvl, d = _case(mirror)
+    R = EM.Reader(V)
+    for t in (10, 11):
+        assert V.visit(t, lvl, d)["start"] == 3                            # still open (structure has not turned yet)
+        a, f = R.area(t, lvl, d)
+        assert f == [] and "away from the area" in a["away"]
+        assert V.away_na(t, lvl)["found"] is None and "away" in V.away_na(t, lvl)["na"]
+    a8, _ = R.area(8, lvl, d)
+    assert "away" not in a8 and V.away_na(8, lvl) is None                   # bar 8 trades in the band
+    from decision3 import rsi_hidden as RH
+    V.pb = NS(at=lambda t, dd: None)
+    assert RH.frame_of(V, 10, d, lvl=lvl)["move_from"] is None and RH.frame_of(V, 8, d, lvl=lvl)["move_from"] == 6
+    Vo = _case(mirror, s=OLD)[0]
+    assert Vo.away_na(10, lvl) is None and "away" not in EM.Reader(Vo).area(10, lvl, d)[0]   # what-if: the earlier reading
+
+
+@MIRRORS
+def test_b2_5m_reader_reads_nothing_while_the_5m_candle_is_away(mirror):
+    V, lvl, d = _v5(mirror)
+    F = TF.of(V)
+    for j in range(F.n):
+        a, f = EM5.Reader5(V, j).area5(lvl, d)
+        if a is None:
+            continue
+        inside = float(F.A["low"][j]) <= float(lvl["hi"]) and float(F.A["high"][j]) >= float(lvl["lo"])
+        assert ("away" in a) == (not inside), j
+        if not inside:
+            assert f == []
+
+
+@MIRRORS
+def test_b2_visit_ends_when_the_area_becomes_broken_and_no_new_visit_until_flip_or_reclaim(mirror):
+    ev = [(5, "broken", "close beyond + swing beyond")]
+    V, lvl, d = _case(mirror)
+    V.levels.L[0].events = list(ev)
+    vi = V.visit(5, lvl, d)
+    assert V.visit(4, lvl, d)["start"] == 3 and vi["start"] is None and vi["ended_by"] == "broken" and vi["prev_end"] == 5
+    assert all(V.visit(t, lvl, d)["start"] is None for t in range(5, len(ROWS)))   # still BROKEN ⇒ no new visit of it
+    assert all(EM.Reader(V).area(t, lvl, d) == (None, []) for t in range(5, len(ROWS)))
+    V2, lvl2, d2 = _case(mirror)
+    V2.levels.L[0].events = ev + [(6, "reclaim", "back")]                   # reclaimed ⇒ a place again: the next touch is a new visit
+    assert V2.visit(7, lvl2, d2)["start"] == 6                              # bar 6 (reclaim bar) trades in the band
+    Vo, lo_, do = _case(mirror, s=OLD)
+    Vo.levels.L[0].events = list(ev)
+    assert Vo.visit(6, lo_, do)["start"] == 3                              # what-if: the break never ended the visit
+    for t in range(len(ROWS)):                                             # no look-ahead: the events known by t only
+        Vc, lc, dc = _bare(ROWS[:t + 1], [x for x in STRUCT if x[3] <= t], mirror=mirror)
+        _with_fine(Vc, [x for x in FINE if x[3] <= t], mirror)
+        Vc.levels.L[0].events = [e for e in ev if e[0] <= t]
+        assert V.visit(t, lvl, d) == Vc.visit(t, lc, dc), t

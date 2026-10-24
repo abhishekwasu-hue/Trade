@@ -111,7 +111,8 @@ class Reader5(EM.Reader):
                                ((int(vi["approach_from"]) - 1) if vi.get("approach_from") is not None else None))
             else:
                 out["why"] = vi.get("why") or "no visit in progress"
-                if self._born(lvl) <= ku:                                  # a new visit may start inside the 15M bar in progress
+                if self._born(lvl) <= ku and not (getattr(self.V, "visit_end_new", False) and self.V.object_broken(lvl, ku)):
+                    # a new visit may start inside the 15M bar in progress (never of a BROKEN area — B-2)
                     tch = [i for i in F.children(ku + 1, upto=u) if c5.touches(i, lvl)]
                     if tch:
                         lo, hi = float(lvl["lo"]), float(lvl["hi"])
@@ -408,6 +409,11 @@ class Reader5(EM.Reader):
             rb = (info or {}).get("refined") if m == "E4" else info
             fired.append({"model": m, "variant": "a" if m == "E4" else None, "invalidation": inv, "invalidation_rule": rule,
                           "facts": {**(facts or {}), "trigger_tf": "5M"}, "refined": rb})
+        if getattr(V, "visit_end_new", False) and self.trigger_rule() == "traded_inside" and V.price_away(j, lvl, self.A5):   # B-2: an open visit while price is away from the
+            base["away"] = V.AWAY_NA                                       # area — no entry and no RSI read come from it
+            for f in fired:
+                models[f["model"]] = {"status": "waiting", "waiting": V.AWAY_NA}
+            fired = []
         base["models"] = models
         return base, fired
 
