@@ -810,3 +810,172 @@ I am running the VPS block now and will paste its output. Report to me in Marath
 3. Branch claude/layer5-rsi-questions shows 35 files / ~2,000 lines incl. vision/worker.py, card_summary.py, engine_card.py — confirm it holds ONLY the layer-5 changes, or that it is stacked on another branch; list exactly which commits are layer 5.
 4. Send the layer-5 gallery ZIP and the Fix proof gallery ZIP again — they have not reached me; no ✅ without the charts.
 VPS block output follows separately. Report to me in Marathi.
+
+---
+## 24 Oct — gallery review corrections (TRADE_SESSION_GALLERY_REVIEW_FIXES.md, verbatim) + BREAK-1 answer
+# Trade session — corrections from the chart review of the Layer 5 gallery and the Fix proof gallery
+
+From Abhi. Every chart of both galleries was checked by eye against the method (214 charts); the key findings were re-opened and confirmed. English spec; reports to Abhi in Marathi.
+
+Record this in owner-orders first (INBOX verbatim; a README row; DECISIONS principles, without dates). Then:
+- report first;
+- fix it in PRs with tests;
+- rebuild both galleries and send them as ZIPs.
+
+**Verdicts:**
+- Layer 5: NOT approved. Only the C-L5-1 fix is approved.
+- Fix proof gallery: NOT approved.
+- The layer-5 ZIP that reached Abhi was the OLD build (✓3 / ✗39 / NA11, no "Changes after DECISIONS 56" table). Send the current one.
+
+Chart ids below are the gallery ids (L5-…, sec1…6 file names, 2.x rows, p.., R5-..).
+
+## A. The area / line lifecycle (concept C): one rule for areas AND lines
+
+**A1. Break definition.** Provisional default, pending Abhi's confirmation. Log it in OPEN_QUESTIONS as "BREAK-1".
+- **BROKEN** = a close beyond the object AND price HOLDS beyond it: it builds a swing on the far side that stays beyond. For a supply / resistance broken upward, that is a pullback low that forms ABOVE the object.
+- **SWEEP** = price goes beyond (a close and / or a swing extreme beyond) and turns back inside without holding there. The object stays alive.
+- **BROKEN BACK ⇒ DEAD** uses the same test in the opposite direction.
+- Apply this identically to areas and lines. Today they disagree:
+  - 2.10 (an area) is ruled RECLAIMED, while 2.11–2.20 (lines) are ruled dead for the same behaviour;
+  - "broken back" is stamped BEFORE "break known" on every line case.
+- Wording: use "reclaimed" for alive and "dead" for dead. Never "RECLAIMED (broken back)".
+
+**A2. The K4 reclaim fix (#373) never reached lines.** In all three sec1 cases (07, 09, 12 Oct), the bar that made the break known was itself the bar that closed back over the line, and price then held on the original side with swings there. Example: 9 Oct 09:15, then the whole of 9 Oct above the line.
+- The line was therefore broken back / dead, yet the code reports broken_back_at = none and credits the approach-side rule.
+- Fix the line lifecycle so it mirrors the area fix.
+
+**A3. Approach side must allow a sweep (#377).** One to a few marginal closes beyond the object, without price holding there (no swing formed beyond), still count as approaching from the BREAK side. 2.23 and 2.24 were wrongly classed "from above / accepted".
+
+**A4. Re-evaluate under A1–A3 and report each case with charts.** These are likely valid retests that were removed:
+- 2.3 / 2.4 — a 17 Jul two-close poke with no swing above = a sweep, so the resistance stays alive;
+- 2.17 — the textbook break-side retest on 20 Jul 14:15.
+Also re-check these long stays beyond an object that were counted as many sweeps: N01 / N03 ("sweeps ×12" while price stayed hundreds of points beyond for days, with swings there), and sec3 1H 265 / W 256. Under A1 these are likely BROKEN and then DEAD.
+
+**A5. Object identity.**
+- The same band appears under several ids:
+  - 281 / 280 / 278 (55,699–55,970);
+  - 288 / 290;
+  - 292 / 293;
+  - 297 / 293.
+- One id is reused for different bands: 293 in E37 vs E38; 299 in E44 vs E47.
+- Make object identity stable: one place = one id for its life. Prove that duplicates cannot bypass max_hits_per_zone or the "one signal per model per place" rule.
+
+**A6. Possible union bands (Z-1u).**
+- Area 298 (54,886–55,193) looks like 294 plus a sweep high.
+- E07 / R5-E07 area 297 is 628 pts: the full range of one impulse candle, not wick-to-body.
+- Show the base candle and the band rule for each of these; fix them if they violate the base rule.
+
+**A7. The refined base.**
+- Degenerate bases: 1-point wide (E31, N08), or equal to the whole area (R5-E01, E09).
+- Missed obvious 15M turns inside the band: N03, N07, maybe N04.
+- Fix the detector so the refined base is the newest 15M turn of the area's side inside the band, as its wick-to-body.
+
+**A8. Lifecycle stamps on the chart.**
+- Stamp each state at the bar where it became KNOWN. Today BROKEN / DEAD often lands on a rally bar about a day later (2.1, 2.7, 2.9).
+- Show the lifecycle state on every area chart, and show the base candle in view.
+
+## B. The visit and the move into the zone
+
+**B1. A visit must end by structure.** When price leaves the area and builds swings away from it that do not reach it again, the visit has ended.
+- Examples: D04 / D05 — price fell about 1,900 pts and the visit stayed "open" for days; N07, D11, D13 are the same.
+- No model or RSI read belongs to a visit that has ended.
+
+**B2. The move start must update.** "The move begins at the LAST swing built away from the area." When a new away swing forms, the start moves forward.
+- Wrong today: D02 / D03, D07, D12, E25, E26 (E26 and E27 disagree on the same visit), E49, E53.
+
+## C. RSI (layer 5)
+
+**C1. Pushes are under-counted at D0.** Clear 15M swing highs with 80–250 pt pullbacks are not counted: E03, E07, E08, E13, E14.
+- 29 of the 39 ✗ results say "fewer than two pushes". That is far too many.
+- Fix push detection so that every turn the finest structure confirms inside the move is a push.
+
+**C2. The RSI value at a push is the RSI AT THE BAR OF THE PRICE EXTREME.** Never the highest RSI of the segment.
+- E14: the 12:15 push is labelled 76.8, while the pane shows about 66–68. The divergence is hidden.
+- Same issue: E13, E15, and the D0 vs D1 / D2 mismatches at the same bar (P04, P06, P08, P09).
+- One convention at every degree.
+
+**C3. Equal highs (and lows).** A second push that reaches the first push's top counts as "higher or equal". Define "reaches" by structure, with no number: the second push trades into the wick-to-body band of the first push's top candle.
+- It is a regular divergence only when RSI is STRICTLY lower (mirror for lows).
+- N11 (9 Oct 55,419 vs 12 Oct 55,416, RSI 71 → 59) is a missed textbook case. Check N01 and N10.
+- P08 (equal RSI counted as "lower") is wrong.
+
+**C4. Always the most recent consecutive pair.**
+- D11, D13: the old ✓ is kept after a newer pair reads ✗.
+- E49: an earlier pair is used.
+- D12, N12: "more extreme price between the pivots" means a pivot was skipped. Fix the push list.
+
+**C5. L5-b (the forming push): approved, with three conditions.**
+- RSI strictly lower than the prior push.
+- The first push is a real swing with a pullback, never a gap-open bar (P01, P02).
+- The forming read is labelled "forming", re-checked every bar, and dropped when it disappears (P01, P02, P04, P05, P12).
+
+**C6. L5-c (RSI at a broken-line retest): approved**, with the provisional move-start definition. E11 shows a real divergence that was hidden by NA.
+
+**C7. C-L5-1: approved** (X01 before / after is correct). After the fix, re-check E34 and E37 too; both still showed NA with a clear away swing.
+
+**C8. The RSI pane must draw exactly the pair that was judged**, with the right values.
+- Problems seen: E05, E20, E41 (pair not drawn); E46, E50 (wrong value label).
+- No pairs drawn across gaps or from before a break (E18, E19, E35, E36).
+- The facts box must not overflow (E10, E11, E17–E19, E30, E34–E37).
+- E50's text "67.51 > 73.45" is false.
+
+## D. The 5M entry: why 5M looked worse, and the fix (sec4)
+
+The gap is mostly not "5M is bad":
+- 4 failures are shared by both timeframes.
+- 3 of the 4 wins that only 15M had are scoring artefacts (E1 below).
+- With honest scoring it is roughly 15M 5 vs 5M 4.
+
+The real 5M weakness:
+
+**D1. The 5M trigger fired while the 15M push / sweep at the area was still running** (p01, p04, p12). Rule: a 5M trigger counts only after the 15M push into the area has turned. That means the latest closed 15M bar failed to extend the push or, after a sweep, closed back inside. Structure words only; no number.
+
+**D2. Invalidation comes from the higher structure:** the refined base far edge / the area / the visit or sweep extreme. NEVER a 5M swing inside the area (p12: 55,888 inside the area, versus the real high 56,066).
+
+**D3. A trigger candle whose own range already went beyond the invalidation is a sweep candle.** It belongs to E4 (a) after the sweep, not to E1 (p01: wick about 90 pts above the invalidation; G02: invalidation inside the sweep).
+
+**D4. E4 (a) needs a separate push that fails** after the sweep is back inside on 15M. A tight flag right after the rally is not a failed push (p04).
+
+**D5.** Re-run the 15M vs 5M replay after D1–D4 and E1. Show it per model, with charts.
+
+## E. Scoring of results (affects every replay statistic)
+
+**E1. "Next area" must lie BEYOND the entry area, never overlapping it.**
+- In p02 and p09 the next area overlapped the entry area itself.
+- In p16 the entry was 56 pts from the next area. That is a chase, and an E2 trigger far outside the refined base.
+- The same visit must have the same next area (p01 / p02, p09 / p10 differ).
+- Re-score every replay with this rule.
+
+## F. Daily trend side (sec6)
+
+**F1. Report and fix the Daily structure.**
+- Apr–Jun reads DOWN although plain Dow shows higher highs / higher lows. It is read as a degree / ABC correction. Show the exact rule and the swings used.
+- Fix the inconsistent labels: "LL 52,783" vs "HL 52,783"; "HH 58,597" is below 58,706.
+
+**F2. Prove no look-ahead on the 29 Jun panel.** Was 58,706 a CONFIRMED pivot (N = 2) at that decision bar? If not, fix it.
+
+**F3.** The sensitivity chart shows N = 3 reading UP through the 61,765 → 49,955 fall. Note this as a fragility in the report. N stays Abhi's provisional setting.
+
+## G. Proof quality (galleries)
+
+**G1. range_upper before / after are pixel-identical except the header.** That proves nothing.
+- Show the state before the range-edge fix vs after.
+- Show a POSITIVE case where price reaches a range edge and a model fires there, from any group.
+
+**G2. Captions must match the charts.**
+- 2.3 says "no entry", but its AFTER header shows an entry on the line.
+- "Approached from ABOVE / BELOW" arrows must point at the revisit / trigger, not at an earlier break-back bar (sec1, 2.5).
+
+**G3. No overlapping labels:** sec3 (BROKEN / RECLAIMED / decision-bar boxes). Count distinct trades once: 27 rows = 24 trades.
+
+## Order of work
+1. Report A1–A8, B1–B2, F1–F2 with charts. Wait for Abhi's BREAK-1 answer only if A1's default turns out to change many entries; otherwise continue with it.
+2. Fix A + B (one PR).
+3. Fix C (one PR).
+4. Fix D + E (one PR).
+5. Rebuild both galleries and the 15M vs 5M replay; send the ZIPs.
+
+Each PR: self-review, tests (no look-ahead, both mirrors), before / after charts. No deploy until Abhi's ✅ on the rebuilt galleries.
+
+
+BREAK-1: (b) confirmed by me — broken = a close beyond AND price holds beyond (a swing forms on the far side and stays beyond); a push beyond that turns back inside without holding is a sweep and the object stays alive. Same rule for areas and lines, and for broken back ⇒ dead. Example that proves it: L5-X01 (11 Sep, Daily area 274) — price gapped below, made its low and came straight back inside: a sweep, so the E4 (b) bear call there must not exist. Record it in DECISIONS.

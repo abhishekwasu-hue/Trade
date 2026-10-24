@@ -155,3 +155,31 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     place; a Weekly overlap never counts (Weekly bands are wide — Weekly stays context). Replaces DECISIONS 54 / 55 labels. (Owner rule)
 59. L5-c line-retest move start (the last swing built away from the line on the side price comes from, formed after the break and
     before the revisit) is accepted provisionally; final after Abhi checks the charts (L5-E17). (Owner decision)
+60. BREAK-1 (owner rule, areas AND lines alike): BROKEN = a close beyond the object AND price holds beyond it (a swing forms on the far
+    side and stays beyond); a push beyond that turns back inside without holding is a SWEEP and the object stays alive. Broken back ⇒
+    DEAD uses the same test in the opposite direction. Wording: "reclaimed" = alive, "dead" = dead (never "RECLAIMED (broken back)").
+    Proof case: L5-X01 (Daily area 274) — gap below, low, straight back inside = a sweep ⇒ no E4 (b) there. (Owner rule)
+61. Approach side allows a sweep: marginal closes beyond the object without price holding there (no swing beyond) still count as the
+    approach from the break side. (Owner rule)
+62. Object identity is stable: one place = one id for its life; a reused id or duplicate ids can never bypass max_hits_per_zone or the
+    one-signal-per-model-per-place rule. Bands follow the base rule (wick to body of the base candle), never a union. (Owner rule)
+63. Refined base = the newest 15M turn of the area's side inside the band, as its wick-to-body; lifecycle states are stamped at the bar
+    they became KNOWN, and every area chart shows its state and its base candle. (Owner rule)
+64. A visit ends by structure (price leaves and builds swings away that do not reach it again); no model or RSI read belongs to an ended
+    visit. The move into the zone starts at the LAST swing built away from the area and moves forward with each new away swing.
+    (Owner rule)
+65. RSI (layer 5): every turn the finest structure confirms inside the move is a push; the RSI value at a push is the RSI at the bar of
+    the price extreme (one convention at every degree); a second push that trades into the wick-to-body band of the first push's top
+    candle is "equal" and counts as higher-or-equal (mirror for lows); a regular divergence needs RSI strictly lower (mirror); always
+    the most recent consecutive pair; the forming push (L5-b) needs RSI strictly lower, a first push that is a real swing with a
+    pullback (never a gap-open bar), and is re-checked every bar and dropped when it disappears; the RSI pane draws exactly the judged
+    pair with its values, never across gaps or from before a break. L5-c and C-L5-1 approved. (Owner rule)
+66. 5M trigger: counts only after the 15M push into the area has turned (the latest closed 15M bar failed to extend the push or, after
+    a sweep, closed back inside); invalidation comes from the higher structure (refined base far edge / area / visit or sweep extreme),
+    never a 5M swing inside the area; a trigger candle whose own range already went beyond the invalidation is a sweep candle (E4 (a)
+    after the sweep, not E1); E4 (a) needs a separate failed push after the sweep is back inside on 15M. (Owner rule)
+67. Scoring: the "next area" lies beyond the entry area, never overlapping it; one visit = one next area; every replay is re-scored
+    with this. (Owner rule)
+68. Galleries prove changes: before / after must differ where claimed, include a positive case, captions match charts, no overlapping
+    labels, distinct trades counted once. Layer 5 and the Fix proof gallery are NOT approved until rebuilt; no deploy before Abhi's ✅.
+    (Owner decision)
