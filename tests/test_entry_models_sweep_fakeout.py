@@ -78,6 +78,7 @@ def test_e4a_fires_when_the_next_push_fails_inside_the_sweep_extreme(mirror):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e2_e3_after_the_sweep_trade_into_the_base_and_include_the_sweep_extreme(mirror, monkeypatch):
     monkeypatch.setattr(EM.Reader, "c1", lambda self, u, l, dd, st: {"done": u >= 14, "line": "LTF CHoCH (test)"})
     V, lvl, d = _v(SWEEP, mirror)
@@ -100,6 +101,7 @@ def test_e2_e3_after_the_sweep_trade_into_the_base_and_include_the_sweep_extreme
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e1_does_not_come_back_after_a_sweep(mirror):
     V, lvl, d = _v(SWEEP, mirror)
     st = _run(V, lvl, d, range(8, len(SWEEP)))
@@ -116,6 +118,7 @@ def test_e1_does_not_come_back_after_a_sweep(mirror):
 
 # ------------------------------------------------------------------------------------------------ base_broken ends only E1
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_a_close_beyond_the_refined_base_only_ends_e1(mirror, monkeypatch):
     """Bar 6 enters the area ABOVE the refined base and closes beyond its far edge (103.9 > 103.5, still inside the context 100–104):
     base_broken ⇒ E1 never fires in this visit. The area is NOT broken (no K4 event, models armed) and E2 / E3 / E4 (a) still fire."""
@@ -145,10 +148,15 @@ def test_a_close_beyond_the_refined_base_only_ends_e1(mirror, monkeypatch):
 def test_close_beyond_plus_swing_beyond_disarms_the_area_models(mirror):
     V, lvl, d = _v(SWEEP, mirror, events=[(12, "broken", "close beyond + swing beyond (K4)")])
     a, f = EM.Reader(V).area(14, lvl, d)
+    assert f == [] and a is None and V.visit(14, lvl, d)["ended_by"] == "broken"   # B-2: the visit ended where the break became known
+    V, lvl, d = _v(SWEEP, mirror, s={**REFINE, "visit_end_rule": "single_swing"},
+                   events=[(12, "broken", "close beyond + swing beyond (K4)")])   # the earlier reading: visit open, models disarmed
+    a, f = EM.Reader(V).area(14, lvl, d)
     assert f == [] and "broke inside this visit" in a["disarmed"]
     assert all(x["status"] == "disarmed" for x in a["models"].values())
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if (E4 (b) object = the BREAK-1 state)
 @MIRRORS
 def test_return_to_the_flipped_area_from_the_other_side_is_e4b(mirror, monkeypatch):
     """The supply 100–104 broken UP (close beyond + swing beyond ⇒ BROKEN / flipped to demand, break_dir +1 = the bull put's direction);
@@ -194,6 +202,7 @@ def _real(beyond, mirror, tail=None):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_real_k4_sweep_keeps_the_area_armed_and_the_visit_while_broken_disarms_it(mirror):
     d = 1 if mirror else -1                                                # resistance ⇒ bear call; mirror: support ⇒ bull put
     V, Z, m = _real(False, mirror)
@@ -207,11 +216,14 @@ def test_real_k4_sweep_keeps_the_area_armed_and_the_visit_while_broken_disarms_i
     assert brk == [22]                                                     # e: close beyond + swing beyond = broken
     lvl = {"id": Z.id, "lo": Z.band_at(21)[0], "hi": Z.band_at(21)[1], "role": Z.role_at(21), "tf": "1H"}
     assert not EM.Reader(V).area(21, lvl, d)[0].get("disarmed")
+    assert EM.Reader(V).area(22, lvl, d)[0] is None                         # B-2: the visit ends at the bar the break is known
+    V.s = {**V.s, "visit_end_rule": "single_swing"}                       # the earlier reading: open, disarmed
     a = EM.Reader(V).area(22, lvl, d)[0]
     assert "broke inside this visit" in a["disarmed"] and all(x["status"] == "disarmed" for x in a["models"].values())
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_real_k4_broken_area_retested_from_the_other_side_is_e4b(mirror, monkeypatch):
     """e: after the real K4 break (bar 22), price stays beyond, then comes back to the band from the other side (bar 27) and a rejection
     candle closes away (bar 28) ⇒ E4 (b) in the break direction (bull put for a resistance broken up; mirror: bear call)."""

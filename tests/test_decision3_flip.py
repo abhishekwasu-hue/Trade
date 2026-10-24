@@ -762,7 +762,8 @@ def test_real_13_oct_zone_stays_resistance_while_price_stays_below_22731(real):
     assert L.role_at(t) == LV.RES and L.state_at(t) not in (FL.FLIPPED, FL.DEAD) and L.count("flip", t) == 0
     # method §3 (layer 2): broken = a close beyond AND a swing formed beyond — on 13 Oct no swing formed above the area, so it is not
     # BROKEN (the old 3-close rule called it BROKEN); Abhi's expectation (resistance while price stays below the far swing) is unchanged
-    assert L.state_at(t) in (FL.ACTIVE, FL.TESTED) and not [b for b, k, _ in L.events if k == "broken" and b <= t and b >= ix[0]]
+    # owner-approved (DECISIONS 85); chart review/gallery_fixes/R/OWNER_13oct_zone_beyond_not_broken.png
+    assert L.state_at(t) == FL.BEYOND and not [b for b, k, _ in L.events if k == "broken" and b <= t and b >= ix[0]]
     known = [p for p in V.levels._pv_sorted if p.confirm_bar <= t]          # the far-side swing an upward break would have to pass
     far = FL.far_swing(known, L.lo, L.hi, True, ix[0], V.levels.A["close"])
     assert far is not None and far.price == pytest.approx(FAR_UP, abs=0.1)
@@ -779,34 +780,19 @@ def real_elliott():
 
 
 def test_real_29_sep_new_low_flip_on_the_swing_confirmation_with_the_daily_warmup(real_elliott):
-    """29 Sep NIFTY (Abhi Z-1s / Z-1t): the 22,725–22,810 1H supply is a Q40 prior Daily level — born only with the Daily warm-up. It
-    broke at 09:45 (new lows, no swing below it) and FLIPPED at 11:30 when the first swing low after the break (22,569.65) was CONFIRMED
-    — never traded through. The 12:00 rally into the zone is the pullback; 12:00 / 12:15 are judged by the in-zone study (reported, not
-    forced). 29 Sep has no FUT bar in trade-data ⇒ never a setup without volume (Z-1c / RF-2)."""
+    """29 Sep NIFTY — corrected expectation (owner-orders DECISIONS 78 / R5: a non-owner golden that passed only through an unconfirmed
+    swing). The earlier expectation (a Q40 prior Daily level 22,725–22,810, broken 11:00, flipped 11:30) existed only because the Daily
+    path took the 23,350 low as protected at the very next Daily bar — an N = 2 pivot not confirmed then, never a confirmed Daily swing
+    (look-ahead, fixed by F2). With swings confirmed by the decision bar that low ends no impulse, so no a:D-prior band 22,725–22,810 is
+    born; 29 Sep has no FUT bar in trade-data ⇒ never a setup without volume (Z-1c / RF-2). Before / after chart: trade-data
+    review/gallery_fixes/misc/F2_nifty_29sep_before_after.png (copied to gallery_fixes/R/)."""
     m15, ltf, fut, V = real_elliott
     ix = _day_bars(V, "2026-09-29")
     z = [x for x in V.levels.snapshot(ix[0]) if abs(x["lo"] - 22725.45) < 1.0 and abs(x["hi"] - 22809.9) < 1.0]
-    assert z and "a:D-prior" in z[0]["births"] and z[0]["tf"] == "D"      # Abhi Z-1u: its own Daily band, no 1H zone over it
-    L = V.levels.L[z[0]["id"]]
-    ts = lambda b: str(V.levels.ts.iloc[b])[:16]                          # noqa: E731
-    ev = [(ts(b), k) for b, k, _ in L.events if k in ("broken", "flip", "dead", "reclaim") and ts(b).startswith("2026-09-29")]
-    print(f"\n29 Sep zone {z[0]['lo']:,.2f}–{z[0]['hi']:,.2f}: {ev}")
-    brk = [x for x, k in ev if k == "broken"]                              # method §3: broken = a close beyond + a swing formed beyond
-    assert brk and brk[0] == "2026-09-29 11:00" and ("2026-09-29 11:30", "flip") in ev   # broken when the D1 swing below confirmed (layer 2;
-    # the old 3-close rule said 09:45); Abhi Z-1s: FLIPPED at 11:30 (unchanged)
-    t_flip = next(b for b, k, _ in L.events if k == "flip")
-    f = V.levels.flip_view(L, t_flip)
-    assert f["far_swing"]["price"] == pytest.approx(22569.65) and f["far_swing"]["source"] == "first_confirmed_after_break"
-    assert float(m15["low"].iloc[t_flip:ix[-1] + 1].min()) >= 22569.65 - 1e-6   # reached by confirmation, never traded through
+    assert not z                                                           # never born from an unconfirmed Daily swing
+    assert not [L for L in V.levels.L if abs(L.lo - 22725.45) < 1.0 and abs(L.hi - 22809.9) < 1.0]
     for t in ix:
-        r = V.decide(t)
-        if r["ts"][11:16] in ("12:00", "12:15"):
-            cm = r.get("commit") or {}
-            print(f"{r['ts'][11:16]} {r['decision']} lvl {(r.get('level') or {}).get('id')} ③ {r['checklist'].get('③')} "
-                  f"⑥ {r['checklist'].get('⑥')} · visit {cm.get('visit_start')} (previous ended {cm.get('visit_prev_end')}) · handover "
-                  f"{cm.get('handover_state')} · CHoCH {cm.get('choch_vs_arm') or cm.get('ltf_line')}")
-            assert (r.get("level") or {}).get("id") == L.id and r["checklist"]["③"][0] is True   # the pullback into the flipped zone
-        assert r["decision"] != "setup"                                    # no FUT that day ⇒ no entry
+        assert V.decide(t)["decision"] != "setup"                          # no FUT that day ⇒ no entry
 
 
 # ------------------------------------------------------------------------------------------------ Abhi A / B: in-zone study, watch-list

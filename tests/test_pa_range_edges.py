@@ -12,6 +12,7 @@ import re
 from types import SimpleNamespace as NS
 
 import pandas as pd
+import pytest
 
 from decision3 import daily as DD
 from decision3 import flip as FL
@@ -167,6 +168,7 @@ def _scenario_break(piv_kind):
     return V, m, b0, peak + 2
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: a push's own extreme beyond = the earlier break reading (A-L6, conftest)
 def test_broken_needs_a_close_beyond_and_a_swing_beyond():
     V, m, b0, conf = _scenario_break("broken")
     up = [e for e in RE.read_range_edges(V, conf)["by_tf"]["D"]["edges"] or
@@ -177,6 +179,7 @@ def test_broken_needs_a_close_beyond_and_a_swing_beyond():
     assert upb["state"] in (FL.ACTIVE, FL.TESTED)
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: a push's own extreme beyond = the earlier break reading (A-L6, conftest)
 def test_flipped_when_the_far_side_swing_is_reached():
     V, m, b0, conf = _scenario_break("flipped")
     x = RE.read_range_edges(V, conf)["by_tf"]["D"]

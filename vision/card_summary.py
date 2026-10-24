@@ -12,8 +12,8 @@ Setting `approval_card_layout` (vision bot settings; decision3/settings.py OUTPU
 Every value is read from the signal row / its gate tags / the engine row's reader facts (engine3_live.reader_facts ⇒
 paper/engine_entry.engine_gate_tags "reader": the layer 6a evidence list as the engine wrote it). A missing value ⇒ that piece is left
 out (never guessed). No rule, no score, no new number: the reader line only spells out what the evidence list says — "required:
-present" is the method's required set (handover + commitment with its volume comparison + LTF CHoCH, decision3/method.evidence_list)
-and the confirming pieces are the ones it marks present. Display only: no decision, gate, order or button changes here.
+present" is the fired model's own conditions (DECISIONS 54, `label_rule = model`; the legacy 6a what-if: handover + commitment with its
+volume comparison + LTF CHoCH, decision3/method.evidence_list) and the confirming pieces are the ones it marks present. Display only: no decision, gate, order or button changes here.
 """
 import html
 import json
@@ -27,7 +27,8 @@ LAYOUTS = ("classic", "summary")
 REASON_MAX = 90                                                          # Vision's reason on the summary: one line (full text in details)
 PA_MAX = 240                                                             # display: the card's one PA evidence line (full list in the tags)
 CONFIRM_WORDS = {"volume_growing": "volume growing", "rsi_divergence": "RSI div", "confluence": "confluence",
-                 "correction_line_closed_through": "line closed through"}   # decision3/method.CONFIRMING, in its order
+                 "correction_line_closed_through": "line closed through",
+                 "counter_channel_broken": "counter channel broken"}   # decision3/method.CONFIRMING + DECISIONS 54's fifth piece
 VERDICT = {"agree": ("✅", "सहमत"), "gray": ("🟡", "संदिग्ध"), "disagree": ("❌", "असहमत"), "unavailable": ("⚪", "उपलब्ध नाही")}
 NAMES = {"entry": "entry", "sl": "SL", "target": "target"}
 TF_NAME = {"D": "Daily", "1D": "Daily", "W": "Weekly", "60M": "1H"}
@@ -203,7 +204,9 @@ def line_reader(row):
     mark = {True: "✓", False: "✗"}
     parts = [f"{mark[rd[k]]} {k}" for k in ("trend", "area") if isinstance(rd.get(k), bool)]
     ltf = f"{rd['ltf']} CHoCH" if rd.get("ltf") else "LTF CHoCH"
-    if ev.get("required") == "present":                                  # method §5: the required set, as the engine read it
+    if ev.get("label_rule") == "model" and ev.get("required") == "present":   # DECISIONS 54: the required set = the model's own
+        parts.append("✓ " + html.escape(str(ev.get("required_set") or "the model's own conditions"), quote=False))   # conditions
+    elif ev.get("required") == "present":                                # method §5 legacy 6a: the required set, as the engine read it
         fast = "(fast)" if rd.get("handover_form") == "sharp_reversal" else ""
         parts += [f"✓ handover{fast}", "✓ commitment+volume", f"✓ {html.escape(ltf)}"]
     elif ev.get("required") == "absent":
@@ -369,6 +372,9 @@ def model_lines(tags, full=False):
     if ev:                                                               # layer 6 / L6-a: the entry's own A / B label on every layout
         g = _gate(tags)
         gl = f" (label {g['grade']})" if g.get("grade") in ("A", "B") else ""
+        el = entry_evidence_list(tags)
+        if isinstance(el.get("evidence_count"), int):                    # DECISIONS 58: the count, never a label
+            gl = f" ({el['evidence_count']} of {el.get('evidence_of', 5)})"
         out.append(f"📋 {html.escape(lab)} evidence{gl}: {html.escape(ev)}")
     return out
 
@@ -473,9 +479,31 @@ def bullet_next(tags):
     return f"Next area: {word} {_pt(lo)}–{_pt(hi)}" + (f" ({tf})" if tf else "")
 
 
+def evidence_count_words(el):
+    """DECISIONS 58 (no A / B label): the engine evidence list's count as plain words — "evidence: 2 of 5 — confluence, RSI divergence
+    · NA: volume growing inside" (information only, no threshold). "" when the list carries no count (legacy / non-engine)."""
+    el = el if isinstance(el, dict) else {}
+    if not isinstance(el.get("evidence_count"), int):
+        return ""
+    got, na = list(el.get("evidence_present") or []), list(el.get("evidence_na") or [])
+    return (f"evidence: {el['evidence_count']} of {el.get('evidence_of', 5)}" + (f" — {', '.join(got)}" if got else "")
+            + (f" · NA: {', '.join(na)}" if na else ""))
+
+
+def entry_evidence_list(tags):
+    """The entry's own engine evidence list as the tags carry it (gate.reader.evidence_list, paper.engine_entry.entry_gate_tags)."""
+    rd = _gate(tags).get("reader")
+    return rd.get("evidence_list") if isinstance(rd, dict) and isinstance(rd.get("evidence_list"), dict) else {}
+
+
 def bullet_evidence(tags, limit=200):
     """"Evidence ✓: required set · volume growing inside · confluence" — the entry's own evidence pieces marked present (the bracketed
-    detail left out; the full ✓ / ✗ / NA list is in the details reply); "Evidence ✓: none" when none; "" without an evidence list."""
+    detail left out; the full ✓ / ✗ / NA list is in the details reply); "Evidence ✓: none" when none; "" without an evidence list.
+    DECISIONS 58: an engine entry whose list carries the count ⇒ "Evidence: 2 of 5 — … · NA: …" (information only)."""
+    cw = evidence_count_words(entry_evidence_list(tags))
+    if cw:
+        cw = "E" + cw[1:]
+        return cw if len(cw) <= limit else cw[:limit - 1].rstrip() + "…"
     parts = evidence_parts(tags.get("entry_evidence"))
     if not parts:
         return ""

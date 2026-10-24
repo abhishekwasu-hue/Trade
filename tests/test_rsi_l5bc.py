@@ -108,7 +108,9 @@ def test_line_move_from_is_the_last_swing_built_away_from_the_line_after_its_bre
     assert R.line_move_from(8, ln, d, 7) == 3
     assert R.line_move_from(3, ln, d, 7) is None                         # not confirmed yet at bar 3 (bars <= t only)
     assert R.line_move_from(8, {**ln, "break_bar": 4}, d, 7) is None     # a swing before the break is not the retest's move
-    assert R.line_move_from(8, ln, d, 3) is None                         # the revisit must come after the swing
+    assert R.line_move_from(8, ln, d, 3) == 3                            # DECISIONS 64 (B2): the LAST away swing known at t — also one
+    V.s = {**V.s, "visit_end_rule": "single_swing"}                       # formed inside the revisit (the start moves forward)
+    assert R.line_move_from(8, ln, d, 3) is None                         # the earlier reading (what-if): only before the revisit
 
 
 @MIRRORS
@@ -116,7 +118,7 @@ def test_both_readers_pass_the_line_retest_move_to_the_rsi_read(mirror, monkeypa
     V, ln, d = _line_case(mirror, monkeypatch)
     seen = []
 
-    def ev(self, t, dd, lvl, arm, appr=None, move_from=None, cm=None, read_ok=None):
+    def ev(self, t, dd, lvl, arm, appr=None, move_from=None, cm=None, read_ok=None, **kw):
         seen.append((str(lvl.get("id")), move_from))
         return {"label": None, "evidence": [], "evidence_list": {"required": "absent"}, "confirming": {}, "channel_evidence": {},
                 "rsi": {}}

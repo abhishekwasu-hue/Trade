@@ -148,7 +148,9 @@ def test_up_to_four_entries_in_one_visit_and_e3_fires_once_on_the_ltf_choch(mirr
 
 @pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put"])
 def test_models_disarm_when_the_area_breaks_inside_the_visit(mirror):
-    V, lvl, d = _bare(BEAR, SWINGS, mirror=mirror, events=[(7, "broken", "close beyond + swing beyond")])
+    V0, lvl0, d0 = _bare(BEAR, SWINGS, mirror=mirror, events=[(7, "broken", "close beyond + swing beyond")])
+    assert EM.Reader(V0).area(9, lvl0, d0) == (None, [])                   # B-2 (default): the visit ended at the break (bar 7)
+    V, lvl, d = _bare(BEAR, SWINGS, mirror=mirror, events=[(7, "broken", "close beyond + swing beyond")], s={"visit_end_rule": "single_swing"})
     a, fired = EM.Reader(V).area(9, lvl, d)
     assert fired == [] and "broke inside this visit" in a["disarmed"] and all(x["status"] == "disarmed" for x in a["models"].values())
     a6, f6 = EM.Reader(V).area(6, lvl, d)                                    # before the break: still armed (E2 at 6)
@@ -195,6 +197,7 @@ def test_a_breakout_bar_never_fires_and_off_models_stay_off(mirror):
     assert st[10][0]["models"]["E1"] == {"status": "off"} and st[10][0]["models"]["E4"] == {"status": "off"}
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if (E4 (b) object = the BREAK-1 state)
 @pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put"])
 def test_e4b_broken_area_revisited_and_rejected(mirror):
     """A support 100–102 broken down (K4 BROKEN, break_dir −1 = the bear call's direction), revisited from below; a red engulf closes
@@ -322,6 +325,7 @@ def _channel_case():
     return NS(levels=lv, s=S3.load()), m
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_channel_lines_build_both_sides_with_touches_and_the_k65_break():
     V, m = _channel_case()
     t = 34
@@ -340,6 +344,7 @@ def test_channel_lines_build_both_sides_with_touches_and_the_k65_break():
     assert up is not None and up["p2"][0] == 27
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_fast_break_read_equals_broken_by():
     rng = np.random.default_rng(3)
     for trial in range(40):
@@ -374,7 +379,10 @@ def test_entry_gate_settings_are_registered_and_validated():
 def oct12(request):
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=request.param)
-    s = {"level_death_side": "role", **AREA}                               # the default trigger (traded_inside)
+    s = {"level_death_side": "role", **AREA,                               # the default trigger (traded_inside)
+         "break_hold_rule": "swing_beyond"}                                # BREAK-1: this synthetic supply breaks by new lows with no
+    # pullback high held below it — under the owner rule (DECISIONS 60) that is a sweep, never flipped; its row shape is read on the
+    # earlier reading (what-if). The real 12 Oct golden day (tests/test_decision3_flip.py) is read on the default.
     V = E3.V22(m15, s=s, ltf=ltf, futures=fut)
     Vk = E3.V22(m15, s={**s, "entry_gate": "legacy_k"}, ltf=ltf, futures=fut)
     ts = V.levels.ts
@@ -383,6 +391,7 @@ def oct12(request):
     return request.param, V, Vk, bars
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_decide_row_carries_entries_armed_and_the_legacy_k_diagnostic(oct12):
     mirror, V, Vk, bars = oct12
     rows = [V.decide(t) for t in bars]
@@ -393,11 +402,10 @@ def test_decide_row_carries_entries_armed_and_the_legacy_k_diagnostic(oct12):
                       "invalidation", "invalidation_rule", "evidence", "evidence_list", "label", "confirming", "facts"}
     assert e["side"] == ("bull_put" if mirror else "bear_call") and e["label"] in ("A", "B", None)
     assert st[0]["conviction"] == e["label"] and st[0]["mark"] == {"A": "✅", "B": "🟡", None: "⚪"}[e["label"]]
-    for x in (x for r in rows for x in r["entries"]):                       # 6a: A / B only with the required set present
-        req = x["evidence_list"]["required"]
-        assert (x["label"] is None) == (req != "present"), (x["model"], req, x["label"])
-        if req == "present":
-            assert x["label"] == ("A" if any(v is True for v in x["confirming"].values()) else "B")
+    for x in (x for r in rows for x in r["entries"]):                       # DECISIONS 58: no A / B label — the evidence count
+        el = x["evidence_list"]
+        assert x["label"] is None and el["required"] == "present", (x["model"], x["label"])
+        assert el["evidence_count"] == sum(1 for v in x["confirming"].values() if v is True)
     assert e["evidence"][0][1] in ("✓", "✗") and {k for k in e["area"]} >= {"id", "tf", "lo", "hi", "state"}
     keys = [x["key"] for r in rows for x in r["entries"]]
     assert len(keys) == len(set(keys))                                       # one fire per (area, visit, model)
@@ -411,6 +419,7 @@ def test_decide_row_carries_entries_armed_and_the_legacy_k_diagnostic(oct12):
     assert w and all(r["why"] for r in w)                                    # a wait says what the armed models wait for
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_21_oct_like_no_bos_k_blocks_the_old_gate_the_models_still_read_the_visit(oct12, monkeypatch):
     """21 Oct (REPORT_EN §2e): ① DOWN, price at a valid resistance area, but no fresh DOWN BOS ⇒ K = None ⇒ the old ③ waits all day.
     Same bars with K forced to None: legacy_k ⇒ wait ③ "BOS नाही"; the models read the visit (E1 on the visit's first bar) and log the
@@ -432,6 +441,7 @@ def test_21_oct_like_no_bos_k_blocks_the_old_gate_the_models_still_read_the_visi
     assert "E1" in fired and fired.count("E1") == len({e["visit_id"] for r in new for e in r["entries"] if e["model"] == "E1"})
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_channels_parallel_through_the_opposite_extreme_and_the_broken_counter_channel():
     """Abhi 21 Oct: each line has its parallel through the opposite extreme of the same move; the up-channel's lower line broken (close
     below + swing below) ⇒ "lower line broken" / its retest, broken_side "down" — the bear call's handover evidence (a rising channel broken

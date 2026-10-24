@@ -1,0 +1,57 @@
+{
+  "_doc": "DECISIONS 74 (Abhi): bad data is never hidden or patched silently; it is marked here, in the data layer, with its evidence. Prices stay exactly as the source gave them; decision3.history.mark_data_problems only adds a data_problem column. Owner decides what the reading does with a marked bar.",
+  "problems": [
+    {
+      "id": "DP-1",
+      "symbol": "BANKNIFTY",
+      "kind": "close_print_in_no_tick_bar",
+      "bars": {
+        "15M": "2026-08-31 15:15",
+        "5M": "2026-08-31 15:25",
+        "1m": "2026-08-31 15:29"
+      },
+      "summary": "One 628-pt 15M candle (O 57,397.35 H 58,024.95 L 57,397.35 C 58,024.95): the 15:15-15:28 1m bars carry no ticks (O=H=L=C=57,397.35) and the 15:29 1m bar jumps to the close print 58,024.95. No traded path between the two prices exists in the data; the true 15:15-15:30 range cannot be recovered from trade-data.",
+      "evidence": [
+        "trade-data banknifty/BANKNIFTY_15M.csv.gz 2026-08-31 15:15: O 57397.35 H 58024.95 L 57397.35 C 58024.95",
+        "trade-data banknifty/vps_spot_history/2026-10-21_2337/BANKNIFTY_1m.csv.gz and vps_history/2026-10-21_2337/BANKNIFTY_1M.csv.gz (engine3_cache Nifty_Bank 1minute): 15:15..15:28 all O=H=L=C 57397.35; 15:29 O 57397.35 H 58024.95 L 57397.35 C 58024.95",
+        "last traded bars 15:00..15:14: low 57374.20, high 57443.05, 15:14 close 57402.45",
+        "since 2026-08-03 every session's 15:16..15:28 1m bars are flat (BANKNIFTY and NIFTY): a closing-session print, not traded bars; the 15:29 print vs the 15:15 close is +1.09% on 31 Aug, the largest of the 54 sessions (next: +0.98% 3 Aug, +0.72% 4 Aug); NIFTY the same day +0.13%",
+        "trade-data banknifty/BANKNIFTY_D.csv.gz 2026-08-31: H = C = 58024.95; 2026-09-01 open 57560.30 (gap -464.65)",
+        "FUT 5M: no BANKNIFTY futures bars in trade-data before 2026-09-30 => no cross-check possible"
+      ],
+      "status": "marked, not patched"
+    },
+    {
+      "id": "DP-2",
+      "symbol": "ALL",
+      "kind": "flat_tail_and_close_print",
+      "detector": "decision3.history.close_print_runs (settings dp_flat_run_min_bars)",
+      "bars": {},
+      "summary": "DECISIONS 84 (R5-3): since 2026-08-03 every index session ends with a run of identical flat bars (O=H=L=C, the 15:15 reference value) and ONE last print (the closing-auction close, at 15:28 or 15:29, then flat at that price). No traded path exists between the two prices. The detector marks every such bar (the run, the print, the flat bars after it) and every coarser bar that holds them (5M 15:15-15:25, 15M / 1H 15:15); prices stay as the source gave them.",
+      "evidence": [
+        "cause: NSE Closing Auction Session for the cash market from 2026-08-03 (circular NSE/CMTR/75479, 2026-07-30; opportunity_engine/cas.py): the index is not computed from continuous trades 15:15-15:30, Upstox's NSE_INDEX historical + intraday candles carry the 15:15 value per minute, then the auction close print",
+        "trade-data scan (1m spot / 5M / 15M, every history file): BANKNIFTY 55 sessions 2026-08-03..2026-10-21 (1m 54/54 to 10-19, 5M 55/55), NIFTY 54 sessions 2026-08-03..2026-10-19 (1m 54/54; 10-21 dump ends 14:53), SENSEX 20 sessions 2026-09-15..2026-10-13 (all its data); 0 sessions before 2026-08-03 (BANKNIFTY 76, NIFTY 23 clean sessions)",
+        "largest jumps: BANKNIFTY 2026-08-31 +627.60 (+1.09%), 2026-08-03 +564.25 (+0.98%); NIFTY 2026-08-03 +200.95; the 15M 15:15 bar's whole range = the jump",
+        "the print lies beyond the day's traded range on BANKNIFTY 7, NIFTY 11, SENSEX 3 sessions (the Daily high / low is then the auction print)",
+        "15M alone cannot show it (the run sits inside one 15M bar): the 15M bar is marked from the 1m / 5M of the same instrument (history.mark_data_problems finer=)",
+        "FUT (near-month) 5M bars trade normally 15:15-15:35 (BANKNIFTY FUT 27 OCT 26, 2026-10-19): the futures are not affected",
+        "per-day evidence (flat run, flat price, close before, print, jump, 15M range): trade-data review/gallery_fixes/DP/close_print_days.csv"
+      ],
+      "status": "marked, not patched"
+    },
+    {
+      "id": "DP-3",
+      "symbol": "ALL",
+      "kind": "auction_extended_daily",
+      "detector": "decision3.history.mark_auction_extended / auction_extended_bars (on the DP-2 marks)",
+      "bars": {},
+      "summary": "DECISIONS 87 (owner, DP-1 of 24 Oct): a Daily bar whose official close (the closing-auction print) lies beyond the session's traded high / low keeps that close as its Daily close and is flagged auction-extended; its high (print above) / low (print below) is the traded extreme, so the auction-only extension never defines a Daily swing extreme or a zone edge. The 15M bar holding such a print never counts as a close beyond / back inside an object. The official values stay in print_high / print_low.",
+      "evidence": [
+        "cause: NSE cash Closing Auction Session from 2026-08-03 (see DP-2): the index stops trading at the end of continuous trading; the close is set by the auction, not by traded price action",
+        "sessions with the print beyond the traded range (trade-data review/gallery_fixes/DP/close_print_days.csv, print_beyond_traded_range): BANKNIFTY 2026-08-03, 08-12, 08-27, 08-31, 09-03, 09-09, 09-15; NIFTY 2026-08-03, 08-18, 08-25, 08-26, 08-27, 09-02, 09-03, 09-09, 09-15, 10-06, 10-13; SENSEX 2026-09-15, 09-18, 10-06",
+        "detected where the session's intraday bars are marked (live: the 15M marked from the 5M at the source; replays: the same via history.ensure_marked); a session without marked intraday bars is read as given"
+      ],
+      "status": "marked, not patched (prices kept; print_high / print_low hold the official values)"
+    }
+  ]
+}

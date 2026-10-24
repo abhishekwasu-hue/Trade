@@ -47,7 +47,8 @@ band's lower half, resistance in its upper half) — is read the same way: bull 
 E4 b is read for an UP / DOWN trend only); DECISIONS 40: the current Daily / 1H range edges from structure
 (`range_edges.trade_edges`) are armed as areas too (trade side, `range_edge_areas`). E4 (b) approach side (DECISIONS 38,
 `e4b_approach_rule`): a retest only from the break side. Lines (trendline.channel_lines / channels): both sides, both directions, on the trend
-degree (1H) and D1 (15M), whatever the trend; a broken counter channel is listed as evidence (never a gate, not in the A / B label);
+degree (1H) and D1 (15M), whatever the trend; a broken counter channel is listed as evidence (never a gate; a confirming piece of the A / B label under
+`label_rule = model`, DECISIONS 54);
 E4 (b) reads the main swings' broken lines + broken channel parallels, and `PATTERN_HOOK` (a broken pattern boundary — patterns track).
 Bars ≤ t only; LTF bars ≤ the bar's close; swings confirmed by the bar being read. No order, no broker, no AI call.
 """
@@ -68,7 +69,56 @@ PATTERN_HOOK = None
 NAME = {"E1": "Aggressive", "E2": "Confirmation", "E3": "Structure", "E4": "Sweep-retest"}
 MARK = {"present": "✓", "absent": "✗", "NA": "NA"}
 CONF_NAME = {"volume_growing": "volume growing inside", "rsi_divergence": "RSI divergence", "confluence": "confluence",
-             "correction_line_closed_through": "correction line closed through"}
+             "correction_line_closed_through": "correction line closed through", "counter_channel_broken": "counter channel broken"}
+# DECISIONS 54 (owner rule, `label_rule = model`): the five confirming pieces of the A / B label, in this order — each mapped to the fact
+# the engine already reads (never a new reading): RSI divergence (layer 5, V22.rsi_divergence), volume growing inside (the zone read's
+# trade-side volume rising, flip.zone_read summary vol_rising_trade_side), confluence (L6-a / Z-1u: a line meets the area or a Daily /
+# Weekly area overlaps it), correction line closed through (L4: the open pullback's K line broken, trendline.k_line), counter channel
+# broken (T3 / K6.5: a channel against the trade broken in the trade direction, Reader.channel_evidence).
+LABEL_PIECES = ("rsi_divergence", "volume_growing", "confluence", "correction_line_closed_through", "counter_channel_broken")
+LABEL_RULES = ("evidence_count", "model55", "model54", "legacy")
+# DECISIONS 58 (owner rule, `label_rule = evidence_count`, default): NO A / B label — every output shows the evidence list + its count
+# (information only, no threshold, never blocks); confluence = a DAILY area overlapping the traded area (a Weekly overlap never counts —
+# Weekly stays context) or an object of a different kind (a line, a liquidity pool) at the same place. `model55` / `model54` = the A / B
+# labels of DECISIONS 55 / 54 (what-ifs); `legacy` = the old 6a set.
+# DECISIONS 55 (owner rule, `label_rule = model`): two pieces tightened — "counter channel broken" = only the PULLBACK's (correction's)
+# channel at the trend degree (1H; Reader.pullback_channel); "confluence" = only a Daily / Weekly area overlapping the traded area, or an
+# object of a different kind (a line, a liquidity pool) lying AT the same place (Reader.same_place) — overlap by comparison, nearness
+# never counts. `model54` = the DECISIONS 54 reading of those two pieces (what-if).
+
+
+def revisit_start(touch_bars, swings, struct=()):
+    """DECISIONS 64 (a revisit of a broken object ends by structure, CLAUDE.md "the revisit ends when price leaves it by structure"):
+    touch_bars = the bars touching the object; swings = [(bar, does_not_reach)] — the finest swings known (confirmed) at the decision;
+    struct = the bars of the structure-degree swings built away that do not reach it (the RC4 end, as before). The revisit starts at
+    the first touch and ends when price leaves and builds swings away that do not reach the object again: a structure swing that does
+    not reach it, or two consecutive finest swings formed after the start (a swing away and the next turn) that both do not reach it.
+    A finest swing that reaches it keeps the revisit going. ⇒ the start bar of the revisit in progress, or None."""
+    ev = {}
+    for b in touch_bars:
+        ev.setdefault(int(b), [False, [], False])[0] = True
+    for b, nr in swings:
+        ev.setdefault(int(b), [False, [], False])[1].append(bool(nr))
+    for b in struct:
+        ev.setdefault(int(b), [False, [], False])[2] = True
+    start, last_nr = None, False
+    for i in sorted(ev):
+        tch, sws, st = ev[i]
+        if start is not None:
+            if i <= start:
+                continue
+            if st:
+                start = None
+                continue
+            for nr in sws:
+                if nr and last_nr:
+                    start = None
+                    break
+                last_nr = nr
+            continue
+        if tch:
+            start, last_nr = i, False
+    return start
 
 
 def side_of(d):
@@ -90,6 +140,15 @@ class Reader:
         self.side_fn = side_fn
 
     # ------------------------------------------------------------------------------------------ small facts
+    def uid_of(self, lvl):
+        """Abhi A5 / DECISIONS 62: the place's stable id (`Level.uid`) for an armed area / range edge — its visit id and the once-per-
+        model-per-visit key use it, so a moved data window (a new `Level.id`) never opens a new visit for the same place. A range edge
+        without a parent level ⇒ its own id."""
+        lid = lvl.get("parent_level", lvl.get("id"))
+        Ls = self.V.levels.L
+        L = Ls[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(Ls) else None
+        return str(getattr(L, "uid", None) or lvl.get("uid") or lid)
+
     def T(self, i):
         return None if i is None else str(pd.Timestamp(self.ts[int(i)]))
 
@@ -196,6 +255,8 @@ class Reader:
 
     @staticmethod
     def rb_far(rb, d):
+        if rb.get("inv_far") is not None:                                  # DECISIONS 83 (R5-2): a flipped area's invalidation = the
+            return float(rb["inv_far"])                                    # band's far edge (opposite the new trade direction)
         return float(rb["hi"]) if d < 0 else float(rb["lo"])
 
     @staticmethod
@@ -203,13 +264,135 @@ class Reader:
         """The price farther on the invalidation side (bear call: the higher; bull put: the lower)."""
         return max(float(a), float(b)) if d < 0 else min(float(a), float(b))
 
+    def ts64(self):
+        """The 15M bar starts as datetime64 (memoised per V)."""
+        if ("ts64",) not in self.memo:
+            self.memo[("ts64",)] = np.asarray(pd.to_datetime(pd.Series(self.ts)), "datetime64[ns]")
+        return self.memo[("ts64",)]
+
+    def turns15(self):
+        """A7 (Abhi, DECISIONS 63): the 15M turns the refined base reads — every turn the swing engine confirms on the setup timeframe
+        (its finest degree, D0: the 15M chart's own swing highs / lows), in confirmation order. The levels' structure list
+        (`Levels._known0`, D1) missed obvious 15M turns inside the band (L5-N03, N07, N04). A V without swing degrees (a test stub) ⇒
+        `Levels._known0`."""
+        key = ("turns15",)
+        if key not in self.memo:
+            piv = (getattr(self.V, "res", None) or {}).get("pivots") if isinstance(getattr(self.V, "res", None), dict) else None
+            deg = min((k for k, v in (piv or {}).items() if v), default=None)
+            src = piv[deg] if deg is not None else getattr(self.V.levels, "_known0", [])
+            self.memo[key] = sorted(src, key=lambda p: (int(p.confirm_bar), int(p.bar)))
+        return self.memo[key]
+
+    def refine_base_rule(self):
+        """Which 15M candle the refined base is (DECISIONS 79): "origin" (owner rule, default) = the area's ORIGIN base on 15M;
+        "newest_turn" = the A7 / DECISIONS 63 reading (the newest 15M turn inside the band), what-if only."""
+        from . import settings as S3
+        r = str((getattr(self.V, "s", None) or {}).get("entry_area_refine_base", S3.DEFAULTS.get("entry_area_refine_base", "origin")))
+        if r not in ("origin", "newest_turn"):
+            raise ValueError(f"entry_area_refine_base {r!r} — origin / newest_turn")
+        return r
+
     def refined(self, u, lvl, d):
-        """RC2 (Abhi 21 Oct, research default `entry_area_refine = setup_tf`, review after replay): the 1H / Daily area (levels'
-        TA4 band) is the CONTEXT — where. Inside it, the REFINED BASE on the setup timeframe (15M) by the same TA4 rule: the newest turn of
-        the finest structure (Levels._known0 — a swing high for a supply / bear call, a swing low for a demand / bull put), confirmed by
-        bar u, whose extreme lies inside the context band, from the area's own birth turn on (the newest such turn known when the area
-        was born; none ⇒ the area's birth bar); its band = that 15M swing candle's wick to body (levels._band_swing), kept inside the
-        context band. None ⇒ no refined base yet (the models wait). Comparison only, bars ≤ u."""
+        """The refined 15M base of an area at bar u — DECISIONS 79 (owner rule) by default (`refined_origin`); the A7 newest-turn
+        reading (`refined_turn`) only as the what-if `entry_area_refine_base = newest_turn`."""
+        if self.refine_base_rule() == "newest_turn":
+            return self.refined_turn(u, lvl, d)
+        return self.refined_origin(u, lvl, d)
+
+    def hour_start(self):
+        """The start of the 1H candle (09:15-anchored, as levels.h1_frame) holding each 15M bar (memoised per V)."""
+        if ("h1start",) not in self.memo:
+            from . import levels as LVM
+            ts = pd.Series(pd.to_datetime(pd.Series(self.ts)).to_numpy())
+            g, of = LVM.h1_frame(pd.DataFrame({"timestamp": ts, "open": 0.0, "high": 0.0, "low": 0.0, "close": 0.0}))
+            self.memo[("h1start",)] = np.asarray(pd.to_datetime(g["timestamp"]).to_numpy()[of], "datetime64[ns]")
+        return self.memo[("h1start",)]
+
+    def base_candle_bars(self, tf, start):
+        """The 15M bars inside the higher-TF base candle that starts at `start` (1H: its hour; D: its day; W: its week; memoised)."""
+        t = pd.Timestamp(start)
+        mk = ("basebars", str(tf), t)
+        if mk in self.memo:
+            return self.memo[mk]
+        ts = pd.to_datetime(pd.Series(self.ts))
+        if str(tf) == "1H":
+            m = self.hour_start() == np.datetime64(self.hour_start_of(t))
+        elif str(tf) == "W":
+            iso, ref = ts.dt.isocalendar(), t.isocalendar()
+            m = ((iso["year"] == ref[0]) & (iso["week"] == ref[1])).to_numpy()
+        else:
+            m = (ts.dt.normalize() == t.normalize()).to_numpy()
+        self.memo[mk] = np.flatnonzero(m)
+        return self.memo[mk]
+
+    def hour_start_of(self, t):
+        """The 1H candle start holding time t (a 15M bar start inside the data ⇒ its hour; else t itself)."""
+        i = int(np.searchsorted(self.ts64(), np.datetime64(t), side="right")) - 1
+        return pd.Timestamp(self.hour_start()[i]) if i >= 0 and self.ts64()[i] == np.datetime64(t) else t
+
+    def refined_origin(self, u, lvl, d):
+        """DECISIONS 79 (owner rule, replaces DECISIONS 63 / A7-1): the refined base = the ORIGIN base of the area on 15M — the 15M
+        candle(s) inside the area's higher-TF base candle (1H hour / Daily day / Weekly week, `Level.base_ts`; a range edge: its anchor
+        swing candle) from which the departure move started, i.e. the 15M candle(s) holding that base candle's extreme on the base's
+        side (a supply / H base: its high; a demand / L base: its low), as their wick to body (levels._band_swing: no wick ⇒ the body),
+        kept inside the area band. Never a later test / turn candle that merely touched the area. The origin candles are known at the
+        area's birth (only bars ≤ its birth bar and ≤ u are read — no look-ahead). The invalidation = its far edge (`rb_far`). The base
+        candle has no 15M bars in the data (a prior Daily / Weekly area from before the 15M window) or its origin lies outside the
+        visited band ⇒ the area's own band (the higher-TF wick to body itself, `origin` = False). Comparison only."""
+        lid = lvl.get("parent_level", lvl.get("id"))
+        key = ("rbo", str(lid), float(lvl["lo"]), float(lvl["hi"]), int(u), int(d))
+        if key in self.memo:
+            return self.memo[key]
+        from . import levels as LVM
+        lo, hi = float(lvl["lo"]), float(lvl["hi"])
+        Ls = self.V.levels.L
+        L = Ls[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(Ls) else None
+        if L is not None:
+            tf, start, born = getattr(L, "tf", None) or lvl.get("tf"), getattr(L, "base_ts", None), int(getattr(L, "born_bar", 0) or 0)
+            uid = str(getattr(L, "uid", "") or "").split(":")
+            side = uid[1] if len(uid) > 2 and uid[1] in ("H", "L") else ("H" if getattr(L, "role0", None) == LVM.RES else "L")
+        else:                                                              # a range edge: its anchor swing candle
+            tf, start, born = lvl.get("tf"), lvl.get("anchor_ts"), int(lvl.get("born_bar") or 0)
+            edge = lvl.get("range_edge")
+            side = ("H" if edge == "upper" else "L") if edge else ("H" if d < 0 else "L")
+        A = self.A
+        out = None
+        dp = getattr(self.V.levels, "dp", None)                            # DECISIONS 84: a data-problem bar is never the origin
+        bars = [] if start is None else [int(b) for b in self.base_candle_bars(tf, start) if int(b) <= min(born, int(u))
+                                         and not (dp is not None and len(dp) > int(b) and dp[int(b)])]
+        if bars:
+            ext = (max if side == "H" else min)(float(A["high" if side == "H" else "low"][b]) for b in bars)
+            org = [b for b in bars if float(A["high" if side == "H" else "low"][b]) == ext]
+            bands = [LVM._band_swing(side, A["open"][b], A["high"][b], A["low"][b], A["close"][b], ext, 0) for b in org]
+            blo, bhi = max(min(x[0] for x in bands), lo), min(max(x[1] for x in bands), hi)
+            if blo <= bhi:
+                b = org[-1]
+                out = {"lo": round(blo, 2), "hi": round(bhi, 2), "bar": b, "bars": org, "ts": self.T(b), "price": round(ext, 2),
+                       "kind": side, "tf": "15M", "origin": True, "context_id": lid,
+                       "context_uid": self.uid_of(lvl) if L is not None else None,
+                       "what": f"15M origin base {self.T(org[0])[:16]}{' …' if len(org) > 1 else ''} (the {'high' if side == 'H' else 'low'} "
+                               f"of the {lvl.get('tf')} base candle {str(pd.Timestamp(start))[:16]}) of area {self.uid_of(lvl)}"}
+        if out is None and (L is not None or start is not None):           # no 15M origin in the data ⇒ the area's own band
+            out = {"lo": round(lo, 2), "hi": round(hi, 2), "bar": born, "bars": [], "ts": self.T(born) if born < len(self.ts) else None,
+                   "price": round(hi if side == "H" else lo, 2), "kind": side, "tf": lvl.get("tf"), "origin": False, "context_id": lid,
+                   "context_uid": self.uid_of(lvl) if L is not None else None,
+                   "what": f"the {lvl.get('tf')} area's own band (its base candle has no 15M origin inside the band in the data)"}
+        flipped = L is not None and any(k == "flip" and int(b) <= int(u) for b, k, *_ in (getattr(L, "events", None) or []))
+        if out is not None and flipped:                                    # DECISIONS 83 (R5-2): a FLIPPED area — the location
+            out = {**out, "inv_far": round(hi if d < 0 else lo, 2), "flipped": True,   # stays the original base; the invalidation =
+                   "what": out["what"] + " — flipped area: invalidation = the band's far edge"}   # the band's far edge opposite the trade
+        self.memo[key] = out
+        return out
+
+    def refined_turn(self, u, lvl, d):
+        """WHAT-IF (`entry_area_refine_base = newest_turn`; the A7 reading, replaced by DECISIONS 79). RC2 (Abhi 21 Oct, research default `entry_area_refine = setup_tf`, review after replay): the 1H / Daily area (levels'
+        TA4 band) is the CONTEXT — where. Inside it, the REFINED BASE on the setup timeframe (15M) by the same TA4 rule — Abhi A7
+        (DECISIONS 63): the NEWEST 15M turn of the area's side inside the band, as its wick to body. A turn = a 15M swing (`turns15`: a
+        swing high for a supply / bear call, a swing low for a demand / bull put) confirmed by bar u, from the area's own birth turn on
+        (the newest such turn known when the area was born, at or after its own base candle; none ⇒ the area's birth bar); it is inside
+        the band when its swing candle's wick to body (levels._band_swing: no wick ⇒ the body) trades into the band — a turn whose
+        extreme pokes just beyond the band (a sweep) is still the turn at the area. Its band is that wick to body, kept inside the context band (never beyond the
+        area, Z-1u). None ⇒ no refined base yet (the models wait). Comparison only, bars ≤ u."""
         lid = lvl.get("parent_level", lvl.get("id"))
         key = ("rb", str(lid), float(lvl["lo"]), float(lvl["hi"]), int(u), int(d))
         if key in self.memo:
@@ -219,21 +402,37 @@ class Reader:
         kind = "H" if d < 0 else "L"
         L = self.V.levels.L[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(self.V.levels.L) else None
         born = int(getattr(L, "born_bar", 0) or 0) if L is not None else int(lvl.get("born_bar") or 0)   # a range edge: its own birth
-        sw = [p for p in getattr(self.V.levels, "_known0", []) if p.kind == kind and p.confirm_bar <= u and lo <= float(p.price) <= hi]
-        birth = [p for p in sw if p.confirm_bar <= born]
+        A = self.A
+        bts = getattr(L, "base_ts", None) if L is not None else None       # the area's own base candle: a turn from before it (another
+        base0 = int(np.searchsorted(self.ts64(), np.datetime64(pd.Timestamp(bts)))) if bts is not None else 0   # era, e.g. a flipped
+                                                                           # area's old side) is never its birth turn
+
+        def band(p):
+            b = int(p.bar)
+            return LVM._band_swing(kind, A["open"][b], A["high"][b], A["low"][b], A["close"][b], float(p.price), 0)
+
+        sw = []
+        for p in self.turns15():
+            if int(p.confirm_bar) > u:
+                break
+            if p.kind != kind:
+                continue
+            blo, bhi = band(p)
+            if blo <= hi and bhi >= lo:                                    # its wick to body trades into the band
+                sw.append((p, blo, bhi))
+        birth = [p for p, _, _ in sw if p.confirm_bar <= born and int(p.bar) >= base0]
         floor = max(int(p.bar) for p in birth) if birth else born
-        cands = [p for p in sw if int(p.bar) >= floor]
+        cands = [x for x in sw if int(x[0].bar) >= floor]
         out = None
         if cands:
-            p = max(cands, key=lambda q: (int(q.bar), int(q.confirm_bar)))
+            p, blo, bhi = max(cands, key=lambda x: (int(x[0].bar), int(x[0].confirm_bar)))
             b = int(p.bar)
-            A = self.A
-            blo, bhi = LVM._band_swing(kind, A["open"][b], A["high"][b], A["low"][b], A["close"][b], float(p.price), 0)
             blo, bhi = max(blo, lo), min(bhi, hi)
             if blo <= bhi:
                 out = {"lo": round(blo, 2), "hi": round(bhi, 2), "bar": b, "ts": self.T(b), "price": round(float(p.price), 2),
-                       "kind": kind, "tf": "15M", "context_id": lid,
-                       "what": f"15M {'swing high' if kind == 'H' else 'swing low'} {self.T(b)[:16]} inside {lvl.get('tf')} area {lid}"}
+                       "kind": kind, "tf": "15M", "context_id": lid, "context_uid": self.uid_of(lvl) if L is not None else None,
+                       "what": f"15M {'swing high' if kind == 'H' else 'swing low'} {self.T(b)[:16]} inside {lvl.get('tf')} area "
+                               f"{self.uid_of(lvl)}"}
         self.memo[key] = out
         return out
 
@@ -383,7 +582,29 @@ class Reader:
             raise ValueError(f"e4b_approach_rule {r!r} — {' / '.join(self.APPROACH_RULES)}")
         return r
 
-    def approach_side(self, u, form, start, edge, d):
+    def accepted_on_original_side(self, b_end, edge, d, swings):
+        """DECISIONS 61 (BREAK-1, owner rule): was price ACCEPTED on the broken object's ORIGINAL side at the 15M bar b_end? The run of
+        consecutive 15M closes on the original side ending at b_end HOLDS there when a swing of the hold side (`flip.hold_kind`: above a
+        line / area broken down ⇒ a pullback low formed above it; mirror) formed inside that run and was CONFIRMED by b_end (bars ≤ b_end
+        only — no look-ahead). One to a few marginal closes there without such a swing = a sweep: still the approach from the break side.
+        edge(i) = the object's original-side edge at the 15M bar i; swings(b) = the structure's finest degree swings known by b (the
+        swings the K4 hold reads, `Levels._known0` — areas and lines alike). Comparison only."""
+        C = self.V.levels.A["close"]
+        if b_end < 0 or b_end >= len(C):
+            return False
+
+        def orig(i):
+            return (float(C[i]) - float(edge(i))) * d < 0
+        if not orig(b_end):
+            return False
+        r0 = int(b_end)
+        while r0 - 1 >= 0 and orig(r0 - 1):
+            r0 -= 1
+        hk = FL.hold_kind(d < 0)
+        return any(p.kind == hk and r0 <= int(p.bar) and int(p.confirm_bar) <= b_end and (float(p.price) - float(edge(int(p.bar)))) * d < 0
+                   for p in swings(int(b_end)))
+
+    def approach_side(self, u, form, start, edge, d, accepted=None):
         """DECISIONS 38 (live reading check, H2): the retest of an object broken DOWN (bear call) needs price to come back UP to it from
         BELOW and be rejected there; a candle coming DOWN from above (the object's original side, where price was accepted) and closing
         through it is a breakdown candle — never an E4 (b). Mirror for bull puts. edge(i) = the object's original-side edge at bar i (a
@@ -391,6 +612,9 @@ class Reader:
           • the revisit came from the break side — the close before the revisit's first bar is not beyond the original-side edge;
           • the rejection form's first candle opened from the break side — its open is not beyond the original-side edge (one-candle
             form: bar u; a two-candle form: its first candle).
+        DECISIONS 61 (BREAK-1): "where price was accepted" = price HELD there (accepted(i) — the caller's structure test at the closing
+        candle i, `accepted_on_original_side`); marginal closes on the original side without a swing held there are a sweep and the
+        approach still counts from the break side. accepted None (`break_hold_rule = swing_beyond`, what-if) ⇒ any close there blocks.
         None ⇒ ok, else why (a wait text). `e4b_approach_rule = any` = the earlier reading (no approach check, what-if)."""
         if self.approach_rule() == "any":
             return None
@@ -398,13 +622,16 @@ class Reader:
 
         def orig(x, i):                                                    # beyond the object on its ORIGINAL side (bear call: above)
             return (float(x) - float(edge(i))) * d < 0
+
+        def held(i):                                                       # accepted there (a hold), not a sweep (DECISIONS 61)
+            return accepted is None or (i >= 0 and bool(accepted(i)))
         word = "above" if d < 0 else "below"
         p = int(start) - 1
-        if p >= 0 and orig(C[p], p):
+        if p >= 0 and orig(C[p], p) and held(p):
             return (f"the revisit came from {word} the broken object (its original side, where price was accepted) — not a retest from "
                     f"the break side (DECISIONS 38, H2)")
         f0 = int(u) if form.get("form") in self.ONE_CANDLE_FORMS else int(u) - self.FORM_SPAN.get(form.get("form"), 1)
-        if f0 >= 0 and orig(O[f0], f0):
+        if f0 >= 0 and orig(O[f0], f0) and held(f0 - 1):
             return (f"the rejection candle came from {word} the broken object and closed through it — a breakout / breakdown candle, "
                     f"never an E4 (b) (DECISIONS 38, H2)")
         return None
@@ -419,8 +646,9 @@ class Reader:
         start = int(vi["start"])
         lid = lvl.get("parent_level", lvl.get("id"))
         L = V.levels.L[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(V.levels.L) else None
-        base = {"object": "area", "area_id": lid, "tf": lvl.get("tf"), "role": lvl.get("role"), "lo": lvl["lo"], "hi": lvl["hi"],
-                "state": lvl.get("state"), "direction": int(d), "side": side_of(d), "visit_id": f"{lid}@{self.T(start)}",
+        uid = self.uid_of(lvl)
+        base = {"object": "area", "area_id": lid, "area_uid": uid, "tf": lvl.get("tf"), "role": lvl.get("role"), "lo": lvl["lo"],
+                "hi": lvl["hi"], "state": lvl.get("state"), "direction": int(d), "side": side_of(d), "visit_id": f"{uid}@{self.T(start)}",
                 "visit_start": self.T(start), "visit_start_bar": start, "labels": lvl.get("confluence_label")}
         models = {}
         if self.came_from_trade_side(start, lvl, d):
@@ -536,6 +764,11 @@ class Reader:
             rb = (info or {}).get("refined") if m == "E4" else info
             fired.append({"model": m, "variant": "a" if m == "E4" else None, "invalidation": inv, "invalidation_rule": rule,
                           "facts": facts, "refined": rb})
+        if getattr(V, "visit_end_new", False) and self.trigger_rule() == "traded_inside" and V.price_away(t, lvl, None):   # B-2: an open visit while price is away from the
+            base["away"] = V.AWAY_NA                                       # area — no entry and no RSI read come from it
+            for f in fired:
+                models[f["model"]] = {"status": "waiting", "waiting": V.AWAY_NA}
+            fired = []
         base["models"] = models
         return base, fired
 
@@ -670,6 +903,13 @@ class Reader:
         if key in self.memo:
             return self.memo[key]
         kind = "L" if d < 0 else "H"
+        if getattr(self.V, "visit_end_new", False):                        # DECISIONS 64: swings away that do not reach it again
+            tb = {int(i) for i in touches(born, t)}
+            piv = [p for p in self.V.visit_swings() if p.confirm_bar <= t and born <= p.bar <= t]
+            st = {int(p.bar) for p in getattr(self.V.levels, "_known0", []) if p.confirm_bar <= t and born <= p.bar <= t and
+                  p.kind == kind and away_fn_swing(p)}
+            self.memo[key] = revisit_start(tb, [(int(p.bar), bool(away_fn_swing(p))) for p in piv], st)
+            return self.memo[key]
         piv = {int(p.bar) for p in getattr(self.V.levels, "_known0", []) if p.confirm_bar <= t and born <= p.bar <= t and
                p.kind == kind and away_fn_swing(p)}
         tb = {int(i) for i in touches(born, t)}
@@ -691,8 +931,9 @@ class Reader:
         V = self.V
         A = self.A
         out = []
-        for x in V.levels.snapshot(t):
-            if x.get("state") != FL.BROKEN or int(x.get("break_dir") or 0) != int(d) or not x.get("trade_location", True):
+        want_state = FL.FLIPPED if FL.hold_rule(V.s) == "follow_through" else FL.BROKEN   # DECISIONS 77: E4 (b) only after BROKEN
+        for x in V.levels.snapshot(t):                                     # (follow-through = code FLIPPED); never BEYOND_NOT_BROKEN
+            if x.get("state") != want_state or int(x.get("break_dir") or 0) != int(d) or not x.get("trade_location", True):
                 continue
             if x.get("broken_at") is None:
                 continue
@@ -730,6 +971,27 @@ class Reader:
             out.append(("line", ln, touch, away, aw_sw, int(k) + 1))
         return out
 
+    def acceptance(self, kind, obj, edge15, d, k_of=None):
+        """DECISIONS 61: accepted(i) for `approach_side` — price HELD on the object's original side at the closing candle i (k_of maps a
+        candle of another frame — 5M — to the last 15M bar closed with it). None under `break_hold_rule = swing_beyond` (what-if)."""
+        V = self.V
+        if FL.hold_rule(V.s) != "hold":
+            return None
+        k0 = getattr(V.levels, "_known_hold", getattr(V.levels, "_known0", None))   # the hold degree (A-L1: D0) — areas and lines
+        if kind == "line" and k0 is None:                                  # no finest structure known (old callers) ⇒ the line's own
+            g = int(obj.get("degree") or V.s.get("level_degree", 2))       # degree
+
+            def swings(b, g=g):
+                return TL._known_deg(V, b, g)
+        else:
+            k0 = list(k0 or [])
+
+            def swings(b, k0=k0):
+                return [p for p in k0 if int(p.confirm_bar) <= b]
+        if k_of is None:
+            return lambda i: self.accepted_on_original_side(int(i), edge15, d, swings)
+        return lambda i: self.accepted_on_original_side(int(k_of[int(i)]), edge15, d, swings)
+
     def broken(self, t, d, keep=None, extra=None):
         """E4 (b) for every broken object of the trade direction ⇒ ([armed dicts], [fired at t]). keep(kind, obj) (model C: its own
         object filters C-b / C-d / C-e) ⇒ only the objects it keeps; None ⇒ all (today)."""
@@ -746,10 +1008,11 @@ class Reader:
                 continue
             role = obj.get("role") if kind == "area" else ("support" if d < 0 else "resistance")
             w0 = self.side_since(t, role, d, start)
-            base = {"object": "broken_" + kind, "area_id": oid, "tf": obj.get("tf") if kind == "area" else "line",
+            uid = self.uid_of(obj) if kind == "area" else oid
+            base = {"object": "broken_" + kind, "area_id": oid, "area_uid": uid, "tf": obj.get("tf") if kind == "area" else "line",
                     "role": role, "lo": obj.get("lo") if kind == "area" else round(TL.line_value(obj, t), 2),
                     "hi": obj.get("hi") if kind == "area" else round(TL.line_value(obj, t), 2), "state": "BROKEN",
-                    "direction": int(d), "side": side_of(d), "visit_id": f"{oid}@{self.T(start)}", "visit_start": self.T(start),
+                    "direction": int(d), "side": side_of(d), "visit_id": f"{uid}@{self.T(start)}", "visit_start": self.T(start),
                     "visit_start_bar": int(start), "broken_at": self.T(obj.get("broken_at") if kind == "area" else obj.get("break_bar"))}
             if kind == "line":
                 base["line"] = {k: obj.get(k) for k in ("id", "family", "tf", "p1", "p2", "slope", "touches", "break_bar", "parallel_of",
@@ -767,13 +1030,14 @@ class Reader:
                 edge = (lambda i, e0=e0: e0)
             else:
                 edge = (lambda i, ln=obj: TL.line_value(ln, i))
+            acc = self.acceptance(kind, obj, edge, d)                      # DECISIONS 61: a sweep there is still the break-side approach
             first, appr_why = None, None
             for u in range(w0, t + 1):
                 if self.touch_visit(u, oid, born, touch, aw_sw, d) != start:
                     continue
                 r = self.rejection(u, d, lambda i: len(touch(i, i)) > 0, start, away)
                 if r is not None and self.retest_ok(u, r, touch, start, d) is None:
-                    why = self.approach_side(u, r, start, edge, d)
+                    why = self.approach_side(u, r, start, edge, d, accepted=acc)
                     if why is not None:                                    # a breakdown candle / a revisit from the original side
                         appr_why = why
                         continue
@@ -809,15 +1073,70 @@ class Reader:
         kind = "L" if d < 0 else "H"
         bb = ln.get("break_bar")
         bb = int(bb) if bb is not None else int(ln["p1"][0])
-        sw = [int(p.bar) for p in getattr(self.V.levels, "_known0", []) if p.kind == kind and p.confirm_bar <= t and bb <= p.bar < int(start)
+        new = getattr(self.V, "visit_end_new", False)                      # DECISIONS 64 (B2): the LAST away swing known at t — it moves
+        src = list(getattr(self.V.levels, "_known0", [])) + (list(self.V.visit_swings()) if new else [])   # forward inside the revisit
+        end = int(t) + 1 if new else int(start)
+        sw = [int(p.bar) for p in src if p.kind == kind and p.confirm_bar <= t and bb <= p.bar < end
               and ((float(p.price) < TL.line_value(ln, int(p.bar))) if d < 0 else (float(p.price) > TL.line_value(ln, int(p.bar))))]
         return max(sw) if sw else None
 
     # ------------------------------------------------------------------------------------------ evidence (layer 6a builders)
-    def evidence(self, t, d, lvl, arm, appr=None, move_from=None, cm=None, read_ok=None):
+    def label_rule(self):
+        r = str(self.V.s.get("label_rule", "evidence_count"))
+        r = "model55" if r == "model" else r                               # the DECISIONS 55 name before 58 (what-if alias)
+        if r not in LABEL_RULES:
+            raise ValueError(f"label_rule {r!r} — {' / '.join(LABEL_RULES)}")
+        return r
+
+    def model_conditions(self, fired, trigger_tf="15M"):
+        """DECISIONS 54: the fired model's OWN conditions by name, exactly the checks the model made at its trigger (Reader.area /
+        Reader.broken and the Reader5 mirrors) — all held, or the model would not have fired. The wording follows the active what-if
+        switches (entry_trigger_rule, entry_area_refine, e4b_approach_rule) so it never names a check that was not made."""
+        m, var = fired.get("model"), fired.get("variant")
+        rule, rb = self.trigger_rule(), fired.get("refined")
+        if m == "E4" and var == "b":
+            kind = fired.get("kind") or str((fired.get("facts") or {}).get("object", "")).replace("broken_", "")
+            form = (fired.get("facts") or {}).get("form")
+            out = ["trend side (the trade side)", f"a broken {kind} in the trade direction (not broken back / dead), revisited"]
+            if self.approach_rule() == "break_side":
+                out.append("the revisit came from the break side (DECISIONS 38)")
+            out.append(f"a {trigger_tf} rejection form{f' ({form})' if form else ''} at the object, closing on its trade side")
+            if self.inside_on():
+                out.append("no close beyond the retest extreme")
+            return out
+        out = ["trend side (the trade side)", "a pullback visit to an alive trade-side area (not from the trade side, not broken)"]
+        if rule == "legacy":
+            pass
+        elif rb is not None:
+            out.append(f"the {trigger_tf} trigger candle traded into the refined 15M base" if rule == "traded_inside" else
+                       f"the {trigger_tf} trigger candle at the area (close inside), the refined 15M base reached in the visit")
+        else:
+            out.append(f"the {trigger_tf} trigger candle traded inside the area" if rule == "traded_inside" else
+                       f"the {trigger_tf} trigger candle closed inside the area")
+        if m == "E1":
+            out.append(f"the visit's first {trigger_tf} candle at the " + ("refined base (not closed through in the visit)" if rb is not None
+                                                                         else "area"))
+        elif m == "E2":
+            out += [f"a {trigger_tf} commitment candle inside the visit with its FUT volume comparison", "no absorption without a handover"]
+        elif m == "E3":
+            out += ["an LTF CHoCH by close inside the visit", "no absorption without a handover"]
+        elif m == "E4":
+            sw = (fired.get("facts") or {}).get("swept")
+            out += [f"a sweep beyond {sw or 'the far edge / the visit extreme'}, closed back inside",
+                    "the next push failed inside the sweep extreme"]
+        if rule != "legacy":
+            out.append("no close beyond the invalidation")
+        return out
+
+    def evidence(self, t, d, lvl, arm, appr=None, move_from=None, cm=None, read_ok=None, fired=None, trigger_tf="15M"):
         """The 6a evidence list + label A / B for an entry at bar t (method.confirming_evidence / method_label / evidence_list — the
-        same builders _level_eval uses): required set as read (handover + c0 + volume + c1), confirming pieces, context facts. The label
-        is None when the required set reads absent (6a: A and B both need it)."""
+        same builders _level_eval uses): required set, confirming pieces, context facts. Never blocks, never changes the entry.
+          label_rule = model (default, DECISIONS 54, owner rule; `fired` = the fired model's dict): the required set = the fired
+            model's own conditions (model_conditions — every fired entry has it); A = + ≥ 1 of the five confirming pieces
+            (LABEL_PIECES), B = the model's conditions only. The old 6a set (handover + c0 + volume + c1) stays as a fact
+            (`legacy_required`).
+          label_rule = legacy (what-if, or no `fired`): the required set as read (handover + c0 + volume + c1); the label is None when
+            it reads absent (6a: A and B both need it)."""
         V = self.V
         A = self.A
         if cm is None:                                                     # a broken line: the same shared confirmation, window = revisit
@@ -851,15 +1170,126 @@ class Reader:
         # model fired without it (E1 before any commitment, E2 before the LTF CHoCH, …) has no A / B label: the evidence list says ✗.
         label = M.method_label(confirm) if el["required"] == "present" else None
         chx = self.channel_evidence(t, d)
+        if fired is not None and self.label_rule() != "legacy":
+            tight = None
+            if self.label_rule() in ("evidence_count", "model55"):         # DECISIONS 55 / 58: the two tightened pieces
+                tight = {"pullback_channel": self.pullback_channel(t, d, arm),
+                         "same_place": self.same_place(t, lvl, weekly=self.label_rule() == "model55")}
+            return self._model_label(fired, trigger_tf, el, confirm, chx, lvl, cm, zr, rsi, tl, ev, tight)
         marks = [["required set (handover + commitment + volume + LTF CHoCH)", MARK[el["required"]]]] + \
             [[CONF_NAME.get(k2, k2), MARK.get(v, v)] for k2, v in el["confirming"].items()] + \
             [["counter channel broken in the trade direction (handover evidence; context)", "✓" if chx["present"] else "✗"]]
         return {"label": label, "evidence_list": el, "evidence": marks, "confirming": confirm, "commit": cm, "zone_read": zr,
                 "rsi": rsi, "trendline": tl, "context": ev, "channel_evidence": chx}
 
+    def _model_label(self, fired, trigger_tf, el, confirm, chx, lvl, cm, zr, rsi, tl, ev, tight=None):
+        """DECISIONS 54 / 55 (label_rule = model / model54): the evidence list + A / B for a fired entry — see evidence(). `tight` (55) =
+        {"pullback_channel": Reader.pullback_channel, "same_place": Reader.same_place} replaces the confluence and counter-channel
+        pieces; None = the DECISIONS 54 reading (model54, what-if)."""
+        conds = self.model_conditions(fired, trigger_tf)
+        c5 = dict(confirm)
+        if tight is not None:
+            sp, pc = tight["same_place"], tight["pullback_channel"]
+            c5["confluence"] = sp["present"]
+            c5["counter_channel_broken"] = pc["present"]
+        else:
+            if str(lvl.get("tf")) == "line":                               # E4 (b) at a broken line: the line IS the object, never its
+                c5["confluence"] = True if lvl.get("confluence") else None   # own confluence; what lies on it is not read here ⇒ NA
+            c5["counter_channel_broken"] = bool(chx.get("present"))
+        c5 = {k2: c5.get(k2) for k2 in LABEL_PIECES}
+        count = self.label_rule() == "evidence_count"                     # DECISIONS 58: no A / B label, the count instead
+        label = None if count else M.method_label(c5)
+
+        def w(v):
+            return "NA" if v is None else ("present" if v else "absent")
+        el2 = {"required": "present", "required_set": f"the {fired.get('model')} model's own conditions", "label_rule": self.label_rule(),
+               "model_conditions": {c: "present" for c in conds}, "entry_hours": el.get("entry_hours"),
+               "confirming": {k2: w(v) for k2, v in c5.items()}, "context": el.get("context"),
+               "legacy_required": el.get("required"),
+               "label_pieces": [CONF_NAME[k2] for k2, v in c5.items() if v is True]}
+        if count:
+            el2.pop("label_pieces")
+            el2.update(evidence_count=sum(1 for v in c5.values() if v is True), evidence_of=len(LABEL_PIECES),
+                       evidence_present=[CONF_NAME[k2] for k2, v in c5.items() if v is True],
+                       evidence_na=[CONF_NAME[k2] for k2, v in c5.items() if v is None])
+        if tight is not None:
+            el2["confluence_at"] = tight["same_place"]["objects"]
+            el2["pullback_channel"] = tight["pullback_channel"]
+        mdl = str(fired.get("model")) + (f" ({fired.get('variant')})" if fired.get("model") == "E4" else "")
+        marks = ([[f"{mdl} — the model's own conditions (" + ("all held" if count else "required set") + ")", "✓"]] +       # compact first: the card's line is cut
+                 [[CONF_NAME[k2], MARK[el2["confirming"][k2]]] for k2 in LABEL_PIECES] +   # by length; each condition by name after
+                 [[f"{mdl} condition: {c}", "✓"] for c in conds])
+        return {"label": label, "evidence_list": el2, "evidence": marks, "confirming": c5, "commit": cm, "zone_read": zr,
+                "rsi": rsi, "trendline": tl, "context": ev, "channel_evidence": chx}
+
+    def pullback_origin(self, t, d, arm):
+        """The trend-degree (1H) swing the pullback / correction into the area started from: the newest swing of the trend's side (a
+        swing LOW for a bear call — the correction rose from it; a swing HIGH for a bull put) at or before the visit's first bar `arm`,
+        known by bar t. None ⇒ not readable."""
+        kind = "L" if d < 0 else "H"
+        ps = [p for p in TL._known_deg(self.V, t, int(self.V.s.get("level_degree", 2))) if p.kind == kind and int(p.bar) <= int(arm)]
+        return max(ps, key=lambda p: int(p.bar)) if ps else None
+
+    def pullback_channel(self, t, d, arm):
+        """DECISIONS 55: "counter channel broken" = only the PULLBACK's (correction's) own channel at the trend degree (1H): a channel
+        running against the trade (rising for a bear call, falling for a bull put) whose base line is drawn on the correction's own
+        swings (both anchors from the pullback's origin on — `pullback_origin`) and whose line broke in the trade direction (K6.5,
+        a close beyond + a swing beyond). Comparison only. ⇒ {present (True / False / None = origin not readable), origin, channels}."""
+        org = self.pullback_origin(t, d, arm)
+        if org is None:
+            return {"present": None, "origin": None, "channels": [], "degree": "1H"}
+        want, against = ("down", "rising") if d < 0 else ("up", "falling")
+        g = int(self.V.s.get("level_degree", 2))
+        own = [c for c in TL.channels(self.V, t, g) if c["slope_dir"] == against and int(c["base_line"]["p1"][0]) >= int(org.bar)]
+        hits = [{"channel": c["id"], "tf": c["tf"], "state": c["state"], "broken_lines": c["broken_lines"]} for c in own
+                if c["broken_side"] == want]
+        return {"present": bool(hits), "origin": {"bar": int(org.bar), "ts": self.T(org.bar), "price": round(float(org.price), 2)},
+                "channels": hits, "pullback_channels": [c["id"] for c in own], "degree": TL.TF_OF_DEGREE.get(g, f"D{g}")}
+
+    def same_place(self, t, lvl, weekly=False):
+        """DECISIONS 55: "confluence" = only (a) a Daily / Weekly area OVERLAPPING the traded area (another alive area of a higher
+        timeframe than the traded one — method §1 — bands overlap),
+        or (b) an object of a different kind AT the same place — a line whose value at bar t lies inside the area's band (the trade-side
+        line through the area; an unbroken trend-degree line), or a liquidity pool (an equal highs / lows pool, method §3 "equal" — a
+        plain swing inside the band is the area's own reaction) whose price lies inside it. A broken-line object (E4 b): an alive area
+        whose band holds the line's value. Overlap by comparison only — nearness (a reaction turning at a line outside the band) never
+        counts. DECISIONS 58 (`weekly = False`, default): a Weekly area never counts (Weekly stays context) — a 1H traded area counts an
+        overlapping Daily area; a Daily traded area counts no other area (another Daily = the same timeframe, never merged — Z-1u; only
+        a line / pool there); a broken-line object counts a 1H / Daily area holding it. `weekly = True` = the DECISIONS 55 reading.
+        ⇒ {present, objects: [words]}."""
+        V = self.V
+        lo, hi = float(lvl["lo"]), float(lvl["hi"])
+        own = lvl.get("parent_level", lvl.get("id"))
+        objs = []
+        snap = V.levels.snapshot(t) or []
+        if str(lvl.get("tf")) == "line":                                   # the object is a line: an area (different kind) holding it
+            for x in snap:
+                if (weekly or x.get("tf") != "W") and float(x["lo"]) <= lo <= float(x["hi"]):
+                    objs.append(f"{x.get('tf')} area {x.get('id')} {float(x['lo']):,.2f}–{float(x['hi']):,.2f}")
+            return {"present": bool(objs), "objects": objs}
+        rank = {"15M": 0, "1H": 1, "D": 2, "W": 3}                        # method §1: a HIGHER-timeframe area at the same place
+        r0 = rank.get(str(lvl.get("tf")), 1)                               # (a Daily traded area: a Weekly one; never same-TF areas)
+        for x in snap:
+            if (x.get("id") == own or x.get("tf") not in (("D", "W") if weekly else ("D",)) or rank.get(str(x.get("tf")), 0) <= r0
+                    or float(x["hi"]) < lo or float(x["lo"]) > hi):
+                continue
+            objs.append(f"{x.get('tf')} area {x.get('id')} {float(x['lo']):,.2f}–{float(x['hi']):,.2f}")
+        ln = lvl.get("tl")
+        if isinstance(ln, dict) and ln.get("value_t") is not None and lo <= float(ln["value_t"]) <= hi:
+            objs.append(f"line {ln.get('id', '')} {float(ln['value_t']):,.2f}".replace("  ", " "))
+        g = int(V.s.get("level_degree", 2))
+        for c in TL.channel_lines(V, t, g):
+            if not c.get("broken") and lo <= float(TL.line_value(c, t)) <= hi:
+                objs.append(f"{c['tf']} {c['family']} {float(TL.line_value(c, t)):,.2f}")
+        for p in LQ.pools(V, t):
+            if p.get("src") == "equal" and lo <= float(p["price"]) <= hi:
+                objs.append(f"liquidity pool (equal {'highs' if p['side'] == 'buy' else 'lows'}) {float(p['price']):,.2f}")
+        return {"present": bool(objs), "objects": list(dict.fromkeys(objs))}
+
     def channel_evidence(self, t, d):
         """Abhi 21 Oct: a channel running AGAINST the trade (rising for a bear call, falling for a bull put) whose line broke in the trade
-        direction (K6.5) = handover evidence — listed with the channel / line ids; never a gate, never in the A / B label."""
+        direction (K6.5) = handover evidence — listed with the channel / line ids; never a gate. DECISIONS 54 (`label_rule = model`): one of
+        the five confirming pieces of the A / B label ("counter channel broken"); `legacy`: context only, not in the label."""
         V = self.V
         want, against = ("down", "rising") if d < 0 else ("up", "falling")
         hits = []
@@ -910,8 +1340,9 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             vi = V.visit(t, lvl, d)
             cm6 = V._confirm(t, d, lvl, {})
             ok6, why6, cm = cm6
-            ev = R.evidence(t, d, lvl, int(vi["start"]), cm=cm, read_ok=ok6, move_from=cm.get("move_from_bar"))
+            ev = R.evidence(t, d, lvl, int(vi["start"]), cm=cm, read_ok=ok6, move_from=cm.get("move_from_bar"), fired=f)
             area = {k: lvl.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
+            area["uid"] = a.get("area_uid")
             if lvl.get("range_edge"):                                      # DECISIONS 40: a range edge (card / audit wording)
                 area["range_edge"] = lvl["range_edge"]
             arm0, mf0 = int(vi["start"]), cm.get("move_from_bar")
@@ -919,8 +1350,11 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             x = f["raw"]
             lvl2 = {**x, "visit_from": f["start"]}
             cm6 = V._confirm(t, d, lvl2, {})
-            ev = R.evidence(t, d, lvl2, f["start"], cm=cm6[2], read_ok=cm6[0], move_from=cm6[2].get("move_from_bar"))
+            if getattr(V, "visit_end_new", False):                         # DECISIONS 64: the last swing built away known at t (the
+                cm6[2]["move_from_bar"] = V.move_from(t, float(x["lo"]), float(x["hi"]), d)   # break's own swing beyond or later)
+            ev = R.evidence(t, d, lvl2, f["start"], cm=cm6[2], read_ok=cm6[0], move_from=cm6[2].get("move_from_bar"), fired=f)
             area = {k: x.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
+            area["uid"] = a.get("area_uid")
             lvl = lvl2
             arm0, mf0 = int(f["start"]), cm6[2].get("move_from_bar")
         else:
@@ -929,7 +1363,7 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             lvl = {"id": f"line:{ln['id']}", "lo": v, "hi": v, "tf": "line", "role": a["role"], "births": ["tl"], "sweeps": 0,
                    "fresh": None, "confluence_line": True, "confluence": []}
             mf0 = R.line_move_from(t, ln, d, f["start"])                    # DECISIONS 56 (L5-c): the move into the line's retest
-            ev = R.evidence(t, d, lvl, f["start"], move_from=mf0)
+            ev = R.evidence(t, d, lvl, f["start"], move_from=mf0, fired=f)
             area = {"id": lvl["id"], "tf": "line", "role": a["role"], "lo": v, "hi": v, "state": "BROKEN", "line": a.get("line")}
             arm0 = int(f["start"])
         # T9 (PA evidence wiring, CLAUDE.md "evidence is listed and never blocks"): every PA track's facts for this entry — read after
@@ -949,6 +1383,11 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
                     "channel_evidence": ev["channel_evidence"], "pa_evidence": pa_ev,
                     "confirming": ev["confirming"], "_eval": ev, "_lvl": lvl})
     return {"entries": out, "armed": armed, "first_area": first_area, "reader": R}
+
+
+def _uid_key(a):
+    """A5: an armed object's stable place id (its `area_uid`; a line / range edge ⇒ its own id) — for ordering and cluster ids."""
+    return str(a.get("area_uid") or a.get("area_id"))
 
 
 def clusters(armed, entries, cands=(), obj="area", prefix="C"):
@@ -978,7 +1417,8 @@ def clusters(armed, entries, cands=(), obj="area", prefix="C"):
         if (str(lid), int(d)) in seen:
             continue
         seen.add((str(lid), int(d)))
-        pool.append({"object": "area", "area_id": lid, "tf": lvl.get("tf"), "role": lvl.get("role"), "lo": lvl["lo"], "hi": lvl["hi"],
+        pool.append({"object": "area", "area_id": lid, "area_uid": lvl.get("uid"), "tf": lvl.get("tf"), "role": lvl.get("role"),
+                     "lo": lvl["lo"], "hi": lvl["hi"],
                      "state": lvl.get("state"), "direction": int(d), "visit_start_bar": None, "visit_id": None, "_unvisited": True})
     groups = []
     for a in sorted(pool, key=lambda x: (str(x.get("role")), int(x["direction"]), float(x["lo"]))):
@@ -994,10 +1434,10 @@ def clusters(armed, entries, cands=(), obj="area", prefix="C"):
         vis = [x for x in mem if not x.get("_unvisited")]
         if not vis:
             continue
-        anchor = min(vis, key=lambda x: (int(x["visit_start_bar"]), str(x["area_id"])))
-        info = {"id": f"{prefix}{anchor['area_id']}", "anchor": anchor["area_id"], "visit_id": anchor["visit_id"],
-                "visit_start": anchor["visit_start"], "n": len(mem),
-                "members": [{**{k: x.get(k) for k in ("area_id", "tf", "role", "lo", "hi", "state", "visit_id")},
+        anchor = min(vis, key=lambda x: (int(x["visit_start_bar"]), _uid_key(x)))   # A5: ties by the stable place id (never a list index)
+        info = {"id": f"{prefix}{_uid_key(anchor)}", "anchor": anchor["area_id"], "anchor_uid": anchor.get("area_uid"),
+                "visit_id": anchor["visit_id"], "visit_start": anchor["visit_start"], "n": len(mem),
+                "members": [{**{k: x.get(k) for k in ("area_id", "area_uid", "tf", "role", "lo", "hi", "state", "visit_id")},
                              "visited": not x.get("_unvisited")} for x in mem],
                 "use": "count only: one signal per model per place (edges, trigger and invalidation = the visited area, Z-1u)"}
         for x in vis:
@@ -1006,7 +1446,7 @@ def clusters(armed, entries, cands=(), obj="area", prefix="C"):
     keep, chosen = {}, {}
     order = sorted(range(len(entries)), key=lambda i: (0 if of.get(id(entries[i][3])) and entries[i][3] is of[id(entries[i][3])][2]
                                                        else 1, int(entries[i][3].get("visit_start_bar") or 0),
-                                                       str(entries[i][3].get("area_id"))))
+                                                       _uid_key(entries[i][3])))
     for i in order:
         f, lvl, d, a = entries[i]
         g = of.get(id(a))

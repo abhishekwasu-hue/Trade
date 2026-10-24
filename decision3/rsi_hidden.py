@@ -85,10 +85,14 @@ def frame_of(V, t, d, move_from=None, arm=None, lvl=None, row=None):
         k = V.pb.at(t, d) or {}
         k0 = k.get("k_open_bar") if k.get("k_open_bar") is not None else t
         vi = V.visit(t, lvl, d, k0)
-        if vi.get("start") is None or vi.get("approach_from") is None:
+        mf = vi.get("move_from") if "move_from" in vi else (
+            (int(vi["approach_from"]) - 1) if vi.get("approach_from") is not None else None)   # DECISIONS 64: the last away swing
+        if vi.get("start") is not None and hasattr(V, "away_na") and V.away_na(t, lvl) is not None:
+            return {"kind": "zone_move", "move_from": None, "arm": None, "why": V.AWAY_NA}
+        if vi.get("start") is None or mf is None:
             return {"kind": "zone_move", "move_from": None, "arm": None,
                     "why": "the move into the area is not known (" + (vi.get("why") or "no swing built away from the area yet") + ")"}
-        return {"kind": "zone_move", "move_from": int(vi["approach_from"]) - 1, "arm": int(vi["start"]),
+        return {"kind": "zone_move", "move_from": int(mf), "arm": int(vi["start"]),
                 "why": "the move into the area (from its own swing)"}
     k = V.pb.at(t, d) if getattr(V, "pb", None) is not None else None
     if not k or k.get("i_end_bar") is None:

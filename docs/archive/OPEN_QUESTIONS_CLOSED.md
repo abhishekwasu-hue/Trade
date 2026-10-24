@@ -1477,3 +1477,179 @@ without holding = a SWEEP (object alive); broken back ⇒ DEAD by the same test;
 A visit also ends when its object becomes BROKEN under BREAK-1 (b) — at the bar the break became known (N07, after A1 lands). An object
 not broken, with one directional leg away and no confirmed turn yet: the visit may stay open until the next confirmed swing, but no
 model entry and no RSI read comes from that open visit while price is away from the area (proof case D11). RSI judged only after C1.
+
+<!-- moved from branch `lifecycle` at the integ51 merge (DECISIONS 70: archive, never delete) -->
+
+## Gallery review A — the area / line lifecycle under BREAK-1 (A1–A4, A8; branch `lifecycle`; report docs/reports/gallery_review_fixes.md §A)
+BREAK-1 is the owner rule (DECISIONS 60 / 69 — not open). Built as `break_hold_rule = hold` (default; `swing_beyond` = the earlier
+reading, what-if only): BROKEN = a close beyond + a swing of the HOLD side (a pullback low above / high below) confirmed while every
+close is still beyond (the confirming bar too); a push back without that = a sweep (alive, "reclaimed"); broken back ⇒ DEAD (areas as
+lines; no "reclaim" to the old role); the flip waits for the hold; the E4 (b) approach side allows a sweep (DECISIONS 61); stamps at the
+bar KNOWN (DECISIONS 63). Provisional choices, checked against DECISIONS 23 / 27 / 38 / 39 / 60 / 61 / 63 / 65 / 69, CLAUDE.md
+("Sweep / fakeout", "An area flips only once", "E4 (b)") and the method doc (Area lifecycle):
+- **A-L1 (needs Abhi — golden conflict, STOPPED for the lead):** the degree of the hold swing. Default = the structure's finest degree
+  (Abhi's approved D1, the swings the K4 break always read; method §3 "small wiggles inside a leg are not swings"), for areas AND lines
+  (a 1H line's own D2 almost never shows a pullback on the far side). On D1, Abhi's own example 2.17 ("the textbook break-side retest,
+  20 Jul 14:15") is NOT broken: the 20 Jul pullback high below the line (57,838, 10:30) is a D0 turn only. On D0 (every 15M turn) 2.17
+  is broken (20 Jul 09:15, held) and X01 / 2.3 / 2.4 stay sweeps — but the NIFTY 12 / 13 Oct golden zone 22,544–22,622 no longer
+  exists at 12 Oct (7 golden tests in tests/test_decision3_flip.py fail). On D1 two golden tests fail (below). Golden expectations not
+  edited; the lead / Abhi decide the degree.
+- **A-L2 (golden conflict, reported):** NIFTY 29 Sep (Z-1s): the 22,725–22,810 Daily supply broke to new lows and the 12:00 rally came
+  back into it with no pullback high held below ⇒ under BREAK-1 a sweep (never broken / flipped); the golden expects broken 11:00 /
+  flipped 11:30 and the 12:00 / 12:15 pullback read at the flipped zone. The synthetic replica tests/oct12_fixture.py (a support
+  broken by new lows, no hold) fails the same way. Both tests left failing, not edited.
+- **A-L3:** BROKEN, then broken back with a hold ⇒ DEAD for areas too (A1 "BROKEN BACK ⇒ DEAD … identically to areas and lines");
+  the earlier area "reclaim" (back to the old role) exists only in the what-if.
+- **A-L4:** not changed (outside the area / line objects, log only): model C's O death (`model_c`, OFF by default; DECISIONS 32 wording
+  "a close beyond O plus a swing beyond O"), the pattern boundary break (`patterns_pa`), the display band finder `levels.band_flip_facts`
+  (facts.validity breaks; not used by the decision). Each still reads the earlier "swing beyond".
+- **A-L5:** N01 (Daily 81, Apr–May "sweeps ×12" while price stayed beyond): the replay build has no swings before 13 May (swings2
+  warm-up from the 13 Apr data start), so neither reading can see a hold there — a data / warm-up limit, not a lifecycle rule. N03
+  (Daily 288, 5–7 Aug) shows no lifecycle event in either reading (price stayed inside the wide band).
+- **A-L6:** tests written for the earlier reading run on the what-if (`earlier_break_reading` fixture, tests/conftest.py), which
+  reproduces it exactly; the default is pinned by tests/test_break_hold.py (both mirrors, cut = full no-look-ahead).
+
+<!-- moved from branch `identity` at the integ51 merge (DECISIONS 70: archive, never delete) -->
+
+## Gallery review A5–A7 (24 Oct) — object identity, band rule, refined base (branch `identity`; report `docs/reports/gallery_review_fixes_A567.md`)
+
+Checked against DECISIONS 62 / 63 (owner rules), CLAUDE.md (no numbers, Z-1u never union, refined base RC2) and the method doc (Areas:
+wick to body, BOS-origin base; refined base). Each item has a provisional default; work continues with it.
+
+| id | Question (one line) | Provisional default | Concept |
+|---|---|---|---|
+| A5-1 | The stable id of a place: `<timeframe>:<H \| L>:<base candle start>` (e.g. `1H:L:2026-09-11 09:15`, `D:L:2026-09-11`). OK as the id Abhi sees on cards / galleries? | `Level.uid` = that; visit ids, the once-per-model key and the cluster anchor use it; `Level.id` stays a lookup index only | C areas (identity) |
+| A5-2 | Line ids still carry bar indices of the build (e.g. `line:D2:H+:600-650`) — the same window effect as the area ids. | not changed here (lines belong to the trendline track); flagged to that owner | K6.5 lines (identity) |
+| A5-3 | A Daily and a 1H level can hold the SAME band when the Daily swing candle's wick to body = its first hour's (55,699–55,970: `1H:L:2026-09-11 09:15` and `D:L:2026-09-11`). | kept as two objects of two timeframes (Z-1u: the 1H is the location, the Daily is its confluence label; identical bands ⇒ identical lifecycle) | C areas, §1 MTF |
+| A6-1 | Area 297 / 296 (57,397–58,025, 628 pts): its 1H swing candle is the single 15:15 bar of 31 Aug — 1m shows 15:15–15:28 flat at 57,397.35 and one 15:29 print at 58,024.95 (the Daily close is the same). No wick ⇒ the body = the whole bar. A data (closing print) question, not a union. | band unchanged (the rule is applied as written); listed as a data note | C areas (band rule), data |
+| A6-2 | Area 298 (54,886–55,193) is the 1H swing candle's own upper wick (10-05 09:15 hour: body top 54,886.20 = the hour's close … high 55,192.65), not 294 + a sweep. | no change (rule-compliant) | C areas (band rule, Z-1u) |
+| A7-1 | "15M turn" for the refined base = every turn the swing engine confirms on 15M (its finest degree, D0), not only the structure list (D1). | D0 (missed turns N03 / N07 / N04 found) | RC2 refined base, TA4 |
+| A7-2 | A turn whose extreme pokes just beyond the band (a sweep) but whose wick to body trades into the band is the turn at the area. | counts; its base is kept inside the band (never beyond the area, Z-1u) | RC2, K4 sweep |
+| A7-3 | Refined base = the whole area when the 15M candle's wick to body equals (or contains) the 1H candle's (the extreme sits in the hour's first 15M bar; R5-E01, E01, E09) and no newer turn exists. | kept (by construction the newest turn IS the area's own base candle) | RC2 |
+| A7-4 | A real 15M turn candle with a tiny wick still gives a narrow base (rule: wick to body; "no wick ⇒ the body" only when there is no wick at all). | kept literally; listed in the replay (widths) for Abhi | TA4 / Z-1x |
+
+<!-- moved from branch `visitmove` at the integ51 merge (DECISIONS 70: archive, never delete) -->
+## Gallery review B — the visit end and the move start (DECISIONS 64; report docs/reports/gallery_review_fixes_B.md; branch `visitmove`)
+Provisional defaults (checked against DECISIONS 37 / 56 / 59 / 60 / 61 / 64, CLAUDE.md "Sweep / fakeout" and "E4 (b)", method §3 Visit):
+- **B-1 (the swings of a visit)** "Swings built away" = the finest swings the engine computes (swings2 D0, the 15M turns the gallery draws
+  and rsi2 counts as pushes) together with the D1 structure swings. Today only D1 counted, and a long one-way fall (D04 / D05, ~1,900 pts)
+  has no D1 turn for days. Default: D0 ∪ D1. If C (push detection) settles on another "finest structure", the visit follows it
+  (`V22.visit_swings()` is the one place).
+- **B-2 ("do not reach it again")** A visit ends at (a) a D1 swing built away (as before) or (b) a finest swing away followed by a turn
+  that does not reach the area again; a turn that reaches it keeps the visit (the dip was part of it). Consequence: at a decision bar
+  inside a one-way move that has not turned yet (N07 09-15 15:15; D11 08-27 15:15, whose 13:15 turn came back 26 pts into the band)
+  the visit is still open — it ends at the next confirmed turn. Default: structure only (no distance, no time). Abhi to confirm on the
+  N07 / D11 charts.
+- **B-3 (L5-c line move start)** DECISIONS 59 said "formed … before the revisit"; DECISIONS 64 says the start moves forward with each
+  new away swing. Default: the last away swing beyond the line known at t (also one inside the revisit). `single_swing` = the 59 reading.
+- **B-4 (area born on its touching bar; not mine — area builder)** D04 / D05: area 293 / 295 is born on the 07-22 09:15 breakdown
+  candle, which itself trades in the band ⇒ a "visit" begins on the birth bar (price leaving the base, not returning to it). Logged for
+  the area-builder owner; the visit rule now ends it by structure the same day.
+- Far side: a swing beyond the far edge + the next turn not back inside ends the VISIT (held beyond); the area's broken / dead state
+  stays the lifecycle's (BREAK-1). A sweep (the next turn back inside) keeps the visit.
+- `visit_end_rule = single_swing` (dashboard `engine3_visit_end_rule`) = the earlier reading byte-for-byte (what-if / revert).
+
+Built on branch `visitmove` (report docs/reports/gallery_review_fixes_B.md §7): the visit ends at the lifecycle's broken / dead event
+(today's K4; BREAK-1 through the same events when A1 lands); an open visit whose candle is away from the band reads nothing (15M / 5M
+readers, row RSI, dossier, hidden frame). Charts: trade-data `review/gallery_fixes/B/L5-D11_B2_away_broken.png`, `L5-N07_B2_away_broken.png`
+(N07 to be re-proved after A1).
+
+<!-- moved from branch `label54` at the integ51 merge (DECISIONS 70: archive, never delete) -->
+
+## Label rule DECISIONS 54 (owner rule) — built 23 Oct (worktree branch `label54`; trade-data `review/layer6_gallery/label54/`)
+
+Checked against CLAUDE.md (Entry framework: "evidence is listed and never blocks"; "never add a trading rule Abhi didn't state"),
+DECISIONS 46, 49, 50, 54, method §4 / §5, L6-a, Z-1u, T3 / K6.5. `label_rule = model` (default; `legacy` = the old 6a set, what-if) in
+`decision3/entry_models.py` (`Reader.model_conditions`, `Reader._model_label`), used by the 15M Reader and the 5M Reader5 alike.
+- **L54-a (the required set). Implemented.** Required = the fired model's own conditions, named as the model checked them (E1 / E2 / E3 /
+  E4 a / E4 b each; the words follow the active what-ifs — `entry_trigger_rule`, `entry_area_refine`, `e4b_approach_rule` — so a check
+  that was not made is never named). Every fired entry has it ⇒ every entry has A or B. The old 6a set is kept as the fact
+  `evidence_list.legacy_required`.
+- **L54-b (the five confirming pieces → existing facts). Implemented, no new reading.** RSI divergence = the layer 5 read
+  (`V22.rsi_divergence`, NA when not readable); volume growing inside = the zone read's trade-side volume rising
+  (`flip.zone_read` summary `vol_rising_trade_side`, NA without FUT volume); confluence = L6-a / Z-1u (a line meets the area, or a Daily
+  / Weekly area overlaps it — `method.confirming_evidence`); correction line closed through = L4 (`trendline.k_line` broken, NA when no
+  correction line is open); counter channel broken = T3 / K6.5 (`Reader.channel_evidence`). Every piece had an existing fact — none NA
+  by construction.
+- **L54-c (E4 (b) at a broken line — confluence). Provisional default: NA.** The line's synthetic level carries `confluence_line = True`
+  (the line IS the object), which would have made every E4 (b) line "confluence ✓". Provisional: for a line object confluence reads NA
+  (an area / Daily level lying on the line is not read for it today). Open for Abhi: should an area on the broken line count?
+- **L54-d (pin). Done.** `label_rule = legacy` = the code before this build, byte for byte (PIN15 / model C pins read it); `model`
+  changes only the label / evidence-list fields (label, evidence, evidence_list, confirming; row conviction / mark / missing) — entries,
+  invalidation, gates identical (tests/test_label_rule_model.py, 15M + 5M, both mirrors; the 13-group BANKNIFTY replay 53 / 53).
+- **L54-e (what the replay shows). Logged for Abhi, no change.** 53 / 53 entries read A under the new rule (old rule: 1 A, 52 none):
+  confluence 39, counter channel broken 36, RSI divergence 3, volume growing inside 3 (FUT-testable group only), correction line
+  closed through 0. The counter channel piece is read on every line degree (1H and 15M channels) and the confluence piece counts a
+  Weekly / Daily area overlap, so B is rare here. The rule is as stated (no filter added); whether the counter channel should be read only
+  on the trend degree is Abhi's call.
+- **L54-f (output words). Done.** Vision facts: "| label A (the model's own conditions + at least one confirming piece: …)" / "| label B
+  (the model's own conditions only)" / legacy only: "| no A / B label (the legacy 6a required set reads absent)". Card evidence line:
+  "✓ E1 — the model's own conditions (required set)" first, then the five pieces, then each condition by name (the card line is cut by
+  length; the full list is in the evidence list and the Vision facts). Summary card 📋 Reader line: "✓ the E1 model's own conditions".
+  The Vision system prompt (cached) is unchanged — it already lists the evidence as never deciding.
+
+
+### DECISIONS 55 (owner rule) — the two confirming pieces tightened (23 Oct, branch `label54`; gallery `label54/` "after DECISIONS 55")
+- **L55-a (counter channel broken). Implemented.** `Reader.pullback_channel`: only the PULLBACK's own channel at the trend degree (1H,
+  `level_degree`): a channel against the trade whose base line's anchors are both from the pullback's origin on (the newest 1H swing of
+  the trend's side at or before the visit's first bar — a swing low for a bear call, a high for a bull put) and whose line broke in the
+  trade direction (K6.5). No origin known ⇒ NA. The 15M degree and channels drawn on earlier moves never count. Replay: present 0 /
+  53, NA 2 — no 1H pullback into these areas had its own channel yet (the corrections are one 1H leg), so the piece never fires here.
+- **L55-b (confluence). Implemented.** `Reader.same_place`: only (a) a Daily / Weekly area overlapping the traded area — of a HIGHER
+  timeframe than the traded one (method §1: "a higher-timeframe area at the same place is labelled confluence"; a Daily traded area
+  counts a Weekly overlap only), or (b) an object of a different kind AT the same place: a line whose value at the bar lies inside the
+  band (the trade-side line through the area, or an unbroken 1H line), or a liquidity pool inside it. Nearness (a reaction turning at a
+  line outside the band, Abhi 4 B) no longer counts. A broken-line object (E4 b): an alive area whose band holds the line's value.
+  Overlap by comparison only, no distance number.
+- **L55-c (liquidity pool = equal highs / lows). Provisional default.** Only an equal highs / lows pool (method §3 "equal", `liquidity.pools`
+  src "equal") counts; a plain swing high / low inside the band is the area's own reaction (every supply area holds its own swing high),
+  so it is never "an object of a different kind". Open for Abhi.
+- **L55-d (what-if).** `label_rule = model54` = the DECISIONS 54 reading of the two pieces; `legacy` unchanged (byte pins).
+- **L55-e (does it separate?). For Abhi — no card change made.** 53 entries: A 48 / B 5 (D54: A 53 / B 0). Per model: E1 20 / 2, E2
+  1 / 0, E3 9 / 0, E4a 11 / 0, E4b area 2 / 1, E4b line 5 / 2. Confluence is present on 48 — 46 of them through a Daily / Weekly
+  overlap (the Weekly areas are wide, e.g. 54,891–56,099, and cover most 1H areas of Sep / Oct). It separates only weakly; replacing A /
+  B on the card with the evidence list + its count waits for Abhi's word (DECISIONS 55).
+
+### DECISIONS 58 (owner rule) — no A / B label; the evidence list + its count (24 Oct, branch `label54`; gallery `label54/` "after DECISIONS 58")
+- **L58-a (no label). Implemented.** `label_rule = evidence_count` (default): the entry's `label` is None; the evidence list carries
+  `evidence_count` / `evidence_of` (5) / `evidence_present` / `evidence_na`. Information only — no threshold, never blocks. The first
+  evidence mark reads "E1 — the model's own conditions (all held)". What-ifs: `model55` (alias `model`) / `model54` (the A / B labels of
+  DECISIONS 55 / 54), `legacy` (the old 6a set; byte pins unchanged). Entries / invalidation / gates identical (53 / 53 in the replay).
+- **L58-b (outputs).** Engine card (`vision/worker.engine_caption`): no "label A / B" in the head; the evidence bullet reads "Evidence:
+  N of 5 — <present> · NA: <not readable>". Classic card detail line "📋 E1 — Aggressive evidence (N of 5): …"; Vision facts "| evidence:
+  N of 5 — … (information only)"; setup chart "Evidence N of 5 (present: …; information only)". A signal whose list carries no count
+  (legacy / non-engine) keeps today's words byte for byte. The facts dossier prints no label (unchanged).
+- **L58-c (confluence without the Weekly).** A Weekly overlap never counts. A 1H traded area counts an overlapping Daily area. Provisional
+  default for a DAILY traded area: another overlapping Daily area does NOT count (same timeframe — areas are never merged, Z-1u; method
+  §1 names a HIGHER-timeframe area as confluence); only a line / equal pool at the place counts there. A broken-line object counts a 1H /
+  Daily area holding the line's value (never a Weekly). Open for Abhi.
+- **L58-d (replay, 53 entries).** Evidence count 0: 17, 1: 31, 2: 4, 3: 1. Per model (0 / 1 / 2 / 3): E1 6 / 15 / 1 / 0, E2 0 / 0 /
+  1 / 0, E3 2 / 7 / 0 / 0, E4a 2 / 6 / 2 / 1, E4b area 2 / 1 / 0 / 0, E4b line 5 / 2 / 0 / 0. Pieces present: confluence 36, RSI
+  divergence 3, volume growing inside 3, correction line closed through 0, counter channel broken 0 (NA: volume 50, correction line 41,
+  RSI 11, counter channel 2).
+
+<!-- moved from branch `dailyF` at the integ51 merge (DECISIONS 70: archive, never delete) -->
+
+## Gallery review F — Daily trend side (BANKNIFTY; report `docs/reports/gallery_review_fixes_F.md`, charts trade-data `review/gallery_fixes/F/`)
+
+Checked against CLAUDE.md, DECISIONS 1–3, 17, 68, method §2 b) / §3 Structure (Swing, Degree, Equal), STABLE layer 1 (L1-a / b / c).
+
+- **F1-LBL (concept: Degree — "every comparison uses swings of the same degree"; display, layer 1 `daily_swings.tag_pivots`). Bug,
+  fixed.** The Daily chart labels compared each swing with the previous same-kind swing of any degree ("LL 52,783" vs the inner low
+  54,222 while the reading's HL compares with 49,955; "HH 58,597" vs the inner high 58,252 while below 58,706). Now: compared with the
+  structure's reference swing of the same kind (moved only by a break beyond it), C-13 equal ⇒ EQH / EQL. Reading unchanged.
+- **F1-RULE (concept: Daily trend, A1 / ABC_FIX 1 / 3, trend first) — verdict: correct by the method** (same as D-SIDE-1): Apr–Jun is an
+  A1 correction (counter-move corrective by compare, parent 61,765 held) ⇒ DOWN; 17 – 29 Jun NEUTRAL by trend first.
+- **F2-CONF (concept: Swing — a turn is a swing once confirmed; layer 1 `fold_impulse` A1-end branch). Bug, fix HELD.** On 29 Jun the
+  protected origin 58,706 was the counter-move's running top, one bar before its N = 2 confirmation (30 Jun close). No future data
+  read (cut = full). The fix (top must be a confirmed Daily swing; why text names the sharp-zone edge — D-SIDE-3) changes the golden
+  `test_decision3_flip::test_real_29_sep…` (NIFTY prior-Daily level not born) ⇒ stopped, not committed; waiting for Abhi / the lead.
+  Provisional: the engine keeps the current reading. BANKNIFTY effect of the fix: 29 Jun close DOWN → NEUTRAL (session 30 Jun).
+- **F3-N (concept: Swing degree, L1-c `daily_pivot_n`) — fragility, information.** N = 3 reads UP through the 61,765 → 49,955 fall and
+  the whole replay window; N = 1 NEUTRAL from March. N stays 2 (Abhi's provisional setting).
+
+<!-- answered 24 Oct (DECISIONS 71–73), moved from the short file at the integ51 merge -->
+| A-L1 | BREAK-1 hold swing degree: D1 (2.17 never broken; 2 goldens fail) or D0 (matches 2.17 / X01 / 2.3; 9 goldens fail)? And what to do with the failing goldens / 28 pinned tests | D1, not merged | branch lifecycle, docs/reports/gallery_review_fixes.md §A | — ANSWERED (A-L1 = D0, DECISIONS 71; L58-c = no, DECISIONS 73)
+| L58-c | Daily traded area: does an overlapping other Daily area count as confluence? | no (line / pool only) | branch label54 | — ANSWERED (A-L1 = D0, DECISIONS 71; L58-c = no, DECISIONS 73)
+| F2-CONF | Daily protected origin only after the top is a confirmed swing (29 Jun 58,706 confirmed 30 Jun); fix fails NIFTY 29 Sep golden — apply or hold? | held | branch dailyF, docs/reports/gallery_review_fixes_F.md |
+| B-2 | Visit ends when its object becomes BROKEN; open visit away from the area reads nothing (D11, N07) — confirm after charts | provisional default | branch visitmove |

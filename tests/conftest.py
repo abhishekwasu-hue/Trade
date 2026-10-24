@@ -203,3 +203,61 @@ def _no_gate_error_telegram(monkeypatch):
     monkeypatch.setattr(_GA, "_sender", lambda: (lambda line: False))
     _GA._SEEN.clear()
     _GA._FAILED.clear()
+
+
+@pytest.fixture
+def earlier_break_reading(monkeypatch):
+    """BREAK-1 (owner-orders DECISIONS 60 / 69): the default is `break_hold_rule = hold`. Tests written for the earlier reading (any
+    swing beyond — the push's own extreme counted; a broken area broken back = reclaimed) run on the what-if `swing_beyond`, which
+    reproduces that reading exactly; the default is covered by tests/test_break_hold.py."""
+    from decision3 import flip as FL
+    from decision3 import settings as S3
+    monkeypatch.setitem(S3.DEFAULTS, "break_hold_rule", "swing_beyond")
+    monkeypatch.setattr(FL, "hold_rule", lambda s=None: "swing_beyond")   # settings dicts loaded at import time read it too
+
+
+
+@pytest.fixture
+def hold_break_reading(monkeypatch):
+    """DECISIONS 76 replaced BREAK-1 (the pullback-swing hold, DECISIONS 60 / 71) by the follow-through lifecycle (default
+    `break_hold_rule = follow_through`, tests/test_lifecycle_follow_through.py). Tests written for BREAK-1 run on its what-if `hold`,
+    which reproduces it exactly; an explicit other rule still reads (and an unknown one still raises)."""
+    from decision3 import flip as FL
+    from decision3 import settings as S3
+    real = FL.hold_rule
+    monkeypatch.setitem(S3.DEFAULTS, "break_hold_rule", "hold")
+    monkeypatch.setattr(FL, "hold_rule", lambda s=None: real(s) if (s or {}).get("break_hold_rule") not in (None, "follow_through")
+                        else "hold")
+
+
+@pytest.fixture(scope="module")
+def earlier_break_reading_ctx():
+    """`earlier_break_reading` for module-scoped fixtures (built before any function-scoped monkeypatch): a context manager the fixture
+    builds its rows in, undone right after, so the rest of the module keeps the default. The integ51 merge put tests written on the
+    12 Oct synthetic fixture (tests/oct12_fixture.py: a support broken by new lows WITHOUT a hold ⇒ a sweep under BREAK-1, OPEN_QUESTIONS
+    A-L2) by the other branches on the what-if, as the lifecycle branch did (A-L6); their tests take `earlier_break_reading` too. The
+    default reading is pinned by tests/test_break_hold.py; before / after charts: trade-data review/gallery_fixes/integ/."""
+    import contextlib
+
+    @contextlib.contextmanager
+    def ctx():
+        from decision3 import flip as FL
+        from decision3 import settings as S3
+        mp = pytest.MonkeyPatch()
+        mp.setitem(S3.DEFAULTS, "break_hold_rule", "swing_beyond")
+        mp.setattr(FL, "hold_rule", lambda s=None: "swing_beyond")
+        try:
+            yield
+        finally:
+            mp.undo()
+    return ctx
+
+
+@pytest.fixture
+def turn_base_reading(monkeypatch):
+    """DECISIONS 79 (owner rule): the default refined base is the area's ORIGIN base on 15M (`entry_area_refine_base = origin`). Tests
+    written for the replaced A7 reading (DECISIONS 63: the newest 15M turn inside the band — their synthetic bars place a later 15M
+    turn as the base) run on the what-if `newest_turn`, which reproduces that reading exactly; the default is covered by
+    tests/test_refined_origin_base.py."""
+    from decision3 import settings as S3
+    monkeypatch.setitem(S3.DEFAULTS, "entry_area_refine_base", "newest_turn")
