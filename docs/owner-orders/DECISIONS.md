@@ -150,3 +150,8 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     "confirmed" once its swing confirms. (L5-c): RSI divergence is read at the retest of a broken line / area like at any area — the
     retest is the pullback to the object. (Owner rule)
 57. A fix is approved only after Abhi has checked its charts: galleries are sent as ZIPs for review. (Owner decision)
+58. No A / B label: the card and every output show the evidence list + its count (information only, no threshold, never blocks).
+    Confluence = a Daily area overlapping the traded area, or an object of a different kind (a line, a liquidity pool) at the same
+    place; a Weekly overlap never counts (Weekly bands are wide — Weekly stays context). Replaces DECISIONS 54 / 55 labels. (Owner rule)
+59. L5-c line-retest move start (the last swing built away from the line on the side price comes from, formed after the break and
+    before the revisit) is accepted provisionally; final after Abhi checks the charts (L5-E17). (Owner decision)
