@@ -1071,3 +1071,7 @@ R5 Other open items (general):
 - The entry found to sit on a different, still-alive area is accepted; include its chart in the proof set.
 
 Then: merge into the integration branch → PR → CI → C (RSI), then D + E. No deploy before my ✅.
+
+---
+## 24 Oct — answer key attached
+answer_key_batch1_v3.json (8 lifecycle items L01–L08, rule "BREAK-2") — stored privately at trade-data review/answer_key/answer_key_batch1_v3.json
