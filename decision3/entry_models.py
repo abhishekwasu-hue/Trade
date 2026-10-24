@@ -90,6 +90,15 @@ class Reader:
         self.side_fn = side_fn
 
     # ------------------------------------------------------------------------------------------ small facts
+    def uid_of(self, lvl):
+        """Abhi A5 / DECISIONS 62: the place's stable id (`Level.uid`) for an armed area / range edge — its visit id and the once-per-
+        model-per-visit key use it, so a moved data window (a new `Level.id`) never opens a new visit for the same place. A range edge
+        without a parent level ⇒ its own id."""
+        lid = lvl.get("parent_level", lvl.get("id"))
+        Ls = self.V.levels.L
+        L = Ls[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(Ls) else None
+        return str(getattr(L, "uid", None) or lvl.get("uid") or lid)
+
     def T(self, i):
         return None if i is None else str(pd.Timestamp(self.ts[int(i)]))
 
@@ -203,13 +212,28 @@ class Reader:
         """The price farther on the invalidation side (bear call: the higher; bull put: the lower)."""
         return max(float(a), float(b)) if d < 0 else min(float(a), float(b))
 
+    def turns15(self):
+        """A7 (Abhi, DECISIONS 63): the 15M turns the refined base reads — every turn the swing engine confirms on the setup timeframe
+        (its finest degree, D0: the 15M chart's own swing highs / lows), in confirmation order. The levels' structure list
+        (`Levels._known0`, D1) missed obvious 15M turns inside the band (L5-N03, N07, N04). A V without swing degrees (a test stub) ⇒
+        `Levels._known0`."""
+        key = ("turns15",)
+        if key not in self.memo:
+            piv = (getattr(self.V, "res", None) or {}).get("pivots") if isinstance(getattr(self.V, "res", None), dict) else None
+            deg = min((k for k, v in (piv or {}).items() if v), default=None)
+            src = piv[deg] if deg is not None else getattr(self.V.levels, "_known0", [])
+            self.memo[key] = sorted(src, key=lambda p: (int(p.confirm_bar), int(p.bar)))
+        return self.memo[key]
+
     def refined(self, u, lvl, d):
         """RC2 (Abhi 21 Oct, research default `entry_area_refine = setup_tf`, review after replay): the 1H / Daily area (levels'
-        TA4 band) is the CONTEXT — where. Inside it, the REFINED BASE on the setup timeframe (15M) by the same TA4 rule: the newest turn of
-        the finest structure (Levels._known0 — a swing high for a supply / bear call, a swing low for a demand / bull put), confirmed by
-        bar u, whose extreme lies inside the context band, from the area's own birth turn on (the newest such turn known when the area
-        was born; none ⇒ the area's birth bar); its band = that 15M swing candle's wick to body (levels._band_swing), kept inside the
-        context band. None ⇒ no refined base yet (the models wait). Comparison only, bars ≤ u."""
+        TA4 band) is the CONTEXT — where. Inside it, the REFINED BASE on the setup timeframe (15M) by the same TA4 rule — Abhi A7
+        (DECISIONS 63): the NEWEST 15M turn of the area's side inside the band, as its wick to body. A turn = a 15M swing (`turns15`: a
+        swing high for a supply / bear call, a swing low for a demand / bull put) confirmed by bar u, from the area's own birth turn on
+        (the newest such turn known when the area was born; none ⇒ the area's birth bar); it is inside the band when its swing candle's
+        wick to body (levels._band_swing: no wick ⇒ the body) trades into the band — a turn whose extreme pokes just beyond the band
+        (a sweep) is still the turn at the area. Its band is that wick to body, kept inside the context band (never beyond the
+        area, Z-1u). None ⇒ no refined base yet (the models wait). Comparison only, bars ≤ u."""
         lid = lvl.get("parent_level", lvl.get("id"))
         key = ("rb", str(lid), float(lvl["lo"]), float(lvl["hi"]), int(u), int(d))
         if key in self.memo:
@@ -219,21 +243,34 @@ class Reader:
         kind = "H" if d < 0 else "L"
         L = self.V.levels.L[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(self.V.levels.L) else None
         born = int(getattr(L, "born_bar", 0) or 0) if L is not None else int(lvl.get("born_bar") or 0)   # a range edge: its own birth
-        sw = [p for p in getattr(self.V.levels, "_known0", []) if p.kind == kind and p.confirm_bar <= u and lo <= float(p.price) <= hi]
-        birth = [p for p in sw if p.confirm_bar <= born]
+        A = self.A
+
+        def band(p):
+            b = int(p.bar)
+            return LVM._band_swing(kind, A["open"][b], A["high"][b], A["low"][b], A["close"][b], float(p.price), 0)
+
+        sw = []
+        for p in self.turns15():
+            if int(p.confirm_bar) > u:
+                break
+            if p.kind != kind:
+                continue
+            blo, bhi = band(p)
+            if blo <= hi and bhi >= lo:                                    # its wick to body trades into the band
+                sw.append((p, blo, bhi))
+        birth = [p for p, _, _ in sw if p.confirm_bar <= born]
         floor = max(int(p.bar) for p in birth) if birth else born
-        cands = [p for p in sw if int(p.bar) >= floor]
+        cands = [x for x in sw if int(x[0].bar) >= floor]
         out = None
         if cands:
-            p = max(cands, key=lambda q: (int(q.bar), int(q.confirm_bar)))
+            p, blo, bhi = max(cands, key=lambda x: (int(x[0].bar), int(x[0].confirm_bar)))
             b = int(p.bar)
-            A = self.A
-            blo, bhi = LVM._band_swing(kind, A["open"][b], A["high"][b], A["low"][b], A["close"][b], float(p.price), 0)
             blo, bhi = max(blo, lo), min(bhi, hi)
             if blo <= bhi:
                 out = {"lo": round(blo, 2), "hi": round(bhi, 2), "bar": b, "ts": self.T(b), "price": round(float(p.price), 2),
-                       "kind": kind, "tf": "15M", "context_id": lid,
-                       "what": f"15M {'swing high' if kind == 'H' else 'swing low'} {self.T(b)[:16]} inside {lvl.get('tf')} area {lid}"}
+                       "kind": kind, "tf": "15M", "context_id": lid, "context_uid": self.uid_of(lvl) if L is not None else None,
+                       "what": f"15M {'swing high' if kind == 'H' else 'swing low'} {self.T(b)[:16]} inside {lvl.get('tf')} area "
+                               f"{self.uid_of(lvl)}"}
         self.memo[key] = out
         return out
 
@@ -419,8 +456,9 @@ class Reader:
         start = int(vi["start"])
         lid = lvl.get("parent_level", lvl.get("id"))
         L = V.levels.L[lid] if isinstance(lid, (int, np.integer)) and 0 <= int(lid) < len(V.levels.L) else None
-        base = {"object": "area", "area_id": lid, "tf": lvl.get("tf"), "role": lvl.get("role"), "lo": lvl["lo"], "hi": lvl["hi"],
-                "state": lvl.get("state"), "direction": int(d), "side": side_of(d), "visit_id": f"{lid}@{self.T(start)}",
+        uid = self.uid_of(lvl)
+        base = {"object": "area", "area_id": lid, "area_uid": uid, "tf": lvl.get("tf"), "role": lvl.get("role"), "lo": lvl["lo"],
+                "hi": lvl["hi"], "state": lvl.get("state"), "direction": int(d), "side": side_of(d), "visit_id": f"{uid}@{self.T(start)}",
                 "visit_start": self.T(start), "visit_start_bar": start, "labels": lvl.get("confluence_label")}
         models = {}
         if self.came_from_trade_side(start, lvl, d):
@@ -746,10 +784,11 @@ class Reader:
                 continue
             role = obj.get("role") if kind == "area" else ("support" if d < 0 else "resistance")
             w0 = self.side_since(t, role, d, start)
-            base = {"object": "broken_" + kind, "area_id": oid, "tf": obj.get("tf") if kind == "area" else "line",
+            uid = self.uid_of(obj) if kind == "area" else oid
+            base = {"object": "broken_" + kind, "area_id": oid, "area_uid": uid, "tf": obj.get("tf") if kind == "area" else "line",
                     "role": role, "lo": obj.get("lo") if kind == "area" else round(TL.line_value(obj, t), 2),
                     "hi": obj.get("hi") if kind == "area" else round(TL.line_value(obj, t), 2), "state": "BROKEN",
-                    "direction": int(d), "side": side_of(d), "visit_id": f"{oid}@{self.T(start)}", "visit_start": self.T(start),
+                    "direction": int(d), "side": side_of(d), "visit_id": f"{uid}@{self.T(start)}", "visit_start": self.T(start),
                     "visit_start_bar": int(start), "broken_at": self.T(obj.get("broken_at") if kind == "area" else obj.get("break_bar"))}
             if kind == "line":
                 base["line"] = {k: obj.get(k) for k in ("id", "family", "tf", "p1", "p2", "slope", "touches", "break_bar", "parallel_of",
@@ -912,6 +951,7 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             ok6, why6, cm = cm6
             ev = R.evidence(t, d, lvl, int(vi["start"]), cm=cm, read_ok=ok6, move_from=cm.get("move_from_bar"))
             area = {k: lvl.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
+            area["uid"] = a.get("area_uid")
             if lvl.get("range_edge"):                                      # DECISIONS 40: a range edge (card / audit wording)
                 area["range_edge"] = lvl["range_edge"]
             arm0, mf0 = int(vi["start"]), cm.get("move_from_bar")
@@ -921,6 +961,7 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
             cm6 = V._confirm(t, d, lvl2, {})
             ev = R.evidence(t, d, lvl2, f["start"], cm=cm6[2], read_ok=cm6[0], move_from=cm6[2].get("move_from_bar"))
             area = {k: x.get(k) for k in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
+            area["uid"] = a.get("area_uid")
             lvl = lvl2
             arm0, mf0 = int(f["start"]), cm6[2].get("move_from_bar")
         else:
@@ -951,6 +992,11 @@ def read(V, t, trend, act, side_fn=None, keep=None, extra=None, prefix="", broke
     return {"entries": out, "armed": armed, "first_area": first_area, "reader": R}
 
 
+def _uid_key(a):
+    """A5: an armed object's stable place id (its `area_uid`; a line / range edge ⇒ its own id) — for ordering and cluster ids."""
+    return str(a.get("area_uid") or a.get("area_id"))
+
+
 def clusters(armed, entries, cands=(), obj="area", prefix="C"):
     """Lead's provisional rule (Abhi may override; `entry_cluster_rule = cluster`): areas of the same role on the same side whose bands
     overlap, visited together (all armed at this bar), are ONE place — at most one signal per model per overlapping cluster per visit.
@@ -978,7 +1024,8 @@ def clusters(armed, entries, cands=(), obj="area", prefix="C"):
         if (str(lid), int(d)) in seen:
             continue
         seen.add((str(lid), int(d)))
-        pool.append({"object": "area", "area_id": lid, "tf": lvl.get("tf"), "role": lvl.get("role"), "lo": lvl["lo"], "hi": lvl["hi"],
+        pool.append({"object": "area", "area_id": lid, "area_uid": lvl.get("uid"), "tf": lvl.get("tf"), "role": lvl.get("role"),
+                     "lo": lvl["lo"], "hi": lvl["hi"],
                      "state": lvl.get("state"), "direction": int(d), "visit_start_bar": None, "visit_id": None, "_unvisited": True})
     groups = []
     for a in sorted(pool, key=lambda x: (str(x.get("role")), int(x["direction"]), float(x["lo"]))):
@@ -994,10 +1041,10 @@ def clusters(armed, entries, cands=(), obj="area", prefix="C"):
         vis = [x for x in mem if not x.get("_unvisited")]
         if not vis:
             continue
-        anchor = min(vis, key=lambda x: (int(x["visit_start_bar"]), str(x["area_id"])))
-        info = {"id": f"{prefix}{anchor['area_id']}", "anchor": anchor["area_id"], "visit_id": anchor["visit_id"],
-                "visit_start": anchor["visit_start"], "n": len(mem),
-                "members": [{**{k: x.get(k) for k in ("area_id", "tf", "role", "lo", "hi", "state", "visit_id")},
+        anchor = min(vis, key=lambda x: (int(x["visit_start_bar"]), _uid_key(x)))   # A5: ties by the stable place id (never a list index)
+        info = {"id": f"{prefix}{_uid_key(anchor)}", "anchor": anchor["area_id"], "anchor_uid": anchor.get("area_uid"),
+                "visit_id": anchor["visit_id"], "visit_start": anchor["visit_start"], "n": len(mem),
+                "members": [{**{k: x.get(k) for k in ("area_id", "area_uid", "tf", "role", "lo", "hi", "state", "visit_id")},
                              "visited": not x.get("_unvisited")} for x in mem],
                 "use": "count only: one signal per model per place (edges, trigger and invalidation = the visited area, Z-1u)"}
         for x in vis:
@@ -1006,7 +1053,7 @@ def clusters(armed, entries, cands=(), obj="area", prefix="C"):
     keep, chosen = {}, {}
     order = sorted(range(len(entries)), key=lambda i: (0 if of.get(id(entries[i][3])) and entries[i][3] is of[id(entries[i][3])][2]
                                                        else 1, int(entries[i][3].get("visit_start_bar") or 0),
-                                                       str(entries[i][3].get("area_id"))))
+                                                       _uid_key(entries[i][3])))
     for i in order:
         f, lvl, d, a = entries[i]
         g = of.get(id(a))

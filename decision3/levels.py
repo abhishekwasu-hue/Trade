@@ -76,6 +76,10 @@ class Level:
                                                     # Daily / Weekly / prior band. Read only by decision3/model_c.py (never in snapshot)
     inside_bases: list = field(default_factory=list)  # additive (model C): [(known bar, base bar, role)] of births that fell INSIDE this
                                                       # band (lineage only) — read only by model_c._ha_area (never in snapshot)
+    uid: str = None                                 # Abhi A5 / DECISIONS 62: the place's stable identity — "<tf>:<H|L>:<base candle
+                                                    # start>" (the band's own timeframe, the side of the base, the candle it was built
+                                                    # from). `id` = this build's list index (lookups only; it shifts when the data window
+                                                    # moves); `uid` is the same in every build that holds the place (`place_uid`)
 
     def provisional(self, t):
         """PF-2: the band's min width at t is the provisional one (born / merged while σ_1H was missing, σ_1H not known yet)."""
@@ -126,6 +130,14 @@ class Level:
 
     def alive(self, t):
         return self.born_bar <= t and (self.dead_bar is None or self.dead_bar > t)
+
+
+def place_uid(tf, kind, base_ts):
+    """Abhi A5 / DECISIONS 62 (one place = one id for its life): the place's identity from what built it — the band's own timeframe
+    (1H / D / W), the side of its base (H = a swing high / supply base, L = a swing low / demand base) and the start of the base candle
+    (1H: its hour; Daily / Weekly: its day). It never depends on the data window (unlike `Level.id`, a list index of one build)."""
+    t = pd.Timestamp(base_ts)
+    return f"{tf}:{kind}:{t.strftime('%Y-%m-%d %H:%M') if tf == '1H' else t.strftime('%Y-%m-%d')}"
 
 
 def h1_frame(m15):
@@ -223,7 +235,7 @@ class Levels:
             sg = float(np.median(hl["h"].max() - hl["l"].min()))        # तात्पुरता: bars ≤ t चे 1H ranges चा median (lookahead नाही)
         return float(self.s["level_min_width_sigma"]) * (sg if np.isfinite(sg) else 0.0)
 
-    def _born(self, t, role, lo, hi, birth, anchor, base_bar=None):
+    def _born(self, t, role, lo, hi, birth, anchor, base_bar=None, key=None):
         """Abhi Z-1u: a birth always BUILDS its own band (its own candles, its own timeframe) — never merged into another band, never
         widening one. A birth lying wholly inside an alive same-timeframe, same-role band is that zone (lineage only, band unchanged); one
         that overlaps it partly is its own level with the overlap recorded as lineage ("born from" evidence); other timeframes are related
@@ -250,7 +262,7 @@ class Levels:
                         o.inside_bases.append((int(t), int(base_bar), role))
                     return o
         L = Level(len(self.L), role, float(lo), float(hi), int(t), [birth], anchor, tf=tf,
-                  base_bar=None if base_bar is None else int(base_bar))
+                  base_bar=None if base_bar is None else int(base_bar), uid=self._uid(tf, key, t))
         for o in self.L:
             if o.tf == tf and o.alive(t):
                 olo, ohi = o.band_at(t)
@@ -259,6 +271,23 @@ class Levels:
         L.bands.append((t, L.lo, L.hi))
         self.L.append(L)
         return L
+
+    def _uid(self, tf, key, t):
+        """A5: the new level's stable id (`place_uid`); key = (H | L, base candle start). The same base candle reborn as a new life
+        (its earlier level dead, or of the other role) ⇒ "<uid>~<birth bar start>" (deterministic, window-free); no key ⇒ the birth
+        bar (a fallback, never expected)."""
+        u = place_uid(tf, key[0], key[1]) if key else f"{tf}:?:{self.ts.iloc[int(t)].strftime('%Y-%m-%d %H:%M')}"
+        if any(o.uid == u for o in self.L):
+            u = f"{u}~{self.ts.iloc[int(t)].strftime('%Y-%m-%d %H:%M')}"
+        return u
+
+    def by_uid(self, uid):
+        """The level of this build holding the place `uid` (A5), or None."""
+        return next((L for L in self.L if L.uid == str(uid)), None)
+
+    def _h1_ts(self, bar):
+        """The start of the 1H candle holding 15M bar `bar` (09:15-anchored, as h1_frame)."""
+        return pd.Timestamp(self.h1["timestamp"].iloc[int(self.h1_of[int(bar)])])
 
     def _prior_levels(self):
         """Q40 (Abhi): 15M window आधीचे महत्त्वाचे Daily levels — फक्त trend-degree swings (degree-aware Dow चे impulse origin / टोक =
@@ -323,7 +352,7 @@ class Levels:
             r = src.iloc[p.bar]
             lo, hi = _band_swing(p.kind, r["open"], r["high"], r["low"], r["close"], p.price, self._w(0))
             role = RES if lo > px0 else (SUP if hi < px0 else (RES if p.kind == "H" else SUP))
-            out.append((role, lo, hi, birth, p.price))
+            out.append((role, lo, hi, birth, p.price, None, (p.kind, r["timestamp"])))
             self.prior.append({"src": birth, "kind": p.kind, "price": float(p.price), "role": role})
         return out
 
@@ -334,7 +363,8 @@ class Levels:
         for p in self.piv:
             o, hh, ll, cc = self._h1_upto(h1_of[p.bar], p.confirm_bar)
             lo, hi = _band_swing(p.kind, o, hh, ll, cc, p.price, self._w(p.confirm_bar))
-            out.setdefault(p.confirm_bar, []).append((RES if p.kind == "H" else SUP, lo, hi, "a:D2", p.price, int(p.bar)))
+            out.setdefault(p.confirm_bar, []).append((RES if p.kind == "H" else SUP, lo, hi, "a:D2", p.price, int(p.bar),
+                                                      (p.kind, self._h1_ts(p.bar))))
         # Daily swings (known_at = त्या दिवसाचा close ⇒ त्या दिवसाचा शेवटचा 15M bar)
         if self.daily_states and self.daily_df is not None:
             seen = set()
@@ -356,7 +386,8 @@ class Levels:
                     t = int(js[0])
                     lo, hi = _band_swing(p.kind, dd["open"].iloc[p.bar], dd["high"].iloc[p.bar], dd["low"].iloc[p.bar], dd["close"].iloc[p.bar],
                                          p.price, self._w(t))
-                    out.setdefault(t, []).append((RES if p.kind == "H" else SUP, lo, hi, "a:D", p.price))
+                    out.setdefault(t, []).append((RES if p.kind == "H" else SUP, lo, hi, "a:D", p.price, None,
+                                                  (p.kind, dd["timestamp"].iloc[p.bar])))
         for item in self._prior_levels():
             out.setdefault(0, []).append(item)
         # (d) liquidity: equal highs / lows (D2) — Abhi's method §3 "equal": the later extreme reaches the earlier swing's own band
@@ -389,7 +420,8 @@ class Levels:
                 w = self._w(t)
                 if hi - lo < w:
                     lo, hi = (hi - w, hi) if kind == "H" else (lo, lo + w)
-                out.setdefault(t, []).append((RES if kind == "H" else SUP, lo, hi, "d", (a.price + b.price) / 2, int(a.bar)))
+                out.setdefault(t, []).append((RES if kind == "H" else SUP, lo, hi, "d", (a.price + b.price) / 2, int(a.bar),
+                                              (kind, self._h1_ts(a.bar))))
         return out
 
     def _bos(self, t, known):
@@ -529,9 +561,10 @@ class Levels:
                             hi = lo + w
                         else:
                             lo = hi - w
-                    births.setdefault(t, []).append((SUP if d > 0 else RES, lo, hi, "b", origin.price, int(jx[0]) if len(jx) else None))
+                    births.setdefault(t, []).append((SUP if d > 0 else RES, lo, hi, "b", origin.price, int(jx[0]) if len(jx) else None,
+                                                     ("L" if d > 0 else "H", pd.Timestamp(self.h1["timestamp"].iloc[int(_j)]))))
             for role, lo, hi, why, anchor, *bb in births.get(t, []):
-                L = self._born(t, role, lo, hi, why, anchor, bb[0] if bb else None)
+                L = self._born(t, role, lo, hi, why, anchor, bb[0] if bb else None, bb[1] if len(bb) > 1 else None)
                 if not np.isfinite(self.sig1h[t]) and float(self.s["level_min_width_sigma"]) > 0:   # PF-2 only with the legacy min width
                     prov.add(L.id)
                     if not (L.prov and L.prov[-1][1] is None):
@@ -729,7 +762,7 @@ class Levels:
             births = [L.births[0]] + [b for tm, b in L.merged_from if tm <= t and b != L.births[0]]   # (merged_from: legacy only)
             births = [b for b in dict.fromkeys(births) if b != "c"] + (["c"] if L.count("flip", t) else [])   # "c" once flipped by t
             ov = [(o, olo, ohi) for o, olo, ohi in alive if o.id != L.id and not (hi < olo or lo > ohi)]
-            conf = [{"tf": o.tf, "id": o.id, "lo": round(olo, 2), "hi": round(ohi, 2)} for o, olo, ohi in ov
+            conf = [{"tf": o.tf, "id": o.id, "uid": o.uid, "lo": round(olo, 2), "hi": round(ohi, 2)} for o, olo, ohi in ov
                     if L.tf == "1H" and o.tf in ("D", "W")]
             inside_1h = [o.id for o, _, _ in ov if L.tf != "1H" and o.tf == "1H" and st[o.id] not in (FL.BROKEN, FL.DEAD)]
             w = hi - lo
@@ -741,7 +774,7 @@ class Levels:
                 loc, why = False, f"{TF_WORD[L.tf]} band overlapped by 1H zone(s) {inside_1h}: the 1H band is the location (Abhi Z-1u)"
             elif mx is not None and wsg is not None and wsg > float(mx):   # Abhi Z-1x: no trade, flagged "check" — never re-cut / widened
                 loc, why, wide = False, f"too wide {w:,.0f} pts = {wsg}σ_1H > {float(mx):g}σ (trade_band_max_sigma) — check, no trade", True
-            out.append({"id": L.id, "tf": L.tf, "role": L.role_at(t), "lo": round(lo, 2), "hi": round(hi, 2), "births": births,
+            out.append({"id": L.id, "uid": L.uid, "tf": L.tf, "role": L.role_at(t), "lo": round(lo, 2), "hi": round(hi, 2), "births": births,
                         "anchor": L.anchor, "tests": L.count("test", t), "sweeps": L.count("sweep", t), "flips": L.count("flip", t),
                         "fresh": L.count("test", t) == 0, "score": self.score(L, t, births, conf), "dist": round(dist, 2),
                         "dist_sigma": round(dist / sg, 2) if np.isfinite(sg) and sg > 0 else None,

@@ -94,14 +94,14 @@ def collect(rows, consumed=None, day=None):
                 v = visits[key] = {"kind": "visit", "visit_id": key, "first_ts": str(bts), "n_rows": 0, "direction": int(a.get("direction") or 0)}
             v.update(bar_ts=str(bts), armed=a, n_rows=v["n_rows"] + 1)
     evid = {e["visit_id"] for e in entries}
-    members = [(str(m.get("area_id")), e["direction"], pd.Timestamp(e["bar_ts"])) for e in entries
+    members = [(str(m.get("area_uid") or m.get("area_id")), e["direction"], pd.Timestamp(e["bar_ts"])) for e in entries
                for m in ((e["entry"].get("cluster") or {}).get("members") or []) if isinstance(m, dict)]
     out = []
     for key, v in visits.items():
         a = v["armed"]
         if key in evid:
             continue
-        aid, d = str(a.get("area_id")), int(a.get("direction") or 0)
+        aid, d = str(a.get("area_uid") or a.get("area_id")), int(a.get("direction") or 0)
         if any(aid == m and d == dd and pd.Timestamp(v["first_ts"]) <= t <= pd.Timestamp(v["bar_ts"]) for m, dd, t in members):
             continue
         out.append(v)
@@ -365,7 +365,7 @@ def geometry(V, c):
     aid = a.get("id", a.get("area_id"))
     obj = str((e or {}).get("object") or a.get("object") or "area")
     g = {"dec": dec, "k": k, "d": d, "obj": obj, "lo": _f(a.get("lo")), "hi": _f(a.get("hi")), "tf": a.get("tf"), "role": a.get("role"),
-         "state": a.get("state"), "aid": aid, "events": [], "line": None, "rb": None, "inv": None, "next": None, "approach": None}
+         "state": a.get("state"), "aid": aid, "uid": a.get("uid") or a.get("area_uid"), "events": [], "line": None, "rb": None, "inv": None, "next": None, "approach": None}
     T = lambda b: ts[int(b)] if 0 <= int(b) < len(ts) else None             # noqa: E731
     if str(aid).startswith("line:"):
         g["kind"] = "line"
@@ -391,10 +391,14 @@ def geometry(V, c):
     else:
         g["kind"] = "area"
         L = None
-        try:
-            L = V.levels.L[int(aid)]
-        except (TypeError, ValueError, IndexError):
-            L = None
+        uid = a.get("uid") or a.get("area_uid")                            # A5: the place's stable id first (the list index of
+        if uid and hasattr(V.levels, "by_uid"):                            # another build may name a different level)
+            L = V.levels.by_uid(uid)
+        if L is None and not uid:
+            try:
+                L = V.levels.L[int(aid)]
+            except (TypeError, ValueError, IndexError):
+                L = None
         if L is not None:
             if L.born_bar <= k:
                 g["events"].append((T(L.born_bar), "born", f"born ({L.tf} {L.role0})"))
@@ -458,9 +462,11 @@ def refined_for_visit(V, c, g):
         F = V.trigger_frame()
         j = int(np.searchsorted(np.asarray(F.end, "datetime64[ns]"), np.datetime64(g["dec"]), side="right")) - 1
         R = EM5.Reader5(V, j)
-        lvl = {"id": g["aid"], "lo": g["lo"], "hi": g["hi"], "tf": g["tf"], "role": g["role"]}
+        Lu = V.levels.by_uid(g["uid"]) if g.get("uid") and hasattr(V.levels, "by_uid") else None   # A5: this build's level of the place
+        aid = Lu.id if Lu is not None else g["aid"]
+        lvl = {"id": aid, "lo": g["lo"], "hi": g["hi"], "tf": g["tf"], "role": g["role"]}
         try:
-            lvl.update({kk: v for kk, v in next(x for x in V.levels.snapshot(g["k"]) if x["id"] == int(g["aid"])).items()
+            lvl.update({kk: v for kk, v in next(x for x in V.levels.snapshot(g["k"]) if x["id"] == int(aid)).items()
                         if kk not in ("lo", "hi")})
         except (StopIteration, TypeError, ValueError):
             pass

@@ -99,12 +99,15 @@ def _rows15(name, extra):
 # every entry, identical (diffed key by key against 806b74a).
 # Re-pinned for DECISIONS 56 (L5-b): the only change on these fixtures = one abc row's RSI summary now lists the push still forming
 # (`zone_read.summary.rsi_divergence.forming_push`, D0 / D1 at 2030-02-15 10:15); every other key identical (diffed key by key).
-PIN15 = {"abc": "dbf3a03a8bc9f7df915bdd9fcee5fb4401ee2d44379a156cc83d16a9dae5bd35",
-         "oct12_bear": "b958c1981998c89a5cc706c5544e45be41eb2e9ac02265b572a80e82f69a002b",
-         "oct12_bull": "cccbc4d26c792f72dcfc755c643d81dd008d41cd0fa567e535af1f1927a50602"}
-PIN15_C = {"abc": "3905ff9e46015ce67f6a6b7adc3d5889177698240a4fbc3953741390218e9fea",
-           "oct12_bear": "20d14e2757185d322c0013f76147183f2b1e30cf493d1250925cc0f7f856ecd7",
-           "oct12_bull": "c596545e7de3a9b357808ee2ae7d111aa1a92e155f2541084a73c94e5c6d8823"}
+# Re-pinned for the gallery review A5 / A7 fix (branch `identity`, DECISIONS 62 / 63): every row now carries the place's stable id
+# (`uid`, visit ids `<uid>@<start>`) and the refined base reads every 15M turn (D0) whose wick to body trades into the band. The 15M
+# path is still independent of `trigger_tf` (the three settings below give one digest).
+PIN15 = {"abc": "5cd0314f4d72f0c2338c28aa73e9acfd12855c7b62cfc9ef99aa1a8f525e9737",
+         "oct12_bear": "7cb8e2648fe482cb4dabf21cc9ae3d18a603c44fb20618c24b193d9cdda28905",
+         "oct12_bull": "99a02a9fb3fef2b2192c44b2f490ca813eb8ea6a27e2d37165cca974ebb26bfd"}
+PIN15_C = {"abc": "ca9ac81744a345c5cd621ab354b3f4eb0a0e2faf569b03c19b053bbb76ba8d18",
+           "oct12_bear": "949a617fe665ca232343cb5661c7f2e22d35bd43fe1d50f557ab13a6bd5f08c4",
+           "oct12_bull": "6a50b092f2e28dc6e1d4be79f03107603c1cf04e952f1698a4c0ca3c1e570d76"}
 
 
 @pytest.mark.parametrize("name", sorted(PIN15))
