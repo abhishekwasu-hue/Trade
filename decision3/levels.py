@@ -789,13 +789,21 @@ class Levels:
                     cb = -1 if ka < ts15[0] else int(np.searchsorted(be, ka, side="left"))
                     if cb >= self.n:
                         continue
+                    xb = -1                                                # the 15M bar of its extreme (−1: not inside the window)
+                    if b15 >= 0:
+                        nx = int(p.bar) + 1
+                        e15 = self.n if nx >= len(dd) else int(np.searchsorted(day15, np.datetime64(pd.Timestamp(
+                            dd["timestamp"].iloc[nx]).normalize()), side="left"))
+                        if e15 > b15:
+                            seg = self.A["high"][b15:e15] if p.kind == "H" else -self.A["low"][b15:e15]
+                            xb = b15 + int(np.argmax(seg))
                     out.append(NS(kind=p.kind, price=float(p.price), bar=b15, confirm_bar=cb, close=float(dd["close"].iloc[int(p.bar)]),
-                                  clo=float(dd["low"].iloc[int(p.bar)]), chi=float(dd["high"].iloc[int(p.bar)]), h1=None))
+                                  clo=float(dd["low"].iloc[int(p.bar)]), chi=float(dd["high"].iloc[int(p.bar)]), h1=None, xbar=xb))
         else:
             deg = getattr(self, "_fin_deg", None)
             src = self.res["pivots"].get(deg) if deg is not None else None
             out = [NS(kind=p.kind, price=float(p.price), bar=int(p.bar), confirm_bar=int(p.confirm_bar), close=float(C[int(p.bar)]),
-                      clo=None, chi=None, h1=int(self.h1_of[int(p.bar)]))
+                      clo=None, chi=None, h1=int(self.h1_of[int(p.bar)]), xbar=int(p.bar))
                    for p in (src if src else self._pv_sorted)]
         memo[tf] = out = sorted(out, key=lambda p: (p.confirm_bar, p.bar))
         return out
@@ -808,7 +816,7 @@ class Levels:
         lo, hi = L.band_at(t)
         kind = "H" if up else "L"
         bey = [p for p in self._own_swings(L.tf) if p.confirm_bar <= t and p.kind == kind and ((p.price > hi) if up else (p.price < lo))
-               and not self._internal(p, lo, hi, t)]
+               and not self._internal(p, L, lo, hi, t)]
 
         def pick(xs):                                                      # the most recent (its bar; ties: the later known)
             return max(xs, key=lambda p: (p.bar, p.confirm_bar))
@@ -826,19 +834,41 @@ class Levels:
         c4 = self._h1_upto(p.h1, min(int(p.confirm_bar), int(t)))         # the same 1H candle the zone bands are cut from
         return (None, None) if c4 is None else (float(c4[2]), float(c4[1]))
 
-    def _internal(self, p, lo, hi, t):
-        """DECISIONS 86 (S1, owner rule): a swing whose own-TF candle traded inside the object's band [lo, hi] — made while price was
-        testing the object, its false-break extremes included — is INTERNAL: never the object's next swing (a break / broken-back reads
-        only EXTERNAL swings). Comparison only; bars ≤ t."""
+    def _internal(self, p, L, lo, hi, t):
+        """DECISIONS 94 (S1 precise, owner rule): a swing beyond the object's band [lo, hi] is INTERNAL — never the object's next swing
+        (a break / broken-back reads only EXTERNAL swings) — when its extreme was made
+          (1) during a visit inside the object: its own-TF candle traded inside the band (DECISIONS 86 — price was at the object's
+              place, the object's own base wick included), or
+          (2) during an excursion beyond it that ended with a reading-TF close back inside (a false-break extreme): the excursion goes
+              through the role side at the extreme (a resistance ⇒ a high above, a support ⇒ a low below), and the first 15M close not
+              beyond at / after the extreme bar came by t and at / after the object's base candle (`_obj_start`; an excursion that
+              ended before the object existed is not a test of it). An auction-extended close never counts (DECISIONS 87).
+        An excursion still running at t is external. Comparison only; bars ≤ t."""
         clo, chi = self._candle_range(p, t)
-        return clo is not None and chi is not None and clo <= hi and chi >= lo
+        if clo is not None and chi is not None and clo <= hi and chi >= lo:
+            return True                                                    # (1) a visit inside the object
+        b = int(getattr(p, "xbar", -1))
+        if b < 0 or b > t or L.role_at(b) != (RES if p.kind == "H" else SUP):
+            return False                                                   # (extreme before the 15M window: the excursion cannot be seen)
+        C = self.A["close"][:int(t) + 1]
+        back = ((C <= hi) if p.kind == "H" else (C >= lo)) & ~self.ax[:int(t) + 1]   # a close not beyond
+        after = np.flatnonzero(back[b:])
+        return bool(len(after)) and b + int(after[0]) >= self._obj_start(L)   # (2) closed back at the object; still running ⇒ external
+
+    def _obj_start(self, L):
+        """The object's first 15M bar for DECISIONS 94: the start of its base candle (`base_ts`; its own wick beyond the band is made at
+        the object), else `base_bar`, else the bar it became known; −1 = before the window."""
+        if L.base_ts is not None:
+            return int(np.searchsorted(self.ts.to_numpy(), np.datetime64(pd.Timestamp(L.base_ts)), side="left")) - (
+                1 if pd.Timestamp(L.base_ts) < self.ts.iloc[0] else 0)
+        return int(L.base_bar) if L.base_bar is not None else int(L.born_bar)
 
     def internal_swings(self, L, t):
-        """DECISIONS 86 / 89: the own-TF swings beyond L's band (known by t) whose candle traded inside it — the extremes made while
-        price tested L (its false-break extremes). [(kind, price, bar, confirm_bar)]; display them as `false_break_extremes`."""
+        """DECISIONS 86 / 89 / 94: the own-TF swings beyond L's band (known by t) that are INTERNAL (`_internal`) — the extremes made
+        while price tested L (its false-break extremes). [(kind, price, bar, confirm_bar)]; display them as `false_break_extremes`."""
         lo, hi = L.band_at(t)
         return [(p.kind, p.price, p.bar, p.confirm_bar) for p in self._own_swings(L.tf) if p.confirm_bar <= t
-                and ((p.kind == "H" and p.price > hi) or (p.kind == "L" and p.price < lo)) and self._internal(p, lo, hi, t)]
+                and ((p.kind == "H" and p.price > hi) or (p.kind == "L" and p.price < lo)) and self._internal(p, L, lo, hi, t)]
 
     def false_break_extremes(self, L, t, since=None):
         """DECISIONS 89 (owner rule, display): every extreme made while price tests L through its role side (an INTERNAL swing,

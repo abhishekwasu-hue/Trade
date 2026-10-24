@@ -41,13 +41,14 @@ def _rows(name, trigger_tf):
     return [V.decide5(j) for j in range(F.n) if str(F.end[j])[:10] == str(last)[:10]]
 
 
-# pins the default reading as of PR #385; change only with a before/after chart
-PIN_DEFAULT = {("abc", "15M"): "bee6106f8ae0cff75c0b22e822cecdee9369a03e47395aa1089cccd9f5b2474d",
-               ("abc", "5M"): "bee6106f8ae0cff75c0b22e822cecdee9369a03e47395aa1089cccd9f5b2474d",
-               ("oct12_bear", "15M"): "842dfe9ac4af0da85c32667b0bcfdc2903be98c4b93e8f00f667f16472834920",
-               ("oct12_bear", "5M"): "a1d15a44183d1d9291b3d2b5fba9cf89dd5ef780d9e69a68ed42dc527f5d90e0",
-               ("oct12_bull", "15M"): "c25437a23efdf6afdd5eb77bac22c5c0e74b528ab3ef59ad10d54aab4664667e",
-               ("oct12_bull", "5M"): "d035c754c8760736c3d246797684ce07185543ee4d51da445d5e2e46a177dc12"}
+# pins the default reading as of PR #385 + DECISIONS 94 (S1 precise: no entry change; synthetic Daily supports break one step later —
+# chart review/gallery_fixes/S1_precise/P3); change only with a before/after chart
+PIN_DEFAULT = {("abc", "15M"): "abc5f8d8d4013d8b7ce336319a8d875166bbae2106c793df6b49c2dd44f52100",
+               ("abc", "5M"): "abc5f8d8d4013d8b7ce336319a8d875166bbae2106c793df6b49c2dd44f52100",
+               ("oct12_bear", "15M"): "48ad8d98db68bbcd72a8dc8acc1a2abafa9225041f96d5b5a1123a61ae6305b9",
+               ("oct12_bear", "5M"): "3aabc0f50fd042185bfa18bb280e847867e2ca3730ae6ecac85d91854f27ea32",
+               ("oct12_bull", "15M"): "365b7662864f7e3d3b714bc79ba07cb51187b3369c4d97338ba81cba4ebfb3c8",
+               ("oct12_bull", "5M"): "4c364ae267474fbc76f3f69db3d97857a244962e0704596aed5376f4a505dae3"}
 
 
 def test_the_pinned_settings_are_the_defaults():

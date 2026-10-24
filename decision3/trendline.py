@@ -388,19 +388,29 @@ def follow_through_break(C, known, line, side, start, end, HL=None):
     false break (the excursion ends); a wick through the swing that closes back = a sweep of that swing. Bars start … end only; swings
     confirmed by the judged bar only. Returns (excursion start, known bar, open excursion start): the first two = the break (None if
     none), the last = the start of the excursion still beyond at `end` without follow-through (BEYOND_NOT_BROKEN) or None.
-    DECISIONS 86 (S1): HL = (highs, lows) of the line's chart ⇒ a swing whose own candle traded through the line (its low ≤ the line ≤
-    its high at the swing's bar — made while price was testing the line, its false-break extremes included) is INTERNAL and never the
-    next swing; only EXTERNAL swings count."""
+    DECISIONS 94 (S1 precise): HL = (highs, lows[, auction flags]) of the line's chart ⇒ a swing beyond the line is INTERNAL (never the
+    next swing) when (1) its own candle traded through the line (DECISIONS 86: a visit — its low ≤ the line ≤ its high at its bar), or
+    (2) its extreme was made during an excursion beyond the line that ended with a close back on the line's side within the line's
+    test window (from `start` on; a false-break extreme, internal from that close on). A swing of an excursion still running, or one
+    that ended before `start`, is EXTERNAL."""
     if end < start:
         return None, None, None
     kind = "H" if side > 0 else "L"
-    ps = [p for p in known if p.kind == kind and not (HL is not None and 0 <= int(p.bar) < len(HL[0])
-                                                      and float(HL[1][int(p.bar)]) <= float(line(int(p.bar))) <= float(HL[0][int(p.bar)]))]
+    ps = [p for p in known if p.kind == kind and not (HL is not None and 0 <= int(p.bar) < len(HL[0])   # (1) a visit: its candle
+                                                      and float(HL[1][int(p.bar)]) <= float(line(int(p.bar))) <= float(HL[0][int(p.bar)]))]   # traded through the line
     pb = np.array([int(p.bar) for p in ps], int)
     pp = np.array([float(p.price) for p in ps], float)
     pc = np.array([_cb(p) for p in ps], int)
     ex = None
     dp = HL[2] if HL is not None and len(HL) > 2 else None
+    pe = np.full(len(ps), np.iinfo(np.int64).max)                         # DECISIONS 94: the bar its excursion closed back (internal
+    if HL is not None:                                                     # from then on); max = external
+        for i, b in enumerate(pb):
+            for u in range(max(int(b), 0), int(end) + 1):                  # the first close not beyond at / after its extreme (an
+                if (dp is None or len(dp) <= u or not dp[u]) and (float(C[u]) - float(line(u))) * side <= 0:   # auction-extended one
+                    if u >= int(start):                                    # never counts), within the line's test window
+                        pe[i] = u
+                    break
     for u in range(int(start), int(end) + 1):
         if dp is not None and len(dp) > u and dp[u]:                       # DECISIONS 87: an auction-extended close never counts
             continue
@@ -412,7 +422,7 @@ def follow_through_break(C, known, line, side, start, end, HL=None):
             ex = u
         if not len(ps):
             continue
-        ok = (pc <= u) & ((pp - lu) * side > 0)
+        ok = (pc <= u) & ((pp - lu) * side > 0) & (pe > u)
         pre = ok & (pb < ex)
         pool = pre if pre.any() else (ok & (pb >= ex))
         if not pool.any():
