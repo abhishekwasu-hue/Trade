@@ -979,3 +979,13 @@ Each PR: self-review, tests (no look-ahead, both mirrors), before / after charts
 
 
 BREAK-1: (b) confirmed by me — broken = a close beyond AND price holds beyond (a swing forms on the far side and stays beyond); a push beyond that turns back inside without holding is a sweep and the object stays alive. Same rule for areas and lines, and for broken back ⇒ dead. Example that proves it: L5-X01 (11 Sep, Daily area 274) — price gapped below, made its low and came straight back inside: a sweep, so the E4 (b) bear call there must not exist. Record it in DECISIONS.
+
+---
+## 24 Oct — BREAK-1 confirmed
+From Abhi — change to TRADE_SESSION_GALLERY_REVIEW_FIXES.md, item A1 only: BREAK-1 = (b) is now CONFIRMED by me, no longer a provisional default. Record it in DECISIONS, close BREAK-1 in OPEN_QUESTIONS, and continue the file with no wait on this point. Everything else in the file is unchanged.
+
+---
+## 24 Oct — B report answer (B-2), resend B ZIP, F2 again
+From Abhi — B report received. Before any ✅ I review the charts myself: send the B before/after ZIP to me again (it did not reach me), and send the F2 question again in one short message.
+B-2 answer (provisional default, record in OPEN_QUESTIONS/DECISIONS when I confirm after the charts): a visit also ends when its object becomes BROKEN under BREAK-1 (b) — N07 (price held beyond for weeks with swings beyond) is a broken area, so its visit ends at the bar the break became known; prove it with the chart once A1 lands. Where the object is not broken and one directional leg away has no confirmed turn yet, the visit may stay open until the next confirmed swing, but no model entry and no RSI read may come from that open visit while price is away from the area (show D11 as the proof case).
+RSI ✓ going 5 → 0 is expected until C1 (push counting) is fixed — judge RSI only after the C PR. Keep A + B in one PR as planned; no merge before my ✅ on the charts.

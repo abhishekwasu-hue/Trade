@@ -183,3 +183,4 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
 68. Galleries prove changes: before / after must differ where claimed, include a positive case, captions match charts, no overlapping
     labels, distinct trades counted once. Layer 5 and the Fix proof gallery are NOT approved until rebuilt; no deploy before Abhi's ✅.
     (Owner decision)
+69. BREAK-1 = (b) is CONFIRMED by Abhi (not a provisional default): DECISIONS 60 is the owner rule for areas and lines. (Owner decision)

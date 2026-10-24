@@ -1484,3 +1484,12 @@ Provisional defaults (checked against DECISIONS 37 / 56 / 59 / 60 / 61 / 64, CLA
 - Far side: a swing beyond the far edge + the next turn not back inside ends the VISIT (held beyond); the area's broken / dead state
   stays the lifecycle's (BREAK-1). A sweep (the next turn back inside) keeps the visit.
 - `visit_end_rule = single_swing` (dashboard `engine3_visit_end_rule`) = the earlier reading byte-for-byte (what-if / revert).
+
+### BREAK-1 — CLOSED (Abhi confirmed, DECISIONS 60 / 69)
+BROKEN = a close beyond AND price holds beyond (a swing forms on the far side and stays beyond); a push beyond that turns back inside
+without holding = a SWEEP (object alive); broken back ⇒ DEAD by the same test; areas and lines alike. Proof case L5-X01 (Daily 274).
+
+### B-2 — Abhi's provisional default (confirm after the charts; then DECISIONS)
+A visit also ends when its object becomes BROKEN under BREAK-1 (b) — at the bar the break became known (N07, after A1 lands). An object
+not broken, with one directional leg away and no confirmed turn yet: the visit may stay open until the next confirmed swing, but no
+model entry and no RSI read comes from that open visit while price is away from the area (proof case D11). RSI judged only after C1.
