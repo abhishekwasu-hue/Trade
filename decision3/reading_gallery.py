@@ -94,14 +94,14 @@ def collect(rows, consumed=None, day=None):
                 v = visits[key] = {"kind": "visit", "visit_id": key, "first_ts": str(bts), "n_rows": 0, "direction": int(a.get("direction") or 0)}
             v.update(bar_ts=str(bts), armed=a, n_rows=v["n_rows"] + 1)
     evid = {e["visit_id"] for e in entries}
-    members = [(str(m.get("area_id")), e["direction"], pd.Timestamp(e["bar_ts"])) for e in entries
+    members = [(str(m.get("area_uid") or m.get("area_id")), e["direction"], pd.Timestamp(e["bar_ts"])) for e in entries
                for m in ((e["entry"].get("cluster") or {}).get("members") or []) if isinstance(m, dict)]
     out = []
     for key, v in visits.items():
         a = v["armed"]
         if key in evid:
             continue
-        aid, d = str(a.get("area_id")), int(a.get("direction") or 0)
+        aid, d = str(a.get("area_uid") or a.get("area_id")), int(a.get("direction") or 0)
         if any(aid == m and d == dd and pd.Timestamp(v["first_ts"]) <= t <= pd.Timestamp(v["bar_ts"]) for m, dd, t in members):
             continue
         out.append(v)
@@ -365,7 +365,7 @@ def geometry(V, c):
     aid = a.get("id", a.get("area_id"))
     obj = str((e or {}).get("object") or a.get("object") or "area")
     g = {"dec": dec, "k": k, "d": d, "obj": obj, "lo": _f(a.get("lo")), "hi": _f(a.get("hi")), "tf": a.get("tf"), "role": a.get("role"),
-         "state": a.get("state"), "aid": aid, "events": [], "line": None, "rb": None, "inv": None, "next": None, "approach": None}
+         "state": a.get("state"), "aid": aid, "uid": a.get("uid") or a.get("area_uid"), "events": [], "line": None, "rb": None, "inv": None, "next": None, "approach": None}
     T = lambda b: ts[int(b)] if 0 <= int(b) < len(ts) else None             # noqa: E731
     if str(aid).startswith("line:"):
         g["kind"] = "line"
@@ -376,14 +376,14 @@ def geometry(V, c):
             if b2 <= k:
                 g["events"].append((T(b2), "born", "line drawn (2nd swing)"))
             if ln.get("broken") and ln.get("break_bar") is not None and int(ln["break_bar"]) <= k:
-                g["events"].append((T(ln["break_bar"]), "broken", f"broken {ln.get('break_side') or ''}: close beyond"))
-                try:
+                try:                                                       # DECISIONS 63: each state stamped at the bar it became KNOWN
                     kb = TL.break_known_at(V, ln)
                     if kb is not None and int(kb) <= k:
-                        g["events"].append((T(kb), "known", "break known (swing beyond)"))
-                    bb = TL.broken_back_at(V, ln, k)
+                        g["events"].append((T(kb), "broken", f"broken {ln.get('break_side') or ''} (close beyond + held: a swing "
+                                                             f"beyond) — known"))
+                    bb = TL.broken_back_at(V, ln, k, known=True)
                     if bb is not None and int(bb) <= k:
-                        g["events"].append((T(bb), "reclaim", "broken back ⇒ dead"))
+                        g["events"].append((T(bb), "dead", "broken back (closed back + held on its original side) ⇒ dead — known"))
                 except Exception:                                          # noqa: BLE001 — display
                     pass
         g["label"] = (f"broken {ln.get('tf', '')} line {ln.get('family', '')}".replace("  ", " ") if ln else
@@ -391,20 +391,33 @@ def geometry(V, c):
     else:
         g["kind"] = "area"
         L = None
-        try:
-            L = V.levels.L[int(aid)]
-        except (TypeError, ValueError, IndexError):
-            L = None
+        uid = a.get("uid") or a.get("area_uid")                            # A5: the place's stable id first (the list index of
+        if uid and hasattr(V.levels, "by_uid"):                            # another build may name a different level)
+            L = V.levels.by_uid(uid)
+        if L is None and not uid:
+            try:
+                L = V.levels.L[int(aid)]
+            except (TypeError, ValueError, IndexError):
+                L = None
         if L is not None:
             if L.born_bar <= k:
                 g["events"].append((T(L.born_bar), "born", f"born ({L.tf} {L.role0})"))
+            if getattr(L, "base_bar", None) is not None and int(L.base_bar) <= k:   # DECISIONS 63: the base candle in view
+                g["events"].append((T(L.base_bar), "base", f"base candle ({L.tf} {L.role0})"))
             for b, kind, _w in L.events:
                 if int(b) <= k and kind != "test":
-                    g["events"].append((T(b), kind, {"broken": "broken (close + swing beyond)", "flip": "flipped (role changed)",
-                                                      "reclaim": "reclaimed (broken back)", "dead": "dead", "sweep": "sweep"}.get(kind, kind)))
+                    g["events"].append((T(b), kind, {"broken": "broken (follow-through: a close beyond the next external swing)",
+                                                      "flip": "flipped (role changed)",
+                                                      "beyond": "BEYOND_NOT_BROKEN (closed beyond, outcome unknown)",
+                                                      "reclaim": "FALSE BREAK (closed back inside — alive)", "dead": "dead",
+                                                      "sweep": "false break (back inside — alive)"}.get(kind, kind)))
             if L.dead_bar is not None and L.dead_bar <= k and not any(x[1] == "dead" for x in g["events"]):
                 g["events"].append((T(L.dead_bar), "dead", "dead"))
             g["tests"] = sum(1 for b, kind, _ in L.events if kind == "test" and int(b) <= k)
+            try:                                                           # DECISIONS 89: extremes made while testing the object
+                g["fbx"] = V.levels.false_break_extremes(L, k)
+            except (AttributeError, IndexError, KeyError, TypeError, ValueError):   # display only — never blocks a chart
+                g["fbx"] = []
         role = {"resistance": "supply", "support": "demand"}.get(str(g["role"]), str(g["role"]))
         g["label"] = (f"{'broken ' if obj == 'broken_area' else ''}{g['tf']} {role} area {px(g['lo'])}–{px(g['hi'])} "
                       f"({str(g['state'] or '').lower()})")
@@ -426,7 +439,7 @@ def geometry(V, c):
     try:
         opp = []
         for x in V.levels.snapshot(k):
-            if str(x.get("state") or "").upper() in ("BROKEN", "DEAD") or not x.get("trade_location", True) or ref is None:
+            if str(x.get("state") or "").upper() in ("BROKEN", "BEYOND_NOT_BROKEN", "DEAD") or not x.get("trade_location", True) or ref is None:
                 continue
             if (d < 0 and x.get("role") == "support" and float(x["hi"]) < ref) or (d > 0 and x.get("role") == "resistance" and float(x["lo"]) > ref):
                 opp.append(x)
@@ -458,9 +471,11 @@ def refined_for_visit(V, c, g):
         F = V.trigger_frame()
         j = int(np.searchsorted(np.asarray(F.end, "datetime64[ns]"), np.datetime64(g["dec"]), side="right")) - 1
         R = EM5.Reader5(V, j)
-        lvl = {"id": g["aid"], "lo": g["lo"], "hi": g["hi"], "tf": g["tf"], "role": g["role"]}
+        Lu = V.levels.by_uid(g["uid"]) if g.get("uid") and hasattr(V.levels, "by_uid") else None   # A5: this build's level of the place
+        aid = Lu.id if Lu is not None else g["aid"]
+        lvl = {"id": aid, "lo": g["lo"], "hi": g["hi"], "tf": g["tf"], "role": g["role"]}
         try:
-            lvl.update({kk: v for kk, v in next(x for x in V.levels.snapshot(g["k"]) if x["id"] == int(g["aid"])).items()
+            lvl.update({kk: v for kk, v in next(x for x in V.levels.snapshot(g["k"]) if x["id"] == int(aid)).items()
                         if kk not in ("lo", "hi")})
         except (StopIteration, TypeError, ValueError):
             pass
@@ -543,7 +558,7 @@ def panel_bars(V, dec, back15=90, ahead15=26, backh=70, aheadh=8, back5=54, ahea
 UP, DN = "#2f9e44", "#e03131"
 SUPC, RESC = "#2b8a3e", "#c92a2a"
 NEXTC, INVC, DECC, APPC, TRGC = "#1c7ed6", "#c92a2a", "#343a40", "#7048e8", "#f08c00"
-EVC = {"born": "#1864ab", "broken": "#e8590c", "known": "#e8590c", "flip": "#9c36b5", "reclaim": "#2b8a3e", "dead": "#212529",
+EVC = {"born": "#1864ab", "base": "#5c940d", "broken": "#e8590c", "known": "#e8590c", "flip": "#9c36b5", "reclaim": "#2b8a3e", "dead": "#212529",
        "sweep": "#868e96"}
 
 
@@ -759,6 +774,15 @@ def render_case(V, sym, c, out_png, g=None):
                     continue
                 p.L.text(xe, ylim[0] + (ylim[1] - ylim[0]) * 0.04, f" {word}\n {pd.Timestamp(ts_e):%d %b %H:%M}", color=col, fontsize=7,
                          prefer=1, bbox=dict(fc="white", ec=col, alpha=0.88, lw=0.6, pad=1.2))
+            for x in g.get("fbx") or []:                                   # DECISIONS 89: "FALSE BREAK extreme", never a swing high / low
+                if x.get("ts") is None or pd.Timestamp(x["ts"]) < pd.Timestamp(p.ts[0]):
+                    continue
+                xe = p.x(x["ts"])
+                if xe >= p.nb:
+                    continue
+                p.ax.plot([xe], [x["price"]], marker="x", ms=7, mew=1.6, color=EVC.get("reclaim", "#e8590c"), zorder=12)
+                p.L.text(xe, x["price"], f" {x['label']}", color=EVC.get("reclaim", "#e8590c"), fontsize=7, weight="bold",
+                         va="bottom" if x["kind"] == "H" else "top")
             nsw = sum(1 for x in g["events"] if x[1] == "sweep")
             if nsw and tf == "1H":
                 p.L.text(0, ylim[0] + (ylim[1] - ylim[0]) * 0.16, f" sweeps of the area known at the decision: {nsw} (grey dotted)",
@@ -802,7 +826,8 @@ def render_case(V, sym, c, out_png, g=None):
     lines = [f"{sym} #{c['n']} · decision = 5M close {g['dec']:%Y-%m-%d %H:%M} (the 15M context bar closed {pd.Timestamp(V.bar_end.iloc[g['k']]):%d %b %H:%M})"
              + (f" · approached from {g['approach']['from']}" if g.get("approach") else ""),
              f"Object: {g['label']} · lifecycle known at the decision: {lc}" + (f"; sweeps {nsw}" if nsw else "")
-             + (f"; tests {g.get('tests')}" if g.get("tests") else "")]
+             + (f"; tests {g.get('tests')}" if g.get("tests") else "")
+             + (f"; {', '.join(x['label'] for x in g['fbx'][-3:])}" if g.get("fbx") else "")]
     if e:
         lines.append(f"Entry: {e.get('model')} {e.get('name')} {side} at {px(e.get('entry_ref'))} · invalidation "
                      f"{px((g.get('inv') or {}).get('price'))} ({(g.get('inv') or {}).get('rule') or ''}) · next area "

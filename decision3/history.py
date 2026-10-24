@@ -12,6 +12,7 @@
 import logging
 import os
 
+import numpy as np
 import pandas as pd
 
 log = logging.getLogger(__name__)
@@ -34,6 +35,233 @@ def sealed_fn(symbol):
 
 def _read(path):
     return pd.read_parquet(path) if str(path).endswith(".parquet") else pd.read_csv(path)
+
+
+DATA_PROBLEMS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "data_problems.json")
+
+
+def data_problems(symbol=None, path=DATA_PROBLEMS):
+    """DECISIONS 74: the marked data problems (decision3/data/data_problems.json), each with its evidence; `symbol` filters."""
+    import json
+    with open(path, encoding="utf-8") as fh:
+        rows = json.load(fh)["problems"]
+    return [r for r in rows if symbol is None or r["symbol"] in (symbol, "ALL")]
+
+
+CLOSE_PRINT = "DP-2"                     # data_problems.json: the flat session tail + one last print (DECISIONS 84, rule-detected)
+_TF_MIN = {"1m": 1, "1M": 1, "5m": 5, "5M": 5, "15m": 15, "15M": 15, "1H": 60, "60m": 60}
+
+
+def _naive_ts(x):
+    ts = pd.to_datetime(pd.Series(x).reset_index(drop=True))
+    if getattr(ts.dt, "tz", None) is not None:
+        ts = ts.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+    return ts
+
+
+def _session_closed(df, ts, a, last):
+    """The frame's LAST session (rows a..last) is finished: its last bar ends at the exchange session close
+    (opportunity_engine.sessions.SESSION_CLOSE, the session end engine3_live.closed_session_bars uses). Bar end = the `bar_end` column,
+    else the bar start + the frame's bar step. An earlier session in the frame is always finished (a later session's bar exists).
+    Live partial frames (mid-session) ⇒ False: the close-print tail is read only once the session is over (no look-ahead / repaint)."""
+    from opportunity_engine.sessions import SESSION_CLOSE, _step_minutes
+    if "bar_end" in df.columns:
+        end = _naive_ts(df["bar_end"]).iloc[last]
+    else:
+        end = ts.iloc[last] + pd.Timedelta(minutes=_step_minutes(ts.iloc[a:last + 1] if last > a else ts))
+    return end >= ts.iloc[last].normalize() + pd.Timedelta(hours=SESSION_CLOSE.hour, minutes=SESSION_CLOSE.minute)
+
+
+def close_print_runs(df, min_run=None):
+    """DECISIONS 84 detector (comparison, no clock): per session, the session-ending run of FLAT bars (open = high = low = close, every
+    one the same price) followed by ONE last print — the bar that opens at that flat price and prints elsewhere, or a lone flat bar at another price — and then, if the print
+    came before the last bar, flat bars at the printed price up to the session end; or a flat run that reaches the session end itself
+    (a frozen tail, no print). Only a FINISHED session is read (_session_closed): the tail of an in-progress live session is never
+    flagged — the cycle after the close, or the next session's frame, marks it (live = replay). A run shorter than `min_run`
+    (settings `dp_flat_run_min_bars`, a data-quality setting) is ordinary data.
+    One row per affected session: the flat bars, the flat price, the close before the run, the print and its jump; `bars` = the row
+    positions (in `df`) of every affected bar (the run, the print, the flat bars after it)."""
+    from . import settings as S3
+    k = int(S3.DEFAULTS["dp_flat_run_min_bars"] if min_run is None else min_run)
+    cols = ["session", "flat_from", "flat_to", "n_flat", "flat_price", "close_before", "print_ts", "print_high", "print_low",
+            "print_close", "jump", "n_after", "bars"]
+    if df is None or not len(df):
+        return pd.DataFrame(columns=cols)
+    ts = _naive_ts(df["timestamp"])
+    o, h, l, c = (df[x].to_numpy(float) for x in ("open", "high", "low", "close"))
+    flat = (o == h) & (h == l) & (l == c)
+    day = ts.dt.normalize().to_numpy()
+
+    def run_back(end, a):                                                 # identical flat bars ending at `end` ⇒ first index
+        j = end
+        if end < a or not flat[end]:
+            return end + 1
+        while j - 1 >= a and flat[j - 1] and c[j - 1] == c[end]:
+            j -= 1
+        return j
+
+    rows = []
+    starts = np.r_[0, np.flatnonzero(day[1:] != day[:-1]) + 1]
+    for a, e in zip(starts, np.r_[starts[1:], len(df)]):
+        last = e - 1
+        if e == len(df) and not _session_closed(df, ts, a, last):      # an in-progress session: its last bar is not the session end
+            continue
+        p0 = run_back(last, a)                                            # trailing flat bars (after a print, or the frozen run)
+        hit = None
+        for ip in ((p0 - 1, p0) if p0 <= last else (last,)):              # the print: the bar before them, or the first of them
+            if ip < a + 1 or ip > last:
+                continue
+            j = run_back(ip - 1, a)
+            if ip - j >= k and (c[ip - 1] == o[ip] or flat[ip]) and (not flat[ip] or c[ip] != c[ip - 1]):
+                hit = (j, ip - 1, ip)
+                break
+        if hit is None and last - p0 + 1 >= k:
+            hit = (p0, last, None)                                        # frozen to the session end, no print
+        if hit is None:
+            continue
+        j, t, ip = hit
+        bars = list(range(j, last + 1))
+        rows.append({"session": pd.Timestamp(day[a]), "flat_from": ts.iloc[j], "flat_to": ts.iloc[t], "n_flat": int(t - j + 1),
+                     "flat_price": float(c[t]), "close_before": float(c[j - 1]) if j > a else None,
+                     "print_ts": ts.iloc[ip] if ip is not None else None, "print_high": float(h[ip]) if ip is not None else None,
+                     "print_low": float(l[ip]) if ip is not None else None, "print_close": float(c[ip]) if ip is not None else None,
+                     "jump": float(c[ip] - c[t]) if ip is not None else 0.0, "n_after": int(last - ip) if ip is not None else 0,
+                     "bars": bars})
+    return pd.DataFrame(rows, columns=cols)
+
+
+def close_print_mask(df, tf=None, finer=None, min_run=None):
+    """bool array over `df`: the bars a close-print run (close_print_runs) touches — detected on `df` itself, and, when `finer` (a finer
+    TF of the same instrument, e.g. 1m / 5M under a 15M frame) is given, every `df` bar whose span holds a flagged finer bar (the 15M
+    bar that contains the flat run + the print). `tf` (15M / 5M / 1H …) gives the span; without it the bar_end column, else none."""
+    n = 0 if df is None else len(df)
+    m = np.zeros(n, dtype=bool)
+    if not n:
+        return m
+    for bars in close_print_runs(df, min_run)["bars"]:
+        m[bars] = True
+    if finer is not None and len(finer):
+        fr = close_print_runs(finer, min_run)
+        if len(fr):
+            fts = _naive_ts(finer["timestamp"]).to_numpy()
+            hit = np.sort(fts[np.concatenate([np.asarray(b, int) for b in fr["bars"]])])
+            ts = _naive_ts(df["timestamp"])
+            if tf in _TF_MIN:
+                end = ts + pd.Timedelta(minutes=_TF_MIN[tf])
+            elif "bar_end" in df.columns:
+                end = _naive_ts(df["bar_end"])
+            else:
+                end = ts
+            lo = np.searchsorted(hit, ts.to_numpy(), side="left")
+            hi = np.searchsorted(hit, end.to_numpy(), side="left")
+            m |= hi > lo
+    return m
+
+
+def dp_mask(df):
+    """bool array: the bars marked as a data problem (`data_problem` column non-empty); no column ⇒ none (DECISIONS 84 guard input)."""
+    if df is None or "data_problem" not in getattr(df, "columns", ()):
+        return np.zeros(0 if df is None else len(df), dtype=bool)
+    return df["data_problem"].fillna("").astype(str).ne("").to_numpy()
+
+
+def mark_data_problems(df, symbol, tf, path=DATA_PROBLEMS, finer=None, detect=True):
+    """DECISIONS 74 / 84: a copy of `df` with a `data_problem` column (the problem id, "" elsewhere): the listed `tf` bars of `symbol`
+    (data_problems.json) and — `detect` — every close-print bar the rule detector finds (CLOSE_PRINT; `finer` = a finer TF of the same
+    instrument so a coarse bar that holds the run is marked too). A listed id wins over the detector's on the same bar.
+    Never changes a price and never drops a bar (bad data is marked, not patched or hidden)."""
+    out = df.copy()
+    ts = _naive_ts(out["timestamp"]).to_numpy()
+    out["data_problem"] = ""
+    if detect and len(out):
+        out.loc[close_print_mask(out, tf, finer), "data_problem"] = CLOSE_PRINT
+    rows = data_problems(symbol, path) if symbol else [r for r in data_problems(None, path) if r["symbol"] == "ALL"]
+    for r in rows:                                                        # no symbol ⇒ only the rule-detected (ALL) problems
+        b = (r.get("bars") or {}).get(tf)
+        if b is not None:
+            out.loc[ts == np.datetime64(pd.Timestamp(b)), "data_problem"] = r["id"]
+    return out
+
+
+def ensure_marked(m15, finer=(), symbol=None):
+    """DECISIONS 84 / 87 (DP-2: the flags apply in replays as in live — the same V22 path for both): `m15` with the `data_problem`
+    column — the marks it already carries (live marks the 15M from the 5M at the source, engine3_live.mark_close_prints) kept, plus
+    every 15M bar the rule detector finds from each `finer` frame of the same instrument (the 5M LTF, the 1m spot: the 15M bar that
+    holds the flat run + the print). Never changes a price, never drops a bar; unflagged data reads identical."""
+    if m15 is None or not len(m15):
+        return m15
+    fr = [f for f in (finer if isinstance(finer, (list, tuple)) else [finer]) if f is not None and len(f)]
+    had = "data_problem" in m15.columns
+    out = m15 if had else mark_data_problems(m15, symbol, "15M", finer=fr[0] if fr else None)
+    rest = fr if had else fr[1:]
+    if rest:
+        out = out.copy()
+        free = out["data_problem"].fillna("").astype(str).eq("").to_numpy()
+        for f in rest:
+            hit = close_print_mask(out, "15M", f) & free
+            out.loc[hit, "data_problem"] = CLOSE_PRINT
+            free = free & ~hit
+    return out
+
+
+AUCTION_EXTENDED = "DP-3"                # data_problems.json: a Daily bar whose closing-auction print lies beyond the traded range
+
+
+def auction_extended_bars(intraday):
+    """DECISIONS 87: bool array over `intraday` (marked: `data_problem`) — the data-problem bars whose close (the closing-auction print)
+    lies beyond the session's TRADED range (its unmarked bars + the flat value before the print). Such a close is not traded price
+    action: it never counts as a close beyond / back inside an object (a print inside the traded range is the session's real close and
+    counts). Comparison only."""
+    n = 0 if intraday is None else len(intraday)
+    m = np.zeros(n, dtype=bool)
+    dp = dp_mask(intraday)
+    if not n or len(dp) != n or not dp.any():
+        return m
+    day = _naive_ts(intraday["timestamp"]).dt.normalize().to_numpy()
+    o, h, l, c = (intraday[x].to_numpy(float) for x in ("open", "high", "low", "close"))
+    th, tl = np.where(dp, o, h), np.where(dp, o, l)
+    for i in np.flatnonzero(dp):
+        same = day == day[i]
+        m[i] = c[i] > th[same].max() or c[i] < tl[same].min()
+    return m
+
+
+def mark_auction_extended(daily, intraday):
+    """DECISIONS 87 (owner rule, DP-1 of 24 Oct): a Daily bar whose official close (the closing-auction print) lies beyond the session's
+    TRADED high / low keeps that close as its Daily close and is flagged "auction-extended" (`auction_extended` True, `data_problem`
+    AUCTION_EXTENDED); its high (print above) / low (print below) becomes the traded extreme, so the auction-only extension never
+    defines a Daily swing extreme or a zone edge (wick to body clamps to the swing price). The official values stay in `print_high` /
+    `print_low`. Traded range = the session's intraday bars (`intraday`, marked: `data_problem`) that are not data-problem bars, plus
+    the open of a marked bar (the flat value before the print). A session without intraday bars is read as given (no evidence ⇒ no
+    flag). Comparison only; nothing else changes."""
+    out = daily.copy().reset_index(drop=True)
+    out["print_high"], out["print_low"] = out["high"].astype(float), out["low"].astype(float)
+    out["auction_extended"] = False
+    if "data_problem" not in out.columns:
+        out["data_problem"] = ""
+    if intraday is None or not len(intraday) or not len(out):
+        return out
+    x = pd.DataFrame({"day": _naive_ts(intraday["timestamp"]).dt.normalize().to_numpy(),
+                      "high": intraday["high"].to_numpy(float), "low": intraday["low"].to_numpy(float),
+                      "open": intraday["open"].to_numpy(float)})
+    dp = dp_mask(intraday)
+    dp = dp if len(dp) == len(x) else np.zeros(len(x), dtype=bool)
+    x["th"] = np.where(dp, x["open"], x["high"])
+    x["tl"] = np.where(dp, x["open"], x["low"])
+    g = x.groupby("day").agg(th=("th", "max"), tl=("tl", "min"), n_dp=("th", lambda s: int(dp[s.index].sum())))
+    days = _naive_ts(out["timestamp"]).dt.normalize()
+    th = days.map(g["th"]).to_numpy(float)
+    tl = days.map(g["tl"]).to_numpy(float)
+    nd = days.map(g["n_dp"]).fillna(0).to_numpy(float)
+    c = out["close"].to_numpy(float)
+    up = np.isfinite(th) & (nd > 0) & (c > th)
+    dn = np.isfinite(tl) & (nd > 0) & (c < tl)
+    out.loc[up, "high"] = th[up]
+    out.loc[dn, "low"] = tl[dn]
+    ext = up | dn
+    out.loc[ext, "auction_extended"] = True
+    out.loc[ext & out["data_problem"].fillna("").astype(str).eq(""), "data_problem"] = AUCTION_EXTENDED
+    return out
 
 
 def load_daily(paths, prepare=None):

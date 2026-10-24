@@ -152,7 +152,7 @@ def read_liquidity(V, t, d=None):
                          + (" — nearest" if x["nearest"] else ""))
     ind = []
     for a in lv.snapshot(t):
-        if a["state"] in (FL.BROKEN, FL.DEAD) or (a["role"] == LV.RES and a["below"]) or (a["role"] == LV.SUP and a["above"]):
+        if a["state"] in FL.NOT_PLACE or (a["role"] == LV.RES and a["below"]) or (a["role"] == LV.SUP and a["above"]):
             continue
         x = inducement(V, t, a, F)
         x.update(lo=a["lo"], hi=a["hi"], tf=a["tf"], trade_side=None if d is None else ((a["role"] == LV.SUP) == (d > 0)))

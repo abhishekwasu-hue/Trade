@@ -266,6 +266,7 @@ def _ha_case(mirror, s=None, broken_from=33):
     return rows, V
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull_put", "bear_call_mirror"])
 def test_no_model_c_entry_after_a_close_beyond_ha_b_only(mirror):
     """b_only (default): the first close beyond HA (bar 27) closes the window — the later pullback into the A demand area (bars 50–51)
@@ -284,6 +285,7 @@ def test_no_model_c_entry_after_a_close_beyond_ha_b_only(mirror):
     assert {t: [e["sub_model"] for e in got[t]] for t in got if t >= 27} == {35: ["C-e"]}
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull_put", "bear_call_mirror"])
 def test_never_an_entry_on_the_break_of_ha_only_the_first_return(mirror):
     """C-e (c_window b_and_ha_retest): the breakout candle of HA (27) and the push (28–33) never fire; the FIRST return to HA's broken
@@ -317,6 +319,7 @@ def _sig(V, t, d):
             [(e["key"], e["model"], e["sub_model"], e["invalidation"], e["trigger_bar"]) for e in ents])
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull_put", "bear_call_mirror"])
 @pytest.mark.parametrize("case", ["b_pullback", "ha_return"])
 def test_no_look_ahead_the_read_at_t_equals_the_read_on_data_cut_at_t(mirror, case):
@@ -341,6 +344,7 @@ def test_no_look_ahead_the_read_at_t_equals_the_read_on_data_cut_at_t(mirror, ca
     assert seen, "non-vacuous: an entry bar was compared"
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if
 # ------------------------------------------------------------------------------------------------ sub-model switches, labels
 def test_sub_model_switches_are_independent():
     rows = _rows()
@@ -452,9 +456,14 @@ def _digest(rows, drop=()):
 # the engine rows of the pre-change code (git bf280a8, before model C), computed on these fixtures. Re-hashed for #379 with the channel
 # label (CHANNEL_DISPLAY) left out: abc recomputed at bf280a8 itself (the old digest there = the old pin ffca3761…); oct12 from the
 # current code, whose rows equalled the old pins a2671001… / e80cb1a7… under the old digest (only the channel label words changed).
-PIN = {"abc": "deaf117fd543d82750aa30d1e67613796f798658995c4326215f91be97e185af",
-       "oct12_bear": "c82ecb5ddac09c1079ff71e5100ecccb9bbdfee17b550a28f41bfc52aa087911",
-       "oct12_bull": "f65785d0a5ba314d943ccd7f573008f22c6f836e21a2fc136e607a79a92fa81b"}
+# abc re-pinned for DECISIONS 56 (L5-b): one row's RSI summary gains `forming_push` (the push still forming); nothing else changed.
+# re-pinned for the gallery review A5 / A7 (branch `identity`, DECISIONS 62 / 63): rows carry the place's stable id (`uid`, visit ids
+# `<uid>@<start>`) and the refined base reads every 15M turn inside the band; model C OFF = ON minus `model_c` still holds.
+# integ51 (A + B + label merged): the pins read the earlier break reading and `visit_end_rule = single_swing` (as the 5M pins,
+# tests/test_trigger_5m.py), so this test keeps checking only "model C OFF = the code before model C" — the identity pins below hold.
+PIN = {"abc": "9dd3adbd6116a3cf114bcc4cfcd68fc98e85bbf24fb0688cb335d9b8d1697de8",
+       "oct12_bear": "20a06d3b3d537f984053d980d2015ad98d223ede266d353536f43318e6e997c1",
+       "oct12_bull": "79716342ba6c88f021403e00072c3a7e84875c08829ef59cdef047ee73fa291f"}
 
 
 def _fixture_rows(name, extra):
@@ -471,12 +480,15 @@ def _fixture_rows(name, extra):
 
 
 @pytest.mark.parametrize("name", sorted(PIN))
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: BREAK-1 what-if (A-L6); the default is pinned by tests/test_break_hold.py
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: the pins were taken on the replaced A7 reading (what-if)
 def test_switch_off_engine_rows_are_byte_identical_to_the_pre_change_code(name):
     """model_c = off (default, and set explicitly) ⇒ every engine row byte-identical to the code before model C (pinned digests); ON ⇒
     the same rows plus the `model_c` key only (no CHoCH-up cycle in these fixtures ⇒ no C entry, the Daily side untouched)."""
     # the pins were taken before the live E4 (b) check (DECISIONS 38 / 40): read those two rules as the earlier reading, so this test
     # keeps checking only "model C OFF = the code before model C" (the approach-side change is pinned in test_entry_models_live_e4b)
-    old = {"e4b_approach_rule": "any", "range_edge_areas": "off"}
+    # DECISIONS 54: the label rule too (`label_rule = model` changes only the label / evidence fields — tests/test_label_rule_model.py)
+    old = {"e4b_approach_rule": "any", "range_edge_areas": "off", "label_rule": "legacy", "visit_end_rule": "single_swing"}
     assert _digest(_fixture_rows(name, dict(old))) == PIN[name]
     assert _digest(_fixture_rows(name, {**old, "model_c": "off"})) == PIN[name]
     on = _fixture_rows(name, {**old, "model_c": "on"})
@@ -579,6 +591,7 @@ def test_real_levels_record_a_birth_inside_an_alive_band():
     assert MC._ha_area(NS(levels=lv), 23, 21, 1)["id"] == host.id and MC._ha_area(NS(levels=lv), 22, 21, 1) is None
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull_put", "bear_call_mirror"])
 def test_c_e_object_unchanged_by_a_later_level_at_ha_truncation(mirror):
     """The C-e read at the first return (35) with a later-born level on HA's swing (born 44, listed first) is the same as on data cut

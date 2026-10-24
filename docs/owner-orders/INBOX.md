@@ -794,3 +794,376 @@ Report to me in Marathi.
 ---
 ## 23 Oct — merge and continue (6)
 Merge and continue
+
+---
+## 23 Oct — label tightening, L5-b / L5-c answers
+My answers (record in DECISIONS / OPEN_QUESTIONS):
+1. Label (L54-e): tighten the confirming pieces — "counter channel broken" counts only the PULLBACK's (correction's) channel at the trend degree (1H); "confluence" counts only when a Daily / Weekly area overlaps the traded area, or an object of a different kind (a line, a liquidity pool) lies at the same place — mere nearness does not count. Rebuild the 53-entry label column and show the A / B split per model. If it still does not separate, replace A / B on the card with the evidence list + its count (information only, no threshold); I decide after seeing the split.
+2. L5-b: yes — count the push still forming at the decision bar, marked "forming", read only from bars ≤ t (no look-ahead), shown as "confirmed" once the swing confirms. L5-c: yes — read RSI divergence at the retest of a broken line / area like at any area (the retest is the pullback to the object).
+3. C-L5-1 and the galleries: I give ✅ only after the charts are checked — send the Fix proof gallery (sections 1–6) and the layer-5 gallery as ZIPs.
+I am running the VPS block now and will paste its output. Report to me in Marathi.
+
+---
+## 24 Oct — drop A / B, Weekly not confluence, branch check, resend ZIPs
+1. Label: drop A / B. Show the evidence list + its count on the card and in the outputs (information only, no threshold). Weekly overlap does NOT count as confluence (Weekly bands are too wide; Weekly stays context); confluence = a Daily area overlap or an object of a different kind (line, liquidity pool) at the same place. Record in DECISIONS and rebuild the label column.
+2. L5-c provisional definition: accepted for now; final after I check the charts (especially L5-E17).
+3. Branch claude/layer5-rsi-questions shows 35 files / ~2,000 lines incl. vision/worker.py, card_summary.py, engine_card.py — confirm it holds ONLY the layer-5 changes, or that it is stacked on another branch; list exactly which commits are layer 5.
+4. Send the layer-5 gallery ZIP and the Fix proof gallery ZIP again — they have not reached me; no ✅ without the charts.
+VPS block output follows separately. Report to me in Marathi.
+
+---
+## 24 Oct — gallery review corrections (TRADE_SESSION_GALLERY_REVIEW_FIXES.md, verbatim) + BREAK-1 answer
+# Trade session — corrections from the chart review of the Layer 5 gallery and the Fix proof gallery
+
+From Abhi. Every chart of both galleries was checked by eye against the method (214 charts); the key findings were re-opened and confirmed. English spec; reports to Abhi in Marathi.
+
+Record this in owner-orders first (INBOX verbatim; a README row; DECISIONS principles, without dates). Then:
+- report first;
+- fix it in PRs with tests;
+- rebuild both galleries and send them as ZIPs.
+
+**Verdicts:**
+- Layer 5: NOT approved. Only the C-L5-1 fix is approved.
+- Fix proof gallery: NOT approved.
+- The layer-5 ZIP that reached Abhi was the OLD build (✓3 / ✗39 / NA11, no "Changes after DECISIONS 56" table). Send the current one.
+
+Chart ids below are the gallery ids (L5-…, sec1…6 file names, 2.x rows, p.., R5-..).
+
+## A. The area / line lifecycle (concept C): one rule for areas AND lines
+
+**A1. Break definition.** Provisional default, pending Abhi's confirmation. Log it in OPEN_QUESTIONS as "BREAK-1".
+- **BROKEN** = a close beyond the object AND price HOLDS beyond it: it builds a swing on the far side that stays beyond. For a supply / resistance broken upward, that is a pullback low that forms ABOVE the object.
+- **SWEEP** = price goes beyond (a close and / or a swing extreme beyond) and turns back inside without holding there. The object stays alive.
+- **BROKEN BACK ⇒ DEAD** uses the same test in the opposite direction.
+- Apply this identically to areas and lines. Today they disagree:
+  - 2.10 (an area) is ruled RECLAIMED, while 2.11–2.20 (lines) are ruled dead for the same behaviour;
+  - "broken back" is stamped BEFORE "break known" on every line case.
+- Wording: use "reclaimed" for alive and "dead" for dead. Never "RECLAIMED (broken back)".
+
+**A2. The K4 reclaim fix (#373) never reached lines.** In all three sec1 cases (07, 09, 12 Oct), the bar that made the break known was itself the bar that closed back over the line, and price then held on the original side with swings there. Example: 9 Oct 09:15, then the whole of 9 Oct above the line.
+- The line was therefore broken back / dead, yet the code reports broken_back_at = none and credits the approach-side rule.
+- Fix the line lifecycle so it mirrors the area fix.
+
+**A3. Approach side must allow a sweep (#377).** One to a few marginal closes beyond the object, without price holding there (no swing formed beyond), still count as approaching from the BREAK side. 2.23 and 2.24 were wrongly classed "from above / accepted".
+
+**A4. Re-evaluate under A1–A3 and report each case with charts.** These are likely valid retests that were removed:
+- 2.3 / 2.4 — a 17 Jul two-close poke with no swing above = a sweep, so the resistance stays alive;
+- 2.17 — the textbook break-side retest on 20 Jul 14:15.
+Also re-check these long stays beyond an object that were counted as many sweeps: N01 / N03 ("sweeps ×12" while price stayed hundreds of points beyond for days, with swings there), and sec3 1H 265 / W 256. Under A1 these are likely BROKEN and then DEAD.
+
+**A5. Object identity.**
+- The same band appears under several ids:
+  - 281 / 280 / 278 (55,699–55,970);
+  - 288 / 290;
+  - 292 / 293;
+  - 297 / 293.
+- One id is reused for different bands: 293 in E37 vs E38; 299 in E44 vs E47.
+- Make object identity stable: one place = one id for its life. Prove that duplicates cannot bypass max_hits_per_zone or the "one signal per model per place" rule.
+
+**A6. Possible union bands (Z-1u).**
+- Area 298 (54,886–55,193) looks like 294 plus a sweep high.
+- E07 / R5-E07 area 297 is 628 pts: the full range of one impulse candle, not wick-to-body.
+- Show the base candle and the band rule for each of these; fix them if they violate the base rule.
+
+**A7. The refined base.**
+- Degenerate bases: 1-point wide (E31, N08), or equal to the whole area (R5-E01, E09).
+- Missed obvious 15M turns inside the band: N03, N07, maybe N04.
+- Fix the detector so the refined base is the newest 15M turn of the area's side inside the band, as its wick-to-body.
+
+**A8. Lifecycle stamps on the chart.**
+- Stamp each state at the bar where it became KNOWN. Today BROKEN / DEAD often lands on a rally bar about a day later (2.1, 2.7, 2.9).
+- Show the lifecycle state on every area chart, and show the base candle in view.
+
+## B. The visit and the move into the zone
+
+**B1. A visit must end by structure.** When price leaves the area and builds swings away from it that do not reach it again, the visit has ended.
+- Examples: D04 / D05 — price fell about 1,900 pts and the visit stayed "open" for days; N07, D11, D13 are the same.
+- No model or RSI read belongs to a visit that has ended.
+
+**B2. The move start must update.** "The move begins at the LAST swing built away from the area." When a new away swing forms, the start moves forward.
+- Wrong today: D02 / D03, D07, D12, E25, E26 (E26 and E27 disagree on the same visit), E49, E53.
+
+## C. RSI (layer 5)
+
+**C1. Pushes are under-counted at D0.** Clear 15M swing highs with 80–250 pt pullbacks are not counted: E03, E07, E08, E13, E14.
+- 29 of the 39 ✗ results say "fewer than two pushes". That is far too many.
+- Fix push detection so that every turn the finest structure confirms inside the move is a push.
+
+**C2. The RSI value at a push is the RSI AT THE BAR OF THE PRICE EXTREME.** Never the highest RSI of the segment.
+- E14: the 12:15 push is labelled 76.8, while the pane shows about 66–68. The divergence is hidden.
+- Same issue: E13, E15, and the D0 vs D1 / D2 mismatches at the same bar (P04, P06, P08, P09).
+- One convention at every degree.
+
+**C3. Equal highs (and lows).** A second push that reaches the first push's top counts as "higher or equal". Define "reaches" by structure, with no number: the second push trades into the wick-to-body band of the first push's top candle.
+- It is a regular divergence only when RSI is STRICTLY lower (mirror for lows).
+- N11 (9 Oct 55,419 vs 12 Oct 55,416, RSI 71 → 59) is a missed textbook case. Check N01 and N10.
+- P08 (equal RSI counted as "lower") is wrong.
+
+**C4. Always the most recent consecutive pair.**
+- D11, D13: the old ✓ is kept after a newer pair reads ✗.
+- E49: an earlier pair is used.
+- D12, N12: "more extreme price between the pivots" means a pivot was skipped. Fix the push list.
+
+**C5. L5-b (the forming push): approved, with three conditions.**
+- RSI strictly lower than the prior push.
+- The first push is a real swing with a pullback, never a gap-open bar (P01, P02).
+- The forming read is labelled "forming", re-checked every bar, and dropped when it disappears (P01, P02, P04, P05, P12).
+
+**C6. L5-c (RSI at a broken-line retest): approved**, with the provisional move-start definition. E11 shows a real divergence that was hidden by NA.
+
+**C7. C-L5-1: approved** (X01 before / after is correct). After the fix, re-check E34 and E37 too; both still showed NA with a clear away swing.
+
+**C8. The RSI pane must draw exactly the pair that was judged**, with the right values.
+- Problems seen: E05, E20, E41 (pair not drawn); E46, E50 (wrong value label).
+- No pairs drawn across gaps or from before a break (E18, E19, E35, E36).
+- The facts box must not overflow (E10, E11, E17–E19, E30, E34–E37).
+- E50's text "67.51 > 73.45" is false.
+
+## D. The 5M entry: why 5M looked worse, and the fix (sec4)
+
+The gap is mostly not "5M is bad":
+- 4 failures are shared by both timeframes.
+- 3 of the 4 wins that only 15M had are scoring artefacts (E1 below).
+- With honest scoring it is roughly 15M 5 vs 5M 4.
+
+The real 5M weakness:
+
+**D1. The 5M trigger fired while the 15M push / sweep at the area was still running** (p01, p04, p12). Rule: a 5M trigger counts only after the 15M push into the area has turned. That means the latest closed 15M bar failed to extend the push or, after a sweep, closed back inside. Structure words only; no number.
+
+**D2. Invalidation comes from the higher structure:** the refined base far edge / the area / the visit or sweep extreme. NEVER a 5M swing inside the area (p12: 55,888 inside the area, versus the real high 56,066).
+
+**D3. A trigger candle whose own range already went beyond the invalidation is a sweep candle.** It belongs to E4 (a) after the sweep, not to E1 (p01: wick about 90 pts above the invalidation; G02: invalidation inside the sweep).
+
+**D4. E4 (a) needs a separate push that fails** after the sweep is back inside on 15M. A tight flag right after the rally is not a failed push (p04).
+
+**D5.** Re-run the 15M vs 5M replay after D1–D4 and E1. Show it per model, with charts.
+
+## E. Scoring of results (affects every replay statistic)
+
+**E1. "Next area" must lie BEYOND the entry area, never overlapping it.**
+- In p02 and p09 the next area overlapped the entry area itself.
+- In p16 the entry was 56 pts from the next area. That is a chase, and an E2 trigger far outside the refined base.
+- The same visit must have the same next area (p01 / p02, p09 / p10 differ).
+- Re-score every replay with this rule.
+
+## F. Daily trend side (sec6)
+
+**F1. Report and fix the Daily structure.**
+- Apr–Jun reads DOWN although plain Dow shows higher highs / higher lows. It is read as a degree / ABC correction. Show the exact rule and the swings used.
+- Fix the inconsistent labels: "LL 52,783" vs "HL 52,783"; "HH 58,597" is below 58,706.
+
+**F2. Prove no look-ahead on the 29 Jun panel.** Was 58,706 a CONFIRMED pivot (N = 2) at that decision bar? If not, fix it.
+
+**F3.** The sensitivity chart shows N = 3 reading UP through the 61,765 → 49,955 fall. Note this as a fragility in the report. N stays Abhi's provisional setting.
+
+## G. Proof quality (galleries)
+
+**G1. range_upper before / after are pixel-identical except the header.** That proves nothing.
+- Show the state before the range-edge fix vs after.
+- Show a POSITIVE case where price reaches a range edge and a model fires there, from any group.
+
+**G2. Captions must match the charts.**
+- 2.3 says "no entry", but its AFTER header shows an entry on the line.
+- "Approached from ABOVE / BELOW" arrows must point at the revisit / trigger, not at an earlier break-back bar (sec1, 2.5).
+
+**G3. No overlapping labels:** sec3 (BROKEN / RECLAIMED / decision-bar boxes). Count distinct trades once: 27 rows = 24 trades.
+
+## Order of work
+1. Report A1–A8, B1–B2, F1–F2 with charts. Wait for Abhi's BREAK-1 answer only if A1's default turns out to change many entries; otherwise continue with it.
+2. Fix A + B (one PR).
+3. Fix C (one PR).
+4. Fix D + E (one PR).
+5. Rebuild both galleries and the 15M vs 5M replay; send the ZIPs.
+
+Each PR: self-review, tests (no look-ahead, both mirrors), before / after charts. No deploy until Abhi's ✅ on the rebuilt galleries.
+
+
+BREAK-1: (b) confirmed by me — broken = a close beyond AND price holds beyond (a swing forms on the far side and stays beyond); a push beyond that turns back inside without holding is a sweep and the object stays alive. Same rule for areas and lines, and for broken back ⇒ dead. Example that proves it: L5-X01 (11 Sep, Daily area 274) — price gapped below, made its low and came straight back inside: a sweep, so the E4 (b) bear call there must not exist. Record it in DECISIONS.
+
+---
+## 24 Oct — BREAK-1 confirmed
+From Abhi — change to TRADE_SESSION_GALLERY_REVIEW_FIXES.md, item A1 only: BREAK-1 = (b) is now CONFIRMED by me, no longer a provisional default. Record it in DECISIONS, close BREAK-1 in OPEN_QUESTIONS, and continue the file with no wait on this point. Everything else in the file is unchanged.
+
+---
+## 24 Oct — B report answer (B-2), resend B ZIP, F2 again
+From Abhi — B report received. Before any ✅ I review the charts myself: send the B before/after ZIP to me again (it did not reach me), and send the F2 question again in one short message.
+B-2 answer (provisional default, record in OPEN_QUESTIONS/DECISIONS when I confirm after the charts): a visit also ends when its object becomes BROKEN under BREAK-1 (b) — N07 (price held beyond for weeks with swings beyond) is a broken area, so its visit ends at the bar the break became known; prove it with the chart once A1 lands. Where the object is not broken and one directional leg away has no confirmed turn yet, the visit may stay open until the next confirmed swing, but no model entry and no RSI read may come from that open visit while price is away from the area (show D11 as the proof case).
+RSI ✓ going 5 → 0 is expected until C1 (push counting) is fixed — judge RSI only after the C PR. Keep A + B in one PR as planned; no merge before my ✅ on the charts.
+
+---
+## 24 Oct — send ZIP
+Zip send kra
+
+---
+## 24 Oct — TOKEN BUDGET RULES (binding)
+From Abhi — TOKEN BUDGET RULES (binding; record in INBOX verbatim + DECISIONS + CLAUDE.md §1/§6; apply today).
+Measured: OPEN_QUESTIONS.md (ATP) is 598 KB, owner-orders README 39 KB (read at every start and after every compaction), Trade INBOX 59 KB. That is where most tokens go.
+1. Start-of-task reading ≤ 15 KB: CLAUDE.md (trim to ≤ 5 KB; move details to docs/WORKING_RULES.md) + docs/ROADMAP.md status (ATP) or the current order's status section (Trade). The owner-orders README becomes a short index (≤ 8 KB: one line per item + its roadmap ID / status); move its long history to docs/owner-orders/README_HISTORY.md (move, never delete). Update the CLAUDE.md "read at start / after compaction" rule to this short set.
+2. OPEN_QUESTIONS.md holds only OPEN items (≤ 30 KB). Move answered / closed ones to docs/archive/OPEN_QUESTIONS_CLOSED.md (move, never delete). INBOX.md and DECISIONS.md are append-only and never read whole: grep by ID or date.
+3. Code reading: grep + line ranges; never cat a whole large file; never re-read a file you just edited.
+4. Agents: at most 2 running at a time. Define .claude/agents/ helpers with model: sonnet for mechanical work (running tests, regenerating screenshots / charts, docs and status updates, copying files); keep the main model for design, review, trading / reader logic and anything on order paths. Each agent writes only to its own folder.
+5. Tests: run only the tests touching the change locally; the full pytest / e2e suite runs in GitHub CI (no tokens). Send long output to a file and show only the failure summary (tail / grep). Never re-run a whole suite just to re-check a flake: re-run the single failing test.
+6. No polling: start long runs in the background and wait for the completion notice; no "still waiting" checks.
+7. Images: view at most 10 images per PR yourself; galleries ≤ 20 named charts per fix (Trade: the answer-key match score replaces eyeballing the rest); one screenshot comparison page per milestone (ATP), not per PR.
+8. Reports ≤ 25 lines, in the 3-part shape (changed items by ID / max 3 owner decisions with defaults / deploy line + migration yes-no). No narration, no test-count lists, no repeated background.
+9. Context: at each milestone write a ≤ 1 KB handover note (docs/HANDOVER_NOW.md: what is in flight, next step, open PRs) and continue from a fresh session instead of a long compacted one.
+Report once (≤ 10 lines) with the before / after sizes of CLAUDE.md, README, OPEN_QUESTIONS and INBOX.
+
+---
+## 24 Oct — owner answers A-L1 / F2 / A7-1 / L58-c / B-2 + named-case flags
+OWNER ANSWERS — Trade (A-L1 / F2 / A7-1 / L58-c / B-2) + named-case flags from the B review. One message; report ≤25 lines by ID.
+
+A-L1 = D0. The "held swing on the far side" is a D0 swing (the swing degree stays a setting, no fixed number in logic). Rule: broken = close beyond AND a pullback swing (swing high below for a support / swing low above for a resistance) confirmed on the far side while price stays beyond; the far-side extreme alone is a sweep (proof X01). Same test for broken-back ⇒ dead; no second flip.
+- Before changing any golden test: list the 9 failing tests in two groups — (a) OWNER fixtures (fixtures/golden_cases.md: NIFTY 12 Oct supply/confluence, 7 Oct line, 13 Oct no-trade) and (b) code-generated expectations. Group (b): update with a before/after chart each. Group (a): if ANY owner fixture changes its verdict, stop and send me that chart; do not edit it.
+
+F2 = apply the fix (Daily protected origin only from a top confirmed at the decision bar; no look-ahead is binding). Send the NIFTY 29 Sep chart before/after (which top was used, the bar it was confirmed) before you edit that golden test.
+
+A7-1 = ✅ (15M turn = D0).
+L58-c = No. Two same-TF areas overlapping are not confluence; never merge areas. Confluence = different TF, or area + line.
+B-2 = rule ✅ (visit ends at the bar the break is KNOWN; no reading while price is away). Final ✅ after I review the charts.
+
+A6-1: 31 Aug 15:15 (one 628-pt candle, close = day high 58,025) looks like a bad last print. Compare it with the 1m spot file and FUT 5M for that bar and report what the true 15:15–15:30 range was. Do not hide or patch the bar silently; if it is bad data, mark it as a data problem in the data layer with the evidence.
+
+A7 concern: after the new refined base, "invalidation first" rose (15M 33→40, 5M 38→42). Send the 5 new/changed invalidation-first entries as charts (refined base band + invalidation level visible) so I can check whether the base is too narrow. Numbers alone are not proof.
+
+Named-case flags from the B review (fix or explain each, with a chart):
+1. E53: move start 10-15 15:00 is the bar right before the decision (15:15). Prove that pivot was CONFIRMED at the decision bar; if not, it is look-ahead.
+2. D12: an unmarked D0 low on 09-21 around 12:15 below the area (~56,400) — swing under-detection (same root as C1).
+3. N07, E27 and the E26 entry (08-26 09:15 gap candle closing above the supply 57,611.7–57,799.2): with A-L1 = D0 this supply is BROKEN at 08-26 10:45 (pullback low 57,824 held above) and DEAD at 08-28 11:15 (pullback high 57,596 held below). These visits/entries must disappear after A1. N07 also has price coming DOWN into the supply from above = wrong approach side.
+4. Duplicate ids 288/289 (56,474–56,570) and 290/292 (57,771–57,886): confirm A5 now gives each one id.
+5. Display: N07 x-axis 3/4 empty (old visit marker at 07-23); header "visit at the decision: start X, ended Y" with Y before X → label it "previous visit ended".
+
+Then: A + B + label in one PR. An answer key (hand-marked cases with charts) is coming from me; after it lands, the per-concept match score against it replaces golden-test comparison as the main proof.
+
+---
+## 24 Oct — OWNER ORDER: BREAK / RETEST / FALSE BREAK (replaces the pullback-swing break test)
+OWNER ORDER — Trade: BREAK / RETEST / FALSE BREAK for areas and lines (replaces the pullback-swing break test, A-L1 and break_hold_degree). Implement exactly this; add nothing of your own. Report ≤25 lines by ID.
+
+R1 Research basis (price-action, SMC, supply-demand, Wyckoff, Brooks, 2B, turtle soup, SFP):
+- Most breakout attempts fail; failure shows as no follow-through and usually comes within a few bars.
+- A wick beyond a level that closes back inside is a sweep / false break, not a break.
+- A real break needs a close beyond, acceptance and follow-through. The first return after a real break is the retest (role reversal).
+- A false break of a level is itself a trade: fade back inside, invalidation beyond the false-break extreme.
+
+R2 States of an area or line (both directions, every TF):
+- ALIVE: original role.
+- FALSE BREAK (sweep): price trades or closes beyond the object, then returns inside before a break is confirmed. Object stays ALIVE in its original role.
+- BEYOND_NOT_BROKEN: price has closed beyond the object but follow-through is not confirmed yet. Object is not flipped.
+- BROKEN (flipped): follow-through confirmed = after the close beyond, a candle of the reading TF CLOSES beyond the next swing on the far side — the nearest prior confirmed swing of the object's own TF (Daily object → Daily swing, 1H → 1H, Weekly → Weekly, line → the TF it is drawn on). A wick through that swing that closes back = sweep of the swing, not follow-through. Known at that closing bar.
+- Fresh ground (no prior own-TF swing beyond): follow-through = a new own-TF swing forms beyond and a reading-TF candle closes beyond it.
+- DEAD: a flipped object broken back by the same test in the opposite direction. No second flip.
+- No swing-size number in this rule; swing detection settings stay as they are.
+
+R3 Entries (existing models only, no new rule):
+- FALSE BREAK of an ALIVE object = the E4(a) sweep-candle case: entry back inside, invalidation = the sweep extreme (structural).
+- E4(b) only after BROKEN, on the first return from the correct side.
+- No entry of any model off an object in BEYOND_NOT_BROKEN.
+
+R4 Proof:
+- Owner fixtures must pass UNEDITED; if any fails, stop and send that chart.
+- Match the attached answer key (answer_key_batch1_v3.json): a table expected vs reader per item with the known bar; a chart for every mismatch.
+- Re-run the owner examples and the replay; report verdict changes and entry count before/after, with charts (≤20).
+
+R5 Other open items (general):
+- A golden test that only passed through an unconfirmed swing (look-ahead) and is not an owner fixture is updated to the corrected expectation, with a before/after chart.
+- Refined base = the ORIGIN base of the area on 15M (the candle(s) inside the higher-TF base from which the departure move started), wick-to-body; never a later test or turn candle that merely touched the area. Invalidation = the refined base's far edge. Re-send the narrow-base charts after the fix.
+- Swing detection stays unchanged for structure; small RSI pushes are handled in C1 with charts.
+- The entry found to sit on a different, still-alive area is accepted; include its chart in the proof set.
+
+Then: merge into the integration branch → PR → CI → C (RSI), then D + E. No deploy before my ✅.
+
+---
+## 24 Oct — answer key attached
+answer_key_batch1_v3.json (8 lifecycle items L01–L08, rule "BREAK-2") — stored privately at trade-data review/answer_key/answer_key_batch1_v3.json
+
+---
+## 24 Oct — R6 trend direction and reclaimed objects
+R6 Trend direction and reclaimed objects:
+- Trades are taken only in the trend direction (the reader's existing Daily side; no new rule). Confirm that the side gate applies to EVERY entry model, including E4(a) and E4(b); list any path that bypasses it.
+- E4(b) retest of a BROKEN object only when that break was in the trend direction. The retest of a break against the trend is not traded (most counter-trend breaks fail; the with-trend trade there is the E4(a) fade of the false break).
+- If a counter-trend break turns the trend (confirmed structure break in the new direction on the trend TF, per the existing Daily-side logic), the new direction applies from that bar; no look-ahead.
+- In a range (no trend), only edge fades: bull put at the lower edge, bear call at the upper edge; no breakout-retest entries until the trend TF confirms a direction.
+- Reclaimed object: before BROKEN is confirmed, a return inside = FALSE BREAK (object alive, original role). After BROKEN, a return inside = retest of the flipped object; a break back by the R2 test ⇒ DEAD. A confirmed-broken object is never restored to its original role.
+
+---
+## 24 Oct — OWNER ORDER: ZONE CONSTRUCTION (areas)
+OWNER ORDER — Trade: ZONE CONSTRUCTION (areas). Research-based; implement exactly; numbers only in settings. Report ≤25 lines by ID.
+
+Z1 Definition: a zone is the compact BASE (one to a few overlapping candles, max count = setting) immediately before an IMPULSIVE departure (leg-out). Band: distal = the base's wick extreme, proximal = the base's candle bodies (wick-to-body, as now).
+Z2 Four forms are all valid: rally-base-drop and drop-base-rally (reversal), rally-base-rally and drop-base-drop (continuation, i.e. a base inside a leg).
+Z3 Departure test (settings, no fixed number in logic): the leg-out is impulsive — wide-range, one-directional candles that leave the base quickly; ideally it breaks a prior swing or leaves a gap. A slow overlapping drift away is not a departure ⇒ no zone.
+Z4 Birth only when the departure is known (the leg-out bar that satisfies Z3 has closed); no look-ahead.
+Z5 Quality (reported, not a hidden filter): freshness (untested > tested; each test recorded), departure strength, time at base, room to the next opposing zone, higher-TF context. Show them on the chart label.
+Z6 Width sanity: a band larger than the width setting (relative to the TF's typical zone width) is flagged and refined on the lower TF inside it; a single data-fault candle never makes a zone (use the data-problem flag).
+Z7 Keep the current swing-candle and BOS-origin births only where they satisfy Z1–Z4; list every existing birth type and say which Z rule it passes or fails, with charts.
+Z8 Never merge zones; overlapping zones stay separate objects (keep the identity rules).
+Proof: before/after charts (≤20); owner fixtures pass unedited; match the answer key when supplied.
+
+---
+## 24 Oct — zone construction sequencing
+Queue this after the BREAK-2 PR is merged; do not mix it into that PR.
+
+---
+## 24 Oct — answers Q1–Q3, R5-1…R5-3 (+ answer_key_batch1_v3_1.json, stored in trade-data review/answer_key/)
+Answers (research-based). Report ≤25 lines by ID.
+Q1 Next swing = the MOST RECENT confirmed swing of the object's own TF that lies beyond the object (structure-break practice uses the most recent swing). For a 1H object use the ordinary 1H swing (D1), not the zone-degree swing (D2 can leave an object "unbroken" while price runs far beyond — that is not structure). Daily → Daily swing, Weekly → Weekly, line → the swings it is drawn from.
+Q2 A false break is known at the first reading-TF candle that CLOSES back inside (a wick or intrabar trade inside means nothing until the bar closes). The attached answer_key_batch1_v3_1.json is corrected to this.
+Q3 The one owner-fixture state assertion: keep it unedited until the owner confirms; the owner is reviewing. Fixture verdicts (zone, trade / no-trade) stay as they are.
+R5-1 No lower-TF data for an old higher-TF area ⇒ the whole area band is the refined base (refinement is optional fine-tuning).
+R5-2 Flipped area: location = the original base; invalidation = the band's far edge on the side opposite the new trade direction.
+R5-3 The flat 15:16–15:28 bars + single last print are systemic (every day since the start date found). Now, in the data layer: flag every affected bar as a data problem with evidence; a data-problem bar never defines a base, zone or swing extreme; find the feed cause and fix it going forward. Report the affected-day count and the fix.
+Then: merge originbase into integ51 → one BREAK-2 PR → CI; answer-key match table (expect 8/8) + the E4(b) increase explained with charts (≤10). Then C, then D + E, then Z. No deploy before my ✅.
+
+---
+## 24 Oct — Q3 owner-approved
+Q3 = owner approved: change ONLY that one owner-fixture state assertion to BEYOND_NOT_BROKEN; every other assertion and all verdicts stay unedited. Note it in DECISIONS with the chart.
+
+---
+## 24 Oct — answers S1 / S2 / DP-1 / DP-2 / V1
+Answers (research-based: internal vs external structure, higher-TF direction). Report ≤25 lines by ID.
+S1 Next swing = the most recent EXTERNAL swing of the object's own TF lying beyond the object. A swing whose candle traded inside the object's band — a swing made while price was testing this object, including its false-break extremes — is INTERNAL and never counts. Lower-TF swings never change higher-TF structure; an internal break against the trend is a pullback (timing only), not a break.
+S2 Consequences: the owner-fixture state line stays BEYOND_NOT_BROKEN as approved (DECISIONS 85); 82 is amended by S1; re-score the attached answer key v4 (L06 now: false break, supply alive; L07 next external swing changes, verdict same). Expect 8/8; mismatches → chart.
+DP-1 Daily bars whose closing-auction print lies beyond the traded high/low: keep the official close as the Daily close and flag the bar "auction-extended" so the auction-only extension never defines a Daily swing extreme or a zone edge (since the closing auction began, the index stops trading at the end of continuous trading; the close is set by auction, not by traded price action).
+DP-2 Flags apply in replays too, inside the BREAK-2 PR.
+V1 Vision cross-check (second opinion, never the source of truth): reuse the existing vision test tool. For every answer-key item and every new replay entry, render clean charts at the decision bar (Weekly, Daily, 1H, 15M; no marks, no data after the decision) and ask the vision model fixed questions: higher-TF trend, zones near price, object state (alive / false break / beyond-not-broken / broken / dead), entry yes/no and side. Output a table reader vs vision vs answer key; list disagreements with charts. Budget cap per run in settings; report the cost.
+Then: integ51 + dpfeed → one BREAK-2 PR → CI → my review. Next C, then D + E, then Z.
+
+---
+## 24 Oct — S1 addition
+S1 addition: label every such test-made extreme on charts and in reports as a FALSE BREAK extreme, never as a swing high/low. While price is still beyond and the outcome is unknown the state is BEYOND_NOT_BROKEN; once price closes back inside it becomes FALSE BREAK.
+
+---
+## 24 Oct — answer key v4 attached
+answer_key_batch1_v4.json (L06 false break / supply alive; L07 next external swing 56,743.0) — stored at trade-data review/answer_key/answer_key_batch1_v4.json
+
+---
+## 24 Oct — v4 + V1 cap
+Attached: answer_key_batch1_v4.json (use it instead of v3.1). V1 budget cap = $1 per run (setting), as your default.
+
+---
+## 24 Oct — OWNER ORDER: SWINGS + TREND (SW), then ENTRY GATE (EN)
+OWNER ORDER — Trade: SWINGS + TREND (foundation), then ENTRY GATE. Research-based; numbers only in settings; no dates in rules. Report ≤25 lines by ID.
+
+WORK ORDER (replaces the earlier sequence): finish the BREAK-2 PR first → then SW (this order) → Z (zone construction) → EN (this order) → C (RSI) → D + E. One layer at a time, each with its own PR. Do not start SW inside the BREAK-2 PR.
+
+SW1 Swing = a confirmed pivot (bars on both sides) that also passes a magnitude filter measured in multiples of that TF's ATR (setting per TF). No fixed point thresholds in logic. The newest leg is provisional; nothing reads an unconfirmed pivot.
+SW2 Every swing is labelled EXTERNAL (the major swings that define the current trend/range of that TF) or INTERNAL (smaller swings inside one external leg), relative to the reference range; a larger filter gives the external set, a tighter one the internal set (both settings). BREAK-2's "next external swing" and zone departures use this label.
+SW3 Trend per TF from EXTERNAL swings only: higher highs + higher lows = UP; lower highs + lower lows = DOWN; mixed = RANGE. A trend changes only when the protecting external swing (last higher low in UP / last lower high in DOWN) is broken by a close (CHoCH) and a structure break in the new direction confirms it (BOS). Use the last completed higher-TF bar. Daily side = Daily trend by SW3; the statistical regime (net ratio, sigma) becomes context only.
+SW4 Range (mixed structure): only edge fades — bull put at the lower edge, bear call at the upper edge.
+SW5 Proof: owner fixtures unedited; before/after charts of Daily side and swing labels on the replay window (≤20); match the answer key when supplied.
+
+EN1 The method's own decision rule applies to every model: an ENTRY exists only when the required set is complete (handover + commitment + commitment volume above the approach-leg average + lower-TF CHoCH by close). A model firing without it produces a WATCH alert only (no card, no position). Report how many current entries become watch alerts.
+EN2 Invalidation = the zone's distal edge, or the false-break extreme when that lies beyond; never an internal level inside the zone.
+EN3 Overlapping objects at one location form a cluster: one entry per cluster per visit (objects stay separate; no merging).
+EN4 Lines: anchors are external swings; a line break follows BREAK-2; a line break alone is a pace change, never an entry or reversal by itself.
+EN5 Proof: replay before/after (entries, watch alerts, stop-outs, next-area reached) + ≤20 charts; owner fixtures unedited.
+
+---
+## 24 Oct — #385 review answers
+#385 review answers. Report ≤25 lines.
+1 S1 stays (research + data check: the Daily case's swing is that object's own false-break extreme, so the object correctly stays BEYOND_NOT_BROKEN and the two flip-retest entries are correctly removed). Make the INTERNAL test precise instead of "candle traded inside the band": a swing is internal for an object when its extreme was made during a visit inside the object or during an excursion beyond it that ended with a reading-TF close back inside (a false-break extreme). Re-run the 8 S1 charts and the answer key; report any change.
+2 Auction flags from 5M (same as live) = accepted. Changes to the stable swings layer only with a bug-fix tag and before/after charts.
+3 29 Sep test change = ✅ (not an owner fixture; the old pass depended on an unconfirmed swing).
+4 Early-close days: add the exchange's special-session/early-close calendar to the data-problem flagging (backlog item, not blocking).
+5 L03: say in one line why the earlier own-TF swing beyond (11 Jun) was not used (lookback limit or classification); the break bar matches.
+Merge #385 when CI is green on the latest commit. Then the V1 VPS run (dry-run first, $1 cap), then SW.

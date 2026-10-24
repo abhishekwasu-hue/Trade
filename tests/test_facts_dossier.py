@@ -338,16 +338,18 @@ def test_context_missing_parts_carry_a_reason(world):
 
 
 @pytest.fixture(scope="module")
-def visit_world():
+def visit_world(earlier_break_reading_ctx):
     """The 12-Oct reference shape at the 09:30 bar's close (k = 1): the bear-call visit to the supply area, and its price mirror."""
-    out = {}
-    for mirror in (False, True):
-        m15, fut, ltf, one = _inputs(mirror=mirror)
-        as_of = _asof(m15, 1)
-        out[mirror] = (m15, fut, ltf, one, as_of, _dossier(m15, fut, ltf, one, as_of))
-    return out
+    with earlier_break_reading_ctx():                             # integ51: the earlier break reading (A-L6, conftest)
+        out = {}
+        for mirror in (False, True):
+            m15, fut, ltf, one = _inputs(mirror=mirror)
+            as_of = _asof(m15, 1)
+            out[mirror] = (m15, fut, ltf, one, as_of, _dossier(m15, fut, ltf, one, as_of))
+        return out
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 def test_visit_study_is_the_decisions_own_read(visit_world):
     """Layer 6b: the Vision facts read the SAME method as the decision — the visit by structure (V22.visit), its approach leg, the
     handover episode, the commitment (approach leg + opposite side, push excluded) and the LTF change of character (V22._confirm).
@@ -375,6 +377,7 @@ def test_visit_study_is_the_decisions_own_read(visit_world):
     assert r["commit"]["commit_present"] and r["commit"]["choch"]["done"]
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 def test_visit_mirror_holds(visit_world):
     a, b = visit_world[False][-1]["sections"], visit_world[True][-1]["sections"]
     sa, sb = a["candles"]["area_studies"], b["candles"]["area_studies"]
@@ -386,6 +389,7 @@ def test_visit_mirror_holds(visit_world):
     assert a["ltf_choch"]["visits"][0]["done"] == b["ltf_choch"]["visits"][0]["done"]
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 def test_visit_is_by_structure_never_a_bar_count(visit_world):
     """The old `touch_window_bars` count is gone from the facts: changing it changes nothing (the visit ends only by structure)."""
     m15, fut, ltf, one, as_of, d = visit_world[False]
@@ -395,13 +399,20 @@ def test_visit_is_by_structure_never_a_bar_count(visit_world):
     assert "touch_window_bars" not in src and "RE.RSI(" not in src                # layer 6b: no bar window, no old Cardwell RSI
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 def test_divergence_is_the_method_read_at_the_visit(visit_world):
     """Layer 5 at the visit: the pushes inside the move into the zone (highest degree with two pushes), the zone's own degree too."""
     *_, d = visit_world[False]
     dv = d["sections"]["divergence"]
     assert dv["status"] == D.OK and len(dv["at_visits"]) == 1
     v = dv["at_visits"][0]
-    assert v["zone_side"] == "bear" and "pushes" in v and "zone_degree" in v and v["found"] in (True, False)
+    assert v["zone_side"] == "bear" and "zone_degree" in v
+    # B-2 (Abhi, provisional): at this candle price is away from the area while the visit is still open ⇒ no RSI read (NA + reason);
+    # the earlier reading (visit_end_rule = single_swing, what-if) reads the pushes there.
+    assert v["found"] is None and "away from the area" in v["na"]
+    m15, fut, ltf, one, as_of, _ = visit_world[False]
+    w = _dossier(m15, fut, ltf, one, as_of, cfg={"decision3": {"visit_end_rule": "single_swing"}})["sections"]["divergence"]["at_visits"][0]
+    assert "pushes" in w and w["found"] in (True, False)
     assert dv["latest"] and all(isinstance(x, str) for x in dv["latest"])
 
 

@@ -85,14 +85,11 @@ def daily_png(daily_df, states, title, upto=None, start=0, symbol=None, vol=None
         ax.axvspan(i - start - 0.5, i - start + 0.5, color=TREND_COLOR.get(states[i].trend, "#fff"), lw=0)
     _candles(ax, d)
     last = states[n - 1]
-    hs, ls = [], []
+    from . import daily_swings as DS
     shown = [p for p in last.pivots if p.bar >= start]
-    for p in last.pivots:
-        seq = hs if p.kind == "H" else ls
-        lab = p.kind
-        if seq:
-            lab = ("HH" if p.price > seq[-1] else "LH") if p.kind == "H" else ("HL" if p.price > seq[-1] else "LL")
-        seq.append(p.price)
+    full = daily_df.reset_index(drop=True)                                 # F1: structure labels (same degree), C-13 equal
+    tags = DS.tag_pivots(last.pivots, full["open"].to_numpy(float), full["close"].to_numpy(float))
+    for p, lab in zip(last.pivots, tags):
         if p.bar >= start:
             ax.annotate(lab, (p.bar - start, p.price), textcoords="offset points", xytext=(0, 8 if p.kind == "H" else -12), ha="center",
                         fontsize=8, color="#1c7ed6" if p.kind == "H" else "#e8590c")
@@ -171,13 +168,13 @@ def method_band_view(lv, t, shown, act, debug=False):
             out.append((x, "armed"))
             seen.add(x["id"])
     rest = [x for x in shown if x["id"] not in seen and x.get("trade_location", True)]
-    live = [x for x in rest if x.get("state") != FL.BROKEN]
+    live = [x for x in rest if x.get("state") not in (FL.BROKEN, FL.BEYOND)]
     for side in ("above", "below"):
         for x in sorted((x for x in live if x.get(side)), key=lambda x: x["dist"])[:MAX_BANDS_PER_SIDE]:
             out.append((x, "area"))
     inside = [x for x in live if not x.get("above") and not x.get("below")]
     out += [(x, "area") for x in inside]
-    broken = sorted((x for x in rest if x.get("state") == FL.BROKEN), key=lambda x: x.get("broken_at") or -1)
+    broken = sorted((x for x in rest if x.get("state") in (FL.BROKEN, FL.BEYOND)), key=lambda x: x.get("broken_at") or -1)
     if broken:
         out.append((broken[-1], "broken"))
     return out

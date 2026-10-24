@@ -130,7 +130,7 @@ def fib_on_areas(V, t, snap=None, obvious=None):
                       "to_price": round(float(end.price), 2), "to_ts": str(lv.ts.iloc[int(end.bar)]), "bos_ts": str(lv.ts.iloc[int(bbar)])}
     snap = lv.snapshot(t) if snap is None else snap
     obvious = LP.obvious_extremes(V, t) if obvious is None else obvious
-    areas = [x for x in snap if x["state"] not in (FL.BROKEN, FL.DEAD) and x.get("trade_location", True)]   # an AREA = a location
+    areas = [x for x in snap if x["state"] not in FL.NOT_PLACE and x.get("trade_location", True)]   # an AREA = a location
     # (Abhi Z-1u: a Weekly band is context only, a Daily band under a 1H zone is that zone's label — a wide context band is no landing)
     pools = []
     for x in obvious:

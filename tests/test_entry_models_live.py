@@ -435,20 +435,22 @@ def test_cards_without_a_model_stay_todays():
 
 # ------------------------------------------------------------------------------------------------ 9. the joined contract (H1 rows ⇒ H2)
 @pytest.fixture(scope="module")
-def h1_rows():
+def h1_rows(earlier_break_reading_ctx):
     """Real decision3 rows (entry_gate = models, the default) on the synthetic 12 Oct fixture — the rows the live engine stores."""
-    from decision3 import engine as E3
-    from tests import oct12_fixture as F
-    m15, fut, ltf = F.build(mirror=False)
-    # the fixture's trigger bar trades up through the area and closes below it (the trade side) ⇒ an entry under the default trigger
-    # reading (Abhi 22 Oct, traded_inside; it was none under #364's inside) — the contract shape is checked on the default
-    V = E3.V22(m15, s={"level_death_side": "role", "entry_area_refine": "area"}, ltf=ltf, futures=fut)
-    ts = V.levels.ts
-    last = ts.dt.normalize().iloc[-1]
-    bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == last]
-    return m15, fut, ltf, bars, [V.decide(t) for t in bars]
+    with earlier_break_reading_ctx():                             # integ51: the earlier break reading (A-L6, conftest)
+        from decision3 import engine as E3
+        from tests import oct12_fixture as F
+        m15, fut, ltf = F.build(mirror=False)
+        # the fixture's trigger bar trades up through the area and closes below it (the trade side) ⇒ an entry under the default trigger
+        # reading (Abhi 22 Oct, traded_inside; it was none under #364's inside) — the contract shape is checked on the default
+        V = E3.V22(m15, s={"level_death_side": "role", "entry_area_refine": "area"}, ltf=ltf, futures=fut)
+        ts = V.levels.ts
+        last = ts.dt.normalize().iloc[-1]
+        bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == last]
+        return m15, fut, ltf, bars, [V.decide(t) for t in bars]
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 def test_h1_rows_reach_the_live_path_with_the_contract_fields(h1_rows, es):
     """decision3's own row schema (invalidation = price + invalidation_rule; area {id, tf, role, lo, hi, state, object}; visit_id; key;
     evidence pairs + the 6a evidence_list; armed[].models) ⇒ engine3_live payload ⇒ engine_signal store ⇒ pending_entries ⇒ the Vision
@@ -476,9 +478,10 @@ def test_h1_rows_reach_the_live_path_with_the_contract_fields(h1_rows, es):
         assert tags["gate"]["grade"] == tags["engine_grade"] == (e["label"] if e["label"] in ("A", "B") else None)
         lines = CS.model_lines(tags)
         assert any("invalidation (info): " in ln and e["invalidation"]["rule"][:20] in ln for ln in lines)
-        assert any("required set" in ln for ln in lines)                                  # the 6a required set ✓ / ✗ on the card
+        assert any("own conditions" in ln for ln in lines)          # DECISIONS 54 / 58: the model's own conditions on the card
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 def test_h1_keys_are_stable_across_a_cron_rerun(h1_rows):
     """A cron re-run recomputes the bar from scratch (a new V22 on the same closed bars) ⇒ the same visit_id / key per model ⇒ the
     (bot, symbol, visit_id, model) claim dedupes it. A later bar of the same visit never re-fires a model that fired earlier."""

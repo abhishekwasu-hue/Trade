@@ -44,11 +44,13 @@ def _day(mirror):
 
 
 @pytest.fixture(scope="module", params=[False, True], ids=["bear_call", "bull_put"])
-def day(request):
-    inputs, V, bars = _day(request.param)
-    return request.param, inputs, V, bars, {i: V.decide(i) for i in bars}
+def day(request, earlier_break_reading_ctx):
+    with earlier_break_reading_ctx():                             # integ51: the earlier break reading (A-L6, conftest)
+        inputs, V, bars = _day(request.param)
+        return request.param, inputs, V, bars, {i: V.decide(i) for i in bars}
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 # ------------------------------------------------------------------------------------------------ T9: evidence never blocks
 def test_entries_and_rows_identical_without_the_pa_evidence(day, monkeypatch):
     mirror, (m15, fut, ltf), _V, bars, rows = day
@@ -63,6 +65,7 @@ def test_entries_and_rows_identical_without_the_pa_evidence(day, monkeypatch):
         assert [e.get("pa_evidence") for e in plain[i]["entries"]] == [[] for _ in plain[i]["entries"]]
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 def test_every_entry_lists_each_tracks_facts(day):
     mirror, _inputs, _V, bars, rows = day
     ents = [e for r in rows.values() for e in r["entries"]]
@@ -78,7 +81,7 @@ def test_every_entry_lists_each_tracks_facts(day):
         assert any(x["track"] == "T2" and x["concept"] == "area base / departure" for x in rows_)   # the entry area's own base
         json.dumps(rows_)                                                  # JSON-safe (payload / store)
     e1 = next(e for e in ents if e["model"] == "E1")
-    assert e1["evidence"][0][0].startswith("required set")                 # the 6a list itself is unchanged in shape
+    assert "the model's own conditions" in e1["evidence"][0][0]            # the model's own conditions first (DECISIONS 54 / 58)
 
 
 def test_volume_rows_say_fut_volume_missing_never_spot():
@@ -161,6 +164,7 @@ def test_lines_and_channels_on_any_timeframe_by_the_same_core(mirror):
     assert lo < float(CLOSES[-1]) < up
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 def test_channels_by_tf_reads_each_timeframe_on_its_own_swings(day):
     _mirror, _inputs, V, bars, rows = day
     t = bars[0]
@@ -179,6 +183,7 @@ def test_channels_by_tf_reads_each_timeframe_on_its_own_swings(day):
     assert [c["id"] for c in r["channels"]] == [c["id"] for g in TL.line_degrees(V) for c in TL.channels(V, t, g)]   # row unchanged
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 def test_e4b_objects_stay_the_trend_degrees_lines(day):
     """Daily / Weekly broken channel lines are evidence only — never an E4 (b) retest object (that would be a new entry location)."""
     _mirror, _inputs, V, bars, _rows = day

@@ -541,7 +541,8 @@ def _method_reads(c):
         k = V.pb.at(t, d) or {}
         _ok, _why, cm = V._confirm(t, d, x, k)
         arm = int(cm.get("arm_bar", vi["start"]))
-        rsi = V.rsi_divergence(t, d, arm, x.get("tf", "1H"), cm.get("move_from_bar"))
+        rsi = (V.away_na(t, x) if hasattr(V, "away_na") else None) or \
+            V.rsi_divergence(t, d, arm, x.get("tf", "1H"), cm.get("move_from_bar"))   # B-2: nothing read while price is away
         k0 = k.get("k_open_bar") if k.get("k_open_bar") is not None else t
         c0 = k.get("i_end_bar") if k.get("i_end_bar") is not None else k0     # the LTF context start, as V22._confirm reads it
         visits.append({"area": x, "d": d, "visit": vi, "arm": arm, "commit": cm, "rsi": rsi, "ltf_from": min(int(c0), arm),
@@ -583,8 +584,7 @@ def _visits5(V, t, d5, areas, armed, trend):
         vi = R.visit5(j, x, d)
         if vi["start5"] is None and vi.get("data") is None:
             continue
-        lid = x.get("parent_level", x.get("id"))
-        vid = f"{lid}@{vi['vid']}"
+        vid = f"{R.uid_of(x)}@{vi['vid']}"                                  # A5: the engine's visit id (the place's stable id)
         eng = next((a for a in row.get("armed") or [] if a.get("object") == "area" and a.get("visit_id") == vid), None)
         ents = [_entry_facts(e) for e in row.get("entries") or [] if e.get("area_visit_id") == vid]
         v = {"area": x, "d": d, "visit5": vi, "visit_id": vid, "armed": x.get("id") in arm_ids, "engine": eng, "entries": ents,
@@ -594,10 +594,11 @@ def _visits5(V, t, d5, areas, armed, trend):
             appr = R.appr5(vi)
             ok5, cm5 = R.confirm5(x, d, start, appr)
             arm15 = min(int(F.b_of[start]), t)
-            mf = (int(vi["approach_from15"]) - 1) if vi.get("approach_from15") is not None else None
+            mf = vi.get("move_from15")                                     # the engine's own move start (DECISIONS 64)
             v.update(arm=arm15, commit=cm5, required_ok=bool(ok5), c0=R.c0(j, x, d, start, appr), absorbing=R.absorbing(j, x, d, start),
                      refined=R.refined(t, x, d) if R.refine_on() else None, appr=appr, move_from=mf,
-                     rsi=V.rsi_divergence(t, d, arm15, x.get("tf", "1H") if x.get("tf") in ("1H", "D") else "1H", mf))
+                     rsi=(V.away_na(j, x, R.A5) if hasattr(V, "away_na") else None) or   # B-2: the 5M candle away ⇒ NA
+                     V.rsi_divergence(t, d, arm15, x.get("tf", "1H") if x.get("tf") in ("1H", "D") else "1H", mf))
         out.append(v)
     return out
 

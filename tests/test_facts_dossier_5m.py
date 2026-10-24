@@ -49,26 +49,34 @@ def _at_5m(m15, minutes):
 
 
 @pytest.fixture(scope="module")
-def fired():
+def fired(earlier_break_reading_ctx):
     """The 09:30 5M close (the 5M candle 09:25): E2 + E3 fire at the supply area's visit (bear) / the mirrored demand (bull)."""
-    return {mi: _five(mi, lambda m: _at_5m(m, 15), S_AREA) for mi in (False, True)}
+    with earlier_break_reading_ctx():                             # integ51: the earlier break reading (A-L6, conftest)
+        return {mi: _five(mi, lambda m: _at_5m(m, 15), S_AREA) for mi in (False, True)}
 
 
 @pytest.fixture(scope="module")
-def in_progress():
+def in_progress(earlier_break_reading_ctx):
     """The 09:25 5M close: the visit began at 09:15 on 5M, inside the 15M bar 09:15 still in progress."""
-    return {mi: _five(mi, lambda m: _at_5m(m, 10)) for mi in (False, True)}
+    with earlier_break_reading_ctx():                             # integ51: the earlier break reading (A-L6, conftest)
+        return {mi: _five(mi, lambda m: _at_5m(m, 10)) for mi in (False, True)}
 
 
 # ------------------------------------------------------------------------------------------------ 15M what-if = the earlier dossier
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: written on the 12 Oct synthetic fixture (A-L6, conftest)
 @pytest.mark.parametrize("mirror", [False, True])
 @pytest.mark.parametrize("k", [1, 2])
 def test_trigger_tf_15m_is_the_earlier_dossier_byte_for_byte(mirror, k):
     pin = json.loads(gzip.decompress(open(PIN, "rb").read()))
     m15, fut, ltf, one = T._inputs(mirror=mirror)
-    d = T._dossier(m15, fut, ltf, one, T._asof(m15, k), cfg={"decision3": {"trigger_tf": "15M"}})
+    d = T._dossier(m15, fut, ltf, one, T._asof(m15, k), cfg={"decision3": {"trigger_tf": "15M", "visit_end_rule": "single_swing"}})
     assert set(d["sections"]) == set(D.SECTIONS) == set(D.sections_of("15M"))
-    assert json.loads(json.dumps(d, sort_keys=True)) == pin[f"{mirror}|{k}"]
+    assert json.loads(json.dumps(d, sort_keys=True)) == pin[f"{mirror}|{k}"]   # the pin's own visit rule (what-if, byte for byte)
+    n = json.loads(json.dumps(T._dossier(m15, fut, ltf, one, T._asof(m15, k), cfg={"decision3": {"trigger_tf": "15M"}}), sort_keys=True))
+    av = n["sections"]["divergence"]["at_visits"]                              # B-2: the open visit's candle is away from the area ⇒
+    assert av and all(x.get("found") is None and "away from the area" in x["na"] for x in av)   # no RSI read (NA with the reason)
+    n["sections"]["divergence"]["at_visits"] = pin[f"{mirror}|{k}"]["sections"]["divergence"]["at_visits"]
+    assert n == pin[f"{mirror}|{k}"]                                         # every other fact identical
 
 
 def test_trigger_tf_typo_fails_loudly():
@@ -77,6 +85,7 @@ def test_trigger_tf_typo_fails_loudly():
         T._dossier(m15, fut, ltf, one, T._asof(m15, 1), cfg={"decision3": {"trigger_tf": "1M"}})
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 # ------------------------------------------------------------------------------------------------ the engine's row = the trigger section
 @pytest.mark.parametrize("mirror", [False, True])
 def test_trigger_section_is_the_engines_own_5m_row(fired, mirror):
@@ -91,6 +100,7 @@ def test_trigger_section_is_the_engines_own_5m_row(fired, mirror):
     assert S["areas"]["asof_bar"] == row["context_ts"]                          # areas at the decision's own 15M bar k(j)
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 # ------------------------------------------------------------------------------------------------ O-7 visit / O-8 required set
 @pytest.mark.parametrize("mirror", [False, True])
 def test_visit_and_required_set_are_the_engines_5m_reads(fired, mirror):
@@ -116,6 +126,7 @@ def test_visit_and_required_set_are_the_engines_5m_reads(fired, mirror):
         assert x["models"] == D._j(a["models"])
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 @pytest.mark.parametrize("mirror", [False, True])
 def test_a_visit_starting_inside_the_15m_bar_in_progress_is_seen(in_progress, mirror):
     """L6-O7: the 5M visit begins inside the 15M bar in progress — the 15M dossier (last closed 15M bar) finds no visit for the area; the
@@ -132,6 +143,7 @@ def test_a_visit_starting_inside_the_15m_bar_in_progress_is_seen(in_progress, mi
     assert not [x for x in old["sections"]["candles"]["area_studies"] if str(x["area_id"]) in {str(a["area_id"]) for a in live}]
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 # ------------------------------------------------------------------------------------------------ O-9 E4 (b) objects
 @pytest.mark.parametrize("mirror", [False, True])
 def test_e4b_objects_are_the_engines_broken_objects_with_lifecycle_and_revisit(in_progress, mirror):
@@ -158,6 +170,7 @@ def test_e4b_objects_are_the_engines_broken_objects_with_lifecycle_and_revisit(i
     assert len(other) == len(ob["objects"]) and [x["object"] for x in other] == [x["object"] for x in ob["objects"]]
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 # ------------------------------------------------------------------------------------------------ O-12 liquidity with the Daily frame
 @pytest.mark.parametrize("mirror", [False, True])
 def test_liquidity_reads_the_engines_levels(fired, mirror):
@@ -187,6 +200,7 @@ def test_liquidity_uses_the_daily_frame_when_given():
     assert lq["status"] == D.OK and lq["daily_frame"]["daily_bars"] == int((daily["timestamp"] < as_of.normalize()).sum())
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: built on the 12 Oct synthetic fixture (A-L6, conftest)
 # ------------------------------------------------------------------------------------------------ no look-ahead
 @pytest.mark.parametrize("mirror", [False, True])
 def test_5m_dossier_never_reads_after_as_of(fired, mirror):

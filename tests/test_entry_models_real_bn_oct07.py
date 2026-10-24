@@ -123,6 +123,7 @@ def test_oct07_0915_e2_commitment_not_trading_into_the_refined_base_no_longer_fi
     assert rb is not None and float(A["high"][i]) < float(rb["lo"])         # the candle's high stays below the base
 
 
+@pytest.mark.usefixtures("earlier_break_reading")   # integ51: the context-area what-if was read on the earlier break reading
 def test_oct07_0915_e2_with_the_context_area_as_the_base_still_fires():
     V, ts, rows = _build({"entry_area_refine": "area"}, only={"09:15"})       # what-if: the visited area plays the base's role
     i = int(np.flatnonzero(ts.astype(str).str.startswith(f"{DAY} 09:15"))[0])

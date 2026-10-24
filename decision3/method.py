@@ -69,7 +69,7 @@ class Pullbacks:
                         piv = [p for p in self.p1 if p.confirm_bar <= t and p.bar >= imp["i_end_bar"]
                                and p.kind == ("H" if d == UP else "L")]
                         lvl = [x for x in self.lv.snapshot(t) if x["role"] == (LV.SUP if d == UP else LV.RES)
-                               and x.get("state") != "BROKEN"                 # K4: BROKEN ⇒ trade location नाही (`Levels.active` सारखं)
+                               and x.get("state") not in ("BROKEN", "BEYOND_NOT_BROKEN")   # K4 / DECISIONS 76: BROKEN ⇒ trade location नाही (`Levels.active` सारखं)
                                and (L[t] <= x["hi"] if d == UP else H[t] >= x["lo"]) and (x["hi"] < imp["i_end"] if d == UP else x["lo"] > imp["i_end"])]
                         if piv or lvl:
                             imp.update(open=True, k_open_bar=t, why_open="उलट D1 swing confirm" if piv else "trade-बाजूच्या level मध्ये")

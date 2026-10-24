@@ -31,19 +31,41 @@ def prepare(df):
     return d[["timestamp", "bar_end", "open", "high", "low", "close"]]
 
 
-def tag_pivots(pivots):
-    """HH / LH (H) आणि HL / LL (L) — मागच्या त्याच प्रकारच्या pivot शी तुलना; पहिला ⇒ "H" / "L"."""
-    out, last = [], {}
-    for p in pivots:
-        prev = last.get(p.kind)
-        if prev is None:
+def tag_pivots(pivots, O=None, C=None):
+    """Structure labels of the Daily swings (Abhi gallery review F1 — display bug fix; method §3 Degree: every comparison uses swings
+    of the same degree). A swing is compared with the structure's REFERENCE swing of the same kind, never with an inner swing:
+      • the reference high = the last higher high, or — after a break down — the highest high between the old reference low and the
+        new lower low (the high that break started from); the reference low = the mirror;
+      • a high beyond the reference high ⇒ "HH": it becomes the reference high, and the reference low becomes the lowest low between
+        the old reference high and it (the low that break started from); a low beyond the reference low ⇒ "LL" (mirror);
+      • a swing that stays inside ⇒ "LH" / "HL" — an inner swing: it never moves the references; with the Daily opens / closes (O, C)
+        one that reaches the reference swing candle's own area without going beyond it ⇒ "EQH" / "EQL" (C-13, `daily.c13_equal`);
+      • the first swing of each kind ⇒ "H" / "L".
+    The earlier labels compared each swing with the previous swing of the same kind, whatever its degree (so an inner low could make a
+    structural higher low read "LL", and a pullback high inside a down leg read "HH" while below the leg's own high)."""
+    ps = sorted(enumerate(pivots), key=lambda x: (x[1].bar, x[1].confirm_bar))
+    out = [None] * len(pivots)
+    ref = {"H": None, "L": None}
+    seen = []
+    for j, p in ps:
+        q = ref[p.kind]
+        opp = "L" if p.kind == "H" else "H"
+        up = p.kind == "H"
+        if q is None:
             tag = p.kind
-        elif p.kind == "H":
-            tag = "HH" if p.price > prev else "LH"
+            ref[p.kind] = p
+        elif (p.price > q.price) if up else (p.price < q.price):
+            tag = "HH" if up else "LL"
+            between = [x for x in seen if x.kind == opp and q.bar < x.bar < p.bar]
+            if between:                                                    # the swing this break started from
+                ref[opp] = (min if up else max)(between, key=lambda x: x.price)
+            ref[p.kind] = p
+        elif O is not None and C is not None and DD.c13_equal(O, C, p.price, q.kind, q.bar, q.price):
+            tag = "EQH" if up else "EQL"
         else:
-            tag = "HL" if p.price > prev else "LL"
-        last[p.kind] = p.price
-        out.append(tag)
+            tag = "LH" if up else "HL"
+        seen.append(p)
+        out[j] = tag
     return out
 
 
@@ -392,7 +414,7 @@ def build(df, s=None, window=500, es=None, with_elliott=False, sealed=None, symb
     piv = list(q15[-1].pivots)                                             # दोन्ही modes चे pivots एकच (_raw_pivots)
     objs = structure_objects(d, q15, s, elliott=elliott_debug)
     mark_accepted(objs["impulses"], d["timestamp"], s, symbol, accepted)
-    tags = tag_pivots(piv)
+    tags = tag_pivots(piv, d["open"].to_numpy(float), C)
     seg_m, seg_q = protected_segments(minor, C), protected_segments(q15, C)
     prot_m = {(x["kind"], x["bar"]) for x in seg_m}
     prot_q = {(x["kind"], x["bar"]) for x in seg_q}

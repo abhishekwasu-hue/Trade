@@ -97,21 +97,39 @@ def _rows15(name, extra):
 # checks, OPEN_QUESTIONS): only display / evidence words changed — `channels[].state` (a line broken back reads "… broken, then broken
 # back", never a retest) and `pa_evidence` text (the 1H / 15M "range" word from the structural range, DECISIONS 16); every other key,
 # every entry, identical (diffed key by key against 806b74a).
-PIN15 = {"abc": "4f2bb23b8419d47ff469f3a24fc4f5696a15e08b201fdbbe529a2491da2f14ae",
-         "oct12_bear": "b958c1981998c89a5cc706c5544e45be41eb2e9ac02265b572a80e82f69a002b",
-         "oct12_bull": "cccbc4d26c792f72dcfc755c643d81dd008d41cd0fa567e535af1f1927a50602"}
-PIN15_C = {"abc": "29e1526ca51b490a1abbd4b02add478eb1c207060b91f3b1ad4aa1648c503b86",
-           "oct12_bear": "20d14e2757185d322c0013f76147183f2b1e30cf493d1250925cc0f7f856ecd7",
-           "oct12_bull": "c596545e7de3a9b357808ee2ae7d111aa1a92e155f2541084a73c94e5c6d8823"}
+# Re-pinned for DECISIONS 56 (L5-b): the only change on these fixtures = one abc row's RSI summary now lists the push still forming
+# (`zone_read.summary.rsi_divergence.forming_push`, D0 / D1 at 2030-02-15 10:15); every other key identical (diffed key by key).
+# Re-pinned for the gallery review A5 / A7 fix (branch `identity`, DECISIONS 62 / 63): every row now carries the place's stable id
+# (`uid`, visit ids `<uid>@<start>`) and the refined base reads every 15M turn (D0) whose wick to body trades into the band. The 15M
+# path is still independent of `trigger_tf` (the three settings below give one digest).
+# integ51: abc re-pinned — the lifecycle branch (A2) words a line broken back as "⇒ dead (closed back and held …)" (51 rows of
+# `channels[].state`, nothing else; the identity pin and this one differ only there). Chart: trade-data gallery_fixes/integ/B01.
+PIN15 = {"abc": "cdd6181289e9aaff82080dc89003882b838a923b4f1dd4f45ec39b866ca932f3",
+         "oct12_bear": "7cb8e2648fe482cb4dabf21cc9ae3d18a603c44fb20618c24b193d9cdda28905",
+         "oct12_bull": "99a02a9fb3fef2b2192c44b2f490ca813eb8ea6a27e2d37165cca974ebb26bfd"}
+PIN15_C = {"abc": "04f8c3a0780a19c25987043f309dfe2c9fa8072df6253569798d354b1f4eefca",
+           "oct12_bear": "949a617fe665ca232343cb5661c7f2e22d35bd43fe1d50f557ab13a6bd5f08c4",
+           "oct12_bull": "6a50b092f2e28dc6e1d4be79f03107603c1cf04e952f1698a4c0ca3c1e570d76"}
 
 
 @pytest.mark.parametrize("name", sorted(PIN15))
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_15m_path_is_byte_identical_to_the_code_before_the_5m_build(name):
     """trigger_tf = 15M (what-if) = today's decide(t), byte for byte; decide(t) never reads trigger_tf (the 5M default changes only
     decide5, the live loop and the card)."""
+    # The pins hold the visit rule they were taken with (`visit_end_rule = single_swing`, the what-if = the earlier reading byte for
+    # byte) and the label rule (DECISIONS 54: `label_rule = legacy`; the default `model` changes only the label / evidence fields:
+    # tests/test_label_rule_model.py pins that). Under the default (DECISIONS 64 + B-2) these fixtures differ only in visit facts (a
+    # break ends a visit, a BROKEN area is not visited until it flips, `armed[].away`), never in an entry or a decision.
+    old = {"visit_end_rule": "single_swing", "label_rule": "legacy"}
     for tf in ({"trigger_tf": "15M"}, {}, {"trigger_tf": "5M"}):
-        assert _digest(_rows15(name, tf)) == PIN15[name]
-    assert _digest(_rows15(name, {"trigger_tf": "15M", "model_c": "on"})) == PIN15_C[name]
+        assert _digest(_rows15(name, {**tf, **old})) == PIN15[name]
+    assert _digest(_rows15(name, {"trigger_tf": "15M", "model_c": "on", **old})) == PIN15_C[name]
+    a, b = _rows15(name, old), _rows15(name, {"label_rule": "legacy"})
+    assert [(r.get("decision"), json.dumps(r.get("entries"), sort_keys=True, default=str)) for r in a] == \
+        [(r.get("decision"), json.dumps(r.get("entries"), sort_keys=True, default=str)) for r in b]
+    assert _rows15(name, {}) == _rows15(name, {"trigger_tf": "5M"})            # decide(t) never reads trigger_tf
 
 
 # ------------------------------------------------------------------------------------------------ the trigger frame
@@ -170,6 +188,7 @@ def test_handover5_resumable_equals_method_handover_episode_on_every_prefix():
 
 # ------------------------------------------------------------------------------------------------ the models on 5M
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e1_is_the_first_5m_candle_trading_into_the_refined_base(mirror):
     """REF: the 15M bar 8 reaches the refined base 103.0–103.5; on 5M its FIRST child stays below the base and the second one trades into
     it ⇒ E1 at that 5M candle (the 15M E1 read at bar 8's close); invalidation = the base's far edge; once per visit."""
@@ -215,6 +234,7 @@ def test_every_5m_trigger_traded_into_the_base_and_never_beyond_its_invalidation
 
 
 @MIRRORS
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_e3_trigger_is_the_5m_choch_candle_and_it_must_trade_into_the_base(mirror, monkeypatch):
     V, lvl, d = _v5(REF + [(102.1, 103.4, 101.0, 101.2, 1.0), (101.2, 101.4, 100.9, 101.0, 1.0)], REF_SW, (100.0, 104.0), mirror,
                     s=REFINE)
@@ -254,6 +274,7 @@ def test_e4a_on_5m_sweep_and_the_failed_5m_push(mirror):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_e4b_on_5m_rejection_at_the_broken_area_from_the_break_side(mirror):
     rows = [(103.0, 103.2, 101.8, 102.0, 1.0), (102.0, 102.1, 99.0, 99.2, 1.0), (99.2, 99.3, 97.0, 97.2, 1.0),
             (97.2, 98.6, 97.1, 98.5, 1.0), (98.5, 99.6, 98.4, 99.5, 1.0), (99.5, 100.6, 99.4, 100.3, 1.0),
@@ -287,6 +308,36 @@ def test_e4b_on_5m_rejection_at_the_broken_area_from_the_break_side(mirror):
     V2, _l2, d2 = _bare(down, [], mirror=mirror, snapshot=lambda t: [br], extra_L=[L1], ltf=_ltf_from(rr2))
     F2 = TF.of(V2)
     assert not [f for j in range(9, F2.n) for f in EM5.Reader5(V2, j).broken5(d2)[1]]
+
+
+@MIRRORS
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if (E4 (b) object = its state)
+def test_e4b_broken_area_rsi_reads_the_move_into_the_retest_as_the_15m_path(mirror):
+    """Layer 5 gallery (C-L5-1, awaiting Abhi ✅): an E4 (b) entry at a BROKEN AREA on the 5M path passes the move into the retest (the
+    last swing built away from the area, counted from its break) to the RSI read — the same move start the 15M path reads
+    (V._confirm's move_from_bar) — instead of None ("the move into the zone is not known"). Evidence only: the entry itself is unchanged."""
+    rows = [(103.0, 103.2, 101.8, 102.0, 1.0), (102.0, 102.1, 99.0, 99.2, 1.0), (99.2, 99.3, 97.0, 97.2, 1.0),
+            (97.2, 98.6, 97.1, 98.5, 1.0), (98.5, 99.6, 98.4, 99.5, 1.0), (99.5, 100.6, 99.4, 100.3, 1.0),
+            (100.3, 100.4, 98.9, 99.0, 1.0), (99.0, 99.1, 98.0, 98.1, 1.0)]
+    br = {"id": 1, "lo": 100.0, "hi": 102.0, "role": LV.SUP, "state": "BROKEN", "break_dir": -1, "broken_at": 2,
+          "trade_location": True, "tf": "1H", "sweeps": 0, "births": ["a:D2"], "fresh": False, "confluence": []}
+    if mirror:
+        br = {**br, "lo": 2 * MID - 102.0, "hi": 2 * MID - 100.0, "role": LV.RES, "break_dir": 1}
+    L1 = NS(id=1, born_bar=0, state_at=lambda u: "BROKEN", events=[], dead_bar=None)
+    rr = _mirror_rows(rows) if mirror else rows
+    V, _lvl, d = _bare(rows, [("L", 97.0, 2, 3)], mirror=mirror, snapshot=lambda t: [br], extra_L=[L1], ltf=_ltf_from(rr))
+    F = TF.of(V)
+    j = next(j for j in range(9, F.n) if EM5.Reader5(V, j).broken5(d)[1])
+    V._em5_memo = {}
+    seen = []
+    V.rsi_divergence = lambda t, dd, arm, ztf="1H", move_from=None: seen.append((t, dd, arm, move_from)) or {"found": False}
+    V.range_structure = lambda t: None
+    out = EM5.read5(V, j, "UP" if mirror else "DOWN", [])
+    e = next(x for x in out["entries"] if x["model"] == "E4" and x["object"] == "broken_area")
+    k, arm = int(F.k_of[j]), seen[-1][2]
+    want = V._confirm(k, d, {**br, "visit_from": arm}, {})[2].get("move_from_bar")
+    assert want is not None and seen[-1] == (k, d, arm, want)               # the 15M path's move start, never None
+    assert e["invalidation"] is not None and e["facts"]["object"] == "broken_area"
 
 
 @MIRRORS
@@ -381,6 +432,7 @@ def test_5m_entry_payload_fields_and_live_row(oct12_5m, monkeypatch):
     assert "trigger_tf" not in L.compact_entries([{**e, "trigger_tf": None}])[0]   # a 15M entry: the payload as before
 
 
+@pytest.mark.usefixtures("turn_base_reading")   # DECISIONS 79: written for the replaced A7 reading (what-if)
 def test_read5_entries_carry_trigger_tf_ohlc_context_and_entry_ref_the_5m_close():
     V, lvl, d = _v5(REF, REF_SW, (100.0, 104.0), False, s=REFINE)
     V.step2 = None

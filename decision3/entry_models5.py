@@ -94,7 +94,8 @@ class Reader5(EM.Reader):
             return self.memo[key]
         F, c5 = self.F, self.c5
         ku = int(F.k_of[int(u)])
-        out = {"start5": None, "s15": None, "vid": None, "approach_from15": None, "why": "no closed 15M bar yet", "data": None}
+        out = {"start5": None, "s15": None, "vid": None, "approach_from15": None, "move_from15": None, "why": "no closed 15M bar yet",
+               "data": None}
         if ku >= 0:
             vi = self.V.visit(ku, lvl, d)
             if vi["start"] is not None:
@@ -105,16 +106,19 @@ class Reader5(EM.Reader):
                 else:
                     tch = [i for i in ch if c5.touches(i, lvl)]
                     st = tch[0] if tch else ch[0]
-                    out.update(start5=int(st), s15=s15, vid=self.T(s15), approach_from15=vi.get("approach_from"), why=None)
+                    out.update(start5=int(st), s15=s15, vid=self.T(s15), approach_from15=vi.get("approach_from"), why=None,
+                               move_from15=vi.get("move_from") if "move_from" in vi else
+                               ((int(vi["approach_from"]) - 1) if vi.get("approach_from") is not None else None))
             else:
                 out["why"] = vi.get("why") or "no visit in progress"
-                if self._born(lvl) <= ku:                                  # a new visit may start inside the 15M bar in progress
+                if self._born(lvl) <= ku and not (getattr(self.V, "visit_end_new", False) and self.V.object_broken(lvl, ku)):
+                    # a new visit may start inside the 15M bar in progress (never of a BROKEN area — B-2)
                     tch = [i for i in F.children(ku + 1, upto=u) if c5.touches(i, lvl)]
                     if tch:
                         lo, hi = float(lvl["lo"]), float(lvl["hi"])
                         sw = self.V._away_swings(ku, lo, hi, d)
                         out.update(start5=int(tch[0]), s15=ku + 1, vid=F.bin_T(tch[0]), why=None,
-                                   approach_from15=(sw[-1] + 1) if sw else None)
+                                   approach_from15=(sw[-1] + 1) if sw else None, move_from15=sw[-1] if sw else None)
         self.memo[key] = out
         return out
 
@@ -279,8 +283,9 @@ class Reader5(EM.Reader):
         lid = lvl.get("parent_level", lvl.get("id"))
         if vi["start5"] is None and vi.get("data") is None:
             return None, []
-        base = {"object": "area", "area_id": lid, "tf": lvl.get("tf"), "role": lvl.get("role"), "lo": lvl["lo"], "hi": lvl["hi"],
-                "state": lvl.get("state"), "direction": int(d), "side": EM.side_of(d), "visit_id": f"{lid}@{vi['vid']}",
+        uid = self.uid_of(lvl)                                             # A5: the place's stable id (never the build's list index)
+        base = {"object": "area", "area_id": lid, "area_uid": uid, "tf": lvl.get("tf"), "role": lvl.get("role"), "lo": lvl["lo"],
+                "hi": lvl["hi"], "state": lvl.get("state"), "direction": int(d), "side": EM.side_of(d), "visit_id": f"{uid}@{vi['vid']}",
                 "visit_start": vi["vid"], "visit_start_bar": vi["start5"] if vi["start5"] is not None else -1,
                 "visit_start5": self.T5(vi["start5"]), "trigger_tf": "5M", "labels": lvl.get("confluence_label")}
         if vi["start5"] is None:                                           # Q16: no 5M candles for this visit ⇒ the models wait
@@ -405,6 +410,11 @@ class Reader5(EM.Reader):
             rb = (info or {}).get("refined") if m == "E4" else info
             fired.append({"model": m, "variant": "a" if m == "E4" else None, "invalidation": inv, "invalidation_rule": rule,
                           "facts": {**(facts or {}), "trigger_tf": "5M"}, "refined": rb})
+        if getattr(V, "visit_end_new", False) and self.trigger_rule() == "traded_inside" and V.price_away(j, lvl, self.A5):   # B-2: an open visit while price is away from the
+            base["away"] = V.AWAY_NA                                       # area — no entry and no RSI read come from it
+            for f in fired:
+                models[f["model"]] = {"status": "waiting", "waiting": V.AWAY_NA}
+            fired = []
         base["models"] = models
         return base, fired
 
@@ -481,6 +491,17 @@ class Reader5(EM.Reader):
         F = self.F
         ku = int(F.k_of[int(u)])
         kind = "L" if d < 0 else "H"
+        if getattr(self.V, "visit_end_new", False):                        # DECISIONS 64: swings away that do not reach it again
+            def at5(p):                                                    # the 5M candle closing with the swing's 15M bar
+                c = F.last_child_closing(self.V.bar_end[int(p.bar)])
+                return c if c is not None else F.index_of_end(self.V.bar_end[int(p.bar)])
+            sw = [(int(at5(p)), bool(aw_sw(p))) for p in self.V.visit_swings()
+                  if p.confirm_bar <= ku and born15 <= p.bar <= ku and at5(p) >= 0]
+            st = {int(at5(p)) for p in getattr(self.V.levels, "_known0", [])
+                  if p.confirm_bar <= ku and born15 <= p.bar <= ku and p.kind == kind and aw_sw(p) and at5(p) >= 0}
+            tb = {int(i) for i in touch(int(born5), int(u))} if born5 <= u else set()
+            self.memo[key] = EM.revisit_start(tb, sw, st)
+            return self.memo[key]
         piv = set()
         for p in getattr(self.V.levels, "_known0", []):
             if p.confirm_bar <= ku and born15 <= p.bar <= ku and p.kind == kind and aw_sw(p):
@@ -520,9 +541,10 @@ class Reader5(EM.Reader):
             role = obj.get("role") if kind == "area" else ("support" if d < 0 else "resistance")
             w0 = self.side_from(j, role, d, start)
             val = round(F.line_value(obj, j), 2) if kind == "line" else None
-            base = {"object": "broken_" + kind, "area_id": oid, "tf": obj.get("tf") if kind == "area" else "line",
+            uid = self.uid_of(obj) if kind == "area" else oid
+            base = {"object": "broken_" + kind, "area_id": oid, "area_uid": uid, "tf": obj.get("tf") if kind == "area" else "line",
                     "role": role, "lo": obj.get("lo") if kind == "area" else val, "hi": obj.get("hi") if kind == "area" else val,
-                    "state": "BROKEN", "direction": int(d), "side": EM.side_of(d), "visit_id": f"{oid}@{F.bin_T(start)}",
+                    "state": "BROKEN", "direction": int(d), "side": EM.side_of(d), "visit_id": f"{uid}@{F.bin_T(start)}",
                     "visit_start": F.bin_T(start), "visit_start_bar": int(start), "visit_start5": self.T5(start), "trigger_tf": "5M",
                     "broken_at": self.T(obj.get("broken_at") if kind == "area" else obj.get("break_bar"))}
             if kind == "line":
@@ -545,6 +567,9 @@ class Reader5(EM.Reader):
                 edge = (lambda i, ln=obj: F.line_value(ln, i))
                 away = (lambda i, ln=obj: self.A5["close"][i] < F.line_value(ln, i)) if d < 0 else \
                     (lambda i, ln=obj: self.A5["close"][i] > F.line_value(ln, i))
+            edge15 = (lambda i, e0=float(obj["hi"]) if d < 0 else float(obj["lo"]): e0) if kind == "area" else \
+                (lambda i, ln=obj: TL.line_value(ln, i))
+            acc = self.acceptance(kind, obj, edge15, d, k_of=F.k_of)       # DECISIONS 61: held there on the 15M structure
             first, appr_why = None, None
             for u in range(w0, j + 1):
                 if self.touch_visit5(u, oid, born5, int(born), touch, aw_sw, d) != start:
@@ -554,7 +579,7 @@ class Reader5(EM.Reader):
                     r = self.rejection5(u, d, lambda i: len(touch(i, i)) > 0, start, away)
                     res = (None, None)
                     if r is not None and c5.retest_ok(u, r, touch, start, d) is None:
-                        res = (r, c5.approach_side(u, r, start, edge, d))
+                        res = (r, c5.approach_side(u, r, start, edge, d, accepted=acc))
                     self.memo[key] = res
                 r, why = self.memo[key]
                 if r is None:
@@ -645,27 +670,36 @@ def read5(V, j, trend, act, side_fn=None, keep=None, extra=None, prefix="", brok
         if f["model"] != "E4" or f["variant"] == "a":
             vi = R.visit5(j, lvl, d)
             ok5, cm5 = R.confirm5(lvl, d, start5, R.appr5(vi))
-            mf = (int(vi["approach_from15"]) - 1) if vi.get("approach_from15") is not None else None
+            mf = vi.get("move_from15")              # DECISIONS 64 (B2): the last away swing at k
             area = {kk: lvl.get(kk) for kk in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
+            area["uid"] = a.get("area_uid")
             if lvl.get("range_edge"):
                 area["range_edge"] = lvl["range_edge"]
         elif f["kind"] == "area":
             x = f["raw"]
             lvl = {**x, "visit_from": arm15}
             ok5, cm5 = R.confirm5(lvl, d, start5, None)
-            mf = None
+            # L5-a (RSI evidence only, never a gate): the move into the retest of the broken area begins at the last swing built away
+            # from it — the same visit / approach the 15M path reads (V._confirm's move_from_bar on the area counted from its break).
+            # Without it the RSI read said "the move into the zone is not known" although that swing exists (layer 5 gallery, C-L5-1).
+            vb = R.visit5(j, lvl, d)
+            mf = vb.get("move_from15")
+            if getattr(V, "visit_end_new", False):                         # DECISIONS 64: the last swing built away known at k — the
+                mf = V.move_from(k, float(x["lo"]), float(x["hi"]), d)    # break's own swing beyond or a later one (BREAK-1: a broken
+                # area always has its swing beyond, so this is never one from before the break); the revisit's end rule is E4 (b)'s
             area = {kk: x.get(kk) for kk in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
+            area["uid"] = a.get("area_uid")
         else:
             ln = f["raw"]
             v = round(F.line_value(ln, j), 2)
             lvl = {"id": f"line:{ln['id']}", "lo": v, "hi": v, "tf": "line", "role": a["role"], "births": ["tl"], "sweeps": 0,
                    "fresh": None, "confluence_line": True, "confluence": []}
             ok5, cm5 = R.confirm5(lvl, d, start5, None)
-            mf = None
+            mf = R.line_move_from(k, ln, d, arm15)                         # DECISIONS 56 (L5-c): the move into the line's retest
             area = {"id": lvl["id"], "tf": "line", "role": a["role"], "lo": v, "hi": v, "state": "BROKEN", "line": a.get("line")}
         if mf is not None:
             cm5["move_from_bar"] = mf
-        ev = EM.Reader.evidence(R, k, d, lvl, arm15, cm=cm5, read_ok=ok5, move_from=mf)   # confirming pieces / zone read at 15M (k)
+        ev = EM.Reader.evidence(R, k, d, lvl, arm15, cm=cm5, read_ok=ok5, move_from=mf, fired=f, trigger_tf="5M")   # confirming pieces / zone read at 15M (k)
         ev["evidence_list"] = {**ev["evidence_list"], "entry_hours": "inside" if R.entry_window5(j) else "outside (operational)"}
         pa_ev = PE.for_entry(V, k, d, {**area, "object": a["object"]}, lvl=lvl, arm=arm15, move_from=mf)
         m = f["model"]

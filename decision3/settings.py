@@ -53,11 +53,29 @@ DEFAULTS = {
     "zone_visit_rule": "structure",          # method §3 Visit: संपते फक्त रचनेने — area पासून दूर swing (Abhi 21 Oct: एका candle चा बाहेर close /
                                              # "अपयशी commitment बाहेर" visit संपवत नाही — तो जुना शेवट फक्त entry_gate = legacy_k मध्ये).
                                              # "close_away" (Z-1v: बाहेर एक close) / "touch_window" = जुनं — फक्त जुने tests / what-if
+    "visit_end_rule": "away_not_reached",    # DECISIONS 64 (owner rule): a visit ends by structure — price leaves and builds swings away (the
+                                             # finest swings) that do not reach the area again; the move start = the LAST away swing (moves
+                                             # forward). "single_swing" = the earlier reading (one D1 away swing ends it) — what-if only
     "trade_band_max_sigma": None,            # Abhi Z-1x (final): zone रुंदीला आकड्याची मर्यादा नाही — रुंद दिसणारा zone = दोन bases एकत्र ⇒ रचना
                                              # दुरुस्त (Z-1u). फक्त what-if (× σ_1H) — dashboard वर नाही
     "break_rule": "structure",               # Abhi's method §3: broken = close beyond AND a swing formed beyond; sweep = back before any swing
                                              # beyond. "closes" = जुनं (accept_closes सलग closes) — फक्त जुने tests / what-if
     "accept_closes": 3,                      # फक्त break_rule = "closes" (legacy what-if): पलीकडे सलग इतके closes ⇒ acceptance
+    "break_hold_rule": "follow_through",     # DECISIONS 76 (owner rule; areas AND lines, every TF): BROKEN = after the close beyond, a 15M
+                                             # candle CLOSES beyond the most recent prior confirmed swing of the object's own TF on the far side (DECISIONS 82)
+                                             # (fresh ground ⇒ a new own-TF swing forms beyond, then a close beyond it); back inside first =
+                                             # FALSE BREAK (alive); in between = BEYOND_NOT_BROKEN (no entry); flipped then broken back by
+                                             # the same test ⇒ DEAD. What-ifs: "hold" = Abhi BREAK-1 (DECISIONS 60 / 71, replaced by 76):
+                                             # broken = a close beyond AND price HOLDS beyond — a swing of the hold side forms on the far side (a pullback low above a resistance /
+                                             # a line broken up; a pullback high below a support / a line broken down), confirmed while the
+                                             # closes are still beyond (the confirming bar too); a push beyond that turns back without holding
+                                             # = a sweep, the object stays alive ("reclaimed"). Broken back ⇒ DEAD by the same test opposite.
+                                             # The E4 (b) approach side allows a sweep (DECISIONS 61). "swing_beyond" = the earlier reading (any
+                                             # swing beyond — the push's own extreme counted; a broken area broken back = reclaimed) — what-if
+    "break_hold_degree": 0,                  # what-if only (break_hold_rule = hold; DECISIONS 76 replaced it). Abhi A-L1 (DECISIONS 71): the held far-side swing of BREAK-1 (the hold, the
+                                             # broken-back ⇒ dead test, the E4 (b) approach-side acceptance; areas AND lines) is a swing
+                                             # of THIS degree — D0 = every 15M swing high / low (default). The degree stays a setting:
+                                             # None = the structure's finest degree (D1, the earlier lifecycle-branch reading, what-if)
     "level_death_side": "role",              # Q2 / TL1 (✅ Abhi मंजूर): मृत्यू-swing चालू भूमिकेच्या बाजूचा (flipped support = supply ⇒ वरचा D2 H);
                                              # "role0" = जुना Q2 default (मूळ भूमिकेची बाजू, flip नंतरही) — revert साठी
     "level_flip_rule": "far_swing",          # KB K4 (Abhi, final): flip = पट्ट्यापलीकडे + पलीकडचा swing पार (trade ने) ⇒ FLIPPED; acceptance
@@ -78,6 +96,8 @@ DEFAULTS = {
     "c0_volume_required": True,              # Abhi Z-1c: commitment (c0) ला FUT volume हवाच — NA ⇒ "data problem", entry नाही (volume शिवाय
                                              # grade-B trade नाही). False = जुनी प्रथा (NA ⇒ कमाल B) — फक्त volume नसलेले जुने synthetic tests
     "vol_slot_min_sessions": 10,             # slot history इतक्यापेक्षा कमी ⇒ NA (कारणासह); 10–19 ⇒ उपलब्ध sessions चा median (OPEN_QUESTIONS)
+    "dp_flat_run_min_bars": 2,               # DECISIONS 84 data quality: a session-ending run of this many identical flat bars (O=H=L=C) +
+                                             # the single last print ⇒ data problem (decision3.history.close_print_runs)
     "vol_gap_max_frac": 0.5,                 # Abhi RF-2 (b): in-zone window (arm … commitment) च्या इतक्यापेक्षा जास्त bars ला FUT volume नाही
                                              # ⇒ data problem: entry नाही + Telegram "data problem: FUT volume gaps" (NIFTY / BANKNIFTY, दिवसातून
                                              # एकदा); कमी ⇒ volume असलेल्या bars ची सरासरी + "gaps n/m" नोंद
@@ -105,6 +125,15 @@ DEFAULTS = {
                                              # True = जुनं (form खिडकी + entry खिडकी commitment मध्ये) — what-if
     "verdict_rule": "method",               # method §4 / §5: required set ⇒ enter; label A = + ≥ 1 confirming piece, B = required only;
                                              # evidence listed, never scored; "score" = जुनं (evidence_weights / conv_* / ④ / §5.3) what-if
+    "label_rule": "evidence_count",          # DECISIONS 58: no A / B label — the evidence list + its count (info only; Weekly
+                                             # overlap never confluence). What-ifs: model55 / model54 = the A / B labels below.
+                                             # DECISIONS 54 (owner rule): an entry model's A / B label — required = the fired model's own
+                                             # conditions (every fired entry has it); A = + ≥ 1 confirming piece (RSI divergence, volume
+                                             # growing inside, confluence, correction line closed through, counter channel broken), B =
+                                             # the model's conditions only; never blocks. "legacy" = the old 6a set (handover + c0 +
+                                             # volume + c1; absent ⇒ no label) — what-if. DECISIONS 55: counter channel = the
+                                             # pullback's own 1H channel; confluence = D / W overlap or a line / pool at the same
+                                             # place. "model54" = the 54 reading of those two pieces (what-if)
     "line_rule": "logic",                    # method §3 Lines: touch = wick reaches the line, body on its side; two reactions = a line;
                                              # confluence = the line passes through the area, or a reaction out of it turns at the line
                                              # (Abhi 4 B) ⇒ labelled "confluence: line", never a new band; "sigma" = जुनं
@@ -131,6 +160,9 @@ DEFAULTS = {
     "entry_area_refine": "setup_tf",         # Abhi 21 Oct RC2 (RESEARCH DEFAULT, review after replay): 1H / Daily area = context; the
                                              # refined 15M base inside it (TA4) = trigger location (the trigger candle trades into it), E1 and invalidation. "area" = the context
                                              # area itself (the da7cbbc reading, what-if)
+    "entry_area_refine_base": "origin",      # Abhi DECISIONS 79 (owner rule): the refined base = the area's ORIGIN base on 15M (the
+                                             # candle(s) inside the higher-TF base candle the departure started from), wick to body;
+                                             # "newest_turn" = the A7 / DECISIONS 63 newest 15M turn reading (what-if)
     "sharp_reversal_handover": True,         # Abhi Z-1z: zone मध्ये push नाकारला + dominant उलट candle ने गिळला = handover (तुलना, आकडा नाही)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
     "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.
@@ -227,6 +259,11 @@ REGISTER = {
     "zone_visit_rule": ("structure", "structure / close_away / touch_window (legacy)", "Abhi नियम", "Abhi's method §3 Visit: ends only by "
                         "structure — a swing built away from the area; time never ends it. Abhi 21 Oct: one candle (a commitment) "
                         "closing outside never ends it (that old end stays only under entry_gate = legacy_k, logged as a note otherwise)"),
+    "visit_end_rule": ("away_not_reached", "away_not_reached / single_swing (what-if)", "Abhi नियम", "DECISIONS 64 (B1 / B2): a visit "
+                       "ends by structure — after it began, a swing built away from the area and the next turn that does not reach it again "
+                       "(the finest swings); no model or RSI read belongs to an ended visit; the move into the zone starts at the LAST swing "
+                       "built away from the area and moves forward with each new away swing. single_swing = the earlier reading (one D1 "
+                       "away swing ends the visit; the move start fixed at the visit's start)"),
     "entry_gate": ("models", "models / legacy_k", "Abhi नियम", "Abhi 21 Oct: the four entry models E1–E4 (built only from layers "
                    "1–5 outputs: trend side, areas + K4, visits, commitment c0 with volume, LTF CHoCH c1, lines, RSI) decide; the old ③ "
                    "(BOS impulse + K pullback) is logged as legacy_k_gate, never decides. legacy_k = the old ③ gate + old visit end "
@@ -262,11 +299,28 @@ REGISTER = {
                          "range from structure, trade side only — P4). off = edges as evidence only (the earlier reading)"),
     "entry_area_refine": ("setup_tf", "setup_tf / area", "Abhi नियम", "Abhi 21 Oct RC2 — RESEARCH DEFAULT, review after the replay: "
                           "the 1H / Daily area (levels' TA4 band) is the context (where); inside it the refined base on the setup TF "
-                          "(the newest 15M turn of the area's side inside the band, wick to body by the same TA4 rule) gives the trigger "
+                          "(entry_area_refine_base: the area's origin base on 15M, DECISIONS 79) gives the trigger "
                           "location (the trigger candle trades into it), the E1 entry and the invalidation; no refined base yet ⇒ the models wait. area = the context area "
                           "itself (what-if / the da7cbbc reading)"),
+    "entry_area_refine_base": ("origin", "origin / newest_turn (what-if)", "Abhi नियम", "DECISIONS 79: the refined base = the "
+                               "ORIGIN base of the area on 15M — the 15M candle(s) inside the higher-TF base candle holding its "
+                               "extreme (where the departure move started), wick to body, inside the band; never a later test / turn "
+                               "candle; invalidation = its far edge. newest_turn = the replaced A7 reading (DECISIONS 63)"),
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
     "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),
+    "break_hold_rule": ("follow_through", "follow_through / hold (what-if) / swing_beyond (what-if)", "Abhi नियम", "DECISIONS 76 "
+                        "(owner rule): broken = after the close beyond, a 15M close beyond the most recent prior own-TF swing on the far side (1H = D1, DECISIONS 82) "
+                        "(fresh ground: a new own-TF swing beyond, then a close beyond it); back inside first = false break (alive); in "
+                        "between = BEYOND_NOT_BROKEN; flipped then broken back by the same test ⇒ DEAD. hold = the replaced BREAK-1: "
+                        "broken = a "
+                        "close beyond AND price holds beyond (a swing of the hold side forms on the far side and stays beyond — confirmed "
+                        "while the closes are still beyond); a push beyond that turns back without holding is a sweep (alive, "
+                        "\"reclaimed\"); broken back ⇒ DEAD by the same test opposite; areas AND lines alike; the E4 (b) approach side "
+                        "allows a sweep. swing_beyond = the earlier reading (any swing beyond, the push's own extreme counted)"),
+    "break_hold_degree": (0, "0 (D0) / 1 (D1) / None = the finest structure (what-if)", "Abhi नियम", "what-if only (hold rule; "
+                          "DECISIONS 76 replaced it). A-L1 (DECISIONS 71, owner "
+                          "rule): the held far-side swing of BREAK-1 is a D0 swing; the degree stays a setting. Same swings for broken "
+                          "back ⇒ dead (no second flip) and the E4 (b) approach-side acceptance; areas and lines alike"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
     "a2_handover_required": (True, "True / False", "Abhi नियम", "Abhi Z-1m: handover (a2) अनिवार्य, क्रम a2 → c1 → c0; False फक्त जुने tests"),
@@ -284,6 +338,9 @@ REGISTER = {
     "vol_slot_sessions": (20, "—", "Abhi नियम", "Abhi (Z-1 volume): bar volume ÷ त्याच time-of-day slot चा मागच्या 20 sessions चा median"),
     "c0_volume_required": (True, "True / False", "Abhi नियम", "Abhi Z-1c: FUT volume नाही = data error ⇒ entry नाही; False फक्त जुने volume-नसलेले tests"),
     "vol_slot_min_sessions": (10, "5 / 10 / 20", "अंदाज", "slot history किमान (legs2 rvol_min_sessions सारखं); कमी ⇒ NA — OPEN_QUESTIONS Z-1h"),
+    "dp_flat_run_min_bars": (2, "≥ 2 (bars in the flat run)", "व्याख्या", "DECISIONS 84 (R5-3): the data layer's close-print "
+                             "detector — identical flat bars ending the session before one last print are not traded bars; a data-quality "
+                             "check (method P1), never a reading threshold"),
     "vol_gap_max_frac": (0.5, "0–1 (share of the window's bars)", "Abhi नियम", "Abhi RF-2 (b): FUT volume gaps > इतका भाग ⇒ data problem, "
                          "entry नाही (default 50% — Abhi चा आकडा); commitment bar चाच volume नाही ⇒ Z-1c (entry नाही)"),
     "liq_marks_per_side": (3, "2/3/5", "अंदाज (फक्त chart)", "spec §7.6 pools लहान खुणा — गर्दी टाळायला; क्रम PWH/PWL > PDH/PDL > equal > swing (liquidity.pool_marks prio, फक्त display)"),
@@ -302,6 +359,18 @@ REGISTER = {
     "volume_baseline": ("raw", "raw / slot (legacy)", "Abhi नियम", "method §3 Volume: raw bars, no time-slot baselines"),
     "candle_rule": ("compare", "compare / ratio (legacy)", "Abhi नियम", "method §3: body and wicks compared, never ratios; big = vs the visit"),
     "session_windows": (False, "False / True (legacy)", "Abhi नियम", "method P2: no session / day split in reading; entry hours = operational"),
+    "label_rule": ("evidence_count", "evidence_count / model55 / model54 / legacy (what-ifs)", "Abhi नियम", "DECISIONS 58 (owner "
+                   "rule, evidence_count): no A / B label — the card and every output show the evidence list + its count (information "
+                   "only, no threshold, never blocks); confluence = a Daily area overlapping the traded area or a line / liquidity pool "
+                   "at the same place, a Weekly overlap never counts. model55 / model54 = the A / B labels of DECISIONS 55 / 54. DECISIONS 54 (owner rule): the entry model's A / B label — the "
+                   "required set = the fired model's own conditions (E1 / E2 / E3 / E4 a / E4 b each, listed by name; every fired entry "
+                   "has it); A = the model's conditions + at least one confirming piece (RSI divergence, volume growing inside, "
+                   "confluence, correction line closed through, counter channel broken); B = the model's conditions only. The label "
+                   "never blocks and never changes an entry. DECISIONS 55 (model): counter channel broken = only the pullback's own "
+                   "channel at the trend degree (1H); confluence = only a Daily / Weekly area overlapping the traded area or an object "
+                   "of a different kind (a line, a liquidity pool) at the same place (overlap, never nearness). model54 = the "
+                   "DECISIONS 54 reading of those two pieces (what-if). legacy = the old 6a required set (handover + commitment + "
+                   "volume + LTF CHoCH; absent ⇒ no label)"),
     "verdict_rule": ("method", "method / score (legacy)", "Abhi नियम", "method §4 / §5: enter on the required set; A / B by confirming evidence; no scores"),
     "line_rule": ("logic", "logic / sigma (legacy)", "Abhi नियम", "method §3 Lines: comparisons with the candle, no σ tolerance or touch count"),
     "sharp_reversal_handover": (True, "—", "Abhi नियम", "Abhi Z-1z: zone मध्ये push नाकारला आणि dominant उलट candle ने लगेच गिळला = handover"),

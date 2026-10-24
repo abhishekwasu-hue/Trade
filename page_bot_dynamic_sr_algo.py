@@ -1543,6 +1543,9 @@ def render():
                                                 "overlap = जुनं §5.3 overlap + doji.",
                     "engine3_trigger_tf": "Layer 3 entry trigger: 5m = प्रत्येक model चा trigger 5M candle वर, engine दर 5M close ला (फक्त बंद "
                                           "15M / 1H / D bars; Abhi DECISIONS 37, method) · 15m = जुनं वर्तन (what-if, byte-identical).",
+                    "engine3_visit_end_rule": "Layer 3 visit end: away_not_reached = price area सोडून दूर swings बांधते आणि पुढचं वळण area "
+                                              "पर्यंत परत पोहोचत नाही ⇒ visit संपली; move start शेवटच्या away swing वर पुढे सरकतो (Abhi "
+                                              "DECISIONS 64, method) · single_swing = जुनं (एका D1 swing ने शेवट, what-if).",
                 }
                 _sw_shown = {k: _L3.switch_choice(k, engine3_switches[k]) for k in _L3.METHOD_SWITCHES}
                 if st.checkbox("Advanced: method layers (legacy fallback)",

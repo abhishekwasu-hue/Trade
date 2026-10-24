@@ -23,7 +23,7 @@ LEGACY = {"engine3_zone_visit_rule": ("close_away", "touch_window"), "engine3_co
           "engine3_line_rule": ("sigma",), "engine3_div_degree_rule": ("all",), "engine3_verdict_rule": ("score",),
           "engine3_entry_gate": ("legacy_k",), "engine3_daily_leg_read": ("elliott",), "engine3_entry_cluster_rule": ("area",),
           "engine3_daily_range_rule": ("c13",), "engine3_range_state_rule": ("overlap",),
-          "engine3_trigger_tf": ("15m",)}
+          "engine3_trigger_tf": ("15m",), "engine3_visit_end_rule": ("single_swing",)}
 
 
 def test_switches_mirror_decision3_settings():
