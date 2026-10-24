@@ -989,3 +989,7 @@ From Abhi — change to TRADE_SESSION_GALLERY_REVIEW_FIXES.md, item A1 only: BRE
 From Abhi — B report received. Before any ✅ I review the charts myself: send the B before/after ZIP to me again (it did not reach me), and send the F2 question again in one short message.
 B-2 answer (provisional default, record in OPEN_QUESTIONS/DECISIONS when I confirm after the charts): a visit also ends when its object becomes BROKEN under BREAK-1 (b) — N07 (price held beyond for weeks with swings beyond) is a broken area, so its visit ends at the bar the break became known; prove it with the chart once A1 lands. Where the object is not broken and one directional leg away has no confirmed turn yet, the visit may stay open until the next confirmed swing, but no model entry and no RSI read may come from that open visit while price is away from the area (show D11 as the proof case).
 RSI ✓ going 5 → 0 is expected until C1 (push counting) is fixed — judge RSI only after the C PR. Keep A + B in one PR as planned; no merge before my ✅ on the charts.
+
+---
+## 24 Oct — send ZIP
+Zip send kra
