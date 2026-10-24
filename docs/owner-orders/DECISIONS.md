@@ -271,3 +271,4 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     extreme). Auction flags are computed from 5M (as live). The stable swings layer changes only with a bug-fix tag and before / after
     charts. The 29 Sep non-owner test change is approved. Early-close / special-session calendar → data-problem flagging (backlog).
     (Owner decisions)
+95. "Merge all" (after the S1-precise report) = the report's defaults accepted: P1 — on the 13 Oct owner fixture the next swing shown is 22,809.35 (6 / 7 Oct highs = false-break extremes under DECISIONS 94; state unchanged); V1 keeps the $1 per-run cap (an item over the cap = NOT_RUN_BUDGET, next run); L03 lookback stays 90 days. #386 merges on green CI. (Owner decision, defaults)
