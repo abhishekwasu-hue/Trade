@@ -58,6 +58,7 @@ def _fired(V, d, n):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_a_breakdown_candle_from_the_original_side_is_never_an_e4b(mirror, monkeypatch):
     """Price was accepted on the line's original side and the trigger candle came down from there and closed through the line ⇒ H2,
     no E4 (b). The earlier reading (`e4b_approach_rule = any`) fired it — the live entry."""
@@ -80,6 +81,7 @@ def test_a_retest_from_the_break_side_still_fires(mirror, monkeypatch):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_a_revisit_that_came_from_the_original_side_is_no_retest(mirror, monkeypatch):
     """A swing that does not reach the line (on its original side) ends the revisit; price then comes back to the line from the
     original side: even a two-candle form whose first candle opened at the line is not a retest from the break side."""
@@ -97,6 +99,7 @@ def test_unknown_approach_rule_is_refused(monkeypatch):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_a_broken_area_retest_from_the_original_side_is_no_e4b(mirror):
     """The same rule for a BROKEN area (support 98–99 broken down ⇒ bear call retest from below): a candle that opened above the
     area's high and closed below it is a breakdown candle."""

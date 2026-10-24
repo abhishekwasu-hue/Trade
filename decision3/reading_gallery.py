@@ -376,14 +376,14 @@ def geometry(V, c):
             if b2 <= k:
                 g["events"].append((T(b2), "born", "line drawn (2nd swing)"))
             if ln.get("broken") and ln.get("break_bar") is not None and int(ln["break_bar"]) <= k:
-                g["events"].append((T(ln["break_bar"]), "broken", f"broken {ln.get('break_side') or ''}: close beyond"))
-                try:
+                try:                                                       # DECISIONS 63: each state stamped at the bar it became KNOWN
                     kb = TL.break_known_at(V, ln)
                     if kb is not None and int(kb) <= k:
-                        g["events"].append((T(kb), "known", "break known (swing beyond)"))
-                    bb = TL.broken_back_at(V, ln, k)
+                        g["events"].append((T(kb), "broken", f"broken {ln.get('break_side') or ''} (close beyond + held: a swing "
+                                                             f"beyond) — known"))
+                    bb = TL.broken_back_at(V, ln, k, known=True)
                     if bb is not None and int(bb) <= k:
-                        g["events"].append((T(bb), "reclaim", "broken back ⇒ dead"))
+                        g["events"].append((T(bb), "dead", "broken back (closed back + held on its original side) ⇒ dead — known"))
                 except Exception:                                          # noqa: BLE001 — display
                     pass
         g["label"] = (f"broken {ln.get('tf', '')} line {ln.get('family', '')}".replace("  ", " ") if ln else
@@ -398,10 +398,13 @@ def geometry(V, c):
         if L is not None:
             if L.born_bar <= k:
                 g["events"].append((T(L.born_bar), "born", f"born ({L.tf} {L.role0})"))
+            if getattr(L, "base_bar", None) is not None and int(L.base_bar) <= k:   # DECISIONS 63: the base candle in view
+                g["events"].append((T(L.base_bar), "base", f"base candle ({L.tf} {L.role0})"))
             for b, kind, _w in L.events:
                 if int(b) <= k and kind != "test":
-                    g["events"].append((T(b), kind, {"broken": "broken (close + swing beyond)", "flip": "flipped (role changed)",
-                                                      "reclaim": "reclaimed (broken back)", "dead": "dead", "sweep": "sweep"}.get(kind, kind)))
+                    g["events"].append((T(b), kind, {"broken": "broken (close beyond + held: a swing beyond)", "flip": "flipped (role changed)",
+                                                      "reclaim": "reclaimed (break failed — alive)", "dead": "dead",
+                                                      "sweep": "sweep (reclaimed — alive)"}.get(kind, kind)))
             if L.dead_bar is not None and L.dead_bar <= k and not any(x[1] == "dead" for x in g["events"]):
                 g["events"].append((T(L.dead_bar), "dead", "dead"))
             g["tests"] = sum(1 for b, kind, _ in L.events if kind == "test" and int(b) <= k)
@@ -543,7 +546,7 @@ def panel_bars(V, dec, back15=90, ahead15=26, backh=70, aheadh=8, back5=54, ahea
 UP, DN = "#2f9e44", "#e03131"
 SUPC, RESC = "#2b8a3e", "#c92a2a"
 NEXTC, INVC, DECC, APPC, TRGC = "#1c7ed6", "#c92a2a", "#343a40", "#7048e8", "#f08c00"
-EVC = {"born": "#1864ab", "broken": "#e8590c", "known": "#e8590c", "flip": "#9c36b5", "reclaim": "#2b8a3e", "dead": "#212529",
+EVC = {"born": "#1864ab", "base": "#5c940d", "broken": "#e8590c", "known": "#e8590c", "flip": "#9c36b5", "reclaim": "#2b8a3e", "dead": "#212529",
        "sweep": "#868e96"}
 
 

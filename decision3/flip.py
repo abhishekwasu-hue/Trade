@@ -29,6 +29,32 @@ ACTIVE, TESTED, BROKEN, FLIPPED, DEAD = "ACTIVE", "TESTED", "BROKEN", "FLIPPED",
 RULES = ("far_swing", "acceptance")
 
 
+# ------------------------------------------------------------------------------------------------ BREAK-1: broken = close beyond + hold
+HOLD_RULES = ("hold", "swing_beyond")
+
+
+def hold_rule(s):
+    """Abhi BREAK-1 (DECISIONS 60, owner rule — areas AND lines alike): "hold" (default) = broken only when price HOLDS beyond: a swing
+    of the hold side (`hold_kind`) forms on the far side and is confirmed while the closes are still beyond (the confirming bar too —
+    the #373 lesson: a break-known bar that already closed back is no hold). "swing_beyond" = the earlier reading (what-if): any swing
+    beyond, the push's own extreme counted. Unknown ⇒ ValueError (fail at start, never a silent rule)."""
+    r = (s or {}).get("break_hold_rule")
+    if r is None:                                                          # a bare settings dict / no settings ⇒ the registered default
+        from . import settings as S3
+        r = S3.DEFAULTS.get("break_hold_rule", "hold")
+    r = str(r)
+    if r not in HOLD_RULES:
+        raise ValueError(f"break_hold_rule {r!r} — {' / '.join(HOLD_RULES)}")
+    return r
+
+
+def hold_kind(up):
+    """The swing that proves price HOLDS beyond an object (BREAK-1): beyond it upward (a resistance / a line broken up, or price back
+    ABOVE an object broken down) ⇒ a pullback LOW that forms above it; downward ⇒ a pullback HIGH that forms below it. The push's own
+    extreme (a high above / a low below) never proves a hold — a push that turns back from there is a sweep."""
+    return "L" if up else "H"
+
+
 # ------------------------------------------------------------------------------------------------ far-side swing
 def structural(close, lo, hi, up):
     """Abhi Z-1y: a swing beyond the band counts as a STRUCTURAL far-side swing only if its own candle closed beyond the band too. A swing

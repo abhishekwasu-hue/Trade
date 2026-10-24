@@ -194,6 +194,7 @@ def _real(beyond, mirror, tail=None):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_real_k4_sweep_keeps_the_area_armed_and_the_visit_while_broken_disarms_it(mirror):
     d = 1 if mirror else -1                                                # resistance ⇒ bear call; mirror: support ⇒ bull put
     V, Z, m = _real(False, mirror)
@@ -212,6 +213,7 @@ def test_real_k4_sweep_keeps_the_area_armed_and_the_visit_while_broken_disarms_i
 
 
 @MIRRORS
+@pytest.mark.usefixtures("earlier_break_reading")   # BREAK-1: the earlier reading, what-if (tests/test_break_hold.py = default)
 def test_real_k4_broken_area_retested_from_the_other_side_is_e4b(mirror, monkeypatch):
     """e: after the real K4 break (bar 22), price stays beyond, then comes back to the band from the other side (bar 27) and a rejection
     candle closes away (bar 28) ⇒ E4 (b) in the break direction (bull put for a resistance broken up; mirror: bear call)."""
