@@ -134,6 +134,7 @@ def _two_broken(mirror, monkeypatch, bands=((100.0, 104.0), (102.5, 104.4))):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("hold_break_reading")   # E4 (b) objects in the BREAK-1 state (DECISIONS 76: FLIPPED = the owner's BROKEN)
 def test_overlapping_broken_areas_give_one_e4b_per_place(mirror, monkeypatch):
     V, d = _two_broken(mirror, monkeypatch)
     armed, fired = EM.Reader(V).broken(7, d)
@@ -148,6 +149,7 @@ def test_overlapping_broken_areas_give_one_e4b_per_place(mirror, monkeypatch):
 
 
 @MIRRORS
+@pytest.mark.usefixtures("hold_break_reading")
 def test_separate_broken_areas_still_fire_their_own_e4b(mirror, monkeypatch):
     V, d = _two_broken(mirror, monkeypatch, bands=((100.0, 104.0), (90.0, 92.0)))   # not overlapping ⇒ two places
     armed, fired = EM.Reader(V).broken(7, d)

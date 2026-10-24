@@ -168,13 +168,13 @@ def method_band_view(lv, t, shown, act, debug=False):
             out.append((x, "armed"))
             seen.add(x["id"])
     rest = [x for x in shown if x["id"] not in seen and x.get("trade_location", True)]
-    live = [x for x in rest if x.get("state") != FL.BROKEN]
+    live = [x for x in rest if x.get("state") not in (FL.BROKEN, FL.BEYOND)]
     for side in ("above", "below"):
         for x in sorted((x for x in live if x.get(side)), key=lambda x: x["dist"])[:MAX_BANDS_PER_SIDE]:
             out.append((x, "area"))
     inside = [x for x in live if not x.get("above") and not x.get("below")]
     out += [(x, "area") for x in inside]
-    broken = sorted((x for x in rest if x.get("state") == FL.BROKEN), key=lambda x: x.get("broken_at") or -1)
+    broken = sorted((x for x in rest if x.get("state") in (FL.BROKEN, FL.BEYOND)), key=lambda x: x.get("broken_at") or -1)
     if broken:
         out.append((broken[-1], "broken"))
     return out

@@ -61,14 +61,18 @@ DEFAULTS = {
     "break_rule": "structure",               # Abhi's method §3: broken = close beyond AND a swing formed beyond; sweep = back before any swing
                                              # beyond. "closes" = जुनं (accept_closes सलग closes) — फक्त जुने tests / what-if
     "accept_closes": 3,                      # फक्त break_rule = "closes" (legacy what-if): पलीकडे सलग इतके closes ⇒ acceptance
-    "break_hold_rule": "hold",               # Abhi BREAK-1 (DECISIONS 60, owner rule; areas AND lines alike): broken = a close beyond AND price
-                                             # HOLDS beyond — a swing of the hold side forms on the far side (a pullback low above a resistance /
+    "break_hold_rule": "follow_through",     # DECISIONS 76 (owner rule; areas AND lines, every TF): BROKEN = after the close beyond, a 15M
+                                             # candle CLOSES beyond the nearest prior confirmed swing of the object's own TF on the far side
+                                             # (fresh ground ⇒ a new own-TF swing forms beyond, then a close beyond it); back inside first =
+                                             # FALSE BREAK (alive); in between = BEYOND_NOT_BROKEN (no entry); flipped then broken back by
+                                             # the same test ⇒ DEAD. What-ifs: "hold" = Abhi BREAK-1 (DECISIONS 60 / 71, replaced by 76):
+                                             # broken = a close beyond AND price HOLDS beyond — a swing of the hold side forms on the far side (a pullback low above a resistance /
                                              # a line broken up; a pullback high below a support / a line broken down), confirmed while the
                                              # closes are still beyond (the confirming bar too); a push beyond that turns back without holding
                                              # = a sweep, the object stays alive ("reclaimed"). Broken back ⇒ DEAD by the same test opposite.
                                              # The E4 (b) approach side allows a sweep (DECISIONS 61). "swing_beyond" = the earlier reading (any
                                              # swing beyond — the push's own extreme counted; a broken area broken back = reclaimed) — what-if
-    "break_hold_degree": 0,                  # Abhi A-L1 (DECISIONS 71, owner rule): the held far-side swing of BREAK-1 (the hold, the
+    "break_hold_degree": 0,                  # what-if only (break_hold_rule = hold; DECISIONS 76 replaced it). Abhi A-L1 (DECISIONS 71): the held far-side swing of BREAK-1 (the hold, the
                                              # broken-back ⇒ dead test, the E4 (b) approach-side acceptance; areas AND lines) is a swing
                                              # of THIS degree — D0 = every 15M swing high / low (default). The degree stays a setting:
                                              # None = the structure's finest degree (D1, the earlier lifecycle-branch reading, what-if)
@@ -295,12 +299,17 @@ REGISTER = {
                           "itself (what-if / the da7cbbc reading)"),
     "trade_band_max_sigma": (None, "None / × σ_1H (what-if)", "Abhi नियम", "Abhi Z-1x (final): रुंदीला आकड्याची मर्यादा नाही — रचना दुरुस्त करा"),
     "break_rule": ("structure", "structure / closes (legacy)", "Abhi नियम", "Abhi's method §3: broken = a close beyond + a swing formed beyond; no close count"),
-    "break_hold_rule": ("hold", "hold / swing_beyond (what-if)", "Abhi नियम", "BREAK-1 (DECISIONS 60 / 61, owner rule): broken = a "
+    "break_hold_rule": ("follow_through", "follow_through / hold (what-if) / swing_beyond (what-if)", "Abhi नियम", "DECISIONS 76 "
+                        "(owner rule): broken = after the close beyond, a 15M close beyond the nearest prior own-TF swing on the far side "
+                        "(fresh ground: a new own-TF swing beyond, then a close beyond it); back inside first = false break (alive); in "
+                        "between = BEYOND_NOT_BROKEN; flipped then broken back by the same test ⇒ DEAD. hold = the replaced BREAK-1: "
+                        "broken = a "
                         "close beyond AND price holds beyond (a swing of the hold side forms on the far side and stays beyond — confirmed "
                         "while the closes are still beyond); a push beyond that turns back without holding is a sweep (alive, "
                         "\"reclaimed\"); broken back ⇒ DEAD by the same test opposite; areas AND lines alike; the E4 (b) approach side "
                         "allows a sweep. swing_beyond = the earlier reading (any swing beyond, the push's own extreme counted)"),
-    "break_hold_degree": (0, "0 (D0) / 1 (D1) / None = the finest structure (what-if)", "Abhi नियम", "A-L1 (DECISIONS 71, owner "
+    "break_hold_degree": (0, "0 (D0) / 1 (D1) / None = the finest structure (what-if)", "Abhi नियम", "what-if only (hold rule; "
+                          "DECISIONS 76 replaced it). A-L1 (DECISIONS 71, owner "
                           "rule): the held far-side swing of BREAK-1 is a D0 swing; the degree stays a setting. Same swings for broken "
                           "back ⇒ dead (no second flip) and the E4 (b) approach-side acceptance; areas and lines alike"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),

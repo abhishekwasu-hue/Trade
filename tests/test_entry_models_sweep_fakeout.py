@@ -153,6 +153,7 @@ def test_close_beyond_plus_swing_beyond_disarms_the_area_models(mirror):
     assert all(x["status"] == "disarmed" for x in a["models"].values())
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if (E4 (b) object = the BREAK-1 state)
 @MIRRORS
 def test_return_to_the_flipped_area_from_the_other_side_is_e4b(mirror, monkeypatch):
     """The supply 100–104 broken UP (close beyond + swing beyond ⇒ BROKEN / flipped to demand, break_dir +1 = the bull put's direction);

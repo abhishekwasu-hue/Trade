@@ -27,6 +27,7 @@ from tests.test_decision3_entry_models import _bare
 from tests.test_decision3_zone_answers import P, _mirror, m15_from, res_of
 
 MIRRORS = pytest.mark.parametrize("mirror", [False, True], ids=["resistance_up", "support_down"])
+pytestmark = pytest.mark.usefixtures("hold_break_reading")   # DECISIONS 76 replaced BREAK-1: these cases pin its what-if `hold`
 OLD = {"break_hold_rule": "swing_beyond"}
 # A resistance 117–118 (a D2 high at 118, bar 8). Bars 17 … 21 close above it (the push high 120.5 at bar 19, confirmed at 21);
 # bar 21's low 118.1 stays above the band. Mirror: a support broken down (every price reflected, H ⇄ L).
@@ -55,7 +56,8 @@ def _ev(Z, kinds=("broken", "flip", "reclaim", "dead")):
 
 
 def test_break_hold_rule_is_registered_default_and_checked():
-    assert S3.DEFAULTS["break_hold_rule"] == S3.REGISTER["break_hold_rule"][0] == "hold"
+    assert S3.REGISTER["break_hold_rule"][0] == "follow_through" and "hold" in FL.HOLD_RULES   # DECISIONS 76: hold = what-if
+    assert S3.DEFAULTS["break_hold_rule"] == "hold"                        # (pinned by the module's fixture)
     assert FL.hold_kind(True) == "L" and FL.hold_kind(False) == "H"
     with pytest.raises(ValueError, match="break_hold_rule"):
         FL.hold_rule({"break_hold_rule": "extreme"})

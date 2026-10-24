@@ -828,8 +828,9 @@ class Reader:
         V = self.V
         A = self.A
         out = []
-        for x in V.levels.snapshot(t):
-            if x.get("state") != FL.BROKEN or int(x.get("break_dir") or 0) != int(d) or not x.get("trade_location", True):
+        want_state = FL.FLIPPED if FL.hold_rule(V.s) == "follow_through" else FL.BROKEN   # DECISIONS 77: E4 (b) only after BROKEN
+        for x in V.levels.snapshot(t):                                     # (follow-through = code FLIPPED); never BEYOND_NOT_BROKEN
+            if x.get("state") != want_state or int(x.get("break_dir") or 0) != int(d) or not x.get("trade_location", True):
                 continue
             if x.get("broken_at") is None:
                 continue

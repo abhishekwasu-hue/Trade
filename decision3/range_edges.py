@@ -43,7 +43,7 @@ LOWER, UPPER = "lower", "upper"
 ROLE = {LOWER: LV.SUP, UPPER: LV.RES}
 KIND = {LOWER: "L", UPPER: "H"}
 SIDE = {LOWER: "bull_put", UPPER: "bear_call"}
-WORD = {FL.ACTIVE: "fresh", FL.TESTED: "tested", FL.BROKEN: "broken", FL.FLIPPED: "flipped", FL.DEAD: "dead"}
+WORD = {FL.ACTIVE: "fresh", FL.TESTED: "tested", FL.BROKEN: "broken", FL.BEYOND: "beyond, not broken", FL.FLIPPED: "flipped", FL.DEAD: "dead"}
 BIRTH = "range"                                     # births tag of a range-edge area (levels use "a:D2", "a:D", "b", "c", "d")
 TF_STATES = {"D": ("daily", "daily_df"), "W": ("weekly", "weekly_df")}
 NO_BREAKOUT = "Abhi does not trade breakouts — a range breakout is context only"
@@ -184,7 +184,7 @@ def _entry(V, L, t, snap, edge, members, rng, current):
     dist = 0.0 if lo <= c <= hi else (lo - c if c < lo else c - hi)
     ov = [x for x in snap if not (hi < x["lo"] or lo > x["hi"])]
     conf = [{"tf": x["tf"], "id": x["id"], "lo": x["lo"], "hi": x["hi"]} for x in ov if L.tf in ("1H", "15M") and x["tf"] in ("D", "W")]
-    inside_1h = [x["id"] for x in ov if L.tf in ("D", "W") and x["tf"] == "1H" and x.get("state") not in (FL.BROKEN, FL.DEAD)]
+    inside_1h = [x["id"] for x in ov if L.tf in ("D", "W") and x["tf"] == "1H" and x.get("state") not in FL.NOT_PLACE]
     same = [x["id"] for x in ov if x["tf"] == L.tf and x["role"] == L.role_at(t) and x["lo"] == round(lo, 2) and x["hi"] == round(hi, 2)]
     fv = LVS.flip_view(L, t)
     state = fv["state"]
@@ -195,7 +195,7 @@ def _entry(V, L, t, snap, edge, members, rng, current):
         loc, why = False, "range over — " + NO_BREAKOUT
     elif L.tf == "W":
         loc, why = False, "Weekly range edge: context only (Abhi Z-1u)"
-    elif state in (FL.BROKEN, FL.DEAD):
+    elif state in FL.NOT_PLACE:
         loc, why = False, f"edge {WORD[state]} (K4): not a trade location"
     elif flipped:
         loc, why = False, "edge flipped (role reversed) — no longer this range's edge"

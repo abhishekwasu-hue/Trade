@@ -52,6 +52,8 @@ def broken_by(A, pivs, kind, line, side, start, end, rule=None):
     beyond (a push that turns back first = a sweep). "swing_beyond" (what-if) = the earlier reading: a swing of `kind` (the line's own
     kind — the push's extreme) beyond, closes beyond up to its bar.
     Bars start … end only. Returns the bar of the close that began that excursion, or None."""
+    if FL.hold_rule({"break_hold_rule": rule}) == "follow_through":      # DECISIONS 76 (default): follow-through
+        return follow_through_break(A["close"], pivs, line, side, start, end)[0]
     hold = FL.hold_rule({"break_hold_rule": rule}) == "hold"           # None ⇒ the registered default
     want = FL.hold_kind(side > 0) if hold else kind
 
@@ -377,6 +379,43 @@ def _broken_at(C, pivs, kind, line, side, start, end, hold=False):
     return best
 
 
+def follow_through_break(C, known, line, side, start, end):
+    """DECISIONS 76 (owner rule; lines as areas, every TF): a line is BROKEN when, after a close beyond it (`side` +1 = above), a candle
+    of the line's chart CLOSES beyond the nearest prior confirmed swing of the line's own TF on the far side (`known` = the swings the
+    line is drawn on: a swing high above the line for a break up, a swing low below it for a break down — formed before the
+    excursion's first close, its extreme beyond the line at the judged bar, confirmed by that bar); fresh ground (none) ⇒ a new own-TF
+    swing forms beyond from the excursion on, is confirmed, and a candle closes beyond it. A close back on the line's side first = a
+    false break (the excursion ends); a wick through the swing that closes back = a sweep of that swing. Bars start … end only; swings
+    confirmed by the judged bar only. Returns (excursion start, known bar, open excursion start): the first two = the break (None if
+    none), the last = the start of the excursion still beyond at `end` without follow-through (BEYOND_NOT_BROKEN) or None."""
+    if end < start:
+        return None, None, None
+    kind = "H" if side > 0 else "L"
+    ps = [p for p in known if p.kind == kind]
+    pb = np.array([int(p.bar) for p in ps], int)
+    pp = np.array([float(p.price) for p in ps], float)
+    pc = np.array([_cb(p) for p in ps], int)
+    ex = None
+    for u in range(int(start), int(end) + 1):
+        lu = float(line(u))
+        if (float(C[u]) - lu) * side <= 0:
+            ex = None
+            continue
+        if ex is None:
+            ex = u
+        if not len(ps):
+            continue
+        ok = (pc <= u) & ((pp - lu) * side > 0)
+        pre = ok & (pb < ex)
+        pool = pre if pre.any() else (ok & (pb >= ex))
+        if not pool.any():
+            continue
+        tgt = float(pp[pool].min() if side > 0 else pp[pool].max())
+        if (float(C[u]) - tgt) * side > 0:
+            return ex, u, None
+    return None, None, ex
+
+
 def _pair_ok(C, known, b1, y1, b2, y2, kind):
     """Method §3 Lines (logic): two separate reactions and no candle closes through the line between them (a wick = touch / sweep)."""
     if not separate(known, b1, b2, kind):
@@ -477,15 +516,23 @@ def lines_on(A, known, t, degree, tf, prefix, rule=None, hold_known=None):
 
             def line(b, y1=y1, b1=b1, slope=slope):
                 return y1 + slope * (b - b1)
-            bb = _broken_at(C, hk if rule == "hold" else known, FL.hold_kind(side > 0) if rule == "hold" else kind, line, side, b2 + 1, t,
-                            hold=rule == "hold")                           # BREAK-1: a close beyond + a swing that HOLDS beyond
+            kb = beyond = None
+            if rule == "follow_through":                                   # DECISIONS 76: a close beyond + follow-through
+                bb, kb, beyond = follow_through_break(C, known, line, side, b2 + 1, t)
+            else:
+                bb = _broken_at(C, hk if rule == "hold" else known, FL.hold_kind(side > 0) if rule == "hold" else kind, line, side, b2 + 1,
+                                t, hold=rule == "hold")                    # BREAK-1 what-if: a close beyond + a swing that HOLDS beyond
             groups = touch_groups(A, known, kind, line, b1, b2, t if bb is None else bb)
             x = {"family": f"{'rising' if sd > 0 else 'falling'} line of {'highs' if kind == 'H' else 'lows'}", "kind": kind,
                  "slope_dir": "rising" if sd > 0 else "falling", "degree": g, "tf": tf,
                  "p1": [b1, round(y1, 2)], "p2": [b2, round(y2, 2)],
                  "slope": round(slope, 4), "touches": len(groups), "touch_groups": groups, "value_t": round(line(t), 2),
                  "broken": bb is not None, "break_bar": bb, "break_side": "up" if side > 0 else "down",
-                 "state": "BROKEN" if bb is not None else "ACTIVE", "id": f"{prefix}:{kind}{'+' if sd > 0 else '-'}:{b1}-{b2}"}
+                 "state": "BROKEN" if bb is not None else (FL.BEYOND if beyond is not None else "ACTIVE"),
+                 "id": f"{prefix}:{kind}{'+' if sd > 0 else '-'}:{b1}-{b2}"}
+            if rule == "follow_through":
+                x["break_known_bar"] = kb                                  # DECISIONS 76: the follow-through close (the break is known)
+                x["beyond_at"] = beyond
             if bb is None and cur is None:
                 cur = x
             elif bb is not None:
@@ -534,13 +581,20 @@ def channels_on(A, known, lines, t, degree, rule=None, hold_known=None):
 
         def par(b, yo=yo, bo=bo, sl=sl):
             return yo + sl * (b - bo)
-        pb = _broken_at(C, hk if rule == "hold" else known, FL.hold_kind(pside > 0) if rule == "hold" else pk, par, pside, int(b2) + 1, t,
-                        hold=rule == "hold")                               # BREAK-1 (as the base line)
+        pkb = pbey = None
+        if rule == "follow_through":                                       # DECISIONS 76 (as the base line)
+            pb, pkb, pbey = follow_through_break(C, known, par, pside, int(b2) + 1, t)
+        else:
+            pb = _broken_at(C, hk if rule == "hold" else known, FL.hold_kind(pside > 0) if rule == "hold" else pk, par, pside, int(b2) + 1,
+                            t, hold=rule == "hold")                        # BREAK-1 what-if (as the base line)
         pl = {"family": f"{ln['slope_dir']} line of {'lows' if pk == 'L' else 'highs'} (parallel)", "kind": pk,
               "slope_dir": ln["slope_dir"], "degree": g, "tf": ln["tf"], "p1": [bo, round(yo, 2)], "p2": [bo + 1, round(par(bo + 1), 2)],
               "slope": ln["slope"], "value_t": round(par(t), 2), "broken": pb is not None, "break_bar": pb,
-              "break_side": "up" if pside > 0 else "down", "state": "BROKEN" if pb is not None else "ACTIVE",
+              "break_side": "up" if pside > 0 else "down",
+              "state": "BROKEN" if pb is not None else (FL.BEYOND if pbey is not None else "ACTIVE"),
               "id": f"{ln['id']}|par", "parallel_of": ln["id"]}
+        if rule == "follow_through":
+            pl["break_known_bar"], pl["beyond_at"] = pkb, pbey
         up_, lo_ = (ln, pl) if ln["kind"] == "H" else (pl, ln)
         ut, lt = line_value(up_, t), line_value(lo_, t)
         broken = [x for x in (up_, lo_) if x["broken"]]
@@ -660,6 +714,14 @@ def broken_back_on(C, known, ln, t, rule=None, known_bar=False):
         run_end += 1
     if run_end > t:
         return None
+    if FL.hold_rule({"break_hold_rule": rule}) == "follow_through":      # DECISIONS 76: broken back by the same test ⇒ DEAD
+        kb = ln.get("break_known_bar")
+        kb = int(ln["break_bar"]) if kb is None else int(kb)
+        line = (lambda i, ln=ln: line_value(ln, i))
+        b0, k1, _ = follow_through_break(C, [p for p in known if _cb(p) <= t], line, -side, kb + 1, t)
+        if b0 is None:
+            return None
+        return k1 if known_bar else b0
     hold = FL.hold_rule({"break_hold_rule": rule}) == "hold"
     back_kind = FL.hold_kind(side < 0) if hold else ("L" if side > 0 else "H")   # hold: price back on the original side HOLDS there
     piv = [p for p in known if _cb(p) <= t and p.kind == back_kind and int(p.bar) >= run_end
@@ -686,6 +748,8 @@ def break_known_at(V, ln):
     proves the break after the break close (K6.5; BREAK-1: the hold side's own swing, confirmed while the closes are still beyond)."""
     if not ln.get("broken"):
         return None
+    if FL.hold_rule(V.s) == "follow_through" and ln.get("break_known_bar") is not None:
+        return int(ln["break_known_bar"])                                  # DECISIONS 76: the follow-through close
     side = _break_side(ln)
     bb = int(ln["break_bar"])
     C = V.levels.A["close"]

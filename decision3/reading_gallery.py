@@ -433,7 +433,7 @@ def geometry(V, c):
     try:
         opp = []
         for x in V.levels.snapshot(k):
-            if str(x.get("state") or "").upper() in ("BROKEN", "DEAD") or not x.get("trade_location", True) or ref is None:
+            if str(x.get("state") or "").upper() in ("BROKEN", "BEYOND_NOT_BROKEN", "DEAD") or not x.get("trade_location", True) or ref is None:
                 continue
             if (d < 0 and x.get("role") == "support" and float(x["hi"]) < ref) or (d > 0 and x.get("role") == "resistance" and float(x["lo"]) > ref):
                 opp.append(x)

@@ -230,6 +230,7 @@ def test_b1_holding_beyond_the_far_side_ends_the_visit_a_sweep_does_not(mirror):
     assert V2.visit(6, lvl2, d2)["start"] == 2
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if
 @MIRRORS
 def test_broken_area_retest_move_start_is_the_last_away_swing_after_the_break_on_both_readers(mirror):
     """C-L5-1 + B2: the RSI read of an E4 (b) entry at a broken area gets the last swing built away from it AFTER its break known at the

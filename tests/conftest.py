@@ -217,6 +217,19 @@ def earlier_break_reading(monkeypatch):
 
 
 
+@pytest.fixture
+def hold_break_reading(monkeypatch):
+    """DECISIONS 76 replaced BREAK-1 (the pullback-swing hold, DECISIONS 60 / 71) by the follow-through lifecycle (default
+    `break_hold_rule = follow_through`, tests/test_lifecycle_follow_through.py). Tests written for BREAK-1 run on its what-if `hold`,
+    which reproduces it exactly; an explicit other rule still reads (and an unknown one still raises)."""
+    from decision3 import flip as FL
+    from decision3 import settings as S3
+    real = FL.hold_rule
+    monkeypatch.setitem(S3.DEFAULTS, "break_hold_rule", "hold")
+    monkeypatch.setattr(FL, "hold_rule", lambda s=None: real(s) if (s or {}).get("break_hold_rule") not in (None, "follow_through")
+                        else "hold")
+
+
 @pytest.fixture(scope="module")
 def earlier_break_reading_ctx():
     """`earlier_break_reading` for module-scoped fixtures (built before any function-scoped monkeypatch): a context manager the fixture

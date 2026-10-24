@@ -112,7 +112,7 @@ def areas_facts(V, t, row, close, conf_read=None, types=None):
     conf_by_id = {a["id"]: a for a in (conf_read or {}).get("areas") or ()}
     types_by_id = {a["id"]: a for a in (types or ())}
     alive = [area_fact(x, conf_by_id, types_by_id) for x in snap if str(x.get("state")).upper() in ALIVE and x.get("tf") in SHOWN_TFS]
-    broken = [area_fact(x) for x in snap if str(x.get("state")).upper() == "BROKEN" and x.get("tf") in SHOWN_TFS]
+    broken = [area_fact(x) for x in snap if str(x.get("state")).upper() in ("BROKEN", "BEYOND_NOT_BROKEN") and x.get("tf") in SHOWN_TFS]
     by_id = {a["id"]: a for a in alive}
     watch = [by_id[w["id"]] for w in (row.get("watch_list") or ()) if w.get("id") in by_id]   # the engine's own armed trade side
     side_roles = {w.get("role") for w in (row.get("watch_list") or ())}

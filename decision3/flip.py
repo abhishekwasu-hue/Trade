@@ -26,22 +26,36 @@ import pandas as pd
 from . import daily_legs as DL
 
 ACTIVE, TESTED, BROKEN, FLIPPED, DEAD = "ACTIVE", "TESTED", "BROKEN", "FLIPPED", "DEAD"
+BEYOND = "BEYOND_NOT_BROKEN"            # DECISIONS 76: closed beyond, follow-through not confirmed yet — not flipped, no entry (R3)
+NOT_PLACE = (BROKEN, BEYOND, DEAD)      # states that are never a trade location
 RULES = ("far_swing", "acceptance")
+# DECISIONS 76 words (the owner's lifecycle) for the code states: FLIPPED = the owner's BROKEN (follow-through confirmed, role reversed)
+LIFECYCLE = {ACTIVE: "ALIVE", TESTED: "ALIVE", BEYOND: "BEYOND_NOT_BROKEN", FLIPPED: "BROKEN", BROKEN: "BEYOND_NOT_BROKEN", DEAD: "DEAD"}
+
+
+def lifecycle(state):
+    """DECISIONS 76: the owner's lifecycle word for a code state (ALIVE / BEYOND_NOT_BROKEN / BROKEN / DEAD)."""
+    return LIFECYCLE.get(state, state)
 
 
 # ------------------------------------------------------------------------------------------------ BREAK-1: broken = close beyond + hold
-HOLD_RULES = ("hold", "swing_beyond")
+HOLD_RULES = ("follow_through", "hold", "swing_beyond")
 
 
 def hold_rule(s):
-    """Abhi BREAK-1 (DECISIONS 60, owner rule — areas AND lines alike): "hold" (default) = broken only when price HOLDS beyond: a swing
+    """DECISIONS 76 (owner rule, default "follow_through"; areas AND lines, every TF, both directions): BROKEN = after the close beyond,
+    a reading-TF candle CLOSES beyond the nearest prior confirmed swing of the object's own TF on the far side (fresh ground ⇒ a new
+    own-TF swing forms beyond and a candle closes beyond it); back inside before that = FALSE BREAK (alive); in between =
+    BEYOND_NOT_BROKEN; a flipped object broken back by the same test ⇒ DEAD. What-ifs: "hold" = BREAK-1 (DECISIONS 60 / 71, the
+    pullback-swing hold, `break_hold_degree`):
+    broken only when price HOLDS beyond: a swing
     of the hold side (`hold_kind`) forms on the far side and is confirmed while the closes are still beyond (the confirming bar too —
     the #373 lesson: a break-known bar that already closed back is no hold). "swing_beyond" = the earlier reading (what-if): any swing
     beyond, the push's own extreme counted. Unknown ⇒ ValueError (fail at start, never a silent rule)."""
     r = (s or {}).get("break_hold_rule")
     if r is None:                                                          # a bare settings dict / no settings ⇒ the registered default
         from . import settings as S3
-        r = S3.DEFAULTS.get("break_hold_rule", "hold")
+        r = S3.DEFAULTS.get("break_hold_rule", "follow_through")
     r = str(r)
     if r not in HOLD_RULES:
         raise ValueError(f"break_hold_rule {r!r} — {' / '.join(HOLD_RULES)}")

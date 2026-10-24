@@ -197,6 +197,7 @@ def test_a_breakout_bar_never_fires_and_off_models_stay_off(mirror):
     assert st[10][0]["models"]["E1"] == {"status": "off"} and st[10][0]["models"]["E4"] == {"status": "off"}
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if (E4 (b) object = the BREAK-1 state)
 @pytest.mark.parametrize("mirror", [False, True], ids=["bear_call", "bull_put"])
 def test_e4b_broken_area_revisited_and_rejected(mirror):
     """A support 100–102 broken down (K4 BROKEN, break_dir −1 = the bear call's direction), revisited from below; a red engulf closes

@@ -266,6 +266,7 @@ def _ha_case(mirror, s=None, broken_from=33):
     return rows, V
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull_put", "bear_call_mirror"])
 def test_no_model_c_entry_after_a_close_beyond_ha_b_only(mirror):
     """b_only (default): the first close beyond HA (bar 27) closes the window — the later pullback into the A demand area (bars 50–51)
@@ -284,6 +285,7 @@ def test_no_model_c_entry_after_a_close_beyond_ha_b_only(mirror):
     assert {t: [e["sub_model"] for e in got[t]] for t in got if t >= 27} == {35: ["C-e"]}
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull_put", "bear_call_mirror"])
 def test_never_an_entry_on_the_break_of_ha_only_the_first_return(mirror):
     """C-e (c_window b_and_ha_retest): the breakout candle of HA (27) and the push (28–33) never fire; the FIRST return to HA's broken
@@ -317,6 +319,7 @@ def _sig(V, t, d):
             [(e["key"], e["model"], e["sub_model"], e["invalidation"], e["trigger_bar"]) for e in ents])
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull_put", "bear_call_mirror"])
 @pytest.mark.parametrize("case", ["b_pullback", "ha_return"])
 def test_no_look_ahead_the_read_at_t_equals_the_read_on_data_cut_at_t(mirror, case):
@@ -341,6 +344,7 @@ def test_no_look_ahead_the_read_at_t_equals_the_read_on_data_cut_at_t(mirror, ca
     assert seen, "non-vacuous: an entry bar was compared"
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if
 # ------------------------------------------------------------------------------------------------ sub-model switches, labels
 def test_sub_model_switches_are_independent():
     rows = _rows()
@@ -586,6 +590,7 @@ def test_real_levels_record_a_birth_inside_an_alive_band():
     assert MC._ha_area(NS(levels=lv), 23, 21, 1)["id"] == host.id and MC._ha_area(NS(levels=lv), 22, 21, 1) is None
 
 
+@pytest.mark.usefixtures("hold_break_reading")   # written on BREAK-1 (replaced by DECISIONS 76): its what-if
 @pytest.mark.parametrize("mirror", [False, True], ids=["bull_put", "bear_call_mirror"])
 def test_c_e_object_unchanged_by_a_later_level_at_ha_truncation(mirror):
     """The C-e read at the first return (35) with a later-born level on HA's swing (born 44, listed first) is the same as on data cut
