@@ -251,3 +251,6 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
 88. Vision cross-check: a second opinion, never the source of truth — clean charts at the decision bar (Weekly, Daily, 1H, 15M; no
     marks, no later data), fixed questions, a reader vs vision vs answer-key table; a budget cap per run in settings; the cost is
     reported (paid calls approved within that cap). (Owner decision)
+89. S1 addition: an extreme made while price tests an object is labelled a FALSE BREAK extreme on charts and in reports, never a swing
+    high / low. While price is still beyond with the outcome unknown the state is BEYOND_NOT_BROKEN; once a candle closes back inside it
+    becomes FALSE BREAK. (Owner rule)

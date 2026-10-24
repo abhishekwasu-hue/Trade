@@ -1127,3 +1127,7 @@ DP-1 Daily bars whose closing-auction print lies beyond the traded high/low: kee
 DP-2 Flags apply in replays too, inside the BREAK-2 PR.
 V1 Vision cross-check (second opinion, never the source of truth): reuse the existing vision test tool. For every answer-key item and every new replay entry, render clean charts at the decision bar (Weekly, Daily, 1H, 15M; no marks, no data after the decision) and ask the vision model fixed questions: higher-TF trend, zones near price, object state (alive / false break / beyond-not-broken / broken / dead), entry yes/no and side. Output a table reader vs vision vs answer key; list disagreements with charts. Budget cap per run in settings; report the cost.
 Then: integ51 + dpfeed → one BREAK-2 PR → CI → my review. Next C, then D + E, then Z.
+
+---
+## 24 Oct — S1 addition
+S1 addition: label every such test-made extreme on charts and in reports as a FALSE BREAK extreme, never as a swing high/low. While price is still beyond and the outcome is unknown the state is BEYOND_NOT_BROKEN; once price closes back inside it becomes FALSE BREAK.
