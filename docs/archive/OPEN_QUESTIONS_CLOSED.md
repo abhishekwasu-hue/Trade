@@ -1508,3 +1508,22 @@ bar KNOWN (DECISIONS 63). Provisional choices, checked against DECISIONS 23 / 27
   (Daily 288, 5–7 Aug) shows no lifecycle event in either reading (price stayed inside the wide band).
 - **A-L6:** tests written for the earlier reading run on the what-if (`earlier_break_reading` fixture, tests/conftest.py), which
   reproduces it exactly; the default is pinned by tests/test_break_hold.py (both mirrors, cut = full no-look-ahead).
+
+<!-- moved from branch `identity` at the integ51 merge (DECISIONS 70: archive, never delete) -->
+
+## Gallery review A5–A7 (24 Oct) — object identity, band rule, refined base (branch `identity`; report `docs/reports/gallery_review_fixes_A567.md`)
+
+Checked against DECISIONS 62 / 63 (owner rules), CLAUDE.md (no numbers, Z-1u never union, refined base RC2) and the method doc (Areas:
+wick to body, BOS-origin base; refined base). Each item has a provisional default; work continues with it.
+
+| id | Question (one line) | Provisional default | Concept |
+|---|---|---|---|
+| A5-1 | The stable id of a place: `<timeframe>:<H \| L>:<base candle start>` (e.g. `1H:L:2026-09-11 09:15`, `D:L:2026-09-11`). OK as the id Abhi sees on cards / galleries? | `Level.uid` = that; visit ids, the once-per-model key and the cluster anchor use it; `Level.id` stays a lookup index only | C areas (identity) |
+| A5-2 | Line ids still carry bar indices of the build (e.g. `line:D2:H+:600-650`) — the same window effect as the area ids. | not changed here (lines belong to the trendline track); flagged to that owner | K6.5 lines (identity) |
+| A5-3 | A Daily and a 1H level can hold the SAME band when the Daily swing candle's wick to body = its first hour's (55,699–55,970: `1H:L:2026-09-11 09:15` and `D:L:2026-09-11`). | kept as two objects of two timeframes (Z-1u: the 1H is the location, the Daily is its confluence label; identical bands ⇒ identical lifecycle) | C areas, §1 MTF |
+| A6-1 | Area 297 / 296 (57,397–58,025, 628 pts): its 1H swing candle is the single 15:15 bar of 31 Aug — 1m shows 15:15–15:28 flat at 57,397.35 and one 15:29 print at 58,024.95 (the Daily close is the same). No wick ⇒ the body = the whole bar. A data (closing print) question, not a union. | band unchanged (the rule is applied as written); listed as a data note | C areas (band rule), data |
+| A6-2 | Area 298 (54,886–55,193) is the 1H swing candle's own upper wick (10-05 09:15 hour: body top 54,886.20 = the hour's close … high 55,192.65), not 294 + a sweep. | no change (rule-compliant) | C areas (band rule, Z-1u) |
+| A7-1 | "15M turn" for the refined base = every turn the swing engine confirms on 15M (its finest degree, D0), not only the structure list (D1). | D0 (missed turns N03 / N07 / N04 found) | RC2 refined base, TA4 |
+| A7-2 | A turn whose extreme pokes just beyond the band (a sweep) but whose wick to body trades into the band is the turn at the area. | counts; its base is kept inside the band (never beyond the area, Z-1u) | RC2, K4 sweep |
+| A7-3 | Refined base = the whole area when the 15M candle's wick to body equals (or contains) the 1H candle's (the extreme sits in the hour's first 15M bar; R5-E01, E01, E09) and no newer turn exists. | kept (by construction the newest turn IS the area's own base candle) | RC2 |
+| A7-4 | A real 15M turn candle with a tiny wick still gives a narrow base (rule: wick to body; "no wick ⇒ the body" only when there is no wick at all). | kept literally; listed in the replay (widths) for Abhi | TA4 / Z-1x |

@@ -453,9 +453,11 @@ def _digest(rows, drop=()):
 # label (CHANNEL_DISPLAY) left out: abc recomputed at bf280a8 itself (the old digest there = the old pin ffca3761…); oct12 from the
 # current code, whose rows equalled the old pins a2671001… / e80cb1a7… under the old digest (only the channel label words changed).
 # abc re-pinned for DECISIONS 56 (L5-b): one row's RSI summary gains `forming_push` (the push still forming); nothing else changed.
-PIN = {"abc": "2597dd7fd2420ae989883084047ec63cf25b6197126df9121c924fd955e0efed",
-       "oct12_bear": "c82ecb5ddac09c1079ff71e5100ecccb9bbdfee17b550a28f41bfc52aa087911",
-       "oct12_bull": "f65785d0a5ba314d943ccd7f573008f22c6f836e21a2fc136e607a79a92fa81b"}
+# re-pinned for the gallery review A5 / A7 (branch `identity`, DECISIONS 62 / 63): rows carry the place's stable id (`uid`, visit ids
+# `<uid>@<start>`) and the refined base reads every 15M turn inside the band; model C OFF = ON minus `model_c` still holds.
+PIN = {"abc": "9dd3adbd6116a3cf114bcc4cfcd68fc98e85bbf24fb0688cb335d9b8d1697de8",
+       "oct12_bear": "20a06d3b3d537f984053d980d2015ad98d223ede266d353536f43318e6e997c1",
+       "oct12_bull": "79716342ba6c88f021403e00072c3a7e84875c08829ef59cdef047ee73fa291f"}
 
 
 def _fixture_rows(name, extra):

@@ -279,8 +279,9 @@ class Reader5(EM.Reader):
         lid = lvl.get("parent_level", lvl.get("id"))
         if vi["start5"] is None and vi.get("data") is None:
             return None, []
-        base = {"object": "area", "area_id": lid, "tf": lvl.get("tf"), "role": lvl.get("role"), "lo": lvl["lo"], "hi": lvl["hi"],
-                "state": lvl.get("state"), "direction": int(d), "side": EM.side_of(d), "visit_id": f"{lid}@{vi['vid']}",
+        uid = self.uid_of(lvl)                                             # A5: the place's stable id (never the build's list index)
+        base = {"object": "area", "area_id": lid, "area_uid": uid, "tf": lvl.get("tf"), "role": lvl.get("role"), "lo": lvl["lo"],
+                "hi": lvl["hi"], "state": lvl.get("state"), "direction": int(d), "side": EM.side_of(d), "visit_id": f"{uid}@{vi['vid']}",
                 "visit_start": vi["vid"], "visit_start_bar": vi["start5"] if vi["start5"] is not None else -1,
                 "visit_start5": self.T5(vi["start5"]), "trigger_tf": "5M", "labels": lvl.get("confluence_label")}
         if vi["start5"] is None:                                           # Q16: no 5M candles for this visit ⇒ the models wait
@@ -520,9 +521,10 @@ class Reader5(EM.Reader):
             role = obj.get("role") if kind == "area" else ("support" if d < 0 else "resistance")
             w0 = self.side_from(j, role, d, start)
             val = round(F.line_value(obj, j), 2) if kind == "line" else None
-            base = {"object": "broken_" + kind, "area_id": oid, "tf": obj.get("tf") if kind == "area" else "line",
+            uid = self.uid_of(obj) if kind == "area" else oid
+            base = {"object": "broken_" + kind, "area_id": oid, "area_uid": uid, "tf": obj.get("tf") if kind == "area" else "line",
                     "role": role, "lo": obj.get("lo") if kind == "area" else val, "hi": obj.get("hi") if kind == "area" else val,
-                    "state": "BROKEN", "direction": int(d), "side": EM.side_of(d), "visit_id": f"{oid}@{F.bin_T(start)}",
+                    "state": "BROKEN", "direction": int(d), "side": EM.side_of(d), "visit_id": f"{uid}@{F.bin_T(start)}",
                     "visit_start": F.bin_T(start), "visit_start_bar": int(start), "visit_start5": self.T5(start), "trigger_tf": "5M",
                     "broken_at": self.T(obj.get("broken_at") if kind == "area" else obj.get("break_bar"))}
             if kind == "line":
@@ -650,6 +652,7 @@ def read5(V, j, trend, act, side_fn=None, keep=None, extra=None, prefix="", brok
             ok5, cm5 = R.confirm5(lvl, d, start5, R.appr5(vi))
             mf = (int(vi["approach_from15"]) - 1) if vi.get("approach_from15") is not None else None
             area = {kk: lvl.get(kk) for kk in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
+            area["uid"] = a.get("area_uid")
             if lvl.get("range_edge"):
                 area["range_edge"] = lvl["range_edge"]
         elif f["kind"] == "area":
@@ -662,6 +665,7 @@ def read5(V, j, trend, act, side_fn=None, keep=None, extra=None, prefix="", brok
             vb = R.visit5(j, lvl, d)
             mf = (int(vb["approach_from15"]) - 1) if vb.get("approach_from15") is not None else None
             area = {kk: x.get(kk) for kk in ("id", "tf", "role", "lo", "hi", "state", "births", "confluence_label")}
+            area["uid"] = a.get("area_uid")
         else:
             ln = f["raw"]
             v = round(F.line_value(ln, j), 2)

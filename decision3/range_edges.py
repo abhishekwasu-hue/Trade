@@ -209,7 +209,7 @@ def _entry(V, L, t, snap, edge, members, rng, current):
           f"({', '.join(format(m['price'], ',.2f') for m in members)}) — area = swing candle {lo:,.2f}–{hi:,.2f} (wick to body)",
           f"{WORD[state]}" + (f" ×{tests}" if state == FL.TESTED else "") + (f", ★{L.count('sweep', t)}" if L.count("sweep", t) else ""),
           (f"{SIDE[edge].replace('_', ' ')} at the {edge} edge" if side else "flipped edge — no range trade side")]
-    return {"id": L.id, "tf": L.tf, "role": L.role_at(t), "lo": round(lo, 2), "hi": round(hi, 2), "births": births,
+    return {"id": L.id, "uid": getattr(L, "uid", None) or str(L.id), "tf": L.tf, "role": L.role_at(t), "lo": round(lo, 2), "hi": round(hi, 2), "births": births,
             "anchor": L.anchor, "tests": tests, "sweeps": L.count("sweep", t), "flips": L.count("flip", t),
             "fresh": tests == 0, "score": LVS.score(L, t, births, conf), "dist": round(dist, 2),
             "dist_sigma": round(dist / sg, 2) if np.isfinite(sg) and sg > 0 else None,
