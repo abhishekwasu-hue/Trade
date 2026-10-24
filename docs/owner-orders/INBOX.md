@@ -1139,3 +1139,21 @@ answer_key_batch1_v4.json (L06 false break / supply alive; L07 next external swi
 ---
 ## 24 Oct — v4 + V1 cap
 Attached: answer_key_batch1_v4.json (use it instead of v3.1). V1 budget cap = $1 per run (setting), as your default.
+
+---
+## 24 Oct — OWNER ORDER: SWINGS + TREND (SW), then ENTRY GATE (EN)
+OWNER ORDER — Trade: SWINGS + TREND (foundation), then ENTRY GATE. Research-based; numbers only in settings; no dates in rules. Report ≤25 lines by ID.
+
+WORK ORDER (replaces the earlier sequence): finish the BREAK-2 PR first → then SW (this order) → Z (zone construction) → EN (this order) → C (RSI) → D + E. One layer at a time, each with its own PR. Do not start SW inside the BREAK-2 PR.
+
+SW1 Swing = a confirmed pivot (bars on both sides) that also passes a magnitude filter measured in multiples of that TF's ATR (setting per TF). No fixed point thresholds in logic. The newest leg is provisional; nothing reads an unconfirmed pivot.
+SW2 Every swing is labelled EXTERNAL (the major swings that define the current trend/range of that TF) or INTERNAL (smaller swings inside one external leg), relative to the reference range; a larger filter gives the external set, a tighter one the internal set (both settings). BREAK-2's "next external swing" and zone departures use this label.
+SW3 Trend per TF from EXTERNAL swings only: higher highs + higher lows = UP; lower highs + lower lows = DOWN; mixed = RANGE. A trend changes only when the protecting external swing (last higher low in UP / last lower high in DOWN) is broken by a close (CHoCH) and a structure break in the new direction confirms it (BOS). Use the last completed higher-TF bar. Daily side = Daily trend by SW3; the statistical regime (net ratio, sigma) becomes context only.
+SW4 Range (mixed structure): only edge fades — bull put at the lower edge, bear call at the upper edge.
+SW5 Proof: owner fixtures unedited; before/after charts of Daily side and swing labels on the replay window (≤20); match the answer key when supplied.
+
+EN1 The method's own decision rule applies to every model: an ENTRY exists only when the required set is complete (handover + commitment + commitment volume above the approach-leg average + lower-TF CHoCH by close). A model firing without it produces a WATCH alert only (no card, no position). Report how many current entries become watch alerts.
+EN2 Invalidation = the zone's distal edge, or the false-break extreme when that lies beyond; never an internal level inside the zone.
+EN3 Overlapping objects at one location form a cluster: one entry per cluster per visit (objects stay separate; no merging).
+EN4 Lines: anchors are external swings; a line break follows BREAK-2; a line break alone is a pace change, never an entry or reversal by itself.
+EN5 Proof: replay before/after (entries, watch alerts, stop-outs, next-area reached) + ≤20 charts; owner fixtures unedited.

@@ -255,3 +255,14 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
     high / low. While price is still beyond with the outcome unknown the state is BEYOND_NOT_BROKEN; once a candle closes back inside it
     becomes FALSE BREAK. (Owner rule)
 90. V1 vision cross-check budget cap = $1 per run (a setting). Answer key v4 replaces v3.1. (Owner decision)
+91. Work order: BREAK-2 PR → SW (swings + trend) → Z (zones) → EN (entry gate) → C (RSI) → D + E; one layer per PR. (Owner decision)
+92. SW: a swing = a confirmed pivot passing an ATR-multiple magnitude filter (setting per TF); the newest leg is provisional and never
+    read. Swings are labelled EXTERNAL / INTERNAL (two filter settings); BREAK-2 next swing and zone departures use EXTERNAL. Trend per
+    TF from EXTERNAL swings only (HH+HL UP, LH+LL DOWN, mixed RANGE); a trend changes only by a close through the protecting external
+    swing (CHoCH) confirmed by a structure break in the new direction (BOS), on the last completed higher-TF bar. Daily side = Daily
+    trend by this rule; the statistical regime is context only. Range ⇒ edge fades only. (Owner rule)
+93. EN: an ENTRY exists only with the complete required set (handover + commitment + commitment volume above the approach-leg average
+    + lower-TF CHoCH by close) for every model; without it a model firing is a WATCH alert only (no card, no position). Invalidation =
+    the zone's distal edge, or the false-break extreme beyond it; never an internal level. Overlapping objects at one place = a cluster:
+    one entry per cluster per visit (no merging). Line anchors are external swings; a line break follows BREAK-2 and alone is a pace
+    change, never an entry or reversal. (Owner rule)
