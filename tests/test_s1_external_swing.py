@@ -136,3 +136,33 @@ def test_an_auction_extended_close_never_counts_in_the_lifecycle(mirror):
         Z = [L for L in lv.L if abs(L.anchor - f(118.0)) < 1e-6][0]
         assert [e for e in _ev(Z) if e[0] >= 25] == want
         assert bool(lv.ax[49]) is (not traded_up)
+
+
+@MIRRORS
+def test_a_false_break_extreme_is_internal_only_from_its_close_back(mirror):
+    """DECISIONS 94 (2): a high made during an excursion above the band (its 1H candle 20–23 stays entirely above it — no visit) is
+    EXTERNAL while the excursion runs and INTERNAL from the 15M close back inside on (no look-ahead); the same extreme on a copy of
+    the object whose base comes after it is never internal (made before the object existed); an auction-extended close back never
+    ends the excursion."""
+    import dataclasses
+    from types import SimpleNamespace as NS
+    f, sw = _mirror(mirror)
+    tail = [119.0, 120.0, 121.0, 121.5, 121.7, 121.2, 120.5, 119.0, 117.5, 117.0]   # 17 … 24 above (below the external 122), 25 back
+    m, lv, Z = _case(mirror, tail)
+    lo, hi = Z.lo, Z.hi
+    assert Z.role_at(25) == Z.role0 and Z.count("flip", 26) == 0
+    x = NS(kind=sw("H"), price=f(121.9), bar=21, confirm_bar=23, close=f(121.7), clo=None, chi=None, h1=None, xbar=21)
+    clo, chi = lv._candle_range(NS(**{**vars(x), "h1": int(lv.h1_of[21])}), 24)
+    assert not (clo <= hi and chi >= lo)                                  # its 1H candle never traded inside: no visit
+    assert not lv._internal(x, Z, lo, hi, 24)                             # still running at 24 ⇒ external
+    assert lv._internal(x, Z, lo, hi, 25)                                 # closed back at 25 ⇒ a false-break extreme
+    late = dataclasses.replace(Z, base_ts=None, base_bar=22, events=[])    # the object's base after the extreme
+    assert not lv._internal(x, late, lo, hi, 26)
+    ax = lv.ax.copy()
+    lv.ax[25] = True                                                       # the close back is an auction-extended print
+    lv.__dict__.pop("_back_memo", None)
+    try:
+        assert not lv._internal(x, Z, lo, hi, 25) and lv._internal(x, Z, lo, hi, 26)
+    finally:
+        lv.ax[:] = ax
+        lv.__dict__.pop("_back_memo", None)

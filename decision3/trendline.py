@@ -390,9 +390,9 @@ def follow_through_break(C, known, line, side, start, end, HL=None):
     none), the last = the start of the excursion still beyond at `end` without follow-through (BEYOND_NOT_BROKEN) or None.
     DECISIONS 94 (S1 precise): HL = (highs, lows[, auction flags]) of the line's chart ⇒ a swing beyond the line is INTERNAL (never the
     next swing) when (1) its own candle traded through the line (DECISIONS 86: a visit — its low ≤ the line ≤ its high at its bar), or
-    (2) its extreme was made during an excursion beyond the line that ended with a close back on the line's side within the line's
-    test window (from `start` on; a false-break extreme, internal from that close on). A swing of an excursion still running, or one
-    that ended before `start`, is EXTERNAL."""
+    (2) its extreme was made within the line's test window (from `start` on) during an excursion beyond the line that ended with a
+    close back on the line's side (a false-break extreme, internal from that close on). A swing of an excursion still running, or
+    one made before `start`, is EXTERNAL."""
     if end < start:
         return None, None, None
     kind = "H" if side > 0 else "L"
@@ -404,13 +404,16 @@ def follow_through_break(C, known, line, side, start, end, HL=None):
     ex = None
     dp = HL[2] if HL is not None and len(HL) > 2 else None
     pe = np.full(len(ps), np.iinfo(np.int64).max)                         # DECISIONS 94: the bar its excursion closed back (internal
-    if HL is not None:                                                     # from then on); max = external
-        for i, b in enumerate(pb):
-            for u in range(max(int(b), 0), int(end) + 1):                  # the first close not beyond at / after its extreme (an
-                if (dp is None or len(dp) <= u or not dp[u]) and (float(C[u]) - float(line(u))) * side <= 0:   # auction-extended one
-                    if u >= int(start):                                    # never counts), within the line's test window
-                        pe[i] = u
-                    break
+    if HL is not None and len(ps):                                         # from then on); max = external
+        us = np.arange(int(start), int(end) + 1)
+        back = np.array([(float(C[u]) - float(line(u))) * side <= 0 for u in us], bool)   # a close not beyond (an auction-extended
+        if dp is not None:                                                 # one never counts)
+            back &= np.array([not (len(dp) > u and dp[u]) for u in us], bool)
+        nxt = np.full(len(us) + 1, np.iinfo(np.int64).max)                 # the first close back at / after each bar
+        for i in range(len(us) - 1, -1, -1):
+            nxt[i] = us[i] if back[i] else nxt[i + 1]
+        ok = (pb >= int(start)) & (pb <= int(end))                         # extremes within the line's test window only
+        pe[ok] = nxt[pb[ok] - int(start)]
     for u in range(int(start), int(end) + 1):
         if dp is not None and len(dp) > u and dp[u]:                       # DECISIONS 87: an auction-extended close never counts
             continue

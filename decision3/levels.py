@@ -839,21 +839,25 @@ class Levels:
         (a break / broken-back reads only EXTERNAL swings) — when its extreme was made
           (1) during a visit inside the object: its own-TF candle traded inside the band (DECISIONS 86 — price was at the object's
               place, the object's own base wick included), or
-          (2) during an excursion beyond it that ended with a reading-TF close back inside (a false-break extreme): the excursion goes
-              through the role side at the extreme (a resistance ⇒ a high above, a support ⇒ a low below), and the first 15M close not
-              beyond at / after the extreme bar came by t and at / after the object's base candle (`_obj_start`; an excursion that
-              ended before the object existed is not a test of it). An auction-extended close never counts (DECISIONS 87).
+          (2) during an excursion beyond it that ended with a reading-TF close back inside (a false-break extreme): the extreme is at /
+              after the object's base candle (`_obj_start`; before the object existed it is no test of it — the base's own wick is (1)),
+              the excursion goes through the role side at the extreme (a resistance ⇒ a high above, a support ⇒ a low below), and a 15M
+              close not beyond came at / after the extreme bar by t. An auction-extended close never counts (DECISIONS 87).
         An excursion still running at t is external. Comparison only; bars ≤ t."""
         clo, chi = self._candle_range(p, t)
         if clo is not None and chi is not None and clo <= hi and chi >= lo:
             return True                                                    # (1) a visit inside the object
-        b = int(getattr(p, "xbar", -1))
-        if b < 0 or b > t or L.role_at(b) != (RES if p.kind == "H" else SUP):
-            return False                                                   # (extreme before the 15M window: the excursion cannot be seen)
-        C = self.A["close"][:int(t) + 1]
-        back = ((C <= hi) if p.kind == "H" else (C >= lo)) & ~self.ax[:int(t) + 1]   # a close not beyond
-        after = np.flatnonzero(back[b:])
-        return bool(len(after)) and b + int(after[0]) >= self._obj_start(L)   # (2) closed back at the object; still running ⇒ external
+        b, b0 = int(getattr(p, "xbar", -1)), self._obj_start(L)
+        if b < 0 or b > t or b < b0 or L.role_at(b) != (RES if p.kind == "H" else SUP):
+            return False                                                   # (extreme before the 15M window / before the object: no test of it)
+        key = (p.kind, float(lo), float(hi), int(t))
+        memo = self.__dict__.setdefault("_back_memo", {})
+        if key not in memo:                                                # a close not beyond (bars ≤ t), shared by the swings of one read
+            if len(memo) > 64:
+                memo.clear()
+            C = self.A["close"][:int(t) + 1]
+            memo[key] = ((C <= hi) if p.kind == "H" else (C >= lo)) & ~self.ax[:int(t) + 1]
+        return bool(memo[key][b:].any())                                   # (2) closed back by t; still running ⇒ external
 
     def _obj_start(self, L):
         """The object's first 15M bar for DECISIONS 94: the start of its base candle (`base_ts`; its own wick beyond the band is made at
