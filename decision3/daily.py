@@ -300,6 +300,7 @@ def fold_impulse(d, s=None):
     by_conf = {}
     for p in raw:
         by_conf.setdefault(p.confirm_bar, []).append(p)
+    swing_at = {(p.kind, p.bar): p for p in raw}                          # F2: the confirmed Daily swing at a bar (if it is one)
     # एक degree खालचे pivots (N − 1; Q22 आतले pullbacks, Q32 आतली रचना) — confirm क्रमाने; N = 1 / dc ⇒ हेच pivots
     nlow = int(s["daily_pivot_n"]) - 1
     low_all = pivots_pivot(d, nlow, kat) if (s["daily_swing_method"] == "pivot" and nlow >= 1) else list(raw)
@@ -695,15 +696,22 @@ def fold_impulse(d, s=None):
                 tb = imp_end.bar + 1 + int(np.argmax(seg) if dirn < 0 else np.argmin(seg))
                 hl = [p for p in seq if p.kind == ek and imp_end.bar < p.bar < tb and p.confirm_bar <= i]
                 lvl = hl[-1].price if hl else imp_end.price
-                fire = tb < i and (C[i] - lvl) * dirn > 0                  # Q45: फक्त counter-move च्या शेवटच्या HL पलीकडे close (टोकानंतरचा
+                lvl_name = f"counter-move च्या शेवटच्या {'HL' if dirn < 0 else 'LH'}"
+                # F2 (Abhi, gallery review — layer-1 bug fix): the correction's top becomes the new protected origin only when it is a
+                # CONFIRMED Daily swing at this bar (the same confirmation as every other swing of the reading: pivot N bars to the
+                # right / dc reversal). Before that it is only the running extreme of the counter-move; the reading waits.
+                top_sw = swing_at.get(("H" if dirn < 0 else "L", tb))
+                top_ok = tb < i and top_sw is not None and top_sw.confirm_bar <= i
+                fire = top_ok and (C[i] - lvl) * dirn > 0                 # Q45: फक्त counter-move च्या शेवटच्या HL पलीकडे close (टोकानंतरचा
                                                                            # LH + मधला L नियम complex correction च्या आतल्या minor रचनेवर
                                                                            # लवकर फुटतो — NIFTY (4) — म्हणून नाही)
                 tpx = float(H[tb] if dirn < 0 else L[tb])
                 at_sharp = sharp is not None and sharp[0] <= tpx <= sharp[1]
-                if not fire and at_sharp and tb < i and (C[i] - (sharp[0] if dirn < 0 else sharp[1])) * dirn > 0:
+                if not fire and at_sharp and top_ok and (C[i] - (sharp[0] if dirn < 0 else sharp[1])) * dirn > 0:
                     fire, lvl = True, (sharp[0] if dirn < 0 else sharp[1])  # ABC_FIX rule 3: sharp zone मध्ये संपली + trend दिशेने close
+                    lvl_name = f"the sharp-{'fall supply' if dirn < 0 else 'rise demand'} edge"   # D-SIDE-3: not an HL swing
                 if fire:                     # trend-दिशेचं पुढे जाणं ⇒ nature gate नाही (Q28 / Q36 फक्त सुरुवात / flip)
-                    top = piv("H" if dirn < 0 else "L", tb)
+                    top = top_sw
                     push_prov()
                     ref_corr = max(abs(top.price - imp_end.price), 1e-9)
                     t0 = tstart_org.bar if tstart_org is not None else leg_start   # trend-degree correction ⇒ नव्या impulse चा degree
@@ -715,8 +723,8 @@ def fold_impulse(d, s=None):
                         evid = evid + (f"correction ended at sharp-{'fall supply' if dirn < 0 else 'rise demand'} "
                                        f"{sharp[0]:,.0f}-{sharp[1]:,.0f}",)
                     tstart_org, sharp = top, None                          # नवा trend-degree impulse इथून (parent / degree / sharp zone)
-                    why = (f"correction (A1) संपली — close counter-move च्या शेवटच्या {'HL' if dirn < 0 else 'LH'} {lvl:,.2f} "
-                           f"पलीकडे ⇒ नवा impulse (L{2 * k_imp - 1}), protected = correction टोक {top.price:,.2f}")
+                    why = (f"correction (A1) संपली — close {lvl_name} {lvl:,.2f} पलीकडे ⇒ नवा impulse (L{2 * k_imp - 1}), "
+                           f"protected = correction टोक {top.price:,.2f} (confirmed swing)")
                     corr = corrections(i)
             imp_end = piv(ek, extreme(dirn, leg_start, i))                 # leg चं टोक (wick सह; origin_broken मध्येही — 🟡3 / 🟡4)
             if phase == "impulse" and not pcorr and tstart_org is not None and imp_end.bar == i:   # नवा टोक ⇒ sharp zone पुन्हा
