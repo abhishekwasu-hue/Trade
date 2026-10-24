@@ -1034,3 +1034,40 @@ Named-case flags from the B review (fix or explain each, with a chart):
 5. Display: N07 x-axis 3/4 empty (old visit marker at 07-23); header "visit at the decision: start X, ended Y" with Y before X → label it "previous visit ended".
 
 Then: A + B + label in one PR. An answer key (hand-marked cases with charts) is coming from me; after it lands, the per-concept match score against it replaces golden-test comparison as the main proof.
+
+---
+## 24 Oct — OWNER ORDER: BREAK / RETEST / FALSE BREAK (replaces the pullback-swing break test)
+OWNER ORDER — Trade: BREAK / RETEST / FALSE BREAK for areas and lines (replaces the pullback-swing break test, A-L1 and break_hold_degree). Implement exactly this; add nothing of your own. Report ≤25 lines by ID.
+
+R1 Research basis (price-action, SMC, supply-demand, Wyckoff, Brooks, 2B, turtle soup, SFP):
+- Most breakout attempts fail; failure shows as no follow-through and usually comes within a few bars.
+- A wick beyond a level that closes back inside is a sweep / false break, not a break.
+- A real break needs a close beyond, acceptance and follow-through. The first return after a real break is the retest (role reversal).
+- A false break of a level is itself a trade: fade back inside, invalidation beyond the false-break extreme.
+
+R2 States of an area or line (both directions, every TF):
+- ALIVE: original role.
+- FALSE BREAK (sweep): price trades or closes beyond the object, then returns inside before a break is confirmed. Object stays ALIVE in its original role.
+- BEYOND_NOT_BROKEN: price has closed beyond the object but follow-through is not confirmed yet. Object is not flipped.
+- BROKEN (flipped): follow-through confirmed = after the close beyond, a candle of the reading TF CLOSES beyond the next swing on the far side — the nearest prior confirmed swing of the object's own TF (Daily object → Daily swing, 1H → 1H, Weekly → Weekly, line → the TF it is drawn on). A wick through that swing that closes back = sweep of the swing, not follow-through. Known at that closing bar.
+- Fresh ground (no prior own-TF swing beyond): follow-through = a new own-TF swing forms beyond and a reading-TF candle closes beyond it.
+- DEAD: a flipped object broken back by the same test in the opposite direction. No second flip.
+- No swing-size number in this rule; swing detection settings stay as they are.
+
+R3 Entries (existing models only, no new rule):
+- FALSE BREAK of an ALIVE object = the E4(a) sweep-candle case: entry back inside, invalidation = the sweep extreme (structural).
+- E4(b) only after BROKEN, on the first return from the correct side.
+- No entry of any model off an object in BEYOND_NOT_BROKEN.
+
+R4 Proof:
+- Owner fixtures must pass UNEDITED; if any fails, stop and send that chart.
+- Match the attached answer key (answer_key_batch1_v3.json): a table expected vs reader per item with the known bar; a chart for every mismatch.
+- Re-run the owner examples and the replay; report verdict changes and entry count before/after, with charts (≤20).
+
+R5 Other open items (general):
+- A golden test that only passed through an unconfirmed swing (look-ahead) and is not an owner fixture is updated to the corrected expectation, with a before/after chart.
+- Refined base = the ORIGIN base of the area on 15M (the candle(s) inside the higher-TF base from which the departure move started), wick-to-body; never a later test or turn candle that merely touched the area. Invalidation = the refined base's far edge. Re-send the narrow-base charts after the fix.
+- Swing detection stays unchanged for structure; small RSI pushes are handled in C1 with charts.
+- The entry found to sit on a different, still-alive area is accepted; include its chart in the proof set.
+
+Then: merge into the integration branch → PR → CI → C (RSI), then D + E. No deploy before my ✅.

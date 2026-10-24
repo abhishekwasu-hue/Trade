@@ -13,7 +13,7 @@
 - Method = docs/knowledge/CHART_READER_METHOD.md + pa_standard; concept list CLOSED; a misread is a bug against a named concept.
   Golden cases are examples: never tune to one day, never edit golden expectations (a golden change ⇒ stop and ask Abhi).
 - Entry models E1–E4, each once per visit; evidence listed, never blocks; never add a trading rule Abhi didn't state.
-- No look-ahead. Lifecycle = BREAK-1 (DECISIONS 60/69). STABLE layers: bug fixes only, new tag (docs/reader/STABLE.md).
+- No look-ahead. Lifecycle = DECISIONS 76–77 (false break / beyond-not-broken / broken by follow-through / dead). STABLE layers: bug fixes only, new tag (docs/reader/STABLE.md).
 - FUT near-month volume for indices; spot for structure / areas / RSI. NIFTY holdout sealed.
 
 ## §3 Safety

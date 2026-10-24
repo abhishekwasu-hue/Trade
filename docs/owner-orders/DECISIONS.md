@@ -202,3 +202,18 @@ Check every provisional choice against this list first (CLAUDE.md, memory protoc
 74. Bad data is never hidden or patched silently: it is marked as a data problem in the data layer with its evidence. (Owner rule)
 75. An owner answer key (hand-marked cases with charts) will become the main proof: the per-concept match score against it replaces
     golden-test comparison. (Owner decision)
+76. Lifecycle of areas and lines (replaces DECISIONS 60 / 69 / 71 and break_hold_degree): ALIVE · FALSE BREAK (beyond, back inside
+    before a break is confirmed ⇒ stays ALIVE) · BEYOND_NOT_BROKEN (closed beyond, no follow-through yet; not flipped) · BROKEN =
+    after the close beyond, a reading-TF candle CLOSES beyond the nearest prior confirmed swing of the object's own TF on the far side
+    (a wick through it that closes back = a sweep of that swing); fresh ground ⇒ a new own-TF swing forms beyond and a reading-TF
+    candle closes beyond it; known at that closing bar · DEAD = a flipped object broken back by the same test; no second flip. No
+    swing-size number; swing detection unchanged. (Owner rule)
+77. Entries on the lifecycle: a false break of an ALIVE object = the E4 (a) sweep case (entry back inside, invalidation = the sweep
+    extreme); E4 (b) only after BROKEN, on the first return from the correct side; no entry of any model off an object in
+    BEYOND_NOT_BROKEN. (Owner rule)
+78. Proof: owner fixtures pass unedited (a failure ⇒ stop and send the chart); the owner answer key is matched item by item (expected vs
+    reader with the known bar, a chart per mismatch). A non-owner golden that passed only through an unconfirmed swing is updated to
+    the corrected expectation with a before / after chart. (Owner rule)
+79. Refined base = the ORIGIN base of the area on 15M (the candle(s) inside the higher-TF base from which the departure move started),
+    wick-to-body; never a later test / turn candle that merely touched the area; invalidation = its far edge. (Owner rule;
+    replaces DECISIONS 63's "newest 15M turn" / A7-1)
