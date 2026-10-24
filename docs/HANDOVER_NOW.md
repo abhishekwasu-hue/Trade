@@ -1,6 +1,6 @@
 # HANDOVER_NOW (≤ 1 KB) — 24 Oct
-BLOCKED on Abhi: A-L1 D0 flips the OWNER fixture NIFTY 12 Oct zone 22,544–22,622 (broken 07 Oct 10:45 by a D0 low 1.45 pt above the
-band, dead 08 Oct) ⇒ 7 golden tests fail (chart A01). F2 golden (NIFTY 29 Sep) held. Not edited.
-Built locally: integ51 (lifecycle+identity+visitmove+label54+dailyF F1, A-L1 D0 b64beff, group (b) b527ed4); f2 (F2 fix, DP-1 data
-marker, E53 test). Replay 5M: 53 → 79 (D0) / 98 (D1). Next after the answer: merge f2 into integ51, PR, CI, then C (RSI), D+E.
-No agents running. Open PRs: none. No deploy before ✅.
+Built locally, not merged: integ51 d595b1c (BREAK-2 follow-through lifecycle R2/R3/R6 + A+B+label+F1+F2), originbase 585c5dd (R5
+origin refined base, on integ51 afa7410 — merge into integ51 next). Answer key L01–L08: 6/8 (L03, L06 need 1H own swing = D1 and
+"nearest prior" = most recent swing; that what-if = 8/8). Waiting Abhi: 1H own swing degree + "nearest prior" meaning; false break
+known at close vs trade back; 13 Oct owner fixture BEYOND_NOT_BROKEN; R5 defaults (no 15M data / flipped origin / 03 Aug print).
+Then: merge originbase → PR → CI → C (RSI) → D+E → Z (zones, own PR). No agents running. No deploy before ✅.
